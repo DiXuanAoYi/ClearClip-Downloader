@@ -1,6 +1,6 @@
 [package]
 name = "clearclip"
-version = "0.6.1"
+version = "0.8.0"
 description = "清影 ClearClip：抖音 / 快手短视频解析与下载桌面程序"
 authors = ["ClearClip contributors"]
 license = "MIT"
@@ -46,11 +46,25 @@ tar = "0.4"
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 md-5 = "0.10"
+sha1 = "0.10"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 encoding_rs = "0.8"
+base64 = "0.22"
+russh = { version = "0.65", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "3"
+# BT / 磁力：librqbit 自带 DHT、PEX、UPnP。TLS 提供者（给 https tracker 和种子链接用）由我们安装 ring，避免引入 aws-lc。
+librqbit = { version = "9.0.1", default-features = false }
+bt-http = { package = "reqwest", version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+librqbit-core = { version = "9.0.1", default-features = true }
+
+[target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies]
+librqbit-core = { version = "9.0.1", default-features = false, features = ["sha1-ring"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

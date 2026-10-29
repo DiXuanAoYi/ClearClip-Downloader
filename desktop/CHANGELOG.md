@@ -2,6 +2,38 @@
 
 版本号与 `tauri.conf.json` 一致；每个版本对应一个 `desktop-v<版本>` 的 Release。
 
+## 0.8.0
+
+这一版的主题是**下载引擎打磨**：哈希校验、备用地址、自动降级、边下边播。详细说明见 [docs/download-engine.md](../docs/download-engine.md)，规划见 [docs/roadmap.md](../docs/roadmap.md)。
+
+**新增**
+- **哈希校验**：链接里写 `#sha256=…`（或 md5 / sha1 / sha512、`?md5=…`、`#checksum=算法:值`），下载完成后流式校验，不一致自动重下一次，仍不一致报错；本机接口 `/api/grab` 支持 `checksum` 字段
+- **备用地址**：`#mirror=<地址>`（可重复）或 `/api/grab` 的 `mirrors`，主地址失败后按顺序换用
+- **按域名记住并自动降级**：服务器不支持 Range 记 7 天；连接数受限（429 / 503 / 重置）时自动减少连接继续下载，并记住该域名的可用连接数 30 天
+- **分段数 1–64** 可调（原上限更低）
+- **边下边播**：下载中或已暂停的单个 HTTP 音视频文件，在队列里点“边下边播”即可在内置播放器里看已下载的部分，拖到没下到的位置会等待下载追上
+- **链接直接是文件时不再走站点解析**：`.zip`、`.iso`、`.exe` 等直链按普通文件处理
+
+**代理**：核实并补全了测试：HTTP 代理、SOCKS5（含用户名密码、`socks5h://` 代理端解析域名）、按网站分流都有测试覆盖；设置页补充了说明。**交给 ffmpeg 的流（http(s) 直播流、rtmp、rtsp）现在也按分流规则走代理**：清影在本机起临时转发桥，经 HTTP / SOCKS5 代理转出，ffmpeg 抓取和直播预览不再因为不走代理而看不到；设为直连时会清掉 ffmpeg 继承的代理环境变量。
+
+**文档**：扩展商店上架文案和隐私政策（`docs/release-guide/store-listing.md`、`privacy-policy.md`）补上了接管浏览器下载（`downloads` 权限）、视频发现（`webRequest`、`tabs`）和内容脚本的说明与权限理由。
+
+**说明**：FTP / SFTP / BT / ed2k 暂不走代理；rtmps / rtsps 不能经代理（会明确报错）；“系统代理”出口下的 ffmpeg 流只认环境变量 `http_proxy`；`socks5://` 在本机解析域名，需要代理端解析请用 `socks5h://`；MP4 索引在文件末尾时不能边下边播；音视频分开下载的任务不做哈希校验；浏览器扩展暂不发送哈希和备用地址。
+
+## 0.7.0
+
+这一版的主题是**协议扩展**：除了网页视频和 HTTP 文件，现在 FTP / SFTP、BT / 磁力、ed2k、thunder:// 等链接粘贴进来就能下载。详细说明见 [docs/protocols.md](../docs/protocols.md)，规划见 [docs/roadmap.md](../docs/roadmap.md)。
+
+**新增**
+- **FTP / SFTP**：`ftp://`、`sftp://` 链接（可带 `user:pass@`），支持断点续传、限速和取消；SFTP 首次连接记住服务器指纹，之后指纹变化会拒绝连接
+- **专用链接解码**：`thunder://`（迅雷）、`flashget://`（快车）、`qqdl://`（旋风）自动解码成原链接再下载
+- **RTMP / RTSP / MMS 等流**：交给 ffmpeg 抓取，与直播录制共用
+- **ed2k（电驴）**：自行用 Rust 实现，粘贴 `ed2k://|file|…|/` 链接即可下载。支持从链接里的来源和已配置服务器（含 server.met 列表）查找来源、多个来源并行按块下载、逐块 MD4 校验（坏块自动换来源重下）、断点续传。没有内置搜索，也没有内置任何资源索引
+- **BT / 磁力**：内置 librqbit，支持 `magnet:` 链接和 `.torrent` 地址，DHT、PEX、UPnP 已启用，多文件的种子展开成列表供选择，支持限速、断点续传和暂停 / 取消。下载完成后不做种
+- **Tracker 列表自动更新**（“设置 → BT 与 ed2k”）：默认从 ngosang/trackerslist 的 best 列表更新（经 jsDelivr / GitHub），默认 7 天一次，可改间隔、可手动“立即更新”、可增删列表来源和自己的 tracker；更新失败保留上次的列表；只接受 udp / http / https 地址并去重
+
+**说明**：BT 和 ed2k 的下载速度取决于网络里有没有可用的来源；ed2k 公开服务器已经很少，需要自己配置可用的服务器。ed2k 不支持低 ID 来源、Kad 网络和搜索；BT 暂不支持代理，不支持直接拖入本地 .torrent 文件。
+
 ## 0.6.1
 
 这一版的主题是**浏览器扩展**（扩展版本 1.3.0）：可以接管浏览器自己的下载，嗅探更完整，右键菜单更好用。扩展的完整说明见 [desktop/extension/README.md](extension/README.md)，规划见 [docs/roadmap.md](../docs/roadmap.md)。

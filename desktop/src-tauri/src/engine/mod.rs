@@ -1,7 +1,12 @@
 //! 下载引擎：HTTP（单线程 / 分段并行）、m3u8 等具体传输实现。任务调度在 `download.rs`。
 
+pub mod ftp;
 pub mod hls;
+pub mod hostmem;
 pub mod http;
+pub mod proxy_bridge;
+pub mod sftp;
+pub mod stream;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -46,6 +51,21 @@ pub struct ResumeMeta {
     pub resumable: Option<bool>,
     /// 分段下载的各段进度；为空表示单线程下载
     pub segments: Vec<Segment>,
+}
+
+/// 分段下载时，从文件开头起已经连续下载好的字节数（边下边播只能播放这一段）。
+pub fn contiguous_prefix(segments: &[Segment]) -> u64 {
+    let mut end = 0u64;
+    for s in segments {
+        if s.start != end {
+            break;
+        }
+        end += s.done.min(s.len());
+        if !s.is_complete() {
+            break;
+        }
+    }
+    end
 }
 
 impl ResumeMeta {
@@ -127,6 +147,17 @@ pub fn ensure_space(dir: &std::path::Path, need: u64, reserve: u64) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prefix_stops_at_the_first_gap_or_unfinished_segment() {
+        let seg = |start, end, done| Segment { start, end, done };
+        assert_eq!(contiguous_prefix(&[]), 0);
+        assert_eq!(contiguous_prefix(&[seg(0, 99, 100), seg(100, 199, 100), seg(200, 299, 0)]), 200);
+        // 第二段只下了一半：前缀包含它已下载的部分，后面的段不算
+        assert_eq!(contiguous_prefix(&[seg(0, 99, 100), seg(100, 199, 30), seg(200, 299, 100)]), 130);
+        // 第一段还没下完：后面下好的段不能播
+        assert_eq!(contiguous_prefix(&[seg(0, 99, 40), seg(100, 199, 100)]), 40);
+    }
 
     #[test]
     fn segment_math() {

@@ -2,6 +2,8 @@ pub mod ai;
 pub mod ai_cmds;
 pub mod api;
 pub mod backup;
+pub mod bt;
+pub mod checksum;
 pub mod cli;
 mod clipboard;
 mod commands;
@@ -10,6 +12,7 @@ pub mod cookies;
 pub mod db;
 pub mod diagnostics;
 pub mod download;
+pub mod ed2k;
 pub mod edit;
 pub mod engine;
 pub mod error;
@@ -20,6 +23,7 @@ pub mod lan;
 pub mod library;
 pub mod library_cmds;
 pub mod library_media;
+pub mod links;
 pub mod live;
 pub mod lut;
 pub mod media_cmds;
@@ -250,6 +254,8 @@ pub fn run() {
                 log::info!("restored a backup");
             }
             let mut settings = Settings::load(&settings_path, &default_dl);
+            bt::init(data_dir.clone());
+            engine::hostmem::init(data_dir.clone());
             let db = Db::open(&data_dir.join("clearclip.db")).map_err(|e| e.to_string())?;
             let log_dir = if portable_dir().is_some() { data_dir.join("logs") } else { app.path().app_log_dir().unwrap_or_else(|_| data_dir.join("logs")) };
             log::info!(
@@ -343,6 +349,23 @@ pub fn run() {
                     }
                 });
             }
+            // BT tracker 列表：到期自动更新（失败沿用旧列表）
+            {
+                let st = app.state::<Arc<AppState>>().inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    loop {
+                        let settings = st.settings_raw();
+                        if settings.bt_tracker_auto_update {
+                            let probe = settings.bt_tracker_sources.first().cloned().unwrap_or_else(|| bt::trackers::DEFAULT_SOURCES[0].to_string());
+                            if let Ok(clients) = st.net.clients_for(&settings.network, &probe) {
+                                bt::trackers::refresh_if_due(&clients.api, &st.data_dir, &settings).await;
+                            }
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
+                    }
+                });
+            }
             library_cmds::spawn_maintenance(&handle);
             security::spawn_idle_watch(&handle);
             security::apply_window_protection(&handle, settings.security.content_protection);
@@ -397,6 +420,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
             commands::get_settings,
+            commands::bt_tracker_status,
+            commands::bt_update_trackers,
             commands::save_settings,
             commands::detect_links,
             commands::resolve_link,
@@ -567,6 +592,7 @@ pub fn run() {
             commands::check_update,
             commands::install_update,
             player::player_source,
+            player::preview_source,
             security_cmds::lock_status,
             security_cmds::lock_set_password,
             security_cmds::lock_remove_password,

@@ -1,7 +1,7 @@
 // 与 Rust 端 model.rs / download.rs / db.rs / settings.rs 的结构一一对应。
 
 export type MediaKind = 'video' | 'images' | 'audio' | 'file' | 'playlist'
-export type Protocol = 'http' | 'hls' | 'ytdlp'
+export type Protocol = 'http' | 'hls' | 'ytdlp' | 'ftp' | 'sftp' | 'stream' | 'ed2k' | 'bt'
 export type AssetKind = 'video' | 'image' | 'audio' | 'cover' | 'subtitle' | 'file'
 
 export interface Asset {
@@ -24,6 +24,8 @@ export interface Asset {
   hasAudio: boolean | null
   pairAudio: string | null
   formatId: string | null
+  /** 期望的文件哈希，如 sha256:…；下载完成后校验 */
+  checksum?: string | null
   extra: Record<string, unknown> | null
 }
 
@@ -792,6 +794,12 @@ export interface Settings {
   audioFormat: string
   hlsConcurrency: number
   hlsSkipAds: boolean
+  ed2kServers: string[]
+  ed2kServerMetUrl: string
+  btTrackerAutoUpdate: boolean
+  btTrackerSources: string[]
+  btTrackerIntervalDays: number
+  btCustomTrackers: string[]
   seriesTemplate: string
   useYtdlp: boolean
   genericSniffer: boolean
@@ -1511,4 +1519,12 @@ export interface EditSource {
 export interface OpenedEdit {
   project: EditProject
   missing: string[]
+}
+
+/** BT tracker 列表的状态 */
+export interface TrackerStatus {
+  updatedAt: number | null
+  source: string
+  listCount: number
+  effectiveCount: number
 }

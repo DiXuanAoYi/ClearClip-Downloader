@@ -281,6 +281,7 @@ impl SpeedLimiter {
 mod tests {
     use super::*;
     use crate::settings::{ProxyDef, RouteRule};
+    use std::sync::Arc;
 
     #[test]
     fn missing_proxy_is_a_clear_error() {
@@ -338,6 +339,159 @@ mod tests {
         let t1 = Instant::now();
         l.consume(10_000_000, 0).await;
         assert!(t1.elapsed() < Duration::from_millis(10));
+    }
+
+    /// 本地“源站”：任何请求都回 `hello from origin`。
+    async fn origin() -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = l.accept().await else { return };
+                tokio::spawn(async move {
+                    let mut b = [0u8; 2048];
+                    let _ = s.read(&mut b).await;
+                    let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 17\r\nConnection: close\r\n\r\nhello from origin").await;
+                });
+            }
+        });
+        addr
+    }
+
+    /// 最小的 HTTP 代理：收到绝对地址的 GET 后，把请求转给本地源站，并记下被请求的主机名。
+    async fn http_proxy(origin: std::net::SocketAddr, seen: Arc<Mutex<Vec<String>>>) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = l.accept().await else { return };
+                let seen = seen.clone();
+                tokio::spawn(async move {
+                    let mut b = [0u8; 4096];
+                    let n = s.read(&mut b).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&b[..n]).into_owned();
+                    let target = req.split_whitespace().nth(1).unwrap_or("").to_string();
+                    seen.lock().unwrap().push(format!("{target} auth={}", req.to_ascii_lowercase().contains("proxy-authorization: basic")));
+                    let Ok(mut up) = tokio::net::TcpStream::connect(origin).await else { return };
+                    let _ = up.write_all(b"GET / HTTP/1.1\r\nHost: origin\r\nConnection: close\r\n\r\n").await;
+                    let mut resp = vec![];
+                    let _ = up.read_to_end(&mut resp).await;
+                    let _ = s.write_all(&resp).await;
+                });
+            }
+        });
+        addr
+    }
+
+    /// 最小的 SOCKS5 代理（支持无认证和用户名密码）：把 CONNECT 的目标一律接到本地源站，并记下目标主机名。
+    async fn socks5_proxy(origin: std::net::SocketAddr, creds: Option<(&'static str, &'static str)>, seen: Arc<Mutex<Vec<String>>>) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = l.accept().await else { return };
+                let seen = seen.clone();
+                tokio::spawn(async move {
+                    let mut head = [0u8; 2];
+                    if s.read_exact(&mut head).await.is_err() {
+                        return;
+                    }
+                    let mut methods = vec![0u8; head[1] as usize];
+                    let _ = s.read_exact(&mut methods).await;
+                    if let Some((u, p)) = creds {
+                        if !methods.contains(&2) {
+                            let _ = s.write_all(&[5, 0xff]).await;
+                            return;
+                        }
+                        let _ = s.write_all(&[5, 2]).await;
+                        let mut v = [0u8; 2];
+                        let _ = s.read_exact(&mut v).await;
+                        let mut user = vec![0u8; v[1] as usize];
+                        let _ = s.read_exact(&mut user).await;
+                        let mut pl = [0u8; 1];
+                        let _ = s.read_exact(&mut pl).await;
+                        let mut pass = vec![0u8; pl[0] as usize];
+                        let _ = s.read_exact(&mut pass).await;
+                        let ok = user == u.as_bytes() && pass == p.as_bytes();
+                        let _ = s.write_all(&[1, if ok { 0 } else { 1 }]).await;
+                        if !ok {
+                            return;
+                        }
+                    } else {
+                        let _ = s.write_all(&[5, 0]).await;
+                    }
+                    let mut req = [0u8; 4];
+                    if s.read_exact(&mut req).await.is_err() {
+                        return;
+                    }
+                    let host = match req[3] {
+                        1 => {
+                            let mut a = [0u8; 4];
+                            let _ = s.read_exact(&mut a).await;
+                            std::net::Ipv4Addr::from(a).to_string()
+                        }
+                        3 => {
+                            let mut l = [0u8; 1];
+                            let _ = s.read_exact(&mut l).await;
+                            let mut d = vec![0u8; l[0] as usize];
+                            let _ = s.read_exact(&mut d).await;
+                            String::from_utf8_lossy(&d).into_owned()
+                        }
+                        _ => return,
+                    };
+                    let mut port = [0u8; 2];
+                    let _ = s.read_exact(&mut port).await;
+                    seen.lock().unwrap().push(host);
+                    let Ok(mut up) = tokio::net::TcpStream::connect(origin).await else { return };
+                    let _ = s.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).await;
+                    let _ = tokio::io::copy_bidirectional(&mut s, &mut up).await;
+                });
+            }
+        });
+        addr
+    }
+
+    fn net_with(rules: Vec<RouteRule>, url: String) -> NetworkSettings {
+        NetworkSettings { default_route: Route::Direct, rules, proxies: vec![ProxyDef { id: "p".into(), name: "测试代理".into(), url }] }
+    }
+
+    async fn fetch(net: &NetworkSettings, url: &str) -> Result<String, String> {
+        let c = NetManager::default().clients_for(net, url).map_err(|e| e.to_string())?.download;
+        let resp = c.get(url).send().await.map_err(|e| e.to_string())?;
+        resp.text().await.map_err(|e| e.to_string())
+    }
+
+    #[tokio::test]
+    async fn http_proxy_is_used_only_for_the_sites_routed_to_it() {
+        let seen = Arc::new(Mutex::new(vec![]));
+        let proxy = http_proxy(origin().await, seen.clone()).await;
+        let net = net_with(vec![RouteRule { pattern: "proxied.test".into(), route: Route::Proxy("p".into()) }], format!("http://u:p@{proxy}"));
+        assert_eq!(fetch(&net, "http://www.proxied.test/file").await.unwrap(), "hello from origin");
+        let log = seen.lock().unwrap().clone();
+        assert_eq!(log, vec!["http://www.proxied.test/file auth=true".to_string()], "走代理并带上了代理账号");
+        // 没有命中规则的网站直连：.test 域名解析不了，说明确实没走代理
+        assert!(fetch(&net, "http://other.test/file").await.is_err());
+        assert_eq!(seen.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn socks5_proxy_works_with_remote_dns_and_with_credentials() {
+        let seen = Arc::new(Mutex::new(vec![]));
+        let rules = vec![RouteRule { pattern: "proxied.test".into(), route: Route::Proxy("p".into()) }];
+        // socks5h：域名交给代理解析（本机解析不了 .test，也能连上）
+        let open = socks5_proxy(origin().await, None, seen.clone()).await;
+        let net = net_with(rules.clone(), format!("socks5h://{open}"));
+        assert_eq!(fetch(&net, "http://proxied.test/x").await.unwrap(), "hello from origin");
+        assert_eq!(seen.lock().unwrap().clone(), vec!["proxied.test".to_string()]);
+        // 需要用户名密码：对了能通，错了被拒绝
+        let locked = socks5_proxy(origin().await, Some(("me", "secret")), seen.clone()).await;
+        let good = net_with(rules.clone(), format!("socks5h://me:secret@{locked}"));
+        assert_eq!(fetch(&good, "http://proxied.test/y").await.unwrap(), "hello from origin");
+        let bad = net_with(rules, format!("socks5h://me:wrong@{locked}"));
+        assert!(fetch(&bad, "http://proxied.test/y").await.is_err());
     }
 
     #[tokio::test]

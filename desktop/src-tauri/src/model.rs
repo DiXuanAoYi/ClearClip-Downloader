@@ -24,6 +24,16 @@ pub enum Protocol {
     Hls,
     /// 交给 yt-dlp 下载（url 为原始页面地址，format 为 yt-dlp 的格式 ID）
     Ytdlp,
+    /// FTP / FTPS
+    Ftp,
+    /// SFTP（SSH）
+    Sftp,
+    /// ed2k（电驴）
+    Ed2k,
+    /// BT / 磁力
+    Bt,
+    /// RTMP / RTSP / MMS 等流，交给 ffmpeg 抓取
+    Stream,
 }
 
 /// 单个可下载资源的类型。
@@ -82,6 +92,12 @@ pub struct Asset {
     /// yt-dlp 的格式 ID（protocol = ytdlp 时使用）
     #[serde(default)]
     pub format_id: Option<String>,
+    /// 期望的文件哈希，`算法:十六进制`（如 `sha256:…`）；下载完成后校验
+    #[serde(default)]
+    pub checksum: Option<String>,
+    /// 同一个文件的备用下载地址；主地址连不上或报错时依次换用
+    #[serde(default)]
+    pub mirrors: Vec<String>,
     /// 平台特有的附加数据（如 Pixiv 动图的帧时长）
     #[serde(default)]
     pub extra: Option<serde_json::Value>,
@@ -131,6 +147,8 @@ impl Asset {
             has_audio: None,
             pair_audio: None,
             format_id: None,
+            checksum: None,
+            mirrors: vec![],
             extra: None,
         }
     }

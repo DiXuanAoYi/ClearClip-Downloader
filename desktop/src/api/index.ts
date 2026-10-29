@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   AccountStatus,
+  TrackerStatus,
   AiStatus,
   AccountSummary,
   RouteSpeed,
@@ -115,6 +116,7 @@ export const api = {
   removeTask: (id: number) => invoke<void>('remove_task', { id }),
   clearFinished: () => invoke<void>('clear_finished'),
   playerSource: (path: string) => invoke<PlayerSource>('player_source', { path }),
+  previewSource: (taskId: number) => invoke<PlayerSource>('preview_source', { taskId }),
   taskDetail: (id: number) => invoke<TaskDetail>('task_detail', { id }),
   pauseAll: () => invoke<void>('pause_all'),
   resumeAll: () => invoke<void>('resume_all'),
@@ -138,6 +140,8 @@ export const api = {
   libraryPlatforms: () => invoke<PlatformCount[]>('library_platforms'),
   redownload: (id: number) => invoke<EnqueueResult>('redownload', { id }),
   healthCheck: () => invoke<HealthResult[]>('health_check'),
+  btTrackerStatus: () => invoke<TrackerStatus>('bt_tracker_status'),
+  btUpdateTrackers: () => invoke<TrackerStatus>('bt_update_trackers'),
   siteRuleTest: (rule: SiteRule, url: string) => invoke<MediaInfo>('site_rule_test', { rule, url }),
   moveTask: (id: number, to: 'top' | 'up' | 'down' | 'bottom') => invoke<void>('move_task', { id, to }),
   scheduleTask: (id: number, startAt: number | null) => invoke<void>('schedule_task', { id, startAt }),

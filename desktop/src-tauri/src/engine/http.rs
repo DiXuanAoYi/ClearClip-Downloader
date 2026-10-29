@@ -7,8 +7,9 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-use tokio::sync::watch;
+use tokio::sync::{watch, Semaphore};
 
+use super::hostmem;
 use super::{ensure_space, wait_ctrl, DlError, ResumeMeta, Segment, CTRL_RUN};
 use crate::net::NetManager;
 
@@ -59,7 +60,7 @@ pub struct HttpOptions {
 }
 
 impl HttpOptions {
-    async fn throttle(&self, bytes: usize) {
+    pub(crate) async fn throttle(&self, bytes: usize) {
         if let Some(net) = &self.net {
             net.throttle(bytes, self.speed_limit_kbps).await;
         }
@@ -136,8 +137,12 @@ pub async fn download(
     opts: &HttpOptions,
     mut on_progress: impl FnMut(u64, Option<u64>, &ResumeMeta) + Send,
 ) -> Result<u64, DlError> {
+    let host = hostmem::host_of(&req.url);
+    // 同一个域名以前被限流过：这次一开始就少开几个连接
+    let mut parallel = hostmem::get(&host).max_conns().map_or(opts.segments, |m| m.min(opts.segments)).max(1);
+
     if !meta.segments.is_empty() {
-        match segmented(client, req, part, meta, ctrl, opts, &mut on_progress).await {
+        match segmented_adaptive(client, req, part, meta, ctrl, opts, &mut parallel, &mut on_progress).await {
             Err(SegError::Mismatch) => {
                 log::info!("segment resume rejected by server; restarting single-threaded");
                 let _ = tokio::fs::remove_file(part).await;
@@ -148,11 +153,15 @@ pub async fn download(
         }
     }
 
-    if file_len(part) == 0 && opts.segments > 1 {
+    // 记着这个域名不支持分段时，不再探测，直接单线程
+    if file_len(part) == 0 && opts.segments > 1 && !hostmem::get(&host).no_range() {
         let info = tokio::select! {
             r = probe(client, req) => r?,
             c = wait_ctrl(ctrl) => return Err(DlError::from_ctrl(c)),
         };
+        if !info.ranges {
+            hostmem::note_no_range(&host);
+        }
         if let (true, Some(total)) = (info.ranges, info.total) {
             if total >= opts.min_segment_size.max(2 * MB) {
                 if let Some(dir) = part.parent() {
@@ -165,7 +174,7 @@ pub async fn download(
                     resumable: Some(true),
                     segments: plan_segments(total, opts.segments),
                 };
-                match segmented(client, req, part, meta, ctrl, opts, &mut on_progress).await {
+                match segmented_adaptive(client, req, part, meta, ctrl, opts, &mut parallel, &mut on_progress).await {
                     Err(SegError::Mismatch) => {
                         let _ = tokio::fs::remove_file(part).await;
                         *meta = ResumeMeta::default();
@@ -308,6 +317,39 @@ impl From<DlError> for SegError {
     }
 }
 
+/// 分段下载；服务器因为同时连接太多而限流（429 / 503）时，把并行连接数减半，记住这个域名的上限，
+/// 已下载的部分保留，接着往下下。
+#[allow(clippy::too_many_arguments)]
+async fn segmented_adaptive(
+    client: &reqwest::Client,
+    req: &HttpRequest,
+    part: &Path,
+    meta: &mut ResumeMeta,
+    ctrl: &mut watch::Receiver<u8>,
+    opts: &HttpOptions,
+    parallel: &mut usize,
+    on_progress: &mut (impl FnMut(u64, Option<u64>, &ResumeMeta) + Send),
+) -> Result<u64, SegError> {
+    let host = hostmem::host_of(&req.url);
+    let mut tries = 0;
+    loop {
+        match segmented(client, req, part, meta, ctrl, opts, *parallel, on_progress).await {
+            Err(SegError::Dl(DlError::Status(code @ (429 | 503)))) if *parallel > 1 && tries < 4 => {
+                tries += 1;
+                *parallel = (*parallel / 2).max(1);
+                log::info!("{host} answered {code}; lowering parallel connections to {parallel}");
+                hostmem::note_limit(&host, *parallel);
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                    c = wait_ctrl(ctrl) => return Err(SegError::Dl(DlError::from_ctrl(c))),
+                }
+            }
+            other => return other,
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 /// 分段并行下载：文件预分配到总大小，每段用 Range 下载并写到对应位置；每段的进度记录在 `meta.segments`。
 async fn segmented(
     client: &reqwest::Client,
@@ -316,6 +358,7 @@ async fn segmented(
     meta: &mut ResumeMeta,
     ctrl: &mut watch::Receiver<u8>,
     opts: &HttpOptions,
+    parallel: usize,
     on_progress: &mut (impl FnMut(u64, Option<u64>, &ResumeMeta) + Send),
 ) -> Result<u64, SegError> {
     let Some(total) = meta.total else { return Err(SegError::Mismatch) };
@@ -332,6 +375,7 @@ async fn segmented(
     let validator = meta.etag.clone().or(meta.last_modified.clone());
     let state = Arc::new(Mutex::new(meta.segments.clone()));
     let (stop_tx, stop_rx) = watch::channel(CTRL_RUN);
+    let permits = Arc::new(Semaphore::new(parallel.max(1)));
     let mut set = tokio::task::JoinSet::new();
     for i in 0..meta.segments.len() {
         if meta.segments[i].is_complete() {
@@ -339,7 +383,12 @@ async fn segmented(
         }
         let (client, req, part, state, validator, opts) = (client.clone(), req.clone(), part.to_path_buf(), state.clone(), validator.clone(), opts.clone());
         let mut stop = stop_rx.clone();
-        set.spawn(async move { run_segment(&client, &req, &part, i, &state, validator.as_deref(), &mut stop, &opts).await });
+        let permits = permits.clone();
+        set.spawn(async move {
+            // 并行连接数有限制时，其余的分段排队等位置
+            let _permit = permits.acquire_owned().await.map_err(|_| SegError::Dl(DlError::Other("分段调度已关闭".into())))?;
+            run_segment(&client, &req, &part, i, &state, validator.as_deref(), &mut stop, &opts).await
+        });
     }
 
     let snapshot = |state: &Arc<Mutex<Vec<Segment>>>, meta: &mut ResumeMeta| {
@@ -490,16 +539,22 @@ mod tests {
     async fn serve() -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         tokio::spawn(async move {
             loop {
                 let Ok((mut sock, _)) = listener.accept().await else { break };
+                let active = active.clone();
                 tokio::spawn(async move {
                     let mut buf = vec![0u8; 4096];
                     let n = sock.read(&mut buf).await.unwrap_or(0);
                     let req = String::from_utf8_lossy(&buf[..n]).to_string();
                     let full_path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
-                    let slow = full_path.contains("slow");
                     let path = full_path.split('?').next().unwrap_or("/").to_string();
+                    // /busy：同时超过 2 个连接就回 429（模拟限流的服务器），数据发得慢一点好让连接重叠
+                    let busy = path == "/busy";
+                    let slow = full_path.contains("slow") || busy;
+                    let over_limit = busy && active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 2;
+                    let path = if busy { "/big".to_string() } else { path };
                     let etag = if path == "/changed" { "\"v2\"" } else { "\"v1\"" };
                     let data: &[u8] = if path == "/big" { body() } else { SMALL };
                     let range = header(&req, "range").and_then(|r| parse_range(r, data.len()));
@@ -514,6 +569,7 @@ mod tests {
                         v
                     };
                     let resp: Vec<u8> = match path.as_str() {
+                        _ if over_limit => b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
                         "/forbidden" => b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
                         "/norange" => b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\n0123456789abcdefghij".to_vec(),
                         "/badrange" if range.is_some() => send("206 Partial Content", "Content-Range: bytes 0-19/20\r\n".to_string(), SMALL),
@@ -533,6 +589,9 @@ mod tests {
                     if slow {
                         for chunk in resp.chunks(64 * 1024) {
                             if sock.write_all(chunk).await.is_err() {
+                                if busy {
+                                    active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                }
                                 return;
                             }
                             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -541,6 +600,9 @@ mod tests {
                         let _ = sock.write_all(&resp).await;
                     }
                     let _ = sock.shutdown().await;
+                    if busy {
+                        active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                    }
                 });
             }
         });
@@ -561,6 +623,38 @@ mod tests {
     async fn dl(url: &str, part: &Path, meta: &mut ResumeMeta, segments: usize) -> Result<u64, DlError> {
         let (_tx, mut rx) = watch::channel(CTRL_RUN);
         download(&build_download_client(), &HttpRequest::new(url), part, meta, &mut rx, &opts(segments), |_, _, _| {}).await
+    }
+
+    #[tokio::test]
+    async fn a_rate_limited_host_gets_fewer_parallel_connections_and_is_remembered() {
+        let base = serve().await;
+        let host = hostmem::host_of(&base);
+        hostmem::forget(&host);
+        let part = tmp("busy");
+        let mut meta = ResumeMeta::default();
+        let n = dl(&format!("{base}/busy"), &part, &mut meta, 4).await.unwrap();
+        assert_eq!(n, 3 * MB);
+        assert_eq!(std::fs::read(&part).unwrap(), body());
+        let limit = hostmem::get(&host).max_conns().expect("限流后应记住连接数上限");
+        assert!(limit <= 2, "上限应降到服务器允许的范围，实际 {limit}");
+        // 下次一开始就按记住的上限下载，不会再被限流
+        let part2 = tmp("busy2");
+        let mut meta2 = ResumeMeta::default();
+        assert_eq!(dl(&format!("{base}/busy"), &part2, &mut meta2, 4).await.unwrap(), 3 * MB);
+        assert_eq!(hostmem::get(&host).max_conns(), Some(limit));
+        hostmem::forget(&host);
+    }
+
+    #[tokio::test]
+    async fn a_host_without_range_support_is_remembered_and_not_probed_again() {
+        let base = serve().await;
+        let host = hostmem::host_of(&base);
+        hostmem::forget(&host);
+        let part = tmp("norange-mem");
+        let mut meta = ResumeMeta::default();
+        assert_eq!(dl(&format!("{base}/norange"), &part, &mut meta, 4).await.unwrap(), 20);
+        assert!(hostmem::get(&host).no_range());
+        hostmem::forget(&host);
     }
 
     #[tokio::test]

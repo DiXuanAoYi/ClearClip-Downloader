@@ -8,6 +8,7 @@ pub mod kuaishou;
 pub mod listing;
 pub mod live;
 pub mod pixiv;
+pub mod protocols;
 pub mod remote;
 pub mod rss;
 pub mod weibo;
@@ -158,6 +159,25 @@ pub fn detect_links(text: &str) -> Vec<DetectedLink> {
             }
         }
     }
+    for raw in crate::links::extract_links(text) {
+        use crate::links::LinkKind;
+        let (platform, name) = match crate::links::kind_of(&raw) {
+            LinkKind::Ftp => ("ftp", "FTP"),
+            LinkKind::Sftp => ("sftp", "SFTP"),
+            LinkKind::Stream => ("stream", "流媒体"),
+            LinkKind::Ed2k => ("ed2k", "ed2k"),
+            LinkKind::Magnet => ("magnet", "磁力链接"),
+            LinkKind::Wrapped => ("wrapped", "迅雷 / 快车链接"),
+            _ => continue,
+        };
+        // 专用链接必须能还原才算
+        if crate::links::kind_of(&raw) == LinkKind::Wrapped && crate::links::unwrap_link(&raw).is_none() {
+            continue;
+        }
+        if !out.iter().any(|d| d.url == raw) {
+            out.push(DetectedLink { url: raw, platform: platform.into(), platform_name: name.into() });
+        }
+    }
     out
 }
 
@@ -182,6 +202,10 @@ pub fn detect_links_with(text: &str, settings: &Settings) -> Vec<DetectedLink> {
 pub async fn resolve_text(ctx: &Ctx<'_>, text: &str) -> AppResult<MediaInfo> {
     let urls = extract_urls(text);
     let Some(first) = urls.first() else {
+        // 没有网页链接：看看有没有 FTP、磁力、ed2k、迅雷专用链接等
+        if let Some(link) = crate::links::extract_links(text).into_iter().next() {
+            return resolve_url(ctx, &link).await;
+        }
         return Err(AppError::invalid("没有找到链接。请粘贴分享文案或链接。"));
     };
     // 优先选受支持平台的链接，避免文案中混有其他网址。
@@ -198,6 +222,21 @@ pub fn remote_allowed(provider: Option<&dyn Provider>) -> bool {
 }
 
 pub async fn resolve_url(ctx: &Ctx<'_>, url: &str) -> AppResult<MediaInfo> {
+    // 迅雷 / 快车 / QQ 旋风的专用链接先还原成原始地址
+    let unwrapped;
+    let url = if crate::links::kind_of(url) == crate::links::LinkKind::Wrapped {
+        unwrapped = crate::links::unwrap_link(url).ok_or_else(|| AppError::invalid("这个专用下载链接无法还原，请确认链接完整。"))?;
+        unwrapped.as_str()
+    } else {
+        url
+    };
+    if let Some(r) = protocols::resolve(url) {
+        return r;
+    }
+    if crate::links::kind_of(url) == crate::links::LinkKind::Magnet || crate::bt::is_torrent_url(url) {
+        let probe = if url.starts_with("magnet:") { crate::bt::trackers::DEFAULT_SOURCES[0] } else { url };
+        return crate::bt::resolve(&ctx.http(probe), ctx.settings, url).await;
+    }
     let settings = ctx.settings;
     let has_remote = !settings.remote_endpoint.is_empty();
     let parsed = Url::parse(url).map_err(|_| AppError::invalid("链接格式不正确。"))?;
@@ -242,6 +281,10 @@ async fn resolve_generic(ctx: &Ctx<'_>, url: &str) -> AppResult<MediaInfo> {
     // 用户自己写的站点规则优先
     if let Some(rule) = custom::find(&ctx.settings.custom_sites, url) {
         return custom::resolve(ctx, rule, url).await;
+    }
+    // 压缩包、安装包、文档等普通文件：直接按文件下载
+    if crate::grab::is_file_url(url) {
+        return crate::grab::media_from_url(url);
     }
     // 直接的音视频文件：不用问 yt-dlp
     if generic::is_direct_media(url) {

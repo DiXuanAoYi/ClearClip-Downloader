@@ -10,10 +10,14 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
 
 use crate::db::{self, JobRow, NewDownload};
+use crate::ed2k::{self, link as ed2k_link};
+use crate::engine::ftp as ftp_engine;
 use crate::engine::hls::{self as hls_engine, HlsOptions};
 use crate::engine::http::{self as http_engine, HttpOptions, HttpRequest};
+use crate::engine::sftp as sftp_engine;
+use crate::engine::stream as stream_engine;
 use crate::engine::{wait_ctrl, DlError, ResumeMeta, CTRL_CANCEL, CTRL_PAUSE, CTRL_RUN};
-use crate::error::ErrorKind;
+use crate::error::{AppError, ErrorKind};
 use crate::model::{AppResult, Asset, AssetKind, Chapter, Clip, MediaInfo, Protocol};
 use crate::settings::{ConflictPolicy, Settings};
 use crate::{naming, postprocess, providers, AppState};
@@ -985,6 +989,41 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
             }
         }
     }
+    // 期望的文件哈希：不一致说明下载内容被改动或损坏，清理后从头重新下载一次
+    if outcome.is_ok() && spec.inputs.len() == 1 {
+        if let Some(expect) = spec.inputs[0].checksum.as_deref().and_then(crate::checksum::parse) {
+            set_step(&st, id, "post");
+            set_note(&app, id, Some("正在校验文件…"));
+            match crate::checksum::verify(&final_part, &expect).await {
+                Ok(Ok(())) => {}
+                Ok(Err(actual)) if retry_ok => {
+                    log::warn!("job {id}: {} mismatch (got {actual}), downloading again", expect.algo.name());
+                    for part in parts.iter().chain(std::iter::once(&final_part)) {
+                        remove_part(part);
+                    }
+                    let n = spec.inputs.len();
+                    let st2 = st.clone();
+                    with_entry(&st, id, |e| {
+                        e.meta = JobMeta { inputs: vec![ResumeMeta::default(); n] };
+                        e.snap.received = 0;
+                        e.snap.total = None;
+                        persist(&st2, e);
+                    });
+                    set_note(&app, id, Some("文件校验没通过，正在重新下载…"));
+                    return run_task_inner(app, id, false).await;
+                }
+                Ok(Err(actual)) => {
+                    outcome = Err(DlError::Other(format!(
+                        "文件校验失败：{} 应为 {}，实际是 {actual}。文件可能被改动或下载不完整，请重试或换一个下载源。",
+                        expect.algo.name().to_uppercase(),
+                        expect.hex
+                    )));
+                }
+                Err(e) => outcome = Err(DlError::Other(format!("无法校验文件：{e}"))),
+            }
+            set_note(&app, id, None);
+        }
+    }
     // 按章节另外拆分（保留完整文件）
     if outcome.is_ok() && !spec.post.split_chapters.is_empty() && matches!(spec.primary().kind, AssetKind::Video | AssetKind::Audio) {
         if let Some(ff) = postprocess::find_ffmpeg(&st) {
@@ -1092,6 +1131,7 @@ async fn download_input(
 ) -> Result<u64, DlError> {
     let mut re_resolved = false;
     let mut net_attempts = 0u32;
+    let mut mirror_tries = 0usize;
     loop {
         if let Some(dir) = part.parent() {
             if let Err(e) = tokio::fs::create_dir_all(dir).await {
@@ -1143,6 +1183,63 @@ async fn download_input(
                         r.size
                     })
                 }
+                Protocol::Ftp | Protocol::Sftp => {
+                    let url = url::Url::parse(&asset.url).map_err(|_| DlError::Other("下载地址格式不正确".into()))?;
+                    let cred = asset_credentials(&asset);
+                    if asset.protocol == Protocol::Ftp {
+                        ftp_engine::download(&url, cred.as_deref(), part, &mut meta.inputs[i], rx, opts, |received, total, meta_now| {
+                            reporter.update(received, total, None, Some(meta_now))
+                        })
+                        .await
+                    } else {
+                        let known = sftp_engine::KnownHosts::new(st.data_dir.join("sftp_known_hosts.json"));
+                        sftp_engine::download(&url, cred.as_deref(), &known, part, &mut meta.inputs[i], rx, opts, |received, total, meta_now| {
+                            reporter.update(received, total, None, Some(meta_now))
+                        })
+                        .await
+                    }
+                }
+                Protocol::Ed2k => {
+                    let link = match ed2k_link::parse(&asset.url) {
+                        Ok(ed2k_link::Ed2kLink::File(f)) => f,
+                        _ => return Err(DlError::Other("ed2k 链接无法解析".into())),
+                    };
+                    let client = st.net.clients_for(&settings.network, &settings.ed2k_server_met_url).map_err(|e| DlError::Other(e.message))?.download;
+                    let servers = ed2k::server::collect_servers(&client, &st.data_dir, &settings.ed2k_servers, &settings.ed2k_server_met_url).await;
+                    if servers.is_empty() && link.sources.is_empty() {
+                        task_log(st, id, "没有可用的 ed2k 服务器，也没有链接自带的来源");
+                    }
+                    ed2k::download::download(&link, &servers, part, rx, opts, ed2k::download::Config::default(), |received| {
+                        reporter.update(received, Some(link.size), None, None)
+                    })
+                    .await
+                    .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
+                }
+                Protocol::Bt => {
+                    let probe = if asset.url.starts_with("magnet:") { crate::bt::trackers::DEFAULT_SOURCES[0] } else { asset.url.as_str() };
+                    let client = st.net.clients_for(&settings.network, probe).map_err(|e| DlError::Other(e.message))?.download;
+                    crate::bt::trackers::refresh_if_due(&client, &st.data_dir, settings).await;
+                    let bt_opts = crate::bt::DownloadOptions {
+                        trackers: crate::bt::trackers::effective(&st.data_dir, settings),
+                        speed_limit_kbps: st.net.effective_limit(settings.speed_limit_kbps),
+                        disk_reserve: opts.disk_reserve,
+                        initial_peers: vec![],
+                    };
+                    let idx = asset.format_id.as_deref().and_then(|s| s.parse().ok());
+                    crate::bt::download(&client, &asset.url, idx, part, rx, &bt_opts, |received, total, speed| {
+                        reporter.update(received, Some(total), Some(speed), None)
+                    })
+                    .await
+                    .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
+                }
+                Protocol::Stream => {
+                    let ffmpeg = postprocess::find_ffmpeg(st).ok_or_else(|| DlError::Other(postprocess::ffmpeg_missing().message))?;
+                    let cred = asset_credentials(&asset);
+                    let route = stream_route(settings, &asset.url);
+                    stream_engine::download(&ffmpeg, &asset.url, cred.as_deref(), &route, part, rx, opts.disk_reserve, |n| reporter.update(n, None, None, None))
+                        .await
+                        .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
+                }
                 Protocol::Ytdlp => {
                     let ctx = st.parse_ctx(settings);
                     let format_id = asset.format_id.clone().unwrap_or_else(|| "best".into());
@@ -1159,8 +1256,28 @@ async fn download_input(
         with_entry(st, id, |e| e.meta = m);
 
         match res {
+            // 有备用地址：主地址报错（或重试用完仍连不上）就换下一个，已下载的部分作废
+            Err(ref e @ (DlError::Status(_) | DlError::Net(_)))
+                if asset.protocol == Protocol::Http
+                    && mirror_tries < asset.mirrors.len()
+                    && match e {
+                        DlError::Status(code) => *code >= 400 && *code != 416,
+                        _ => net_attempts >= settings.max_retries,
+                    } =>
+            {
+                mirror_tries += 1;
+                net_attempts = 0;
+                let (from, to) = rotate_mirror(&mut spec.inputs[i]);
+                task_log(st, id, format!("{from} 下载失败（{e}），改用备用地址 {to}"));
+                set_note(app, id, Some("主地址不可用，正在换备用地址…"));
+                remove_part(part);
+                meta.inputs[i] = ResumeMeta::default();
+            }
             Err(DlError::Status(code))
-                if matches!(code, 403 | 404 | 410) && !re_resolved && !media.source_url.is_empty() && asset.protocol != Protocol::Ytdlp =>
+                if matches!(code, 403 | 404 | 410)
+                    && !re_resolved
+                    && !media.source_url.is_empty()
+                    && matches!(asset.protocol, Protocol::Http | Protocol::Hls) =>
             {
                 re_resolved = true;
                 task_log(st, id, format!("服务器返回 HTTP {code}，下载地址可能已过期"));
@@ -1206,6 +1323,69 @@ async fn download_input(
     }
 }
 
+/// 流地址按“设置 → 网络”的分流规则得到的出口。
+fn stream_route(settings: &Settings, url: &str) -> stream_engine::StreamRoute {
+    use crate::settings::Route;
+    let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(String::from)).unwrap_or_default();
+    match settings.network.route_for_host(&host) {
+        Route::Direct => stream_engine::StreamRoute::Direct,
+        Route::System => stream_engine::StreamRoute::System,
+        Route::Proxy(id) => stream_engine::StreamRoute::Proxy(settings.network.proxy_url(&id).unwrap_or_default().to_string()),
+    }
+}
+
+/// 边下边播：把一个正在下载的音视频任务登记给播放器用的本机媒体服务。
+/// 只支持单个文件的 HTTP 下载（m3u8 / mpd 是分片拼接，要下载完才有完整文件）。
+pub(crate) fn preview_growing(st: &Arc<AppState>, id: i64) -> AppResult<(crate::media_server::Growing, String, String, String)> {
+    let (spec, snap, meta) = with_entry(st, id, |e| (e.spec.clone(), e.snap.clone(), e.meta.clone())).ok_or_else(|| AppError::not_found("任务不存在"))?;
+    let asset = spec.inputs.first().filter(|_| spec.inputs.len() == 1).ok_or_else(|| AppError::unsupported("音视频分开下载的任务要合并后才能播放。"))?;
+    if !matches!(snap.status, TaskStatus::Running | TaskStatus::Paused | TaskStatus::Queued) {
+        return Err(AppError::invalid("这个任务已经结束，请直接播放下载好的文件。"));
+    }
+    let kind = match asset.kind {
+        AssetKind::Video => "video",
+        AssetKind::Audio => "audio",
+        _ => return Err(AppError::unsupported("只能边下边播视频和音频。")),
+    };
+    let ext = asset.ext.to_ascii_lowercase();
+    if asset.protocol != Protocol::Http || matches!(ext.as_str(), "m3u8" | "mpd") {
+        return Err(AppError::unsupported("这种下载方式要下载完才能播放（m3u8 等分片格式、站点解析的流）。"));
+    }
+    let total = meta
+        .inputs
+        .first()
+        .and_then(|m| m.total)
+        .or(snap.total)
+        .filter(|t| *t > 0)
+        .ok_or_else(|| AppError::invalid("还不知道文件大小，请稍等下载开始后再试。"))?;
+    let final_path = PathBuf::from(&snap.file_path);
+    let part = input_part_path(&st.settings(), id, &final_path, 0, 1);
+    let (st2, part2, fin2) = (st.clone(), part.clone(), final_path.clone());
+    let available: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || {
+        let segs = with_entry(&st2, id, |e| e.meta.inputs.first().map(|m| m.segments.clone())).flatten().unwrap_or_default();
+        if segs.is_empty() {
+            // 单线程下载是从头顺序写入的；下载完成改名后看最终文件
+            file_len(&part2).max(file_len(&fin2))
+        } else {
+            crate::engine::contiguous_prefix(&segs)
+        }
+    });
+    Ok((crate::media_server::Growing { path: part, final_path, total, available }, snap.title, kind.into(), ext))
+}
+
+/// 把资源的下载地址换成第一个备用地址，原地址排到备用列表末尾；返回 (旧地址, 新地址)。
+fn rotate_mirror(asset: &mut Asset) -> (String, String) {
+    let next = asset.mirrors.remove(0);
+    let old = std::mem::replace(&mut asset.url, next.clone());
+    asset.mirrors.push(old.clone());
+    (old, next)
+}
+
+/// FTP / SFTP / 流媒体资源的登录信息（"用户名:密码"，放在 Authorization 头里，不出现在地址中）。
+fn asset_credentials(asset: &Asset) -> Option<String> {
+    asset.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("authorization")).map(|(_, v)| v.clone())
+}
+
 fn push_log(e: &mut Entry, text: String) {
     if e.log.len() >= LOG_CAP {
         e.log.remove(0);
@@ -1218,6 +1398,11 @@ fn protocol_name(p: Protocol) -> &'static str {
         Protocol::Http => "HTTP 直链",
         Protocol::Hls => "m3u8 分片",
         Protocol::Ytdlp => "yt-dlp",
+        Protocol::Ftp => "FTP",
+        Protocol::Sftp => "SFTP",
+        Protocol::Stream => "流媒体（ffmpeg）",
+        Protocol::Ed2k => "ed2k",
+        Protocol::Bt => "BT / 磁力",
     }
 }
 
@@ -1247,6 +1432,8 @@ fn remove_part(p: &Path) {
     }
     let _ = std::fs::remove_dir_all(hls_engine::segment_dir(p));
     let _ = std::fs::remove_dir_all(suffixed(p, ".subs"));
+    crate::bt::remove_staging(p);
+    let _ = std::fs::remove_file(ed2k::download::sidecar_path(p));
 }
 
 fn dir_size(dir: &Path) -> u64 {
@@ -1257,6 +1444,10 @@ fn dir_size(dir: &Path) -> u64 {
 fn input_received(part: &Path, meta: &ResumeMeta) -> u64 {
     if !meta.segments.is_empty() {
         return meta.segmented_received();
+    }
+    // ed2k 的 .part 是预先分配好大小的，实际进度看已校验的分块
+    if let Some(n) = ed2k::download::verified_bytes(part) {
+        return n;
     }
     let done = file_len(part);
     if done > 0 {
@@ -1887,6 +2078,16 @@ fn human_bytes(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mirrors_rotate_through_every_address_once() {
+        let mut a = Asset::base("file", AssetKind::File, "https://a/f".into(), "文件", "bin");
+        a.mirrors = vec!["https://b/f".into(), "https://c/f".into()];
+        assert_eq!(rotate_mirror(&mut a), ("https://a/f".to_string(), "https://b/f".to_string()));
+        assert_eq!((a.url.as_str(), a.mirrors.clone()), ("https://b/f", vec!["https://c/f".to_string(), "https://a/f".to_string()]));
+        assert_eq!(rotate_mirror(&mut a).1, "https://c/f");
+        assert_eq!(rotate_mirror(&mut a).1, "https://a/f");
+    }
+
     use super::*;
     use crate::model::MediaKind;
 
