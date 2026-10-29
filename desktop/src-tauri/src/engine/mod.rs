@@ -1,7 +1,10 @@
 //! 下载引擎：HTTP（单线程 / 分段并行）、m3u8 等具体传输实现。任务调度在 `download.rs`。
 
+pub mod ftp;
 pub mod hls;
 pub mod http;
+pub mod sftp;
+pub mod stream;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;

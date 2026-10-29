@@ -10,8 +10,11 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
 
 use crate::db::{self, JobRow, NewDownload};
+use crate::engine::ftp as ftp_engine;
 use crate::engine::hls::{self as hls_engine, HlsOptions};
 use crate::engine::http::{self as http_engine, HttpOptions, HttpRequest};
+use crate::engine::sftp as sftp_engine;
+use crate::engine::stream as stream_engine;
 use crate::engine::{wait_ctrl, DlError, ResumeMeta, CTRL_CANCEL, CTRL_PAUSE, CTRL_RUN};
 use crate::error::ErrorKind;
 use crate::model::{AppResult, Asset, AssetKind, Chapter, Clip, MediaInfo, Protocol};
@@ -1143,6 +1146,29 @@ async fn download_input(
                         r.size
                     })
                 }
+                Protocol::Ftp | Protocol::Sftp => {
+                    let url = url::Url::parse(&asset.url).map_err(|_| DlError::Other("下载地址格式不正确".into()))?;
+                    let cred = asset_credentials(&asset);
+                    if asset.protocol == Protocol::Ftp {
+                        ftp_engine::download(&url, cred.as_deref(), part, &mut meta.inputs[i], rx, opts, |received, total, meta_now| {
+                            reporter.update(received, total, None, Some(meta_now))
+                        })
+                        .await
+                    } else {
+                        let known = sftp_engine::KnownHosts::new(st.data_dir.join("sftp_known_hosts.json"));
+                        sftp_engine::download(&url, cred.as_deref(), &known, part, &mut meta.inputs[i], rx, opts, |received, total, meta_now| {
+                            reporter.update(received, total, None, Some(meta_now))
+                        })
+                        .await
+                    }
+                }
+                Protocol::Stream => {
+                    let ffmpeg = postprocess::find_ffmpeg(st).ok_or_else(|| DlError::Other(postprocess::ffmpeg_missing().message))?;
+                    let cred = asset_credentials(&asset);
+                    stream_engine::download(&ffmpeg, &asset.url, cred.as_deref(), part, rx, opts.disk_reserve, |n| reporter.update(n, None, None, None))
+                        .await
+                        .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
+                }
                 Protocol::Ytdlp => {
                     let ctx = st.parse_ctx(settings);
                     let format_id = asset.format_id.clone().unwrap_or_else(|| "best".into());
@@ -1160,7 +1186,7 @@ async fn download_input(
 
         match res {
             Err(DlError::Status(code))
-                if matches!(code, 403 | 404 | 410) && !re_resolved && !media.source_url.is_empty() && asset.protocol != Protocol::Ytdlp =>
+                if matches!(code, 403 | 404 | 410) && !re_resolved && !media.source_url.is_empty() && matches!(asset.protocol, Protocol::Http | Protocol::Hls) =>
             {
                 re_resolved = true;
                 task_log(st, id, format!("服务器返回 HTTP {code}，下载地址可能已过期"));
@@ -1206,6 +1232,11 @@ async fn download_input(
     }
 }
 
+/// FTP / SFTP / 流媒体资源的登录信息（"用户名:密码"，放在 Authorization 头里，不出现在地址中）。
+fn asset_credentials(asset: &Asset) -> Option<String> {
+    asset.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("authorization")).map(|(_, v)| v.clone())
+}
+
 fn push_log(e: &mut Entry, text: String) {
     if e.log.len() >= LOG_CAP {
         e.log.remove(0);
@@ -1218,6 +1249,9 @@ fn protocol_name(p: Protocol) -> &'static str {
         Protocol::Http => "HTTP 直链",
         Protocol::Hls => "m3u8 分片",
         Protocol::Ytdlp => "yt-dlp",
+        Protocol::Ftp => "FTP",
+        Protocol::Sftp => "SFTP",
+        Protocol::Stream => "流媒体（ffmpeg）",
     }
 }
 

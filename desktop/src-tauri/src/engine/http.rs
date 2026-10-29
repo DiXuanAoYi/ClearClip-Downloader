@@ -59,7 +59,7 @@ pub struct HttpOptions {
 }
 
 impl HttpOptions {
-    async fn throttle(&self, bytes: usize) {
+    pub(crate) async fn throttle(&self, bytes: usize) {
         if let Some(net) = &self.net {
             net.throttle(bytes, self.speed_limit_kbps).await;
         }

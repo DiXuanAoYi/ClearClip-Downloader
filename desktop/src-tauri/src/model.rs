@@ -24,6 +24,12 @@ pub enum Protocol {
     Hls,
     /// 交给 yt-dlp 下载（url 为原始页面地址，format 为 yt-dlp 的格式 ID）
     Ytdlp,
+    /// FTP / FTPS
+    Ftp,
+    /// SFTP（SSH）
+    Sftp,
+    /// RTMP / RTSP / MMS 等流，交给 ffmpeg 抓取
+    Stream,
 }
 
 /// 单个可下载资源的类型。

@@ -18,6 +18,7 @@ pub mod i18n;
 pub mod inbox;
 pub mod lan;
 pub mod library;
+pub mod links;
 pub mod library_cmds;
 pub mod library_media;
 pub mod live;

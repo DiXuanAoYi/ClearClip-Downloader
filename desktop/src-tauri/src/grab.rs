@@ -93,13 +93,13 @@ pub fn ext_from_mime(mime: &str) -> Option<&'static str> {
     })
 }
 
-fn url_name(url: &Url) -> String {
+pub(crate) fn url_name(url: &Url) -> String {
     let last = url.path_segments().and_then(|mut s| s.rfind(|x| !x.is_empty())).unwrap_or("");
     let decoded = percent_decode(last);
     clean_filename(&decoded)
 }
 
-fn percent_decode(s: &str) -> String {
+pub(crate) fn percent_decode(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
