@@ -245,7 +245,15 @@ impl TransferLive {
     }
 
     fn try_begin(&self) -> bool {
-        self.active.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| (n < MAX_ACTIVE).then_some(n + 1)).is_ok()
+        // 不用 fetch_update：新版工具链把它改名为 try_update，旧版又没有新名字，手写比较交换两边都能编译
+        let mut n = self.active.load(Ordering::SeqCst);
+        while n < MAX_ACTIVE {
+            match self.active.compare_exchange_weak(n, n + 1, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => return true,
+                Err(cur) => n = cur,
+            }
+        }
+        false
     }
 
     /// (已传输, 总大小, 正在传输的连接数)
