@@ -2,6 +2,7 @@
 
 pub mod ftp;
 pub mod hls;
+pub mod hostmem;
 pub mod http;
 pub mod sftp;
 pub mod stream;

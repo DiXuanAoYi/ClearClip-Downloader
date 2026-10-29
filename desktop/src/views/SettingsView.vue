@@ -207,7 +207,7 @@ function insertVar(v: string) {
             </div>
             <div class="kv">
               <span>大文件分段数<small class="mute block">服务器支持时多线程并行下载，1 表示不分段</small></span>
-              <el-input-number v-model="form.segments" :min="1" :max="16" size="small" />
+              <el-input-number v-model="form.segments" :min="1" :max="64" size="small" />
             </div>
             <div class="kv"><span>文件大于多少 MB 时分段</span><el-input-number v-model="form.segmentMinMb" :min="2" :max="1024" size="small" /></div>
             <div class="kv">

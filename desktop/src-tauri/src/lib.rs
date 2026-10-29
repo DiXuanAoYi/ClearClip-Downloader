@@ -255,6 +255,7 @@ pub fn run() {
             }
             let mut settings = Settings::load(&settings_path, &default_dl);
             bt::init(data_dir.clone());
+            engine::hostmem::init(data_dir.clone());
             let db = Db::open(&data_dir.join("clearclip.db")).map_err(|e| e.to_string())?;
             let log_dir = if portable_dir().is_some() { data_dir.join("logs") } else { app.path().app_log_dir().unwrap_or_else(|_| data_dir.join("logs")) };
             log::info!(

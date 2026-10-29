@@ -1131,6 +1131,7 @@ async fn download_input(
 ) -> Result<u64, DlError> {
     let mut re_resolved = false;
     let mut net_attempts = 0u32;
+    let mut mirror_tries = 0usize;
     loop {
         if let Some(dir) = part.parent() {
             if let Err(e) = tokio::fs::create_dir_all(dir).await {
@@ -1254,6 +1255,23 @@ async fn download_input(
         with_entry(st, id, |e| e.meta = m);
 
         match res {
+            // 有备用地址：主地址报错（或重试用完仍连不上）就换下一个，已下载的部分作废
+            Err(ref e @ (DlError::Status(_) | DlError::Net(_)))
+                if asset.protocol == Protocol::Http
+                    && mirror_tries < asset.mirrors.len()
+                    && match e {
+                        DlError::Status(code) => *code >= 400 && *code != 416,
+                        _ => net_attempts >= settings.max_retries,
+                    } =>
+            {
+                mirror_tries += 1;
+                net_attempts = 0;
+                let (from, to) = rotate_mirror(&mut spec.inputs[i]);
+                task_log(st, id, format!("{from} 下载失败（{e}），改用备用地址 {to}"));
+                set_note(app, id, Some("主地址不可用，正在换备用地址…"));
+                remove_part(part);
+                meta.inputs[i] = ResumeMeta::default();
+            }
             Err(DlError::Status(code))
                 if matches!(code, 403 | 404 | 410)
                     && !re_resolved
@@ -1302,6 +1320,14 @@ async fn download_input(
             other => return other,
         }
     }
+}
+
+/// 把资源的下载地址换成第一个备用地址，原地址排到备用列表末尾；返回 (旧地址, 新地址)。
+fn rotate_mirror(asset: &mut Asset) -> (String, String) {
+    let next = asset.mirrors.remove(0);
+    let old = std::mem::replace(&mut asset.url, next.clone());
+    asset.mirrors.push(old.clone());
+    (old, next)
 }
 
 /// FTP / SFTP / 流媒体资源的登录信息（"用户名:密码"，放在 Authorization 头里，不出现在地址中）。
@@ -2001,6 +2027,16 @@ fn human_bytes(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mirrors_rotate_through_every_address_once() {
+        let mut a = Asset::base("file", AssetKind::File, "https://a/f".into(), "文件", "bin");
+        a.mirrors = vec!["https://b/f".into(), "https://c/f".into()];
+        assert_eq!(rotate_mirror(&mut a), ("https://a/f".to_string(), "https://b/f".to_string()));
+        assert_eq!((a.url.as_str(), a.mirrors.clone()), ("https://b/f", vec!["https://c/f".to_string(), "https://a/f".to_string()]));
+        assert_eq!(rotate_mirror(&mut a).1, "https://c/f");
+        assert_eq!(rotate_mirror(&mut a).1, "https://a/f");
+    }
+
     use super::*;
     use crate::model::MediaKind;
 

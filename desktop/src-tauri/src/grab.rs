@@ -23,6 +23,8 @@ pub struct GrabRequest {
     pub user_agent: String,
     /// 期望的文件哈希（`sha256:…`、`md5:…`，也可只给哈希值），下载完成后校验
     pub checksum: String,
+    /// 备用下载地址（同一个文件）
+    pub mirrors: Vec<String>,
     /// 扩展的显示名（配对确认时显示）
     pub device_name: String,
 }
@@ -119,6 +121,34 @@ pub(crate) fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// 备用地址：请求里给的，加上链接片段里的 `#mirror=<地址>`（可重复）；只要 http / https，去重，最多 8 个。
+pub fn mirrors_for(given: &[String], url: &Url) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    let from_fragment = url
+        .fragment()
+        .into_iter()
+        .flat_map(|f| url::form_urlencoded::parse(f.as_bytes()))
+        .filter(|(k, _)| k.eq_ignore_ascii_case("mirror"))
+        .map(|(_, v)| v.into_owned());
+    for raw in given.iter().cloned().chain(from_fragment) {
+        let Ok(mut u) = Url::parse(raw.trim()) else { continue };
+        if !matches!(u.scheme(), "http" | "https") {
+            continue;
+        }
+        u.set_fragment(None);
+        let m = u.to_string();
+        let main = {
+            let mut c = url.clone();
+            c.set_fragment(None);
+            c.to_string()
+        };
+        if m != main && !out.contains(&m) && out.len() < 8 {
+            out.push(m);
+        }
+    }
+    out
+}
+
 /// 常见的“文件”扩展名：粘贴这类 http(s) 链接就直接当文件下载，不再交给 yt-dlp 去猜。
 const FILE_EXTS: &[&str] = &[
     "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "iso", "img", "dmg", "exe", "msi", "pkg", "deb", "rpm", "apk", "ipa", "appimage", "jar", "pdf",
@@ -168,6 +198,7 @@ pub fn build_media(req: &GrabRequest) -> AppResult<MediaInfo> {
         .unwrap_or_else(|| format!("{}://{host}/", url.scheme()));
 
     let mut asset = Asset::base("file", AssetKind::File, clean_url.clone(), format!("文件 {}", ext.to_uppercase()), ext.clone());
+    asset.mirrors = mirrors_for(&req.mirrors, &url);
     asset.checksum = crate::checksum::parse(&req.checksum).or_else(|| crate::checksum::from_url(&url)).map(|c| c.spec());
     asset.filesize = req.size.filter(|s| *s > 0);
     let ua = if req.user_agent.trim().is_empty() { crate::providers::DESKTOP_UA.to_string() } else { req.user_agent.trim().chars().take(300).collect() };
@@ -262,6 +293,22 @@ mod tests {
             .unwrap();
         assert_eq!(b.assets[0].checksum.as_deref(), Some("md5:900150983cd24fb0d6963f7d28e17f72"));
         assert!(media_from_url("https://x.test/a.zip").unwrap().assets[0].checksum.is_none());
+    }
+
+    #[test]
+    fn mirrors_come_from_the_fragment_and_the_request() {
+        let m =
+            media_from_url("https://a.test/f.iso#mirror=https%3A%2F%2Fb.test%2Ff.iso&mirror=ftp%3A%2F%2Fc.test%2Ff.iso&mirror=https%3A%2F%2Fa.test%2Ff.iso")
+                .unwrap();
+        // ftp 不是 http(s)，和主地址相同的也不算备用
+        assert_eq!(m.assets[0].mirrors, vec!["https://b.test/f.iso".to_string()]);
+        let r = build_media(&GrabRequest {
+            url: "https://a.test/f.iso#mirror=https%3A%2F%2Fb.test%2Ff.iso".into(),
+            mirrors: vec!["https://c.test/f.iso".into(), "https://b.test/f.iso".into(), "nope".into()],
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(r.assets[0].mirrors, vec!["https://c.test/f.iso".to_string(), "https://b.test/f.iso".to_string()]);
     }
 
     use super::*;

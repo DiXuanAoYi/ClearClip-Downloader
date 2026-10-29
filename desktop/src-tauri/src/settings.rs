@@ -867,7 +867,7 @@ impl Settings {
         self.concurrency = self.concurrency.clamp(1, 8);
         self.max_retries = self.max_retries.min(10);
         self.retry_delay_secs = self.retry_delay_secs.clamp(1, 60);
-        self.segments = self.segments.clamp(1, 16);
+        self.segments = self.segments.clamp(1, 64);
         self.per_site_concurrency = self.per_site_concurrency.clamp(1, 8);
         self.site_request_interval_ms = self.site_request_interval_ms.min(10_000);
         self.temp_dir = self.temp_dir.trim().to_string();

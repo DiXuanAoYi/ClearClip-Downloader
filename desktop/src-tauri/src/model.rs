@@ -95,6 +95,9 @@ pub struct Asset {
     /// 期望的文件哈希，`算法:十六进制`（如 `sha256:…`）；下载完成后校验
     #[serde(default)]
     pub checksum: Option<String>,
+    /// 同一个文件的备用下载地址；主地址连不上或报错时依次换用
+    #[serde(default)]
+    pub mirrors: Vec<String>,
     /// 平台特有的附加数据（如 Pixiv 动图的帧时长）
     #[serde(default)]
     pub extra: Option<serde_json::Value>,
@@ -145,6 +148,7 @@ impl Asset {
             pair_audio: None,
             format_id: None,
             checksum: None,
+            mirrors: vec![],
             extra: None,
         }
     }
