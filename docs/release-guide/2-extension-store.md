@@ -13,10 +13,11 @@
 
 商店都要求截图，我无法替你截。建议 3–5 张，在清影和浏览器里实际操作后截取：
 
-1. 在视频网页上点击扩展图标，弹窗里的“发送当前页面”；
-2. 右键菜单里的“发送此页面到清影”；
-3. 清影“媒体库 → 收到的链接”里出现这条记录；
-4. 扩展里的“同步此网站的登录 Cookie”和自动同步开关。
+1. 在视频网页上点击扩展图标，弹窗里发现的视频流列表和“发送所选”；
+2. 右键菜单里的“用清影下载”；
+3. “接管浏览器下载”的设置（类型、最小大小、网站过滤）和“最近接管的下载”；
+4. 清影下载队列里出现被接管的下载（“浏览器下载”分类）；
+5. 扩展里的“同步此网站的登录 Cookie”和自动同步开关。
 
 Chrome 要求 1280×800 或 640×400（PNG 或 JPEG）；Edge、Firefox 对尺寸要求较宽松，用同样的图即可。
 
@@ -27,12 +28,12 @@ Chrome 要求 1280×800 或 640×400（PNG 或 JPEG）；Edge、Firefox 对尺�
 3. 填写“商店列表”（文案见 [store-listing.md](store-listing.md)）、上传图标（`icons/128.png`）和截图。
 4. 在“隐私权”页签填写：
    - **单一用途**：见 [store-listing.md](store-listing.md)；
-   - **权限理由**：对 `cookies`、`contextMenus`、`storage`、`activeTab`、`notifications` 和主机权限 `<all_urls>` 分别填写理由（[store-listing.md](store-listing.md) 里有现成文字）；
+   - **权限理由**：对 `downloads`、`cookies`、`webRequest`、`tabs`、`contextMenus`、`storage`、`activeTab`、`notifications`、主机权限 `<all_urls>` 和内容脚本分别填写理由（[store-listing.md](store-listing.md) 里有现成文字）；
    - **隐私政策链接**：上面的链接；
-   - 数据使用披露：勾选“身份验证信息”（Cookie）和“网站内容/浏览历史（用户主动发送的网址）”，并勾选三项合规声明。
+   - 数据使用披露：勾选“身份验证信息”（Cookie）、“网站内容”和“网页历史记录”（说明见 [store-listing.md](store-listing.md)），并勾选三项合规声明。
 5. 提交审核。申请 `<all_urls>` 这类宽范围主机权限的扩展审核会更久，可能被要求补充说明；如果被拒，按邮件意见修改后重新提交。
 
-> 想加快审核、减少被拒的风险，可以以后把 `<all_urls>` 改成“按需授权”（`optional_host_permissions`，同步某个网站的 Cookie 时再请求该网站的权限）。这需要改扩展代码，需要时告诉我。
+> 新增的 `downloads`、`webRequest`、`tabs` 权限会让审核更严格，权限理由要写清“只在用户开启 / 操作时使用、只发往本机”（[store-listing.md](store-listing.md) 里已写好）。想加快审核、减少被拒的风险，可以以后把 `<all_urls>` 改成“按需授权”（`optional_host_permissions`，同步某个网站的 Cookie 时再请求该网站的权限）。这需要改扩展代码，需要时告诉我。
 
 ### 2. Microsoft Edge 加载项
 

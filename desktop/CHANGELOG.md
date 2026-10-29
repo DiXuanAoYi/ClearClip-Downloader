@@ -16,6 +16,8 @@
 
 **代理**：核实并补全了测试：HTTP 代理、SOCKS5（含用户名密码、`socks5h://` 代理端解析域名）、按网站分流都有测试覆盖；设置页补充了说明。**交给 ffmpeg 的流（http(s) 直播流、rtmp、rtsp）现在也按分流规则走代理**：清影在本机起临时转发桥，经 HTTP / SOCKS5 代理转出，ffmpeg 抓取和直播预览不再因为不走代理而看不到；设为直连时会清掉 ffmpeg 继承的代理环境变量。
 
+**文档**：扩展商店上架文案和隐私政策（`docs/release-guide/store-listing.md`、`privacy-policy.md`）补上了接管浏览器下载（`downloads` 权限）、视频发现（`webRequest`、`tabs`）和内容脚本的说明与权限理由。
+
 **说明**：FTP / SFTP / BT / ed2k 暂不走代理；rtmps / rtsps 不能经代理（会明确报错）；“系统代理”出口下的 ffmpeg 流只认环境变量 `http_proxy`；`socks5://` 在本机解析域名，需要代理端解析请用 `socks5h://`；MP4 索引在文件末尾时不能边下边播；音视频分开下载的任务不做哈希校验；浏览器扩展暂不发送哈希和备用地址。
 
 ## 0.7.0
