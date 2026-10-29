@@ -122,6 +122,7 @@ pub fn parse_srt(text: &str) -> Vec<Cue> {
 /// ASS / SSA 的对白行 → 字幕。只取文字和时间：去掉 `{\\an8}` 之类的样式标记，`\\N` 当换行，忽略绘图和注释行。
 pub fn parse_ass(text: &str) -> Vec<Cue> {
     static OVERRIDE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{[^}]*\}").unwrap());
+    static DRAWING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{[^}]*\\p[1-9]").unwrap());
     let mut fmt: Vec<String> = vec![];
     let mut cues = vec![];
     for line in text.trim_start_matches('\u{feff}').lines() {
@@ -134,6 +135,10 @@ pub fn parse_ass(text: &str) -> Vec<Cue> {
             let at = |name: &str, default: usize| fmt.iter().position(|x| x == name).unwrap_or(default);
             let (Some(s), Some(e), Some(t)) = (parts.get(at("start", 1)), parts.get(at("end", 2)), parts.get(at("text", 9))) else { continue };
             let (Some(start), Some(end)) = (parse_time(s), parse_time(e)) else { continue };
+            // {\p1} 之后是矢量绘图指令（形状、卡拉 OK 特效），不是文字
+            if DRAWING_RE.is_match(t) {
+                continue;
+            }
             let t = OVERRIDE_RE.replace_all(t, "").replace("\\N", "\n").replace("\\n", "\n").replace("\\h", " ");
             let lines: Vec<String> = t.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
             if !lines.is_empty() && end > start {
@@ -490,6 +495,14 @@ mod tests {
         assert_eq!(c.len(), 1);
         assert_eq!((c[0].start, c[0].end), (1500, 3000));
         assert_eq!(c[0].lines, vec!["你好,世界".to_string(), "第二行".to_string()]);
+    }
+
+    #[test]
+    fn ass_drawing_commands_are_not_text() {
+        let ass = "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\\p1}m 0 0 l 100 0 100 100{\\p0}\nDialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,{\\pos(10,10)}路径 p1\n";
+        let c = super::parse_ass(ass);
+        assert_eq!(c.len(), 1, "{c:?}");
+        assert_eq!(c[0].lines, vec!["路径 p1".to_string()]);
     }
 
     use super::*;

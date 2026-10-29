@@ -129,8 +129,41 @@ pub async fn edit_proxy(state: St<'_>, path: String) -> AppResult<String> {
             return Err(e);
         }
         std::fs::rename(&tmp, &out)?;
+        prune_proxies(&dir, &out, PROXY_CACHE_LIMIT);
+    } else if let Ok(f) = std::fs::File::options().write(true).open(&out) {
+        // 用过就刷新修改时间，清理时按“最久没用”删
+        let _ = f.set_modified(std::time::SystemTime::now());
     }
     Ok(state.media.register(&out))
+}
+
+/// 预览小文件的缓存上限：超过后从最久没用的开始删。
+const PROXY_CACHE_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
+
+/// 删掉最旧的预览小文件，直到总大小不超过 `limit`；`keep` 是刚生成的那个，不删。
+fn prune_proxies(dir: &Path, keep: &Path, limit: u64) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let mut files: Vec<(std::time::SystemTime, u64, PathBuf)> = rd
+        .flatten()
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.starts_with("edit-proxy-") && n.ends_with(".mp4") && !n.ends_with(".part.mp4")
+        })
+        .filter_map(|e| {
+            let m = e.metadata().ok()?;
+            Some((m.modified().ok()?, m.len(), e.path()))
+        })
+        .collect();
+    let mut total: u64 = files.iter().map(|f| f.1).sum();
+    files.sort_by_key(|f| f.0);
+    for (_, len, path) in files {
+        if total <= limit {
+            break;
+        }
+        if path != keep && std::fs::remove_file(&path).is_ok() {
+            total -= len;
+        }
+    }
 }
 
 /// 读取一个素材：类型、时长、尺寸、有没有声音，缩略图和播放地址。
@@ -284,13 +317,24 @@ pub fn edit_subtitle_cues(path: String) -> AppResult<Vec<SubtitleCue>> {
     if meta.len() > MAX_SUBTITLE_BYTES {
         return Err(AppError::invalid("这个字幕文件太大了。"));
     }
-    let text = String::from_utf8(std::fs::read(p)?).map_err(|_| AppError::invalid("字幕文件不是 UTF-8 编码，请先用文本编辑器另存为 UTF-8。"))?;
+    let text = decode_subtitle(&std::fs::read(p)?);
     let cues = match ext.as_str() {
         "srt" => subtitle::parse_srt(&text),
         "vtt" => subtitle::parse_vtt(&text),
         _ => subtitle::parse_ass(&text),
     };
     Ok(cues.into_iter().map(|c| SubtitleCue { start_ms: c.start, end_ms: c.end, text: c.lines.join("\n") }).collect())
+}
+
+/// 字幕文件的文字编码：带 BOM 的 UTF-8 / UTF-16，没有 BOM 时先当 UTF-8，不是的话按 GBK（国内常见）读。
+fn decode_subtitle(bytes: &[u8]) -> String {
+    if let Some((enc, bom)) = encoding_rs::Encoding::for_bom(bytes) {
+        return enc.decode_without_bom_handling(&bytes[bom..]).0.into_owned();
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(t) => t.to_string(),
+        Err(_) => encoding_rs::GBK.decode_without_bom_handling(bytes).0.into_owned(),
+    }
 }
 
 /// 检查这些文件还在不在，返回找不到的。
@@ -321,6 +365,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn subtitles_in_gbk_and_utf16_are_read() {
+        let srt = "1\n00:00:01,000 --> 00:00:02,000\n你好，世界\n";
+        assert_eq!(decode_subtitle(srt.as_bytes()), srt);
+        let (gbk, _, _) = encoding_rs::GBK.encode(srt);
+        assert_eq!(decode_subtitle(&gbk), srt);
+        let mut u16le = vec![0xFF, 0xFE];
+        for u in srt.encode_utf16() {
+            u16le.extend(u.to_le_bytes());
+        }
+        assert_eq!(decode_subtitle(&u16le), srt);
+        let mut bom8 = vec![0xEF, 0xBB, 0xBF];
+        bom8.extend(srt.as_bytes());
+        assert_eq!(decode_subtitle(&bom8), srt);
+    }
+
+    #[test]
+    fn proxy_cache_drops_the_oldest_files_but_never_the_new_one() {
+        let d = dir("prune");
+        let put = |name: &str, age: u64| {
+            let p = d.join(name);
+            std::fs::write(&p, vec![0u8; 100]).unwrap();
+            let t = std::time::SystemTime::now() - std::time::Duration::from_secs(age);
+            std::fs::File::options().write(true).open(&p).unwrap().set_modified(t).unwrap();
+            p
+        };
+        let old = put("edit-proxy-a.mp4", 300);
+        let mid = put("edit-proxy-b.mp4", 200);
+        let new = put("edit-proxy-c.mp4", 100);
+        let other = put("keep-me.jpg", 900);
+        let part = put("edit-proxy-d.part.mp4", 900);
+        prune_proxies(&d, &new, 250);
+        assert!(!old.exists() && mid.exists() && new.exists());
+        prune_proxies(&d, &new, 0);
+        assert!(!mid.exists() && new.exists(), "刚生成的不能删");
+        assert!(other.exists() && part.exists(), "别的文件不动");
     }
 
     #[test]

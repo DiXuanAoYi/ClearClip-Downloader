@@ -21,6 +21,7 @@
 | serde、serde_json、reqwest、tokio、futures-util、regex、url、thiserror、chrono、log、tar、zip、hex、fs4、sha2、md-5、aes、cbc、aes-gcm、argon2、async-trait | MIT 或 Apache-2.0 |
 | rusqlite（含内置 SQLite） | MIT（SQLite 为公有领域） |
 | lzma-rs | MIT |
+| encoding_rs（读 GBK / UTF-16 字幕） | MIT 或 Apache-2.0（编码表数据为 BSD-3-Clause） |
 | qrcode | MIT 或 Apache-2.0 |
 | keyring | MIT 或 Apache-2.0 |
 | windows-sys | MIT 或 Apache-2.0 |
