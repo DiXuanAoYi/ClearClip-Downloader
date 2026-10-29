@@ -442,7 +442,7 @@ fn post_for(post: &PostOptions, asset: &Asset, settings: &Settings) -> PostOptio
             p.sub_to = (to != asset.ext).then_some(to);
             p = PostOptions { sub_to: p.sub_to, clip: post.clip.clone(), ..Default::default() };
         }
-        AssetKind::Image | AssetKind::Cover => {
+        AssetKind::Image | AssetKind::Cover | AssetKind::File => {
             p = PostOptions::default();
         }
     }
@@ -711,8 +711,11 @@ pub(crate) fn build_request(st: &AppState, media: &MediaInfo, asset: &Asset) -> 
         req = req.header("Referer", providers::referer_for(&media.platform));
     }
     // Cookie 按域名匹配：只发给它所属的网站，不会发给 CDN
-    if let Some(c) = st.cookies.header_for(&asset.url) {
-        req = req.header("Cookie", c);
+    // 资源自带 Cookie（浏览器扩展接管的下载）时不再附加账号库里的
+    if !has("cookie") {
+        if let Some(c) = st.cookies.header_for(&asset.url) {
+            req = req.header("Cookie", c);
+        }
     }
     req.headers.extend(asset.headers.iter().cloned());
     req
@@ -1468,6 +1471,7 @@ fn kind_str(k: AssetKind) -> &'static str {
         AssetKind::Audio => "audio",
         AssetKind::Cover => "cover",
         AssetKind::Subtitle => "subtitle",
+        AssetKind::File => "file",
     }
 }
 

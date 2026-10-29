@@ -1,9 +1,12 @@
 const $ = (id) => document.getElementById(id)
 const msg = (t, cls = '') => { $('msg').textContent = t; $('msg').className = cls }
 
-function show(settings) {
-  $('main').classList.toggle('hidden', settings)
-  $('settings').classList.toggle('hidden', !settings)
+function show(screen) {
+  // screen：'main' | 'settings' | 'takeover'（兼容旧调用：true = settings，false = main）
+  const name = screen === true ? 'settings' : screen === false ? 'main' : screen
+  $('main').classList.toggle('hidden', name !== 'main')
+  $('settings').classList.toggle('hidden', name !== 'settings')
+  $('takeover').classList.toggle('hidden', name !== 'takeover')
 }
 
 async function currentTab() {
@@ -47,20 +50,41 @@ async function renderSync() {
   }
 }
 
-function sizeText(n) {
-  if (!n) return ''
-  return n >= 1048576 ? ` · ${(n / 1048576).toFixed(1)} MB` : ` · ${Math.round(n / 1024)} KB`
+const picked = new Set()
+
+async function sendItems(items, tab) {
+  const c = await getConfig()
+  let ok = 0
+  let pendingPair = false
+  for (const item of items) {
+    try {
+      const r = item.kind === 'image' ? await call('/api/grab', grabPayload({ url: item.url, referrer: tab.url }, cookieHeader(await api.cookies.getAll({ url: item.url }).catch(() => [])), navigator.userAgent, browserName())) : await call('/api/send', { text: sniffedPayload(item, tab.url, tab.title), device: c.device, name: browserName() })
+      if (r.state === 'pending_pair') pendingPair = true
+      else ok++
+    } catch (e) {
+      msg(e.message, 'err')
+      return
+    }
+  }
+  msg(pendingPair ? '第一次使用：请在电脑上点“允许”完成配对' : `已发送 ${ok} 项，清影会开始下载`, 'ok')
 }
 
 async function renderSniffed() {
   const tab = await currentTab()
-  const list = tab?.id != null ? await getSniffed(tab.id) : []
+  const list = tab?.id != null ? arrangeSniffed(await getSniffed(tab.id)) : []
   $('sniffBox').classList.toggle('hidden', !list.length)
   $('sniffCount').textContent = list.length
   $('sniffList').innerHTML = ''
   for (const item of list) {
     const row = document.createElement('div')
     row.className = 'it'
+    const box = document.createElement('input')
+    box.type = 'checkbox'
+    box.checked = picked.has(item.url)
+    box.onchange = () => {
+      box.checked ? picked.add(item.url) : picked.delete(item.url)
+      $('sniffSend').textContent = picked.size ? `发送所选（${picked.size}）` : '发送所选'
+    }
     const name = document.createElement('span')
     let path = item.url
     try {
@@ -68,24 +92,91 @@ async function renderSniffed() {
     } catch {
       // keep the raw url
     }
-    name.textContent = `${KIND_NAME[item.kind] || item.kind}${sizeText(item.size)} · ${path}`
+    const label = document.createElement('span')
+    label.textContent = sniffLabel(item)
+    const file = document.createElement('span')
+    file.className = 'sub'
+    file.textContent = path
+    name.append(label, file)
     name.title = item.url
     const btn = document.createElement('button')
     btn.textContent = '发送'
     btn.onclick = async () => {
       btn.disabled = true
       try {
-        const r = await call('/api/send', { text: sniffedPayload(item, tab.url, tab.title), device: (await getConfig()).device, name: browserName() })
-        msg(r.state === 'pending_pair' ? '第一次使用：请在电脑上点“允许”完成配对' : '已发送，清影会开始下载', 'ok')
-      } catch (e) {
-        msg(e.message, 'err')
+        await sendItems([item], tab)
       } finally {
         btn.disabled = false
       }
     }
-    row.append(name, btn)
+    row.append(box, name, btn)
     $('sniffList').append(row)
   }
+  $('sniffAll').onclick = () => {
+    const all = list.every((x) => picked.has(x.url))
+    for (const x of list) all ? picked.delete(x.url) : picked.add(x.url)
+    renderSniffed()
+  }
+  $('sniffSend').textContent = picked.size ? `发送所选（${picked.size}）` : '发送所选'
+  $('sniffSend').onclick = async () => {
+    const items = list.filter((x) => picked.has(x.url))
+    if (!items.length) return msg('先勾选要发送的项目', 'err')
+    $('sniffSend').disabled = true
+    try {
+      await sendItems(items, tab)
+    } finally {
+      $('sniffSend').disabled = false
+    }
+  }
+}
+
+// ---------- 接管浏览器下载 ----------
+
+async function renderTakeover() {
+  const cfg = await getTakeover()
+  const { pausedUntil = 0 } = await api.storage.local.get('pausedUntil')
+  $('tkOn').checked = cfg.enabled
+  const info = $('tkInfo')
+  info.textContent = ''
+  if (cfg.enabled) {
+    const paused = Date.now() < pausedUntil
+    info.append(paused ? `已暂停到 ${new Date(pausedUntil).toLocaleTimeString()}。` : '已开启。按住 Alt 点击可临时用浏览器下载。')
+    const a = document.createElement('a')
+    a.className = 'lnk'
+    a.textContent = paused ? ' 恢复接管' : ' 暂停 30 分钟'
+    a.onclick = async () => {
+      await api.storage.local.set({ pausedUntil: paused ? 0 : Date.now() + 30 * 60000 })
+      renderTakeover()
+    }
+    info.append(a)
+  }
+  const { recentGrabs = [] } = await api.storage.local.get('recentGrabs')
+  $('recentBox').classList.toggle('hidden', !recentGrabs.length)
+  $('recent').innerHTML = ''
+  for (const g of recentGrabs.slice(0, 5)) {
+    const row = document.createElement('div')
+    row.className = 'it'
+    const name = document.createElement('span')
+    name.textContent = `${g.ok ? '' : '（失败）'}${g.name || shortUrl(g.url)}`
+    name.title = shortUrl(g.url)
+    const btn = document.createElement('button')
+    btn.className = 'sec'
+    btn.textContent = '用浏览器下载'
+    btn.onclick = () => api.downloads.download({ url: g.url, conflictAction: 'uniquify' }).then(() => msg('已交给浏览器下载', 'ok'), (e) => msg(e.message, 'err'))
+    row.append(name, btn)
+    $('recent').append(row)
+  }
+}
+
+async function loadTakeoverForm() {
+  const cfg = await getTakeover()
+  $('tkEnabled').checked = cfg.enabled
+  $('tkMode').value = cfg.mode
+  $('tkTypes').value = cfg.types.join(', ')
+  $('tkMin').value = cfg.minSizeMB
+  $('tkAllow').value = cfg.allowSites.join('\n')
+  $('tkDeny').value = cfg.denySites.join('\n')
+  $('tkNotify').checked = cfg.notify
 }
 
 async function init() {
@@ -94,9 +185,10 @@ async function init() {
   $('token').value = c.token || ''
   const tab = await currentTab()
   $('page').textContent = tab?.title || tab?.url || ''
-  show(location.hash === '#settings' || !c.port || !c.token)
+  show(location.hash === '#settings' || !c.port || !c.token ? 'settings' : 'main')
   renderSync()
   renderSniffed()
+  renderTakeover()
   refreshConn()
 }
 
@@ -153,16 +245,50 @@ $('cookies').onclick = async () => {
   }
 }
 
-$('openSettings').onclick = () => show(true)
-$('back').onclick = () => show(false)
+$('openSettings').onclick = () => show('settings')
+$('back').onclick = () => show('main')
 $('save').onclick = async () => {
   await api.storage.local.set({ port: Number($('port').value) || null, token: $('token').value.trim() })
   if (await refreshConn()) {
     msg('设置已保存', 'ok')
-    show(false)
+    show('main')
   } else {
     msg('设置已保存，但连接不到清影。请确认清影正在运行、已开启“手机与浏览器扩展”，端口和令牌正确。', 'err')
   }
+}
+
+$('tkOn').onchange = async () => {
+  const cfg = await getTakeover()
+  await api.storage.local.set({ takeover: { ...cfg, enabled: $('tkOn').checked } })
+  renderTakeover()
+}
+$('openTakeover').onclick = async () => {
+  await loadTakeoverForm()
+  show('takeover')
+}
+$('tkBack').onclick = () => {
+  show('main')
+  renderTakeover()
+}
+$('tkDefaultTypes').onclick = () => {
+  $('tkTypes').value = TAKEOVER_TYPES.join(', ')
+}
+$('tkSave').onclick = async () => {
+  const lines = (id) => $(id).value.split(/[\s,;]+/)
+  await api.storage.local.set({
+    takeover: normalizeTakeover({
+      enabled: $('tkEnabled').checked,
+      mode: $('tkMode').value,
+      types: lines('tkTypes'),
+      minSizeMB: $('tkMin').value === '' ? 1 : Number($('tkMin').value),
+      allowSites: lines('tkAllow'),
+      denySites: lines('tkDeny'),
+      notify: $('tkNotify').checked,
+    }),
+  })
+  msg('已保存', 'ok')
+  show('main')
+  renderTakeover()
 }
 
 init()

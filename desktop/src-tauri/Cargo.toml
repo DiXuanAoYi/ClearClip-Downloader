@@ -1,6 +1,6 @@
 [package]
 name = "clearclip"
-version = "0.6.0"
+version = "0.6.1"
 description = "清影 ClearClip：抖音 / 快手短视频解析与下载桌面程序"
 authors = ["ClearClip contributors"]
 license = "MIT"

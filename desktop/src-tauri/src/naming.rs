@@ -100,6 +100,7 @@ pub fn file_name(base: &str, asset: &Asset) -> String {
         AssetKind::Image => format!("_{:02}", asset.index.unwrap_or(0) + 1),
         AssetKind::Audio => "_music".into(),
         AssetKind::Cover => "_cover".into(),
+        AssetKind::File => String::new(),
         AssetKind::Subtitle => format!(".{}", sanitize(asset.quality.as_deref().unwrap_or("sub"))),
     };
     format!("{base}{suffix}.{}", asset.ext)

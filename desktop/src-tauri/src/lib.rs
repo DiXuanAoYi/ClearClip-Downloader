@@ -13,6 +13,7 @@ pub mod download;
 pub mod edit;
 pub mod engine;
 pub mod error;
+pub mod grab;
 pub mod i18n;
 pub mod inbox;
 pub mod lan;

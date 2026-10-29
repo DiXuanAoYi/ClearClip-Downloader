@@ -212,6 +212,7 @@ impl Db {
             MediaKind::Video => "video",
             MediaKind::Images => "images",
             MediaKind::Audio => "audio",
+            MediaKind::File => "file",
             MediaKind::Playlist => "playlist",
         };
         self.conn().execute(

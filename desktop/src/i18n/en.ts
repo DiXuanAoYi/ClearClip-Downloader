@@ -558,7 +558,7 @@ export const en: Record<string, string> = {
   "安全与隐私": "Security & privacy",
   "安全设置选“自定义关键词”并填入“清影”或“下载”。": "In the security settings choose “Custom keywords” and enter “ClearClip” or “download”.",
   "安装": "Install",
-  "安装“发送到清影”扩展（Chrome、Edge、Firefox），可以在网页上右键发送链接，或把当前网站的登录 Cookie 一键同步给清影。扩展只连接本机。": "Install the “Send to ClearClip” extension (Chrome, Edge, Firefox) to right-click and send links from web pages, or sync the current site's login cookies to ClearClip with one click. The extension only talks to this computer.",
+  "安装“发送到清影”扩展（Chrome、Edge、Firefox），可以在网页上右键发送链接、接管浏览器的下载（在扩展里开启）、发现并批量发送网页里的视频，或把当前网站的登录 Cookie 一键同步给清影。扩展只连接本机。": "Install the “Send to ClearClip” extension (Chrome, Edge, Firefox) to right-click and send links from web pages, take over browser downloads (turn it on in the extension), find and send the videos on a page in batch, or sync the current site's login cookies to ClearClip with one click. The extension only talks to this computer.",
   "安装“发送到清影”扩展，在已登录的网站上点“同步此网站的登录 Cookie”，适合 YouTube 等拦截内置登录窗口的网站。": "Install the “Send to ClearClip” extension and click “Sync this site's login cookies” on a site you are logged in to; suited to sites like YouTube that block the built-in login window.",
   "安装说明": "Install instructions",
   "完成": "Done",

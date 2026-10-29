@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <title>发送到清影</title>
 <style>
-  body { width: 300px; margin: 0; padding: 14px; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f1d1a; background: #f6f4f1; }
+  body { width: 340px; margin: 0; padding: 14px; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f1d1a; background: #f6f4f1; }
   @media (prefers-color-scheme: dark) { body { background: #1b1a18; color: #ece8e2; } input { background: #26241f; color: inherit; border-color: #3a3630 !important; } }
   h1 { font-size: 15px; margin: 0 0 10px; } h1 b { color: #d9772f; }
   button { width: 100%; padding: 9px; margin-top: 8px; border: 0; border-radius: 8px; background: #d9772f; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
@@ -19,6 +19,16 @@
   #sniffList .it { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-bottom: 1px solid #d6d0c8; }
   #sniffList .it span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
   #sniffList .it button { width: auto; margin: 0; padding: 3px 10px; font-size: 12px; }
+  textarea { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid #d6d0c8; border-radius: 6px; font: inherit; resize: vertical; min-height: 54px; }
+  @media (prefers-color-scheme: dark) { textarea { background: #26241f; color: inherit; border-color: #3a3630 !important; } }
+  select { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid #d6d0c8; border-radius: 6px; font: inherit; background: transparent; color: inherit; }
+  #sniffList .it input { width: auto; margin: 0; }
+  #sniffList .it .sub { display: block; color: #7b756d; font-size: 11px; }
+  #sniffBar { display: flex; gap: 6px; margin-top: 6px; } #sniffBar button { margin: 0; padding: 5px 8px; font-size: 12px; }
+  #recent .it { display: flex; gap: 6px; align-items: center; padding: 3px 0; border-bottom: 1px solid #d6d0c8; }
+  #recent .it span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+  #recent .it button { width: auto; margin: 0; padding: 3px 8px; font-size: 12px; }
+  a.lnk { color: #d9772f; cursor: pointer; }
   .err { color: #c4423a; } .ok { color: #2f8a57; } .hidden { display: none; } .mute { color: #7b756d; font-size: 12px; }
 </style>
 </head>
@@ -31,11 +41,40 @@
     <button id="cookies" class="sec">同步此网站的登录 Cookie</button>
     <div id="syncInfo" class="mute"></div>
     <div id="sniffBox" class="hidden">
-      <label>检测到的视频（<span id="sniffCount">0</span>）</label>
+      <label>检测到的内容（<span id="sniffCount">0</span>）</label>
       <div id="sniffList"></div>
+      <div id="sniffBar">
+        <button id="sniffAll" class="sec">全选</button>
+        <button id="sniffSend">发送所选</button>
+      </div>
+    </div>
+    <label class="row"><input id="tkOn" type="checkbox" /> 接管浏览器下载（默认关闭）</label>
+    <div id="tkInfo" class="mute"></div>
+    <div id="recentBox" class="hidden">
+      <label>最近接管的下载</label>
+      <div id="recent"></div>
     </div>
     <label class="row"><input id="autoSite" type="checkbox" /> 登录状态变化时自动同步此网站</label>
-    <button id="openSettings" class="sec">设置</button>
+    <button id="openTakeover" class="sec">接管下载设置</button>
+    <button id="openSettings" class="sec">连接设置</button>
+  </div>
+  <div id="takeover" class="hidden">
+    <p class="mute">开启后，浏览器要下载的文件会交给清影下载（带上登录状态和来源页）。按住 Alt 点击下载链接可以临时用浏览器下载。清影没有运行或没接住时，会自动交还给浏览器。</p>
+    <label class="row"><input id="tkEnabled" type="checkbox" /> 接管浏览器下载</label>
+    <label>接管范围</label>
+    <select id="tkMode"><option value="types">只接管下面列出的文件类型</option><option value="all">所有下载（仍受大小和网站限制）</option></select>
+    <label>文件类型（扩展名，用逗号或空格分隔）</label>
+    <textarea id="tkTypes"></textarea>
+    <a id="tkDefaultTypes" class="lnk">恢复默认类型</a>
+    <label>最小文件大小（MB，已知大小小于它的不接管）</label>
+    <input id="tkMin" type="number" min="0" step="1" />
+    <label>只接管这些网站（每行一个，留空表示所有网站）</label>
+    <textarea id="tkAllow" placeholder="example.com"></textarea>
+    <label>不接管这些网站（每行一个，包含子域名）</label>
+    <textarea id="tkDeny" placeholder="drive.google.com"></textarea>
+    <label class="row"><input id="tkNotify" type="checkbox" /> 接管成功时弹出通知</label>
+    <button id="tkSave">保存</button>
+    <button id="tkBack" class="sec">返回</button>
   </div>
   <div id="settings" class="hidden">
     <p class="mute">在清影“设置 → 手机与浏览器扩展”中开启服务，把“分享菜单”里的端口和访问令牌填到这里。</p>
@@ -49,6 +88,8 @@
   </div>
   <div id="msg"></div>
   <script src="shared.js"></script>
+  <script src="takeover.js"></script>
+  <script src="sniff.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

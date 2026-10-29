@@ -658,6 +658,27 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                 Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
             }
         }
+        // 浏览器扩展接管下载：带着 Referer、Cookie 和文件名，只接受本机、已配对设备的请求
+        ("POST", "/api/grab") => {
+            if !peer.ip().is_loopback() {
+                json(sock, "403 Forbidden", serde_json::json!({"error": "只能从本机接管下载"})).await;
+                return;
+            }
+            let device = clean_device(req.headers.get("x-device").map(String::as_str).unwrap_or(""));
+            let Ok(body) = serde_json::from_slice::<crate::grab::GrabRequest>(&req.body) else {
+                json(sock, "400 Bad Request", serde_json::json!({"error": "数据格式不正确"})).await;
+                return;
+            };
+            let name: String = if body.device_name.trim().is_empty() { "浏览器扩展".into() } else { body.device_name.trim().chars().take(40).collect() };
+            if device.is_empty() || !ensure_paired(&app, &device, &name, &peer) {
+                json(sock, "403 Forbidden", serde_json::json!({"state": "pending_pair", "error": "请先在电脑上点“允许”完成配对"})).await;
+                return;
+            }
+            match crate::grab::enqueue(&app, &device, &name, &body) {
+                Ok(v) => json(sock, "200 OK", v).await,
+                Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
+            }
+        }
         _ => respond(sock, "404 Not Found", "text/plain", b"not found").await,
     }
 }

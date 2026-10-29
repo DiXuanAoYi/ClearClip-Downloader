@@ -93,6 +93,10 @@ pub fn command(ctx: &Ctx<'_>, url: &str) -> AppResult<(tokio::process::Command, 
     if let Some(ff) = &ctx.ffmpeg {
         cmd.arg("--ffmpeg-location").arg(ff);
     }
+    // 浏览器扩展嗅探到的清单地址（mpd 等）带着所在网页：作为 Referer 传给 yt-dlp
+    if let Some(r) = super::rss::fragment_hints(url).get("cc-referer").filter(|r| Url::parse(r).is_ok()) {
+        cmd.args(["--referer", r]);
+    }
     let cookie_file = CookieFile::create(ctx.cookies, url);
     if let Some(cf) = &cookie_file {
         cmd.arg("--cookies").arg(&cf.path);

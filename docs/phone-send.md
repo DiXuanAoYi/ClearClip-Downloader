@@ -99,6 +99,7 @@
 | `GET /api/status?device=设备ID` | 该设备最近 20 条发送记录及状态 |
 | `GET /api/hello?device=&dname=` | 登记设备，返回 `{"paired", "maxMb", "version"}`；未配对时电脑上弹出确认 |
 | `POST /api/send` | 正文没有链接时存为文字便签（需要已配对），返回 `{"state": "note"}` |
+| `POST /api/grab` | 浏览器扩展接管下载：只接受本机、已配对设备（请求头 `X-Device`）。正文 `{"url", "referer", "cookie", "filename", "size", "mime", "userAgent", "deviceName"}`，直接按普通文件入队，返回 `{"state", "taskIds", "fileNames"}` |
 | `POST /api/upload?device=&dname=&name=文件名` | 上传一个文件，请求正文就是文件内容（必须带 `Content-Length`），返回 `{"id", "name", "size"}`；`403` + `pending_pair` 表示还没配对，`413` 超过上限，`507` 磁盘空间不足 |
 | `GET /api/box?device=` | 电脑发给手机的项目、这台手机最近上传的文件和链接状态 |
 | `GET /dl/<密钥>?t=令牌&d=设备ID[&inline=1]` | 下载电脑发给手机的项目，支持 `Range`（`inline=1` 仅对图片 / 音视频生效） |

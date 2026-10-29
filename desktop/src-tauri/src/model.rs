@@ -7,6 +7,8 @@ pub enum MediaKind {
     Video,
     Images,
     Audio,
+    /// 任意文件（浏览器扩展接管的下载等）：不做媒体处理
+    File,
     /// 合集 / 播放列表 / 剧集：`entries` 列出条目，按需逐条解析
     Playlist,
 }
@@ -32,6 +34,8 @@ pub enum AssetKind {
     Image,
     Audio,
     Cover,
+    /// 任意文件：压缩包、安装包、文档等，只下载，不做媒体处理
+    File,
     /// 字幕或弹幕（quality 字段为语言代码，弹幕为 danmaku）
     Subtitle,
 }
@@ -277,6 +281,7 @@ impl MediaInfo {
             MediaKind::Video => self.assets.iter().find(|a| a.kind == AssetKind::Video).map(|a| vec![a.id.clone()]).unwrap_or_default(),
             MediaKind::Images => self.assets.iter().filter(|a| a.kind == AssetKind::Image).map(|a| a.id.clone()).collect(),
             MediaKind::Audio => self.assets.iter().find(|a| a.kind == AssetKind::Audio).map(|a| vec![a.id.clone()]).unwrap_or_default(),
+            MediaKind::File => self.assets.iter().find(|a| a.kind == AssetKind::File).map(|a| vec![a.id.clone()]).unwrap_or_default(),
             MediaKind::Playlist => vec![],
         }
     }

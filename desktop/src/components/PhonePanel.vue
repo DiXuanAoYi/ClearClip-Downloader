@@ -211,7 +211,7 @@ onUnmounted(() => {
     <section class="card block">
       <h3>浏览器扩展</h3>
       <p class="mute small">
-        安装“发送到清影”扩展（Chrome、Edge、Firefox），可以在网页上右键发送链接，或把当前网站的登录 Cookie 一键同步给清影。扩展只连接本机。
+        安装“发送到清影”扩展（Chrome、Edge、Firefox），可以在网页上右键发送链接、接管浏览器的下载（在扩展里开启）、发现并批量发送网页里的视频，或把当前网站的登录 Cookie 一键同步给清影。扩展只连接本机。
         <template v-if="info.running">在扩展设置里填写端口 <b class="mono">{{ info.port }}</b> 和上面的访问令牌。</template>
         <template v-else>开启上面的服务后才能使用。</template>
       </p>

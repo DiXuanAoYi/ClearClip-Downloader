@@ -1,8 +1,8 @@
 // 与 Rust 端 model.rs / download.rs / db.rs / settings.rs 的结构一一对应。
 
-export type MediaKind = 'video' | 'images' | 'audio' | 'playlist'
+export type MediaKind = 'video' | 'images' | 'audio' | 'file' | 'playlist'
 export type Protocol = 'http' | 'hls' | 'ytdlp'
-export type AssetKind = 'video' | 'image' | 'audio' | 'cover' | 'subtitle'
+export type AssetKind = 'video' | 'image' | 'audio' | 'cover' | 'subtitle' | 'file'
 
 export interface Asset {
   id: string
