@@ -1,0 +1,18 @@
+PackageIdentifier: DiXuanAoYi.ClearClip
+PackageVersion: @@version@@
+PackageLocale: zh-CN
+Publisher: DiXuanAoYi
+PublisherUrl: https://github.com/DiXuanAoYi
+PackageName: 清影 ClearClip
+PackageUrl: https://github.com/DiXuanAoYi/ClearClip-Downloader
+License: 见仓库
+ShortDescription: 视频和图片网站作品解析与下载：抖音、B站、YouTube 等，支持断点续传、订阅追更、直播录制和手机发链接到电脑。
+Tags:
+  - video-downloader
+  - douyin
+  - bilibili
+  - youtube
+  - yt-dlp
+ReleaseNotesUrl: https://github.com/DiXuanAoYi/ClearClip-Downloader/releases/tag/desktop-v@@version@@
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

@@ -1,0 +1,15 @@
+# 由 update-manifests.py 填写版本和校验值后提交到 microsoft/winget-pkgs
+PackageIdentifier: DiXuanAoYi.ClearClip
+PackageVersion: @@version@@
+InstallerType: nullsoft
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+UpgradeBehavior: install
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/DiXuanAoYi/ClearClip-Downloader/releases/download/desktop-v@@version@@/ClearClip_@@version@@_x64-setup.exe
+    InstallerSha256: @@sha_win_setup@@
+ManifestType: installer
+ManifestVersion: 1.6.0

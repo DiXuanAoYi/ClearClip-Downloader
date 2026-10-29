@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ClearClip",
+  "mainBinaryName": "clearclip",
+  "version": "0.5.1",
+  "identifier": "com.dixuanaoyi.clearclip",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "清影 ClearClip",
+        "url": "index.html",
+        "width": 1080,
+        "height": 720,
+        "minWidth": 820,
+        "minHeight": 560,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' https: http: data: blob: asset: http://asset.localhost; media-src 'self' https: http: blob: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Video",
+    "shortDescription": "视频和图片网站作品解析与下载",
+    "longDescription": "清影 ClearClip：粘贴抖音、B站、YouTube 等网站的分享链接，解析并下载视频、图集和音频，支持断点续传、合集批量下载和手机发链接到电脑。仅用于下载你有权保存的内容。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/DiXuanAoYi/ClearClip-Downloader/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

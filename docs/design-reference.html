@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>清影桌面版规划</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文档，左对齐，窄正文 + 宽幅样机区；样机为独立深色"应用窗口" */
+:root{
+  --bg:#f3f4f2; --surface:#ffffff; --fg:#1d2420; --muted:#5d6862; --line:#d9ddd8;
+  --accent:#d9762b; --accent-soft:#f6e3d2; --ok:#2f8a57; --warn:#b7791f; --bad:#c2453b;
+  --f-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  /* 应用样机自身配色（刻意单一深色外观） */
+  --app-bg:#14181a; --app-side:#1b2023; --app-card:#22292c; --app-line:#2f383c; --app-fg:#e7ecea; --app-mute:#8c9894; --app-acc:#f08a3c;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121614; --surface:#1a201d; --fg:#e4e9e6; --muted:#9aa6a0; --line:#2c3531;
+  --accent:#f0954d; --accent-soft:#3a2a1d; --ok:#5cc28a; --warn:#e0a84a; --bad:#ec7a70; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121614; --surface:#1a201d; --fg:#e4e9e6; --muted:#9aa6a0; --line:#2c3531;
+  --accent:#f0954d; --accent-soft:#3a2a1d; --ok:#5cc28a; --warn:#e0a84a; --bad:#ec7a70; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.7;margin:0}
+.wrap{max-width:1080px;margin:0 auto;padding-inline:20px;padding-block:40px 80px}
+h1,h2,h3{text-wrap:balance;line-height:1.3}
+h1{font-size:clamp(28px,4vw,40px);font-weight:900;margin:0 0 8px;letter-spacing:.01em}
+h2{font-size:24px;font-weight:900;margin:56px 0 12px;padding-top:20px;border-top:1px solid var(--line)}
+h3{font-size:17px;font-weight:700;margin:28px 0 8px}
+p,li{max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.lede{color:var(--muted);font-size:16px}
+code,.mono{font-family:var(--f-mono);font-size:.88em}
+code{background:var(--accent-soft);padding:1px 5px;border-radius:4px}
+nav.toc{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
+nav.toc a{font-size:13px;color:var(--fg);text-decoration:none;border:1px solid var(--line);padding:4px 12px;border-radius:999px;background:var(--surface)}
+nav.toc a:hover,nav.toc a:focus-visible{border-color:var(--accent);outline:none}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:16px 0}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;min-width:0}
+.fact b{display:block;font-size:13px;color:var(--muted);font-weight:500}
+.fact span{font-size:15px}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:860px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:500;letter-spacing:.04em;background:var(--bg);position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.n{font-family:var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+.tag.oss{color:var(--ok);border-color:currentColor}
+.tag.paid{color:var(--warn);border-color:currentColor}
+.tag.web{color:var(--muted)}
+.issues li{margin:4px 0}
+.sev{font-family:var(--f-mono);font-size:11px;padding:0 6px;border-radius:3px;margin-right:6px;color:#fff}
+.sev.h{background:var(--bad)}.sev.m{background:var(--warn)}.sev.l{background:var(--muted)}
+.takeaways{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.takeaways div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;min-width:0}
+.takeaways b{display:block;margin-bottom:4px}
+/* ---------- 应用样机 ---------- */
+.mock-caption{font-size:13px;color:var(--muted);margin:8px 0 28px}
+.win{background:var(--app-bg);color:var(--app-fg);border-radius:12px;overflow:hidden;border:1px solid #0006;box-shadow:0 18px 50px -20px #0008;font-size:13px;line-height:1.5;max-width:100%}
+.titlebar{display:flex;align-items:center;gap:8px;height:36px;padding:0 14px;background:#0f1214;border-bottom:1px solid var(--app-line)}
+.dot{width:11px;height:11px;border-radius:50%}
+.titlebar .t{margin-left:10px;color:var(--app-mute);font-size:12px}
+.app{display:grid;grid-template-columns:180px 1fr;min-height:430px}
+.side{background:var(--app-side);border-right:1px solid var(--app-line);padding:14px 10px;display:flex;flex-direction:column;gap:2px}
+.brand{font-weight:900;font-size:15px;padding:4px 10px 14px;letter-spacing:.04em}
+.brand i{font-style:normal;color:var(--app-acc)}
+.nav{padding:7px 10px;border-radius:6px;color:var(--app-mute);display:flex;justify-content:space-between}
+.nav.on{background:#f08a3c22;color:var(--app-fg)}
+.nav em{font-style:normal;font-family:var(--f-mono);font-size:11px;background:var(--app-acc);color:#1a1208;border-radius:9px;padding:0 6px}
+.side .foot{margin-top:auto;font-size:11px;color:var(--app-mute);padding:8px 10px;border-top:1px solid var(--app-line)}
+.main{padding:18px 22px;min-width:0;display:flex;flex-direction:column;gap:14px}
+.paste{display:flex;gap:8px}
+.paste .in{flex:1;min-width:0;background:var(--app-card);border:1px solid var(--app-line);border-radius:8px;padding:10px 12px;color:var(--app-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--f-mono);font-size:12px}
+.btn{background:var(--app-acc);color:#1a1208;border-radius:8px;padding:9px 16px;font-weight:700;white-space:nowrap}
+.btn.ghost{background:transparent;color:var(--app-fg);border:1px solid var(--app-line);font-weight:500}
+.hint{font-size:11.5px;color:var(--app-mute);display:flex;gap:14px;flex-wrap:wrap}
+.hint b{color:#7fd1a0;font-weight:500}
+.result{display:grid;grid-template-columns:150px 1fr;gap:16px;background:var(--app-card);border:1px solid var(--app-line);border-radius:10px;padding:14px}
+.cover{aspect-ratio:9/16;border-radius:8px;background:linear-gradient(160deg,#3d5a63,#1f2b2f 55%,#5b3b25);position:relative;max-width:100%}
+.cover::after{content:"▶";position:absolute;inset:0;display:grid;place-items:center;font-size:26px;color:#fffc}
+.cover .dur{position:absolute;right:6px;bottom:6px;font-family:var(--f-mono);font-size:10px;background:#000a;padding:0 5px;border-radius:3px;z-index:1}
+.meta{min-width:0;display:flex;flex-direction:column;gap:8px}
+.meta h4{margin:0;font-size:15px;line-height:1.4}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--app-line);color:var(--app-mute)}
+.chip.acc{border-color:var(--app-acc);color:var(--app-acc)}
+.opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.opt{border:1px solid var(--app-line);border-radius:7px;padding:7px 9px;font-size:12px}
+.opt.on{border-color:var(--app-acc);background:#f08a3c14}
+.opt small{display:block;color:var(--app-mute);font-family:var(--f-mono);font-size:10.5px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto}
+.recent{display:flex;flex-direction:column;gap:6px}
+.recent .lbl{font-size:11px;color:var(--app-mute);letter-spacing:.08em}
+.ritem{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:6px 8px;border-radius:6px;background:#ffffff06}
+.ritem .th{width:28px;height:36px;border-radius:4px;background:linear-gradient(160deg,#4b6b5c,#26302c)}
+.ritem .th.b{background:linear-gradient(160deg,#6b4b3c,#2b2220)}
+.ritem span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ritem small{color:var(--app-mute);font-family:var(--f-mono);font-size:10.5px}
+/* 队列 */
+.qhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.qhead h4{margin:0;font-size:15px}
+.stats{display:flex;gap:14px;font-family:var(--f-mono);font-size:11.5px;color:var(--app-mute)}
+.stats b{color:var(--app-fg)}
+.task{display:grid;grid-template-columns:34px 1fr 110px;gap:12px;align-items:center;background:var(--app-card);border:1px solid var(--app-line);border-radius:8px;padding:10px 12px}
+.task .th{width:34px;height:44px;border-radius:4px;background:linear-gradient(160deg,#3d5a63,#1f2b2f)}
+.task .info{min-width:0}
+.task .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{height:5px;background:#ffffff12;border-radius:3px;margin:6px 0 3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--app-acc);border-radius:3px}
+.bar i.done{background:#5cc28a}.bar i.err{background:#ec7a70}
+.task small{font-family:var(--f-mono);font-size:10.5px;color:var(--app-mute)}
+.task .st{text-align:right;font-size:11.5px}
+.st .ok{color:#5cc28a}.st .er{color:#ec7a70}.st .run{color:var(--app-acc)}
+/* 图集 */
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.ph{aspect-ratio:3/4;border-radius:6px;position:relative;border:2px solid transparent}
+.ph.sel{border-color:var(--app-acc)}
+.ph.sel::after{content:"✓";position:absolute;top:5px;right:5px;width:18px;height:18px;border-radius:50%;background:var(--app-acc);color:#1a1208;font-size:11px;display:grid;place-items:center;font-weight:700}
+.ph:nth-child(1){background:linear-gradient(150deg,#5a7d6e,#243029)}
+.ph:nth-child(2){background:linear-gradient(150deg,#8a6a4a,#2e2318)}
+.ph:nth-child(3){background:linear-gradient(150deg,#4a6a8a,#18232e)}
+.ph:nth-child(4){background:linear-gradient(150deg,#7a5a7a,#2a1e2a)}
+.ph:nth-child(5){background:linear-gradient(150deg,#6a7a4a,#262c18)}
+.ph:nth-child(6){background:linear-gradient(150deg,#8a4a4a,#2e1818)}
+.ph:nth-child(7){background:linear-gradient(150deg,#4a8a7a,#182e29)}
+.ph:nth-child(8){background:linear-gradient(150deg,#7a6a5a,#2a241e)}
+/* 设置 */
+.set{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.group{background:var(--app-card);border:1px solid var(--app-line);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:9px;min-width:0}
+.group h5{margin:0;font-size:12px;color:var(--app-mute);font-weight:500;letter-spacing:.08em}
+.kv{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.kv span:first-child{min-width:0}
+.kv .v{font-family:var(--f-mono);font-size:11.5px;color:var(--app-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+.sw{width:30px;height:17px;border-radius:9px;background:#ffffff22;position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff}
+.sw.on{background:var(--app-acc)}.sw.on::after{left:15px}
+/* 迷你窗 */
+.mini-wrap{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.mini{width:300px;max-width:100%}
+.mini .body{padding:12px;display:flex;flex-direction:column;gap:10px}
+.toast{display:flex;gap:10px;align-items:center;background:var(--app-card);border:1px solid var(--app-acc);border-radius:8px;padding:10px}
+.toast .th{width:30px;height:40px;border-radius:4px;background:linear-gradient(160deg,#6b4b3c,#2b2220);flex:none}
+.toast div{min-width:0}
+.toast small{display:block;color:var(--app-mute);font-size:11px}
+.minitext{flex:1;min-width:240px}
+/* 计划 */
+.phases{display:flex;flex-direction:column;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.phase{position:relative;padding:0 0 22px 22px}
+.phase::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.phase h3{margin:0 0 2px}
+.phase .when{font-family:var(--f-mono);font-size:12px;color:var(--accent)}
+.phase ul{margin:6px 0 0;padding-left:18px}
+.phase .done{font-size:13px;color:var(--muted);margin-top:4px}
+pre{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--f-mono);font-size:12.5px;line-height:1.6}
+.risks td:first-child{font-weight:500}
+.src{font-size:12.5px;color:var(--muted)}
+.src a{color:var(--muted)}
+a{color:var(--accent)}
+@media (max-width:720px){
+  .app{grid-template-columns:1fr}
+  .side{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--app-line)}
+  .side .foot,.brand{display:none}
+  .result{grid-template-columns:1fr}.cover{max-width:140px}
+  .opts,.set{grid-template-columns:1fr}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .task{grid-template-columns:34px 1fr}.task .st{grid-column:2;text-align:left}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head><body>
+
+<div class="wrap">
+  <div class="eyebrow">清影 ClearClip · 桌面化方案</div>
+  <h1>清影：短视频解析桌面版规划</h1>
+  <p class="lede">做成一个独立运行的短视频解析与下载桌面程序。本页包含：起点、15 个同类产品调研、5 张界面参考图、技术选型和分阶段实施计划。本阶段只做规划，不改动现有代码。</p>
+  <nav class="toc">
+    <a href="#now">起点</a><a href="#research">竞品调研</a><a href="#design">设计参考图</a><a href="#tech">技术选型</a><a href="#plan">实施计划</a><a href="#risk">风险</a>
+  </nav>
+
+  <h2 id="now">1. 起点</h2>
+  <p>项目最初只是一个很小的抖音、快手解析接口。桌面版的解析层是用 Rust 重新实现的，每个平台一个独立模块。仓库不再包含最初的网页和 PHP 代码。</p>
+
+  <h2 id="research">2. 同类产品调研（15 个）</h2>
+  <p>覆盖三类：专做抖音/快手/小红书的开源工具、通用视频下载器（多为 yt-dlp 前端）、商业下载软件。重点看形态、技术栈和可借鉴的交互。</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>#</th><th>产品</th><th>形态 / 技术栈</th><th>平台范围</th><th>授权</th><th>可借鉴点</th></tr></thead>
+    <tbody>
+      <tr><td class="n">01</td><td><b>Douyin_TikTok_Download_API</b><br><small>Evil0ctal</small></td><td>FastAPI + HTTPX，PyWebIO 网页，另有 CLI、MCP</td><td>抖音、TikTok、B站</td><td><span class="tag oss">开源</span></td><td>解析层与界面分离；批量解析；配套 Cookie 抓取浏览器扩展</td></tr>
+      <tr><td class="n">02</td><td><b>douyin-downloader</b><br><small>jiji262</small></td><td>Python CLI</td><td>抖音作品、图集、合集、音乐、主页批量</td><td><span class="tag oss">开源</span></td><td>进度显示、失败重试、SQLite 去重、浏览器兜底</td></tr>
+      <tr><td class="n">03</td><td><b>TikTokDownloader</b><br><small>JoeanAmier</small></td><td>Python，终端交互 + Web API</td><td>抖音/TikTok 作品、喜欢、合集、直播</td><td><span class="tag oss">开源</span></td><td>文件命名模板、账号批量采集、可配置下载目录结构</td></tr>
+      <tr><td class="n">04</td><td><b>XHS-Downloader</b><br><small>JoeanAmier</small></td><td>Python，Textual 图形界面 + CLI</td><td>小红书图文、视频、LivePhoto</td><td><span class="tag oss">开源</span></td><td>剪贴板监听自动解析；提供 Win/macOS 打包产物</td></tr>
+      <tr><td class="n">05</td><td><b>douyin-downloader</b><br><small>lecepin</small></td><td>Rust + Tauri</td><td>抖音</td><td><span class="tag oss">开源</span></td><td>与本方案技术路线一致；安装包很小</td></tr>
+      <tr><td class="n">06</td><td><b>dYm</b><br><small>IronnMan</small></td><td>Electron + TypeScript</td><td>抖音</td><td><span class="tag oss">开源</span></td><td>下载管理 + AI 内容分析，媒体库思路</td></tr>
+      <tr><td class="n">07</td><td><b>TikDown</b></td><td>Electron，npm 分发</td><td>抖音、TikTok</td><td><span class="tag oss">开源</span></td><td>复制分享链接即自动下载，零操作流程</td></tr>
+      <tr><td class="n">08</td><td><b>Open Video Downloader</b></td><td>Vue 3 + Tauri/Rust，调用 yt-dlp</td><td>yt-dlp 支持的站点</td><td><span class="tag oss">开源</span></td><td>和现有 Vue 前端最接近的参考架构</td></tr>
+      <tr><td class="n">09</td><td><b>yt-dlp-gui</b><br><small>imsyy</small></td><td>Tauri 2 + Rust</td><td>yt-dlp 支持的站点</td><td><span class="tag oss">开源</span></td><td>现代视觉风格，Tauri 2 工程组织</td></tr>
+      <tr><td class="n">10</td><td><b>Parabolic</b></td><td>GTK4/libadwaita（Linux、macOS），Qt（Windows）</td><td>yt-dlp 支持的站点</td><td><span class="tag oss">开源</span></td><td>多任务并行、限速、账号凭据存系统钥匙串</td></tr>
+      <tr><td class="n">11</td><td><b>Stacher</b></td><td>闭源 yt-dlp 图形前端</td><td>yt-dlp 支持的站点</td><td><span class="tag paid">免费 + 订阅</span></td><td>免费版与付费功能的边界划分</td></tr>
+      <tr><td class="n">12</td><td><b>4K Video Downloader Plus</b></td><td>商业桌面软件</td><td>主流视频站</td><td><span class="tag paid">付费</span></td><td>极简"粘贴链接"主界面、清晰度选择弹窗</td></tr>
+      <tr><td class="n">13</td><td><b>Downie</b></td><td>macOS 原生</td><td>上千站点</td><td><span class="tag paid">付费</span></td><td>拖拽链接下载、浏览器扩展、后处理选项</td></tr>
+      <tr><td class="n">14</td><td><b>Cobalt</b></td><td>Web，自托管</td><td>20+ 平台</td><td><span class="tag oss">开源</span></td><td>无广告、无追踪；单输入框的极简交互</td></tr>
+      <tr><td class="n">15</td><td><b>Seal</b></td><td>Android，Kotlin + Compose，Material 3</td><td>yt-dlp 支持的站点</td><td><span class="tag oss">开源</span></td><td>下载卡片、格式选择面板和动态主题的视觉参考</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>调研结论</h3>
+  <div class="takeaways">
+    <div><b>主流程只有一步</b>4K Video Downloader、Cobalt、TikDown 都把"粘贴"做成唯一动作。我们也应支持剪贴板监听，复制分享文案后自动识别。</div>
+    <div><b>Tauri 已是这一类工具的常见选择</b>05、08、09 都用 Tauri，安装包体积远小于 Electron，适合工具型软件。</div>
+    <div><b>队列和历史是标配</b>02、10 都有并行下载、重试、去重。单次解析的网页形态只覆盖了最基础的场景。</div>
+    <div><b>Cookie 管理决定可用性</b>01、04 都为 Cookie 单独做了工具。桌面端可以内置一个登录窗口获取 Cookie，比网页版更有优势。</div>
+    <div><b>解析层要可插拔</b>平台接口变动频繁，01、03 都把每个平台写成独立模块，方便单独修复和热更新规则。</div>
+    <div><b>合规提示要放在显眼处</b>开源项目普遍声明"仅供学习"。桌面版应在首次启动时展示免责声明，只下载用户有权保存的内容。</div>
+  </div>
+
+  <h2 id="design">3. 设计参考图</h2>
+  <p>视觉方向：深色工具风格，暖橙色作为唯一强调色，对应"胶片/剪辑"的气质。左侧固定导航，主区域上方始终保留粘贴框。以下为结构示意，正式开发时再出高保真稿。</p>
+
+  <h3>A. 解析主页</h3>
+  <div class="win" role="img" aria-label="解析主页样机">
+    <div class="titlebar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="t">清影 ClearClip</span></div>
+    <div class="app">
+      <div class="side">
+        <div class="brand">清<i>影</i></div>
+        <div class="nav on">解析</div><div class="nav">下载队列 <em>3</em></div><div class="nav">媒体库</div><div class="nav">设置</div>
+        <div class="foot">v0.1.0 · 规则库 2026.10.02</div>
+      </div>
+      <div class="main">
+        <div class="paste"><div class="in">7.43 复制打开抖音，看看【山野厨房的作品】秋天第一锅板栗焖鸡 https://v.douyin.com/ehHpu7V/</div><div class="btn">解析</div></div>
+        <div class="hint"><span><b>●</b> 剪贴板监听已开启</span><span>支持：抖音视频/图集 · 快手视频/图集</span><span>Ctrl+V 粘贴 · Enter 解析</span></div>
+        <div class="result">
+          <div class="cover"><span class="dur">00:47</span></div>
+          <div class="meta">
+            <div class="chips"><span class="chip acc">抖音 · 视频</span><span class="chip">无水印</span><span class="chip">1080×1920</span></div>
+            <h4>秋天第一锅板栗焖鸡，做法简单，汤汁拌饭能吃三碗</h4>
+            <div style="color:var(--app-mute);font-size:12px">@山野厨房 · 2026-10-02 发布</div>
+            <div class="opts">
+              <div class="opt on">视频 MP4<small>1080p · 18.6 MB</small></div>
+              <div class="opt">背景音乐<small>MP3 · 0.7 MB</small></div>
+              <div class="opt">封面图<small>JPG · 240 KB</small></div>
+            </div>
+            <div class="row"><div class="btn">下载所选</div><div class="btn ghost">复制直链</div><div class="btn ghost">预览</div></div>
+          </div>
+        </div>
+        <div class="recent">
+          <div class="lbl">最近解析</div>
+          <div class="ritem"><div class="th"></div><span>武功山徒步两天一夜全记录，第二天日出太值了</span><small>快手 · 图集 12 张</small></div>
+          <div class="ritem"><div class="th b"></div><span>三分钟学会手冲咖啡的基本萃取比例</span><small>抖音 · 视频</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mock-caption">粘贴整段分享文案即可，程序自动提取短链。结果卡片给出可下载的资源项，默认勾选视频。</p>
+
+  <h3>B. 下载队列</h3>
+  <div class="win" role="img" aria-label="下载队列样机">
+    <div class="titlebar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="t">清影 ClearClip — 下载队列</span></div>
+    <div class="app">
+      <div class="side">
+        <div class="brand">清<i>影</i></div>
+        <div class="nav">解析</div><div class="nav on">下载队列 <em>3</em></div><div class="nav">媒体库</div><div class="nav">设置</div>
+        <div class="foot">同时下载 3 个 · 不限速</div>
+      </div>
+      <div class="main">
+        <div class="qhead"><h4>下载队列</h4><div class="stats"><span>进行中 <b>2</b></span><span>等待 <b>1</b></span><span>完成 <b>14</b></span><span>失败 <b>1</b></span><span>↓ <b>6.2 MB/s</b></span></div></div>
+        <div class="task"><div class="th"></div><div class="info"><div class="name">秋天第一锅板栗焖鸡，做法简单，汤汁拌饭能吃三碗.mp4</div><div class="bar"><i style="width:64%"></i></div><small>11.9 / 18.6 MB · 3.8 MB/s · 剩余 2 秒</small></div><div class="st"><span class="run">下载中 64%</span></div></div>
+        <div class="task"><div class="th"></div><div class="info"><div class="name">武功山徒步两天一夜全记录（图集 12 张）</div><div class="bar"><i style="width:41%"></i></div><small>5 / 12 张 · 2.4 MB/s</small></div><div class="st"><span class="run">下载中 5/12</span></div></div>
+        <div class="task"><div class="th"></div><div class="info"><div class="name">三分钟学会手冲咖啡的基本萃取比例.mp4</div><div class="bar"><i style="width:0"></i></div><small>排队中</small></div><div class="st">等待</div></div>
+        <div class="task"><div class="th"></div><div class="info"><div class="name">城市夜景延时摄影合集.mp4</div><div class="bar"><i class="err" style="width:100%"></i></div><small>链接已过期（403），点击重新解析</small></div><div class="st"><span class="er">失败 · 重试</span></div></div>
+        <div class="task"><div class="th"></div><div class="info"><div class="name">家常红烧肉的三个关键步骤.mp4</div><div class="bar"><i class="done" style="width:100%"></i></div><small>22.4 MB · 保存到 ~/Videos/清影/抖音/</small></div><div class="st"><span class="ok">完成 · 打开</span></div></div>
+      </div>
+    </div>
+  </div>
+  <p class="mock-caption">失败项给出原因和下一步操作。直链过期是最常见的失败，按钮直接触发重新解析再下载。</p>
+
+  <h3>C. 图集选择</h3>
+  <div class="win" role="img" aria-label="图集选择样机">
+    <div class="titlebar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="t">清影 ClearClip — 图集</span></div>
+    <div class="app">
+      <div class="side">
+        <div class="brand">清<i>影</i></div>
+        <div class="nav on">解析</div><div class="nav">下载队列</div><div class="nav">媒体库</div><div class="nav">设置</div>
+        <div class="foot">已选 6 / 8 张</div>
+      </div>
+      <div class="main">
+        <div class="qhead"><h4>武功山徒步两天一夜全记录</h4><div class="chips"><span class="chip acc">快手 · 图集</span><span class="chip">8 张</span><span class="chip">含背景音乐</span></div></div>
+        <div class="grid"><div class="ph sel"></div><div class="ph sel"></div><div class="ph"></div><div class="ph sel"></div><div class="ph sel"></div><div class="ph sel"></div><div class="ph"></div><div class="ph sel"></div></div>
+        <div class="row"><div class="btn">下载 6 张</div><div class="btn ghost">全选</div><div class="btn ghost">同时下载音乐</div><div class="btn ghost">合成为视频（P3）</div></div>
+      </div>
+    </div>
+  </div>
+  <p class="mock-caption">图集默认全选，点击切换。原网页版的图集只能逐张右键保存。</p>
+
+  <h3>D. 设置</h3>
+  <div class="win" role="img" aria-label="设置样机">
+    <div class="titlebar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="t">清影 ClearClip — 设置</span></div>
+    <div class="app">
+      <div class="side">
+        <div class="brand">清<i>影</i></div>
+        <div class="nav">解析</div><div class="nav">下载队列</div><div class="nav">媒体库</div><div class="nav on">设置</div>
+        <div class="foot">配置保存在本机</div>
+      </div>
+      <div class="main">
+        <div class="set">
+          <div class="group"><h5>下载</h5>
+            <div class="kv"><span>保存位置</span><span class="v">~/Videos/清影</span></div>
+            <div class="kv"><span>按平台分子文件夹</span><span class="sw on"></span></div>
+            <div class="kv"><span>文件命名</span><span class="v">{作者}_{标题}_{日期}</span></div>
+            <div class="kv"><span>同时下载数</span><span class="v">3</span></div>
+          </div>
+          <div class="group"><h5>解析</h5>
+            <div class="kv"><span>监听剪贴板</span><span class="sw on"></span></div>
+            <div class="kv"><span>识别后自动下载</span><span class="sw"></span></div>
+            <div class="kv"><span>解析模式</span><span class="v">本地解析（备用：远程 API）</span></div>
+            <div class="kv"><span>远程 API 地址</span><span class="v">https://your-host/api</span></div>
+          </div>
+          <div class="group"><h5>账号与 Cookie</h5>
+            <div class="kv"><span>抖音</span><span class="v">未登录 · 点击登录</span></div>
+            <div class="kv"><span>快手</span><span class="v">已获取 · 2026-10-01</span></div>
+          </div>
+          <div class="group"><h5>通用</h5>
+            <div class="kv"><span>外观</span><span class="v">跟随系统</span></div>
+            <div class="kv"><span>关闭时最小化到托盘</span><span class="sw on"></span></div>
+            <div class="kv"><span>自动检查更新</span><span class="sw on"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mock-caption">保留"远程 API"模式，有自建解析服务的用户可以继续用，同时作为本地解析失效时的备用通道。</p>
+
+  <h3>E. 托盘迷你窗与系统通知</h3>
+  <div class="mini-wrap">
+    <div class="win mini" role="img" aria-label="迷你窗样机">
+      <div class="titlebar"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span class="t">清影</span></div>
+      <div class="body">
+        <div class="toast"><div class="th"></div><div><b>检测到抖音链接</b><small>秋天第一锅板栗焖鸡…</small></div></div>
+        <div class="row" style="margin-top:0"><div class="btn">立即下载</div><div class="btn ghost">打开主窗口</div></div>
+        <div class="bar"><i style="width:64%"></i></div>
+        <small style="color:var(--app-mute);font-family:var(--f-mono);font-size:10.5px">队列：2 个进行中 · 6.2 MB/s</small>
+      </div>
+    </div>
+    <div class="minitext">
+      <p>主窗口关闭后程序驻留在托盘。复制到支持的链接时，托盘弹出迷你窗，用户可以不打开主窗口直接下载，参考 TikDown 和 XHS-Downloader 的剪贴板流程。</p>
+      <p>全局快捷键（默认 <code>Ctrl+Shift+D</code>）解析当前剪贴板内容。</p>
+    </div>
+  </div>
+
+  <h2 id="tech">4. 技术选型</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>方案</th><th>安装包</th><th>复用现有代码</th><th>解析逻辑放哪</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr><td><b>Tauri 2 + Vue 3 + Rust</b></td><td>约 10 MB</td><td>前端交互可迁移到 Vue 3；解析逻辑用 Rust 重新实现</td><td>Rust（reqwest），不受浏览器跨域限制</td><td><span class="tag oss">推荐</span></td></tr>
+      <tr><td>Electron + Vue 3 + Node</td><td>100 MB 以上</td><td>同上，解析移植到 TypeScript</td><td>Node 主进程</td><td>可行，开发快，但体积和内存偏大</td></tr>
+      <tr><td>Wails（Go）/ Flutter</td><td>10–25 MB</td><td>前端需重写</td><td>Go / Dart</td><td>团队无相关积累时不划算</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>推荐技术栈</h3>
+  <ul>
+    <li><b>壳</b>：Tauri 2，插件 <code>clipboard-manager</code>、<code>notification</code>、<code>global-shortcut</code>、<code>dialog</code>、<code>updater</code>、<code>sql</code>（SQLite）、系统托盘。</li>
+    <li><b>前端</b>：Vue 3 + TypeScript + Vite + Pinia，组件库用 Element Plus（与现有 Element UI 用法相近，迁移成本低）。</li>
+    <li><b>解析层</b>：Rust，定义统一的 <code>Provider</code> trait（<code>matches(url)</code> / <code>resolve(url) → MediaInfo</code>），每个平台一个文件；输出结构沿用现有 <code>nickname / video_url / music / type</code> 并补充封面、作者、时长、分辨率。</li>
+    <li><b>下载器</b>：Rust 流式下载，带 Referer/UA，按事件把进度推给前端；支持并发数、断点续传、失败重试。</li>
+    <li><b>可选</b>：ffmpeg 侧车，用于图集合成视频、音视频分离。</li>
+  </ul>
+  <h3>目录规划</h3>
+<pre>ClearClip/
+└── desktop/
+    ├── src/                             # Vue 3 前端
+    │   ├── views/ Parse.vue Queue.vue Library.vue Settings.vue
+    │   ├── stores/ queue.ts history.ts settings.ts
+    │   └── api/ invoke.ts               # 封装 Tauri 命令
+    └── src-tauri/
+        ├── src/
+        │   ├── main.rs  commands.rs  tray.rs  clipboard.rs
+        │   ├── providers/ mod.rs douyin.rs kuaishou.rs remote.rs
+        │   ├── download/ queue.rs task.rs
+        │   └── db.rs                    # 历史与去重
+        └── tauri.conf.json</pre>
+
+  <h2 id="plan">5. 实施计划</h2>
+  <p>按 1 名全栈开发估算，共约 6 周。每个阶段结束都有可演示的产物。</p>
+  <div class="phases">
+    <div class="phase"><span class="when">P0 · 第 1 周</span><h3>技术验证</h3>
+      <ul><li>搭 Tauri 2 + Vue 3 空壳，三平台本地能跑起来</li><li>验证抖音、快手当前可用的取数方式（分享页内嵌 JSON / 新接口及签名），确定是否需要 Cookie</li><li>用 Rust 写出最小的抖音解析并通过命令返回给前端</li></ul>
+      <div class="done">完成标准：粘贴一条抖音链接，桌面窗口里拿到无水印直链。若取数方式不可行，在这里决定是否改为"远程 API 为主"。</div></div>
+    <div class="phase"><span class="when">P1 · 第 2–3 周</span><h3>MVP</h3>
+      <ul><li>移植抖音、快手的视频与图集解析，处理图集和错误码</li><li>解析主页（参考图 A）、单任务下载、预览</li><li>从分享文案中提取链接；支持远程 API 模式</li><li>解析逻辑的单元测试（用录制的响应样本，不依赖线上）</li></ul>
+      <div class="done">完成标准：两个平台四种内容都能解析并下载到本地。</div></div>
+    <div class="phase"><span class="when">P2 · 第 4–5 周</span><h3>效率功能</h3>
+      <ul><li>下载队列（参考图 B）：并发、暂停、重试、直链过期自动重新解析</li><li>图集选择（参考图 C）、音乐/封面单独下载</li><li>剪贴板监听、托盘迷你窗、全局快捷键（参考图 E）</li><li>SQLite 历史记录与去重、媒体库页；设置页（参考图 D）</li><li>内置登录窗口获取 Cookie，存系统钥匙串</li></ul>
+      <div class="done">完成标准：连续复制 10 条链接，全部自动进队列并下载完成。</div></div>
+    <div class="phase"><span class="when">P3 · 第 6 周</span><h3>打包与发布</h3>
+      <ul><li>GitHub Actions 矩阵构建 Windows（msi/nsis）、macOS（dmg，Intel + Apple Silicon）、Linux（AppImage/deb）</li><li>代码签名与 macOS 公证；自动更新</li><li>首次启动免责声明、README 更新</li></ul>
+      <div class="done">完成标准：从 Releases 下载安装包，三平台安装即用并能收到更新。</div></div>
+    <div class="phase"><span class="when">P4 · 之后</span><h3>扩展</h3>
+      <ul><li>新增平台：小红书、B站、微博等（依赖 Cookie 的平台走内置登录）</li><li>解析规则远程下发，平台接口变化时不必发新版</li><li>图集合成视频（ffmpeg）、批量导入链接文件</li></ul></div>
+  </div>
+
+  <h2 id="risk">6. 风险与对策</h2>
+  <div class="scroll">
+  <table class="risks">
+    <thead><tr><th>风险</th><th>影响</th><th>对策</th></tr></thead>
+    <tbody>
+      <tr><td>平台接口和签名频繁变化</td><td>解析失效，用户直接感知</td><td>Provider 独立模块 + 规则远程更新 + 远程 API 备用通道；用样本测试快速定位</td></tr>
+      <tr><td>风控（需要 Cookie、验证码）</td><td>部分内容无法获取</td><td>内置登录窗口；请求频率限制；失败时给出明确提示</td></tr>
+      <tr><td>直链有时效</td><td>排队后下载 403</td><td>下载前检查，过期自动重新解析</td></tr>
+      <tr><td>版权与合规</td><td>分发渠道下架、法律风险</td><td>首次启动声明，仅用于个人有权保存的内容；批量采集他人主页等功能默认关闭</td></tr>
+      <tr><td>macOS 签名/公证成本</td><td>未签名包被系统拦截</td><td>P3 预留 Apple 开发者账号；早期可先发 Windows 版</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>参考来源</h2>
+  <p class="src">
+    <a href="https://github.com/Evil0ctal/Douyin_TikTok_Download_API">Douyin_TikTok_Download_API</a> ·
+    <a href="https://github.com/jiji262/douyin-downloader">jiji262/douyin-downloader</a> ·
+    <a href="https://github.com/JoeanAmier/TikTokDownloader">TikTokDownloader</a> ·
+    <a href="https://github.com/JoeanAmier/XHS-Downloader">XHS-Downloader</a> ·
+    <a href="https://github.com/lecepin/douyin-downloader">lecepin/douyin-downloader</a> ·
+    <a href="https://github.com/IronnMan/dYm">dYm</a> ·
+    <a href="https://cdn.jsdelivr.net/npm/tiktokdien@1.1.4/README.md">TikDown</a> ·
+    <a href="https://www.linuxlinks.com/open-video-downloader-cross-platform-yt-dlp-gui/">Open Video Downloader</a> ·
+    <a href="https://github.com/imsyy/yt-dlp-gui">imsyy/yt-dlp-gui</a> ·
+    <a href="https://ubuntuhandbook.org/index.php/2026/04/parabolic-video-downloader-released-2026-4-0-with-macos-app/">Parabolic</a> ·
+    <a href="https://alternativeto.net/software/stacher/about">Stacher</a> ·
+    <a href="https://www.softwareadvice.com/product/540736-4K-Video-Downloader-Plus/">4K Video Downloader Plus</a> ·
+    <a href="https://mac.softpedia.com/get/Internet-Utilities/Downie.shtml">Downie</a> ·
+    <a href="https://alternativeto.net/software/cobalt-co-wukko-me-/about">Cobalt</a> ·
+    <a href="https://github.com/junkfood02/Seal">Seal</a> ·
+    <a href="https://noqta.tn/en/blog/tauri-2-desktop-apps-rust-web-technologies-2026">Tauri 2 vs Electron 体积对比</a>
+  </p>
+</div>
+</body></html>

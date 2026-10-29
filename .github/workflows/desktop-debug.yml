@@ -1,0 +1,96 @@
+name: desktop-debug
+
+# 调试版：只构建 Windows 便携包，上传成 Actions 产物（Artifact），不创建 Release、不改版本号、不需要合并分支。
+# 比正式发布快得多（只有一个平台、不生成安装包、不做优化），用来在真机上看修改的效果。
+#
+# 两种触发方式：
+#   1. 手动：GitHub 仓库 → Actions → desktop-debug → Run workflow，在 “Use workflow from” 里选分支（这个入口要等本文件进入默认分支后才出现）
+#   2. 推送：往 claude/** 或 debug/** 分支推送，且最新一次提交的说明里带 [debug-build]，会自动构建（不需要本文件在默认分支上）
+#
+# 调试版和正式版的区别：带一个控制台窗口（程序日志实时显示在里面），WebView 里可以右键 → 检查（开发者工具）；体积大、速度慢，只用来测试。
+# 数据放在 exe 旁边的 data 文件夹（便携模式），不会碰已安装版本的数据。
+# 程序标识（identifier）换成 com.dixuanaoyi.clearclip.debug（见 desktop/src-tauri/tauri.debug.conf.json）：清影只允许同一个标识开一个实例，
+# 用正式版的标识，调试版一启动就会被转给已经开着的正式版（或上一个调试包），看到的还是旧界面；换了标识就能和它们同时运行。
+# 窗口标题和侧栏底部会显示版本和提交号，一眼能确认运行的是哪一次构建。
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Windows 架构（绝大多数电脑选 x64；骁龙等 ARM 设备选 arm64）'
+        type: choice
+        options: [x64, arm64]
+        default: x64
+  push:
+    branches: ['claude/**', 'debug/**']
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[debug-build]')
+    runs-on: windows-latest
+    env:
+      ARCH: ${{ inputs.arch || 'x64' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ (inputs.arch == 'arm64') && 'aarch64-pc-windows-msvc' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+          # 调试版和正式版的编译产物不通用，缓存分开放
+          prefix-key: debug-${{ inputs.arch || 'x64' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+        working-directory: desktop
+
+      # --debug：不优化、保留调试信息、启用开发者工具；--no-bundle：只要 exe，不打安装包；
+      # --config：换程序标识（路径相对于 desktop 目录）
+      - name: Build debug exe
+        shell: pwsh
+        working-directory: desktop
+        run: |
+          if ($env:ARCH -eq 'arm64') {
+            npx tauri build --debug --no-bundle --config src-tauri/tauri.debug.conf.json --target aarch64-pc-windows-msvc
+          } else {
+            npx tauri build --debug --no-bundle --config src-tauri/tauri.debug.conf.json
+          }
+
+      - name: Package portable zip
+        id: pack
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $dir = "ClearClip-debug-$version-$sha-windows-$env:ARCH"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $targetDir = if ($env:ARCH -eq 'arm64') { 'aarch64-pc-windows-msvc/debug' } else { 'debug' }
+          Copy-Item "desktop/src-tauri/target/$targetDir/clearclip.exe" $dir/
+          Set-Content -Path "$dir/portable" -Value "设置、数据和日志保存在本目录的 data 文件夹。"
+          Set-Content -Path "$dir/说明.txt" -Encoding UTF8 -Value @"
+          清影 ClearClip 调试版（$version，提交 $sha）
+
+          双击 clearclip.exe 运行。会多出一个控制台窗口，程序日志实时显示在里面；关闭控制台窗口等于退出程序。
+          界面里右键 → 检查，可以打开开发者工具。
+          窗口标题和侧栏底部写着“调试版 $sha”，和这个文件夹名里的提交号对得上，就是这一版。
+          程序标识和正式版不同，可以和已安装的清影同时运行；但两个调试包之间仍然只能开一个（同一个标识），换新包前先把旧的从托盘退出。
+          数据、设置和日志都保存在本目录的 data 文件夹，不影响已安装的版本；删掉整个文件夹就卸载干净了。
+          日志文件：data\logs\clearclip.log
+          "@
+          Compress-Archive -Path $dir -DestinationPath "$dir.zip" -Force
+          "name=$dir" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.name }}
+          path: ${{ steps.pack.outputs.name }}.zip
+          retention-days: 7
+          # zip 已经压缩过，不再二次压缩
+          compression-level: 0

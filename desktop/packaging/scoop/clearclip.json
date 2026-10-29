@@ -1,0 +1,30 @@
+{
+  "version": "@@version@@",
+  "description": "清影 ClearClip：视频和图片网站作品解析与下载（便携版）",
+  "homepage": "https://github.com/DiXuanAoYi/ClearClip-Downloader",
+  "license": "Unknown",
+  "notes": "便携模式：设置和数据保存在 $dir\\data，更新时保留。",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/DiXuanAoYi/ClearClip-Downloader/releases/download/desktop-v@@version@@/ClearClip-@@version@@-portable-windows-x64.zip",
+      "hash": "@@sha_win_portable@@",
+      "extract_dir": "ClearClip-@@version@@-portable"
+    }
+  },
+  "bin": [["clearclip.exe", "clearclip"]],
+  "shortcuts": [["clearclip.exe", "清影 ClearClip"]],
+  "persist": "data",
+  "checkver": {
+    "url": "https://api.github.com/repos/DiXuanAoYi/ClearClip-Downloader/releases/latest",
+    "jsonpath": "$.tag_name",
+    "regex": "desktop-v([\\d.]+)"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/DiXuanAoYi/ClearClip-Downloader/releases/download/desktop-v$version/ClearClip-$version-portable-windows-x64.zip",
+        "extract_dir": "ClearClip-$version-portable"
+      }
+    }
+  }
+}

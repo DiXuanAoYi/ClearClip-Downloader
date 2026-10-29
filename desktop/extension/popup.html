@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>发送到清影</title>
+<style>
+  body { width: 300px; margin: 0; padding: 14px; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f1d1a; background: #f6f4f1; }
+  @media (prefers-color-scheme: dark) { body { background: #1b1a18; color: #ece8e2; } input { background: #26241f; color: inherit; border-color: #3a3630 !important; } }
+  h1 { font-size: 15px; margin: 0 0 10px; } h1 b { color: #d9772f; }
+  button { width: 100%; padding: 9px; margin-top: 8px; border: 0; border-radius: 8px; background: #d9772f; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button.sec { background: transparent; color: inherit; border: 1px solid #d6d0c8; font-weight: 400; }
+  label { display: block; margin-top: 8px; font-size: 12px; color: #7b756d; }
+  input { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid #d6d0c8; border-radius: 6px; font: inherit; }
+  #msg { margin-top: 10px; font-size: 12px; min-height: 18px; word-break: break-all; }
+  label.row { display: flex; gap: 6px; align-items: center; color: inherit; font-size: 12px; margin-top: 10px; }
+  label.row input { width: auto; }
+  #conn { margin-bottom: 8px; } #conn.ok::before { content: "● "; color: #2f8a57; } #conn.err::before { content: "● "; color: #c4423a; }
+  #sites div { display: flex; justify-content: space-between; padding: 2px 0; } #sites a { color: #d9772f; cursor: pointer; }
+  #sniffList .it { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-bottom: 1px solid #d6d0c8; }
+  #sniffList .it span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+  #sniffList .it button { width: auto; margin: 0; padding: 3px 10px; font-size: 12px; }
+  .err { color: #c4423a; } .ok { color: #2f8a57; } .hidden { display: none; } .mute { color: #7b756d; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>发送到<b>清影</b></h1>
+  <div id="conn" class="mute"></div>
+  <div id="main">
+    <div id="page" class="mute"></div>
+    <button id="send">发送当前页面</button>
+    <button id="cookies" class="sec">同步此网站的登录 Cookie</button>
+    <div id="syncInfo" class="mute"></div>
+    <div id="sniffBox" class="hidden">
+      <label>检测到的视频（<span id="sniffCount">0</span>）</label>
+      <div id="sniffList"></div>
+    </div>
+    <label class="row"><input id="autoSite" type="checkbox" /> 登录状态变化时自动同步此网站</label>
+    <button id="openSettings" class="sec">设置</button>
+  </div>
+  <div id="settings" class="hidden">
+    <p class="mute">在清影“设置 → 手机与浏览器扩展”中开启服务，把“分享菜单”里的端口和访问令牌填到这里。</p>
+    <label>端口</label><input id="port" type="number" placeholder="例如 42031" />
+    <label>访问令牌（X-Token）</label><input id="token" type="password" />
+    <label class="row"><input id="autoSync" type="checkbox" /> 开启自动同步</label>
+    <p class="mute">开启后，下面列出的网站登录状态变化时（重新登录、Cookie 更新），扩展会自动把这个网站的 Cookie 同步给清影，每个网站最多 5 分钟一次。只同步列表里的网站。</p>
+    <div id="sites" class="mute"></div>
+    <button id="save">保存并测试</button>
+    <button id="back" class="sec">返回</button>
+  </div>
+  <div id="msg"></div>
+  <script src="shared.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

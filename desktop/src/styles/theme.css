@@ -1,0 +1,142 @@
+/* 深色工具风格，暖橙色为唯一强调色（见 docs/design-reference.html）。 */
+:root {
+  --cc-bg: #f4f5f4;
+  --cc-side: #eaedeb;
+  --cc-card: #ffffff;
+  --cc-line: #d9dedb;
+  --cc-fg: #1d2420;
+  --cc-mute: #69746f;
+  --cc-acc: #d9762b;
+  --cc-acc-soft: #d9762b1f;
+  --cc-ok: #2f8a57;
+  --cc-err: #c2453b;
+  --cc-font: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC', system-ui, sans-serif;
+  --cc-mono: 'JetBrains Mono', ui-monospace, Consolas, 'SF Mono', monospace;
+
+  --el-color-primary: #d9762b;
+  --el-color-primary-light-3: #e59b62;
+  --el-color-primary-light-5: #ecbb95;
+  --el-color-primary-light-7: #f4d6bf;
+  --el-color-primary-light-8: #f7e3d4;
+  --el-color-primary-light-9: #fbf1ea;
+  --el-color-primary-dark-2: #ad5e22;
+  --el-font-family: var(--cc-font);
+}
+
+html.dark {
+  --cc-bg: #14181a;
+  --cc-side: #1b2023;
+  --cc-card: #22292c;
+  --cc-line: #2f383c;
+  --cc-fg: #e7ecea;
+  --cc-mute: #8c9894;
+  --cc-acc: #f08a3c;
+  --cc-acc-soft: #f08a3c22;
+  --cc-ok: #5cc28a;
+  --cc-err: #ec7a70;
+
+  --el-color-primary: #f08a3c;
+  --el-color-primary-light-3: #b8692f;
+  --el-color-primary-light-5: #8a5027;
+  --el-color-primary-light-7: #5c371f;
+  --el-color-primary-light-8: #452b1b;
+  --el-color-primary-light-9: #2e1f16;
+  --el-color-primary-dark-2: #f3a163;
+  --el-bg-color: #22292c;
+  --el-bg-color-overlay: #22292c;
+  --el-border-color: #2f383c;
+  --el-fill-color-blank: #1b2023;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--cc-bg);
+  color: var(--cc-fg);
+  font-family: var(--cc-font);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+input,
+textarea,
+.selectable {
+  user-select: text;
+}
+
+.mono {
+  font-family: var(--cc-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.mute {
+  color: var(--cc-mute);
+}
+
+.card {
+  background: var(--cc-card);
+  border: 1px solid var(--cc-line);
+  border-radius: 10px;
+}
+
+.chip {
+  display: inline-block;
+  font-size: 11px;
+  padding: 0 8px;
+  line-height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--cc-line);
+  color: var(--cc-mute);
+  white-space: nowrap;
+}
+
+.chip.acc {
+  border-color: var(--cc-acc);
+  color: var(--cc-acc);
+}
+
+.ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.thumb {
+  background: linear-gradient(160deg, #3d5a63, #1f2b2f 55%, #5b3b25);
+  border-radius: 6px;
+  object-fit: cover;
+  flex: none;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--cc-line);
+  border-radius: 4px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--cc-acc);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

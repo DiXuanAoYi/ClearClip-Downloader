@@ -1,0 +1,5 @@
+PackageIdentifier: DiXuanAoYi.ClearClip
+PackageVersion: @@version@@
+DefaultLocale: zh-CN
+ManifestType: version
+ManifestVersion: 1.6.0

@@ -1,0 +1,362 @@
+{
+  "op": "edit",
+  "project": {
+    "title": "",
+    "clips": [
+      {
+        "id": 1,
+        "path": "/media/red.webm",
+        "kind": "video",
+        "inMs": 0,
+        "outMs": 1500,
+        "speed": 1,
+        "volume": 1.05,
+        "mute": false,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "rotate": 0,
+        "flipH": false,
+        "flipV": false,
+        "brightness": 0,
+        "contrast": 1,
+        "saturation": 1,
+        "transition": null,
+        "regions": [
+          {
+            "id": 1,
+            "name": "",
+            "track": [
+              {
+                "tMs": 0,
+                "x": 0.15625,
+                "y": 0.41667,
+                "w": 0.15,
+                "h": 0.15017
+              },
+              {
+                "tMs": 400,
+                "x": 0.21875,
+                "y": 0.53623,
+                "w": 0.15,
+                "h": 0.15017
+              },
+              {
+                "tMs": 1000,
+                "x": 0.45,
+                "y": 0.44994,
+                "w": 0.15,
+                "h": 0.15017,
+                "pin": true
+              },
+              {
+                "tMs": 1500,
+                "x": 0.39062,
+                "y": 0.44019,
+                "w": 0.15,
+                "h": 0.15017
+              },
+              {
+                "tMs": 2000,
+                "x": 0.46875,
+                "y": 0.29305,
+                "w": 0.15,
+                "h": 0.15017,
+                "pin": true
+              },
+              {
+                "tMs": 2100,
+                "x": 0.48438,
+                "y": 0.2714,
+                "w": 0.15,
+                "h": 0.15017
+              }
+            ],
+            "shape": "ellipse",
+            "feather": 0.2,
+            "grow": 0,
+            "invert": false,
+            "effect": "focus",
+            "strength": 0.5,
+            "brightness": 0,
+            "contrast": 1,
+            "saturation": 1,
+            "zoom": 2,
+            "reframe": false,
+            "smooth": 0.6,
+            "startMs": 1500,
+            "endMs": 3000
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "path": "/media/red.webm",
+        "kind": "video",
+        "inMs": 1500,
+        "outMs": 4000,
+        "speed": 1,
+        "volume": 1,
+        "mute": false,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "rotate": 0,
+        "flipH": false,
+        "flipV": false,
+        "brightness": 0,
+        "contrast": 1,
+        "saturation": 1,
+        "transition": {
+          "kind": "fade",
+          "durationMs": 500
+        },
+        "regions": [
+          {
+            "id": 1,
+            "name": "",
+            "track": [
+              {
+                "tMs": 1900,
+                "x": 0.45312,
+                "y": 0.31469,
+                "w": 0.15,
+                "h": 0.15017
+              },
+              {
+                "tMs": 2000,
+                "x": 0.46875,
+                "y": 0.29305,
+                "w": 0.15,
+                "h": 0.15017,
+                "pin": true
+              },
+              {
+                "tMs": 2200,
+                "x": 0.5,
+                "y": 0.25807,
+                "w": 0.15,
+                "h": 0.15017,
+                "lost": true
+              },
+              {
+                "tMs": 2300,
+                "x": 0.51562,
+                "y": 0.25105,
+                "w": 0.15,
+                "h": 0.15017,
+                "lost": true
+              },
+              {
+                "tMs": 2400,
+                "x": 0.53125,
+                "y": 0.25064,
+                "w": 0.15,
+                "h": 0.15017,
+                "lost": true
+              },
+              {
+                "tMs": 2500,
+                "x": 0.54688,
+                "y": 0.25685,
+                "w": 0.15,
+                "h": 0.15017,
+                "lost": true
+              },
+              {
+                "tMs": 2600,
+                "x": 0.5625,
+                "y": 0.26942,
+                "w": 0.15,
+                "h": 0.15017,
+                "lost": true
+              },
+              {
+                "tMs": 2700,
+                "x": 0.57812,
+                "y": 0.28787,
+                "w": 0.15,
+                "h": 0.15017,
+                "lost": true
+              },
+              {
+                "tMs": 2800,
+                "x": 0.59375,
+                "y": 0.31146,
+                "w": 0.15,
+                "h": 0.15017,
+                "lost": true
+              },
+              {
+                "tMs": 3100,
+                "x": 0.64062,
+                "y": 0.40282,
+                "w": 0.15,
+                "h": 0.15017
+              },
+              {
+                "tMs": 4000,
+                "x": 0.78125,
+                "y": 0.58156,
+                "w": 0.15,
+                "h": 0.15017
+              }
+            ],
+            "shape": "ellipse",
+            "feather": 0.2,
+            "grow": 0,
+            "invert": false,
+            "effect": "focus",
+            "strength": 0.5,
+            "brightness": 0,
+            "contrast": 1,
+            "saturation": 1,
+            "zoom": 2,
+            "reframe": false,
+            "smooth": 0.6,
+            "startMs": 1500,
+            "endMs": 3000
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "path": "/media/green.webm",
+        "kind": "video",
+        "inMs": 0,
+        "outMs": 5003,
+        "speed": 1,
+        "volume": 1,
+        "mute": false,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "rotate": 0,
+        "flipH": false,
+        "flipV": false,
+        "brightness": 0,
+        "contrast": 1,
+        "saturation": 1,
+        "transition": null
+      }
+    ],
+    "overlays": [
+      {
+        "id": 3,
+        "path": "/media/sticker.png",
+        "kind": "image",
+        "track": 1,
+        "startMs": 1000,
+        "inMs": 0,
+        "outMs": 5000,
+        "speed": 1,
+        "looped": false,
+        "volume": 1,
+        "mute": false,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "x": 0.5,
+        "y": 0.5,
+        "scale": 0.281,
+        "rotate": 0,
+        "opacity": 1,
+        "flipH": false,
+        "flipV": false,
+        "brightness": 0,
+        "contrast": 1,
+        "saturation": 1
+      },
+      {
+        "id": 4,
+        "path": "/media/anim.gif",
+        "kind": "video",
+        "track": 3,
+        "startMs": 2400,
+        "inMs": 0,
+        "outMs": 3600,
+        "speed": 1,
+        "looped": true,
+        "volume": 1,
+        "mute": true,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "x": 0.57,
+        "y": 0.57,
+        "scale": 0.375,
+        "rotate": 0,
+        "opacity": 1,
+        "flipH": false,
+        "flipV": false,
+        "brightness": 0,
+        "contrast": 1,
+        "saturation": 1
+      },
+      {
+        "id": 5,
+        "path": "/media/blue.webm",
+        "kind": "video",
+        "track": 2,
+        "startMs": 3000,
+        "inMs": 0,
+        "outMs": 4000,
+        "speed": 1,
+        "looped": false,
+        "volume": 1,
+        "mute": false,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "x": 0.64,
+        "y": 0.64,
+        "scale": 0.4,
+        "rotate": 0,
+        "opacity": 1,
+        "flipH": false,
+        "flipV": false,
+        "brightness": 0,
+        "contrast": 1,
+        "saturation": 1
+      }
+    ],
+    "texts": [
+      {
+        "id": 4,
+        "text": "你好 Hello",
+        "startMs": 500,
+        "endMs": 3500,
+        "x": 0.3,
+        "y": 0.25,
+        "size": 6,
+        "color": "#FFFFFF",
+        "opacity": 1,
+        "outline": true,
+        "outlineColor": "#000000",
+        "boxed": false,
+        "boxColor": "#000000",
+        "boxOpacity": 0.5,
+        "font": null
+      }
+    ],
+    "audio": [
+      {
+        "id": 5,
+        "path": "/media/music.ogg",
+        "startMs": 5000,
+        "inMs": 0,
+        "outMs": null,
+        "volume": 1,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "looped": false,
+        "duck": false
+      }
+    ],
+    "out": {
+      "width": 0,
+      "height": 0,
+      "fps": 0,
+      "fit": "contain",
+      "quality": "balanced",
+      "codec": "h264",
+      "format": "mp4"
+    }
+  },
+  "inputs": [],
+  "outputDir": null
+}
