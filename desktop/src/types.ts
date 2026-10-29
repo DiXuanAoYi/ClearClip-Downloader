@@ -601,6 +601,11 @@ export interface PhoneSettings {
   port: number
   token: string
   devices: PairedDevice[]
+  host: string
+  receiveDir: string
+  maxUploadMb: number
+  autoExtract: boolean
+  outboxHours: number
 }
 
 export interface PairRequest {
@@ -620,6 +625,72 @@ export interface PhoneInfo {
   devices: PairedDevice[]
   pending: PairRequest[]
   error: string | null
+  /** 二维码里使用的电脑地址 */
+  ip: string | null
+  /** 手动指定的地址（空表示自动） */
+  host: string
+  addresses: LanAddr[]
+  /** 没有找到真实局域网网卡，当前地址可能是虚拟网卡 */
+  suspicious: boolean
+  receiveDir: string
+  maxUploadMb: number
+  autoExtract: boolean
+  outboxHours: number
+}
+
+export interface LanAddr {
+  ip: string
+  name: string
+  likely: boolean
+}
+
+export interface PhoneOptions {
+  host: string
+  receiveDir: string
+  maxUploadMb: number
+  autoExtract: boolean
+  outboxHours: number
+}
+
+export type TransferKind = 'text' | 'image' | 'video' | 'audio' | 'archive' | 'file'
+
+export interface TransferItem {
+  id: number
+  /** in：手机发给电脑；out：电脑发给手机 */
+  direction: 'in' | 'out'
+  kind: TransferKind
+  name: string
+  path: string
+  text: string
+  size: number
+  done: number
+  status: 'receiving' | 'done' | 'failed' | 'ready'
+  message: string | null
+  extra: string | null
+  deviceName: string
+  downloads: number
+  createdAt: number
+  expiresAt: number
+  active: boolean
+  missing: boolean
+}
+
+export interface TransferList {
+  incoming: TransferItem[]
+  outgoing: TransferItem[]
+  receiveDir: string
+}
+
+export interface TransferProgress {
+  id: number
+  done: number
+  total: number
+}
+
+export interface TransferReceived {
+  id: number
+  name: string
+  kind: TransferKind
 }
 
 export interface HealthResult {

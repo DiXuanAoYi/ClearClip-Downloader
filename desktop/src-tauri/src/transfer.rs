@@ -282,7 +282,7 @@ impl LiveGuard {
             let mut m = self.live.lock();
             let Some(l) = m.get_mut(&self.id) else { return };
             l.done = l.done.max(done);
-            let due = l.last_emit.is_none_or(|t| t.elapsed() >= EMIT_EVERY);
+            let due = l.last_emit.map_or(true, |t| t.elapsed() >= EMIT_EVERY);
             if due {
                 l.last_emit = Some(Instant::now());
             }
@@ -639,6 +639,24 @@ async fn json(sock: &mut TcpStream, status: &str, v: serde_json::Value) {
     crate::phone::json_response(sock, status, v).await;
 }
 
+/// 在读完请求正文之前就拒绝：先发出回应，再把还在路上的正文丢弃一小段时间。
+/// 直接关闭连接会让系统向手机发 RST，手机浏览器往往因此收不到回应，只看到“连接中断”。
+async fn reject(sock: &mut TcpStream, status: &str, v: serde_json::Value) {
+    json(sock, status, v).await;
+    let _ = sock.shutdown().await;
+    let mut buf = vec![0u8; 16 * 1024];
+    let mut left = 8 * 1024 * 1024usize;
+    let _ = tokio::time::timeout(Duration::from_secs(2), async {
+        while left > 0 {
+            match sock.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => left = left.saturating_sub(n),
+            }
+        }
+    })
+    .await;
+}
+
 fn clean_device(id: &str) -> String {
     crate::phone::clean_device_id(id)
 }
@@ -650,11 +668,11 @@ pub async fn handle_upload(app: &AppHandle, sock: &mut TcpStream, req: &Request,
     let device = clean_device(req.query.get("device").map(String::as_str).unwrap_or(""));
     let dname: String = req.query.get("dname").map(|s| s.trim().chars().take(40).collect()).unwrap_or_default();
     if !crate::phone::ensure_paired(app, &device, &dname, peer) {
-        json(sock, "403 Forbidden", serde_json::json!({"state": "pending_pair", "error": "请先在电脑上点“允许”完成配对"})).await;
+        reject(sock, "403 Forbidden", serde_json::json!({"state": "pending_pair", "error": "请先在电脑上点“允许”完成配对"})).await;
         return;
     }
     let Some(len) = len else {
-        json(sock, "411 Length Required", serde_json::json!({"error": "缺少文件大小"})).await;
+        reject(sock, "411 Length Required", serde_json::json!({"error": "缺少文件大小"})).await;
         return;
     };
     let limit = settings.phone.max_upload_mb.saturating_mul(1024 * 1024);
@@ -669,16 +687,16 @@ pub async fn handle_upload(app: &AppHandle, sock: &mut TcpStream, req: &Request,
     }
     let dir = receive_dir(&settings);
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        json(sock, "500 Internal Server Error", serde_json::json!({"error": format!("无法创建接收文件夹：{e}")})).await;
+        reject(sock, "500 Internal Server Error", serde_json::json!({"error": format!("无法创建接收文件夹：{e}")})).await;
         return;
     }
     if let Err(e) = crate::engine::ensure_space(&dir, len, RESERVE) {
-        json(sock, "507 Insufficient Storage", serde_json::json!({"error": e.to_string()})).await;
+        reject(sock, "507 Insufficient Storage", serde_json::json!({"error": e.to_string()})).await;
         return;
     }
     let live = live(app);
     if !live.try_begin() {
-        json(sock, "503 Service Unavailable", serde_json::json!({"error": "电脑正在处理太多传输，请稍后再试"})).await;
+        reject(sock, "503 Service Unavailable", serde_json::json!({"error": "电脑正在处理太多传输，请稍后再试"})).await;
         return;
     }
     let name = safe_name(req.query.get("name").map(String::as_str).unwrap_or("file"));
@@ -701,7 +719,7 @@ pub async fn handle_upload(app: &AppHandle, sock: &mut TcpStream, req: &Request,
         Ok(id) => id,
         Err(e) => {
             live.active.fetch_sub(1, Ordering::SeqCst);
-            json(sock, "500 Internal Server Error", serde_json::json!({"error": e.message})).await;
+            reject(sock, "500 Internal Server Error", serde_json::json!({"error": e.message})).await;
             return;
         }
     };
@@ -753,7 +771,7 @@ fn after_received(app: &AppHandle, id: i64, name: &str, kind: &str, path: &Path,
     let live = live(app);
     let notify = {
         let mut last = live.last_notify.lock().unwrap_or_else(|e| e.into_inner());
-        let due = last.is_none_or(|t| t.elapsed() >= NOTIFY_EVERY);
+        let due = last.map_or(true, |t| t.elapsed() >= NOTIFY_EVERY);
         if due {
             *last = Some(Instant::now());
         }
@@ -1043,6 +1061,14 @@ pub async fn handle_download(app: &AppHandle, sock: &mut TcpStream, req: &Reques
     let mime = mime_of(&item.name);
     let inline = inline && inline_ok(mime);
     let body_len = if total == 0 { 0 } else { end + 1 - start };
+    let streaming = req.method != "HEAD" && total > 0;
+    let live = live(app);
+    if streaming && !live.try_begin() {
+        json(sock, "503 Service Unavailable", serde_json::json!({"error": "电脑正在处理太多传输，请稍后再试"})).await;
+        return;
+    }
+    // 占位：离开作用域时自动登记结束（没有真正开始传输时不占）
+    let guard = streaming.then(|| live.guard(app, item.id, total));
     let mut head = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {mime}\r\nContent-Length: {body_len}\r\nAccept-Ranges: bytes\r\nContent-Disposition: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n",
         content_disposition(&item.name, inline)
@@ -1051,14 +1077,10 @@ pub async fn handle_download(app: &AppHandle, sock: &mut TcpStream, req: &Reques
         head.push_str(&format!("Content-Range: bytes {start}-{end}/{total}\r\n"));
     }
     head.push_str("\r\n");
-    if sock.write_all(head.as_bytes()).await.is_err() || req.method == "HEAD" || total == 0 {
+    if sock.write_all(head.as_bytes()).await.is_err() {
         return;
     }
-    let live = live(app);
-    if !live.try_begin() {
-        return;
-    }
-    let guard = live.guard(app, item.id, total);
+    let Some(guard) = guard else { return };
     let live2 = live.clone();
     let id = item.id;
     let res = send_range(sock, &path, start, end, IDLE, |pos| {

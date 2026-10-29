@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../api'
@@ -14,12 +15,45 @@ const EXT_URL = 'https://github.com/DiXuanAoYi/ClearClip-Downloader/tree/main/de
 let unlisten: UnlistenFn | undefined
 let timer: number | undefined
 
+const opts = reactive({ host: '', receiveDir: '', maxUploadMb: 4096, autoExtract: false, outboxHours: 24 })
+let editing = false
+
+function syncOpts(i: PhoneInfo) {
+  if (editing) return
+  opts.host = i.host
+  opts.receiveDir = i.receiveDir
+  opts.maxUploadMb = i.maxUploadMb
+  opts.autoExtract = i.autoExtract
+  opts.outboxHours = i.outboxHours
+}
+
 async function refresh() {
   try {
     info.value = await api.phoneInfo()
+    syncOpts(info.value)
   } catch (e) {
     ElMessage.error(errorText(e))
   }
+}
+
+async function saveOpts() {
+  editing = true
+  try {
+    info.value = await api.phoneSetOptions({ ...opts, host: opts.host.trim(), receiveDir: opts.receiveDir.trim() })
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    editing = false
+    if (info.value) syncOpts(info.value)
+  }
+}
+
+async function pickDir() {
+  const r = await open({ directory: true, multiple: false })
+  if (typeof r !== 'string') return
+  opts.receiveDir = r
+  await saveOpts()
 }
 
 async function toggle(on: boolean) {
@@ -70,8 +104,8 @@ onUnmounted(() => {
     <section class="card block">
       <div class="kv">
         <span>
-          <b>手机发链接到电脑</b>
-          <small class="mute desc">手机和电脑连同一个 Wi-Fi，扫码打开网页，粘贴链接即可让电脑开始下载。不经过任何外部服务器。</small>
+          <b>手机互传</b>
+          <small class="mute desc">手机和电脑连同一个 Wi-Fi，扫码打开网页：发链接让电脑开始下载，或把文字、图片、视频、压缩包等任意文件互相传送。不经过任何外部服务器。</small>
         </span>
         <el-switch :model-value="info.enabled" :loading="busy" @change="toggle(!info.enabled)" />
       </div>
@@ -88,6 +122,64 @@ onUnmounted(() => {
           <p class="mute small">第一次从新设备发送时，电脑上会弹窗请你确认配对。</p>
         </div>
       </div>
+    </section>
+
+    <section class="card block">
+      <h3>地址与传输选项</h3>
+      <div class="kvline2">
+        <span class="mute">电脑地址</span>
+        <el-select v-model="opts.host" size="small" filterable allow-create default-first-option clearable placeholder="自动选择" @change="saveOpts">
+          <el-option v-for="a in info.addresses" :key="a.ip" :value="a.ip" :label="`${a.ip}（${a.name}${a.likely ? '' : '，可能是虚拟网卡'}）`" />
+        </el-select>
+      </div>
+      <p class="mute small">
+        二维码里用的地址：<b class="mono">{{ info.ip ?? '未找到' }}</b>{{ opts.host ? '（手动指定）' : '（自动选择）' }}。
+        开了代理软件的虚拟网卡 / 增强模式 / VPN 时，自动选择会避开它们；如果手机仍然打不开，在上面选择电脑的 Wi-Fi 或有线地址（一般是 192.168.x.x 或 10.x.x.x）。
+      </p>
+      <el-alert v-if="info.suspicious && !opts.host" type="warning" :closable="false" show-icon title="没有找到常见的 Wi-Fi / 有线网卡" description="当前使用的地址可能手机连不上。请确认电脑已连接网络，或在上面手动选择 / 填写地址。" />
+      <div class="kvline2">
+        <span class="mute">接收文件夹</span>
+        <span class="dirrow">
+          <el-input v-model="opts.receiveDir" size="small" :placeholder="info.receiveDir" @change="saveOpts" />
+          <el-button size="small" @click="pickDir">选择…</el-button>
+        </span>
+      </div>
+      <div class="kvline2">
+        <span class="mute">单个文件上限</span>
+        <span class="dirrow">
+          <el-input-number v-model="opts.maxUploadMb" size="small" :min="0" :step="512" :controls="false" @change="saveOpts" />
+          <span class="mute small">MB，0 为不限制</span>
+        </span>
+      </div>
+      <div class="kvline2">
+        <span class="mute">发给手机的保留</span>
+        <span class="dirrow">
+          <el-input-number v-model="opts.outboxHours" size="small" :min="0" :max="8760" :controls="false" @change="saveOpts" />
+          <span class="mute small">小时后自动撤回，0 为不过期</span>
+        </span>
+      </div>
+      <div class="kvline2">
+        <span class="mute">自动解压 zip</span>
+        <span class="dirrow">
+          <el-switch v-model="opts.autoExtract" size="small" @change="saveOpts" />
+          <span class="mute small">收到 zip 后解压到同名文件夹（不会运行其中的任何文件）</span>
+        </span>
+      </div>
+      <el-collapse>
+        <el-collapse-item title="手机扫码打不开 / 识别不出来？" name="help">
+          <div class="help small">
+            <p>最常见的原因是电脑上的代理软件（Clash、v2rayN、Surge 等）开了<b>虚拟网卡 / 增强模式 / TUN</b>，系统的默认出口变成了虚拟网卡，二维码里就是虚拟地址（如 198.18.x.x），手机连不上。</p>
+            <p>处理方法，按顺序试：</p>
+            <ol>
+              <li>在上面“电脑地址”里选择电脑的 Wi-Fi / 有线地址，重新扫码。</li>
+              <li>在代理软件里让局域网直连：把 <span class="mono">192.168.0.0/16</span>、<span class="mono">10.0.0.0/8</span>、<span class="mono">172.16.0.0/12</span> 加入直连 / 绕过列表（Clash 的 “bypass” 或 “skip-proxy”，v2rayN 的路由直连规则）。</li>
+              <li>系统防火墙弹窗时选“专用网络”；Windows 里如果当时点了拒绝，到“防火墙 → 允许应用通过防火墙”里给清影勾选“专用”。</li>
+              <li>手机上关闭它自己的代理 / VPN，并确认和电脑在同一个 Wi-Fi（有些路由器的“访客网络 / AP 隔离”会让设备互相访问不了）。</li>
+              <li>仍然不行：手机浏览器直接输入上面的地址和端口（例如 http://192.168.1.23:{{ info.port }}），再把电脑上复制的网页地址整体粘贴进去。</li>
+            </ol>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
     </section>
 
     <section v-if="info.running && info.apiUrl" class="card block">
@@ -134,7 +226,7 @@ onUnmounted(() => {
         <small class="mute">配对于 {{ formatDateTime(d.addedAt) }} · 最近使用 {{ formatDateTime(d.lastSeen) }}</small>
         <el-button size="small" link @click="revoke(d.id)">撤销</el-button>
       </div>
-      <p class="mute small">网页只能发送链接、查看自己发送的任务状态，不能浏览或下载电脑上的文件。只接受局域网内的访问；手机和电脑不在同一网络时无法使用。</p>
+      <p class="mute small">网页只能发送链接、文字和文件，下载电脑上明确发给手机的项目，不能浏览电脑上的其他文件。只接受局域网内的访问；手机和电脑不在同一网络时无法使用。</p>
     </section>
   </div>
 </template>
@@ -202,6 +294,29 @@ h3 {
 }
 .row :deep(.el-button) {
   margin-left: 0;
+}
+.kvline2 {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.dirrow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.dirrow :deep(.el-input) {
+  flex: 1;
+}
+.help p {
+  margin: 4px 0;
+}
+.help ol {
+  margin: 4px 0;
+  padding-left: 20px;
+  line-height: 1.7;
 }
 .kvline {
   display: grid;

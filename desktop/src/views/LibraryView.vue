@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { api, errorText, events } from '../api'
 import VirtualList from '../components/VirtualList.vue'
+import TransferPanel from '../components/TransferPanel.vue'
 import InboxPanel from '../components/InboxPanel.vue'
 import ItemDrawer from '../components/library/ItemDrawer.vue'
 import LibraryTools, { type ToolTab } from '../components/library/LibraryTools.vue'
@@ -315,9 +316,10 @@ async function clearHistory() {
       <el-radio-group v-model="tab" size="small">
         <el-radio-button value="files">已下载</el-radio-button>
         <el-radio-button value="inbox">收到的链接<template v-if="app.inboxUnhandled"> ({{ app.inboxUnhandled }})</template></el-radio-button>
+        <el-radio-button value="transfer">手机互传</el-radio-button>
         <el-radio-button value="history">解析历史</el-radio-button>
       </el-radio-group>
-      <el-input v-model="query" size="small" clearable :placeholder="tab === 'inbox' ? '搜索链接、标题或设备' : '搜索标题或作者'" class="search" />
+      <el-input v-if="tab !== 'transfer'" v-model="query" size="small" clearable :placeholder="tab === 'inbox' ? '搜索链接、标题或设备' : '搜索标题或作者'" class="search" />
       <el-button v-if="tab === 'files' && app.settings" size="small" @click="run(api.revealFile, app.settings!.downloadDir)">打开下载目录</el-button>
       <el-button v-if="tab === 'files'" size="small" :type="selecting ? 'primary' : 'default'" @click="selecting ? stopSelecting() : (selecting = true)">{{ selecting ? '退出多选' : '多选' }}</el-button>
       <el-dropdown v-if="tab === 'files'" trigger="click" @command="(c: ToolTab) => openTools(c)">
@@ -389,6 +391,7 @@ async function clearHistory() {
     </div>
 
     <InboxPanel v-if="tab === 'inbox'" :query="query" />
+    <TransferPanel v-else-if="tab === 'transfer'" />
     <div v-else v-loading="loading" class="list">
       <template v-if="tab === 'files'">
         <div v-if="!files.length" class="empty mute">{{ query || fPlatform || fKind || fSince || fMissing ? '没有匹配的文件。' : '还没有下载过文件。' }}</div>

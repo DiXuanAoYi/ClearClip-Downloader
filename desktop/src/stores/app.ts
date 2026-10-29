@@ -4,7 +4,7 @@ import { api, errorKind, errorText, events } from '../api'
 import type { AppInfo, ErrorKind, HistoryItem, LockStatus, MediaInfo, Settings, TaskSnapshot } from '../types'
 
 export type ViewName = 'parse' | 'queue' | 'subs' | 'live' | 'library' | 'tools' | 'safebox' | 'settings'
-export type LibraryTab = 'files' | 'inbox' | 'history'
+export type LibraryTab = 'files' | 'inbox' | 'transfer' | 'history'
 export type ToolboxTab = 'video' | 'normalize' | 'edit' | 'lut' | 'subtitle' | 'tags' | 'ai'
 export type SettingsTab = 'download' | 'parse' | 'network' | 'accounts' | 'phone' | 'ai' | 'automation' | 'security' | 'components' | 'diagnostics' | 'general'
 

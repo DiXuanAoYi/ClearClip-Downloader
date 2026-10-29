@@ -59,7 +59,7 @@
 | 字幕、片段与章节 | [docs/subtitles-and-clips.md](docs/subtitles-and-clips.md) |
 | 自动化与集成 | [docs/automation.md](docs/automation.md) |
 | 登录说明 | [docs/login-guide.md](docs/login-guide.md) |
-| 手机发链接 | [docs/phone-send.md](docs/phone-send.md) |
+| 手机互传（发链接、传文件） | [docs/phone-send.md](docs/phone-send.md) |
 | 安全与隐私 | [docs/security-and-privacy.md](docs/security-and-privacy.md) |
 | 调试版构建 | [docs/debug-build.md](docs/debug-build.md) |
 | 发布流程（签名、更新、扩展上架） | [docs/release-guide/](docs/release-guide/README.md) |

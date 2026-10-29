@@ -822,6 +822,50 @@ mod tests {
         assert!(import_cookies(&store, b"{}").is_err());
     }
 
+    #[tokio::test]
+    async fn upload_body_after_the_head_is_not_lost_or_buffered_whole() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let data: Vec<u8> = (0..3_000_000u32).map(|i| (i % 249) as u8).collect();
+        let payload = data.clone();
+        let client = tokio::spawn(async move {
+            let mut c = tokio::net::TcpStream::connect(addr).await.unwrap();
+            let head = format!("POST /api/upload?device=d&name=a.bin HTTP/1.1\r\nHost: x\r\nX-Token: t\r\nContent-Length: {}\r\n\r\n", payload.len());
+            // 请求头和正文开头在同一个包里发出
+            let mut first = head.into_bytes();
+            first.extend_from_slice(&payload[..1000]);
+            c.write_all(&first).await.unwrap();
+            c.write_all(&payload[1000..]).await.unwrap();
+            let mut resp = vec![];
+            c.read_to_end(&mut resp).await.unwrap();
+            String::from_utf8_lossy(&resp).into_owned()
+        });
+        let (mut sock, _) = listener.accept().await.unwrap();
+        let (req, len, leftover) = read_head(&mut sock).await.unwrap();
+        assert!(is_streaming(&req));
+        assert_eq!(req.query.get("name").map(String::as_str), Some("a.bin"));
+        assert_eq!(len, Some(data.len() as u64));
+        assert!(leftover.len() <= 4096, "读请求头时最多多读一个缓冲区");
+        let mut out: Vec<u8> = vec![];
+        let n = transfer::copy_exact(&mut sock, &mut out, &leftover, len.unwrap(), Duration::from_secs(5), |_| true).await.unwrap();
+        assert_eq!(n, data.len() as u64);
+        assert!(out == data, "收到的内容和发送的不一致");
+        json_response(&mut sock, "200 OK", serde_json::json!({"ok": true})).await;
+        drop(sock);
+        assert!(client.await.unwrap().contains("200 OK"));
+    }
+
+    #[test]
+    fn streaming_routes_are_only_upload_and_download() {
+        let mk = |m: &str, p: &str| Request { method: m.into(), path: p.into(), query: HashMap::new(), headers: HashMap::new(), body: vec![] };
+        assert!(is_streaming(&mk("POST", "/api/upload")));
+        assert!(is_streaming(&mk("GET", "/dl/abc")));
+        assert!(is_streaming(&mk("HEAD", "/dl/abc")));
+        assert!(!is_streaming(&mk("GET", "/api/upload")));
+        assert!(!is_streaming(&mk("POST", "/api/send")));
+        assert!(!is_streaming(&mk("POST", "/dl/abc")));
+    }
+
     #[test]
     fn helpers() {
         assert!(ct_eq("abc", "abc"));

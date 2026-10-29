@@ -178,6 +178,9 @@ onMounted(async () => {
     const url = text.match(/https?:\/\/\S+/)?.[0] ?? text
     ElNotification({ title: '收到发送到清影的链接', message: `${url.slice(0, 80)}（可在“媒体库 → 收到的链接”查看）`, type: 'info', duration: 3000, onClick: () => app.goLibrary('inbox') })
   })
+  await events.onTransferReceived((r) => {
+    ElNotification({ title: '收到手机发来的内容', message: r.name.slice(0, 80), type: 'success', duration: 3000, onClick: () => app.goLibrary('transfer') })
+  })
   // 全部完成后睡眠 / 关机的倒计时
   await events.onPowerCountdown((p) => {
     window.clearInterval(countdownTimer)
