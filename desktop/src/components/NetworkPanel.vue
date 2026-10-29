@@ -185,7 +185,7 @@ async function runTest() {
         <el-input :model-value="p.url" size="small" class="grow mono" :placeholder="PROXY_HINT" @change="updateProxy(i, 'url', $event)" />
         <el-button size="small" link @click="removeProxy(i)">删除</el-button>
       </div>
-      <div class="mute small">支持 http://、https://、socks5:// 和 socks5h://，用户名密码写在地址里（socks5://用户:密码@主机:端口）。socks5:// 在本机解析域名；要让代理端解析域名（防止 DNS 污染）请用 socks5h://。代理对 HTTP(S) 下载、解析和 m3u8 生效，FTP / SFTP / BT / ed2k 暂不走代理。</div>
+      <div class="mute small">支持 http://、https://、socks5:// 和 socks5h://，用户名密码写在地址里（socks5://用户:密码@主机:端口）。socks5:// 在本机解析域名；要让代理端解析域名（防止 DNS 污染）请用 socks5h://。代理对 HTTP(S) 下载、解析、m3u8，以及交给 ffmpeg 抓取的 http / rtmp / rtsp 流生效（rtmps / rtsps 不能经代理）；“系统代理”下的 ffmpeg 流只认环境变量里的 http_proxy。FTP / SFTP / BT / ed2k 暂不走代理。</div>
       <div><el-button size="small" @click="addProxy">添加代理</el-button></div>
     </section>
 

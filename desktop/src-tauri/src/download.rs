@@ -1235,7 +1235,8 @@ async fn download_input(
                 Protocol::Stream => {
                     let ffmpeg = postprocess::find_ffmpeg(st).ok_or_else(|| DlError::Other(postprocess::ffmpeg_missing().message))?;
                     let cred = asset_credentials(&asset);
-                    stream_engine::download(&ffmpeg, &asset.url, cred.as_deref(), part, rx, opts.disk_reserve, |n| reporter.update(n, None, None, None))
+                    let route = stream_route(settings, &asset.url);
+                    stream_engine::download(&ffmpeg, &asset.url, cred.as_deref(), &route, part, rx, opts.disk_reserve, |n| reporter.update(n, None, None, None))
                         .await
                         .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
                 }
@@ -1319,6 +1320,17 @@ async fn download_input(
             }
             other => return other,
         }
+    }
+}
+
+/// 流地址按“设置 → 网络”的分流规则得到的出口。
+fn stream_route(settings: &Settings, url: &str) -> stream_engine::StreamRoute {
+    use crate::settings::Route;
+    let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(String::from)).unwrap_or_default();
+    match settings.network.route_for_host(&host) {
+        Route::Direct => stream_engine::StreamRoute::Direct,
+        Route::System => stream_engine::StreamRoute::System,
+        Route::Proxy(id) => stream_engine::StreamRoute::Proxy(settings.network.proxy_url(&id).unwrap_or_default().to_string()),
     }
 }
 

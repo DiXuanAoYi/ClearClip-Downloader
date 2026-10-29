@@ -19,7 +19,7 @@
 | 队列、优先级、限速计划、定时、自动分类、规则引擎 | ✅ | |
 | API、网页控制台、Docker、命令行、Webhook | ✅ | |
 | 校验 | ✅ | 音视频用 ffmpeg 探测并重下；普通文件按链接里的哈希校验（阶段 4，0.8.0） |
-| 代理 | ✅ | 阶段 4（0.8.0）：HTTP / SOCKS5 加测试，可按站点分流；FTP / SFTP / BT / ed2k 暂不走代理 |
+| 代理 | ✅ | 阶段 4（0.8.0）：HTTP / SOCKS5 加测试，可按站点分流；ffmpeg 流（http / rtmp / rtsp）经本机转发桥走代理；FTP / SFTP / BT / ed2k 暂不走代理 |
 | FTP / SFTP、BT / 磁力、thunder://、RTMP | ✅ | 阶段 3（0.7.0）：断点续传；BT 用 librqbit，Tracker 列表定期自动更新 |
 | ed2k | ✅ | 阶段 3（0.7.0）：自行实现（Rust），有链接就能下，不含搜索 / Kad |
 | 网盘直链解析 | 🚫 | 见下文“不做的” |

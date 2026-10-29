@@ -40,7 +40,10 @@ https://example.com/app.iso?sha1=<40 位十六进制>
 
 - 支持 `http://`、`https://`、`socks5://`、`socks5h://`，用户名密码写在地址里。
 - `socks5://` 在本机解析域名；要让代理端解析（避免 DNS 污染）请用 `socks5h://`。
-- 代理对 HTTP(S) 下载、站点解析、m3u8 生效；FTP / SFTP / BT / ed2k 和交给 ffmpeg 的流暂不走代理。
+- 代理对 HTTP(S) 下载、站点解析、m3u8 生效。
+- 交给 ffmpeg 抓取的流（`http(s)://` 直播流、`rtmp://`、`rtsp://`）也按分流规则出去：ffmpeg 自己只认 HTTP 代理，对 SOCKS5、RTMP、RTSP 没有支持，所以清影在本机（127.0.0.1）起一个临时转发桥，把连接经设置里的 HTTP / SOCKS5 代理转出去，抓完即关闭。RTMP 地址里的主机会换成桥的地址，同时用 `-rtmp_tcurl` 保持服务器看到的 tcUrl 不变。
+- 限制：`rtmps://`、`rtsps://` 等带 TLS 或其他协议的地址不能经代理，选了代理会明确报错，请把该网站设为直连；“系统代理”出口下的 ffmpeg 流只认环境变量里的 `http_proxy` 等，不读系统设置；设为“直连”时会清掉 ffmpeg 继承的代理环境变量。
+- FTP / SFTP / BT / ed2k 暂不走代理。
 
 ## 完成后动作
 
