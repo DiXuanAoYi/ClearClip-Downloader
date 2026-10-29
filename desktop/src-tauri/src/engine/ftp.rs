@@ -95,11 +95,7 @@ impl Control {
     /// 打开被动模式的数据连接：先试 EPSV，不行再用 PASV。
     async fn open_data(&mut self) -> Result<TcpStream, DlError> {
         let r = self.cmd("EPSV").await?;
-        let addr = if r.code == 229 {
-            parse_epsv(&r.text).map(|p| SocketAddr::new(self.peer, p))
-        } else {
-            None
-        };
+        let addr = if r.code == 229 { parse_epsv(&r.text).map(|p| SocketAddr::new(self.peer, p)) } else { None };
         let addr = match addr {
             Some(a) => a,
             None => {
@@ -479,7 +475,16 @@ mod tests {
         let m = mock(MockOpts { user: None, content: content(10), rest_ok: true, cut_at: None, epsv: true }).await;
         let (tx, mut rx) = watch::channel(super::super::CTRL_PAUSE);
         let _keep = tx;
-        let r = download(&Url::parse(&format!("ftp://127.0.0.1:{}/f", m.port)).unwrap(), None, &tmp("pause"), &mut ResumeMeta::default(), &mut rx, &HttpOptions::default(), |_, _, _| {}).await;
+        let r = download(
+            &Url::parse(&format!("ftp://127.0.0.1:{}/f", m.port)).unwrap(),
+            None,
+            &tmp("pause"),
+            &mut ResumeMeta::default(),
+            &mut rx,
+            &HttpOptions::default(),
+            |_, _, _| {},
+        )
+        .await;
         assert!(matches!(r, Err(DlError::Paused)));
     }
 }

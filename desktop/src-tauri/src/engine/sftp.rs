@@ -223,11 +223,7 @@ pub async fn download(
         let channel = handle.channel_open_session().await.map_err(net)?;
         channel.request_subsystem(true, "sftp").await.map_err(|e| DlError::Other(format!("服务器没有开启 SFTP：{e}")))?;
         let sftp = SftpSession::new(channel.into_stream()).await.map_err(|e| DlError::Other(format!("SFTP 初始化失败：{e}")))?;
-        let size = sftp
-            .metadata(path.clone())
-            .await
-            .map_err(|e| DlError::Other(format!("文件不存在或没有读取权限：{path}（{e}）")))?
-            .size;
+        let size = sftp.metadata(path.clone()).await.map_err(|e| DlError::Other(format!("文件不存在或没有读取权限：{path}（{e}）")))?.size;
         let mut remote = sftp.open(path.clone()).await.map_err(|e| DlError::Other(format!("无法打开 {path}：{e}")))?;
         let r = copy_remote(&mut remote, size, part, meta, ctrl, opts, &mut on_progress).await;
         let _ = sftp.close().await;
@@ -323,9 +319,18 @@ mod tests {
     async fn missing_username_is_explained() {
         let (_tx, mut rx) = watch::channel(super::super::CTRL_RUN);
         let k = KnownHosts::new(tmp("k2.json"));
-        let err = download(&Url::parse("sftp://127.0.0.1/x").unwrap(), None, &k, &tmp("nouser"), &mut ResumeMeta::default(), &mut rx, &HttpOptions::default(), |_, _, _| {})
-            .await
-            .unwrap_err();
+        let err = download(
+            &Url::parse("sftp://127.0.0.1/x").unwrap(),
+            None,
+            &k,
+            &tmp("nouser"),
+            &mut ResumeMeta::default(),
+            &mut rx,
+            &HttpOptions::default(),
+            |_, _, _| {},
+        )
+        .await
+        .unwrap_err();
         assert!(err.to_string().contains("用户名"));
     }
 }

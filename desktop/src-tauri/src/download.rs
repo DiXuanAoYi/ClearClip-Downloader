@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
 
 use crate::db::{self, JobRow, NewDownload};
+use crate::ed2k::{self, link as ed2k_link};
 use crate::engine::ftp as ftp_engine;
 use crate::engine::hls::{self as hls_engine, HlsOptions};
 use crate::engine::http::{self as http_engine, HttpOptions, HttpRequest};
@@ -1162,6 +1163,22 @@ async fn download_input(
                         .await
                     }
                 }
+                Protocol::Ed2k => {
+                    let link = match ed2k_link::parse(&asset.url) {
+                        Ok(ed2k_link::Ed2kLink::File(f)) => f,
+                        _ => return Err(DlError::Other("ed2k 链接无法解析".into())),
+                    };
+                    let client = st.net.clients_for(&settings.network, &settings.ed2k_server_met_url).map_err(|e| DlError::Other(e.message))?.download;
+                    let servers = ed2k::server::collect_servers(&client, &st.data_dir, &settings.ed2k_servers, &settings.ed2k_server_met_url).await;
+                    if servers.is_empty() && link.sources.is_empty() {
+                        task_log(st, id, "没有可用的 ed2k 服务器，也没有链接自带的来源");
+                    }
+                    ed2k::download::download(&link, &servers, part, rx, opts, ed2k::download::Config::default(), |received| {
+                        reporter.update(received, Some(link.size), None, None)
+                    })
+                    .await
+                    .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
+                }
                 Protocol::Stream => {
                     let ffmpeg = postprocess::find_ffmpeg(st).ok_or_else(|| DlError::Other(postprocess::ffmpeg_missing().message))?;
                     let cred = asset_credentials(&asset);
@@ -1186,7 +1203,10 @@ async fn download_input(
 
         match res {
             Err(DlError::Status(code))
-                if matches!(code, 403 | 404 | 410) && !re_resolved && !media.source_url.is_empty() && matches!(asset.protocol, Protocol::Http | Protocol::Hls) =>
+                if matches!(code, 403 | 404 | 410)
+                    && !re_resolved
+                    && !media.source_url.is_empty()
+                    && matches!(asset.protocol, Protocol::Http | Protocol::Hls) =>
             {
                 re_resolved = true;
                 task_log(st, id, format!("服务器返回 HTTP {code}，下载地址可能已过期"));
@@ -1252,6 +1272,7 @@ fn protocol_name(p: Protocol) -> &'static str {
         Protocol::Ftp => "FTP",
         Protocol::Sftp => "SFTP",
         Protocol::Stream => "流媒体（ffmpeg）",
+        Protocol::Ed2k => "ed2k",
     }
 }
 

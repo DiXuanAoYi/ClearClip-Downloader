@@ -237,6 +237,10 @@ pub struct Settings {
     pub hls_concurrency: usize,
     /// 跳过与正片来源明显不同的 m3u8 分片（常见于插播广告）
     pub hls_skip_ads: bool,
+    /// ed2k 服务器（`主机:端口`），链接里没有来源时向它们查询
+    pub ed2k_servers: Vec<String>,
+    /// ed2k 服务器列表（server.met）的地址；留空则只用上面手动添加的
+    pub ed2k_server_met_url: String,
     /// 剧集的命名模板；变量：{series} {episode} {season} {index} {title}
     pub series_template: String,
     /// 内置平台解析失败或不支持时使用 yt-dlp
@@ -774,6 +778,8 @@ impl Default for Settings {
             audio_format: "mp3".into(),
             hls_concurrency: 6,
             hls_skip_ads: false,
+            ed2k_servers: vec![],
+            ed2k_server_met_url: "http://upd.emule-security.org/server.met".into(),
             series_template: "{series}/第{episode}集".into(),
             use_ytdlp: true,
             generic_sniffer: true,

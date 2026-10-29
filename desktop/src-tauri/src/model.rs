@@ -28,6 +28,8 @@ pub enum Protocol {
     Ftp,
     /// SFTP（SSH）
     Sftp,
+    /// ed2k（电驴）
+    Ed2k,
     /// RTMP / RTSP / MMS 等流，交给 ffmpeg 抓取
     Stream,
 }

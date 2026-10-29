@@ -205,7 +205,20 @@ mod tests {
     async fn live_source(ff: &Path) -> u16 {
         let ts = tmp("live.ts");
         let ok = std::process::Command::new(ff)
-            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=30", "-pix_fmt", "yuv420p", "-f", "mpegts"])
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=160x120:rate=10:duration=30",
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "mpegts",
+            ])
             .arg(&ts)
             .status()
             .unwrap()

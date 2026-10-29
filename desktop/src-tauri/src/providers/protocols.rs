@@ -88,12 +88,30 @@ fn resolve_stream(url: &str) -> AppResult<MediaInfo> {
     Ok(media("stream", "流媒体", clean.as_str(), clean.to_string(), title, MediaKind::Video, vec![asset]))
 }
 
-/// 解析 FTP / SFTP / 流媒体链接；其他协议返回 None。
+/// ed2k 文件链接：链接里有文件名、大小、哈希，可能还带来源；下载地址就是链接本身。
+fn resolve_ed2k(url: &str) -> AppResult<MediaInfo> {
+    match crate::ed2k::link::parse(url.trim()) {
+        Ok(crate::ed2k::link::Ed2kLink::File(f)) => {
+            let (stem, ext) = split_name(&f.name);
+            let ext = if ext.is_empty() { "bin".to_string() } else { ext };
+            let stem = if stem.is_empty() { hex::encode(&f.hash[..4]) } else { stem };
+            let mut asset = Asset::base("file", AssetKind::File, url.trim().to_string(), format!("文件 {}", ext.to_uppercase()), ext);
+            asset.protocol = Protocol::Ed2k;
+            asset.filesize = Some(f.size);
+            Ok(media("ed2k", "ed2k", url.trim(), url.trim().to_string(), stem, MediaKind::File, vec![asset]))
+        }
+        Ok(_) => Err(AppError::invalid("这是 ed2k 服务器链接，不是文件。请在 设置 → 下载 → ed2k 里添加服务器。")),
+        Err(e) => Err(AppError::invalid(format!("ed2k 链接不正确：{e}"))),
+    }
+}
+
+/// 解析 FTP / SFTP / 流媒体 / ed2k 链接；其他协议返回 None。
 pub fn resolve(url: &str) -> Option<AppResult<MediaInfo>> {
     match kind_of(url) {
         LinkKind::Ftp => Some(resolve_remote_file(url, Protocol::Ftp)),
         LinkKind::Sftp => Some(resolve_remote_file(url, Protocol::Sftp)),
         LinkKind::Stream => Some(resolve_stream(url)),
+        LinkKind::Ed2k => Some(resolve_ed2k(url)),
         _ => None,
     }
 }
@@ -130,6 +148,19 @@ mod tests {
         assert!(resolve("ftp://h/pub/").unwrap().is_err());
         assert!(resolve("ftp://h").unwrap().is_err());
         assert!(resolve("https://a.com/x").is_none());
+    }
+
+    #[test]
+    fn ed2k_file_link() {
+        let h = "31D6CFE0D16AE931B73C59D7E0C089C0";
+        let info = resolve(&format!("ed2k://|file|%E6%B5%8B%E8%AF%95.iso|1234|{h}|/")).unwrap().unwrap();
+        let a = &info.assets[0];
+        assert_eq!(a.protocol, Protocol::Ed2k);
+        assert_eq!(a.filesize, Some(1234));
+        assert_eq!(info.title, "测试");
+        assert_eq!(a.ext, "iso");
+        assert!(resolve("ed2k://|server|1.2.3.4|4661|/").unwrap().is_err());
+        assert!(resolve("ed2k://|file|a|1|zz|/").unwrap().is_err());
     }
 
     #[test]
