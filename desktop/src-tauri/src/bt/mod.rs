@@ -531,7 +531,7 @@ mod tests {
                 disable_local_service_discovery: true,
                 ipv4_only: true,
                 listen: Some(ListenerOptions {
-                    listen_addr: (std::net::Ipv4Addr::LOCALHOST, 0).into(),
+                    listen_addr: (std::net::Ipv4Addr::UNSPECIFIED, 0).into(),
                     mode: ListenerMode::TcpOnly,
                     ipv4_only: true,
                     ..Default::default()
