@@ -50,6 +50,9 @@ function onMore(t: TaskSnapshot, cmd: string) {
   else run(api.moveTask, t.id, cmd as 'top' | 'up' | 'down' | 'bottom')
 }
 
+/** 单个音视频文件、已知大小、正在下载或暂停的任务才能边下边播（m3u8 / 站点解析的流要等合并后才有完整文件）。 */
+const canPreview = (t: TaskSnapshot) =>
+  (t.status === 'running' || t.status === 'paused') && t.inputs === 1 && (t.assetKind === 'video' || t.assetKind === 'audio') && !!t.total && t.received > 0 && !/\.(m3u8|mpd)$/i.test(t.filePath)
 const isWaiting = (t: TaskSnapshot) => t.status === 'queued' || t.status === 'paused' || t.status === 'failed'
 
 async function cleanOrphans() {
@@ -174,6 +177,7 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
         <span class="state">{{ statusText[t.status] }}<template v-if="t.status === 'running' && t.total"> {{ percent(t) }}%</template></span>
         <div class="actions">
           <el-button v-if="t.status === 'running' || t.status === 'queued'" link size="small" @click="run(api.pauseTask, t.id)">暂停</el-button>
+          <el-button v-if="canPreview(t)" link size="small" @click="app.previewTask(t.id)">边下边播</el-button>
           <el-button v-if="t.status === 'paused'" link size="small" type="primary" @click="run(api.resumeTask, t.id)">继续</el-button>
           <el-button v-if="t.status === 'failed' || t.status === 'canceled'" link size="small" type="primary" @click="run(api.resumeTask, t.id)">重试</el-button>
           <el-button v-if="t.status === 'done'" link size="small" type="primary" @click="run(api.openFile, t.filePath)">打开</el-button>

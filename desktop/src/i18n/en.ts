@@ -2347,4 +2347,6 @@ export const en: Record<string, string> = {
   "自己添加的 tracker": "Your own trackers",
   "还没有更新过": "Never updated",
   "；列表 {0} 个，实际使用 {1} 个": "; {0} in the list, {1} in use",
+  "支持 http://、https://、socks5:// 和 socks5h://，用户名密码写在地址里（socks5://用户:密码@主机:端口）。socks5:// 在本机解析域名；要让代理端解析域名（防止 DNS 污染）请用 socks5h://。代理对 HTTP(S) 下载、解析和 m3u8 生效，FTP / SFTP / BT / ed2k 暂不走代理。": "Supports http://, https://, socks5:// and socks5h://; put the user name and password in the address (socks5://user:pass@host:port). socks5:// resolves domain names on this computer; use socks5h:// to let the proxy resolve them (avoids DNS poisoning). Proxies apply to HTTP(S) downloads, parsing and m3u8; FTP / SFTP / BT / ed2k do not use them yet.",
+  "边下边播": "Play while downloading",
 }

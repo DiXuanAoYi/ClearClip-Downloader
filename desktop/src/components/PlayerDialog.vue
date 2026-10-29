@@ -39,7 +39,7 @@ watch(
     speed.value = 1
     if (!p) return
     try {
-      const s = await api.playerSource(p.path)
+      const s = p.taskId !== undefined ? await api.previewSource(p.taskId) : await api.playerSource(p.path)
       src.value = s
       trackIndex.value = s.tracks.length ? 0 : -1
     } catch (e) {
@@ -138,7 +138,7 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
       <div v-if="error" class="err">
         <p class="selectable">{{ error }}</p>
-        <el-button v-if="app.player" size="small" @click="api.openFile(app.player.path)">用系统播放器打开</el-button>
+        <el-button v-if="app.player && app.player.path" size="small" @click="api.openFile(app.player.path)">用系统播放器打开</el-button>
       </div>
 
       <div v-else-if="src" class="stage">

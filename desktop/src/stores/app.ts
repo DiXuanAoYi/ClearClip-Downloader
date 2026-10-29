@@ -23,7 +23,7 @@ export const useAppStore = defineStore('app', () => {
   /** 应用锁状态；locked 时界面被锁屏遮住 */
   const lock = ref<LockStatus>({ enabled: false, locked: false, lockedOutSecs: 0 })
   /** 内置播放器：要播放的文件和起始位置；为 null 时关闭 */
-  const player = ref<{ path: string; startMs?: number } | null>(null)
+  const player = ref<{ path: string; startMs?: number; taskId?: number } | null>(null)
   /** 命令面板请求媒体库按关键词搜索；处理后清空 */
   const libraryQuery = ref<string | null>(null)
   /** 命令面板请求解析页解析这段文字；处理后清空 */
@@ -43,6 +43,11 @@ export const useAppStore = defineStore('app', () => {
 
   function openPlayer(path: string, startMs?: number) {
     player.value = { path, startMs }
+  }
+
+  /** 边下边播：播放一个还在下载的任务。 */
+  function previewTask(taskId: number) {
+    player.value = { path: '', taskId }
   }
 
   function goLibraryQuery(q: string) {
@@ -94,7 +99,7 @@ export const useAppStore = defineStore('app', () => {
   }
   media.addEventListener('change', applyTheme)
 
-  return { settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, player, openPlayer, goLibraryQuery, toolboxRequest, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme }
+  return { settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme }
 })
 
 /** 下载队列，监听后端事件保持同步。 */

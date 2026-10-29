@@ -116,6 +116,7 @@ export const api = {
   removeTask: (id: number) => invoke<void>('remove_task', { id }),
   clearFinished: () => invoke<void>('clear_finished'),
   playerSource: (path: string) => invoke<PlayerSource>('player_source', { path }),
+  previewSource: (taskId: number) => invoke<PlayerSource>('preview_source', { taskId }),
   taskDetail: (id: number) => invoke<TaskDetail>('task_detail', { id }),
   pauseAll: () => invoke<void>('pause_all'),
   resumeAll: () => invoke<void>('resume_all'),
