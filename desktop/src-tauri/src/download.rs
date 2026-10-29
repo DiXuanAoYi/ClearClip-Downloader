@@ -17,7 +17,7 @@ use crate::engine::http::{self as http_engine, HttpOptions, HttpRequest};
 use crate::engine::sftp as sftp_engine;
 use crate::engine::stream as stream_engine;
 use crate::engine::{wait_ctrl, DlError, ResumeMeta, CTRL_CANCEL, CTRL_PAUSE, CTRL_RUN};
-use crate::error::ErrorKind;
+use crate::error::{AppError, ErrorKind};
 use crate::model::{AppResult, Asset, AssetKind, Chapter, Clip, MediaInfo, Protocol};
 use crate::settings::{ConflictPolicy, Settings};
 use crate::{naming, postprocess, providers, AppState};
@@ -1320,6 +1320,45 @@ async fn download_input(
             other => return other,
         }
     }
+}
+
+/// 边下边播：把一个正在下载的音视频任务登记给播放器用的本机媒体服务。
+/// 只支持单个文件的 HTTP 下载（m3u8 / mpd 是分片拼接，要下载完才有完整文件）。
+pub(crate) fn preview_growing(st: &Arc<AppState>, id: i64) -> AppResult<(crate::media_server::Growing, String, String, String)> {
+    let (spec, snap, meta) = with_entry(st, id, |e| (e.spec.clone(), e.snap.clone(), e.meta.clone())).ok_or_else(|| AppError::not_found("任务不存在"))?;
+    let asset = spec.inputs.first().filter(|_| spec.inputs.len() == 1).ok_or_else(|| AppError::unsupported("音视频分开下载的任务要合并后才能播放。"))?;
+    if !matches!(snap.status, TaskStatus::Running | TaskStatus::Paused | TaskStatus::Queued) {
+        return Err(AppError::invalid("这个任务已经结束，请直接播放下载好的文件。"));
+    }
+    let kind = match asset.kind {
+        AssetKind::Video => "video",
+        AssetKind::Audio => "audio",
+        _ => return Err(AppError::unsupported("只能边下边播视频和音频。")),
+    };
+    let ext = asset.ext.to_ascii_lowercase();
+    if asset.protocol != Protocol::Http || matches!(ext.as_str(), "m3u8" | "mpd") {
+        return Err(AppError::unsupported("这种下载方式要下载完才能播放（m3u8 等分片格式、站点解析的流）。"));
+    }
+    let total = meta
+        .inputs
+        .first()
+        .and_then(|m| m.total)
+        .or(snap.total)
+        .filter(|t| *t > 0)
+        .ok_or_else(|| AppError::invalid("还不知道文件大小，请稍等下载开始后再试。"))?;
+    let final_path = PathBuf::from(&snap.file_path);
+    let part = input_part_path(&st.settings(), id, &final_path, 0, 1);
+    let (st2, part2, fin2) = (st.clone(), part.clone(), final_path.clone());
+    let available: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(move || {
+        let segs = with_entry(&st2, id, |e| e.meta.inputs.first().map(|m| m.segments.clone())).flatten().unwrap_or_default();
+        if segs.is_empty() {
+            // 单线程下载是从头顺序写入的；下载完成改名后看最终文件
+            file_len(&part2).max(file_len(&fin2))
+        } else {
+            crate::engine::contiguous_prefix(&segs)
+        }
+    });
+    Ok((crate::media_server::Growing { path: part, final_path, total, available }, snap.title, kind.into(), ext))
 }
 
 /// 把资源的下载地址换成第一个备用地址，原地址排到备用列表末尾；返回 (旧地址, 新地址)。

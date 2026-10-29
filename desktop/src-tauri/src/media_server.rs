@@ -15,11 +15,31 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::safebox::random_bytes;
 
+/// 还在下载的文件：按声明的总大小回应，读到还没下载好的位置就等一会儿。
+#[derive(Clone)]
+pub struct Growing {
+    /// 正在写入的文件（.part）；下载完成改名后用 `final_path`
+    pub path: PathBuf,
+    pub final_path: PathBuf,
+    pub total: u64,
+    /// 从文件开头起已经连续下载好的字节数
+    pub available: Arc<dyn Fn() -> u64 + Send + Sync>,
+}
+
+#[derive(Clone)]
+struct Entry {
+    path: PathBuf,
+    growing: Option<Growing>,
+}
+
 #[derive(Clone)]
 pub struct MediaServer {
     port: u16,
-    files: Arc<Mutex<HashMap<String, PathBuf>>>,
+    files: Arc<Mutex<HashMap<String, Entry>>>,
 }
+
+/// 等待还没下载到的数据，超过这个时间没有进展就放弃（播放器会提示“读取失败”）
+const GROWING_WAIT: std::time::Duration = std::time::Duration::from_secs(45);
 
 impl MediaServer {
     /// 绑定一个随机端口（同步，便于在启动流程里使用）；返回服务和待运行的监听器。
@@ -43,11 +63,18 @@ impl MediaServer {
     pub fn register(&self, path: &Path) -> String {
         let mut g = self.files.lock().unwrap_or_else(|e| e.into_inner());
         // 同一个文件重复登记时沿用原来的令牌
-        if let Some((tok, _)) = g.iter().find(|(_, p)| p.as_path() == path) {
+        if let Some((tok, _)) = g.iter().find(|(_, e)| e.growing.is_none() && e.path.as_path() == path) {
             return format!("http://127.0.0.1:{}/m/{tok}", self.port);
         }
         let tok = hex::encode(random_bytes::<16>());
-        g.insert(tok.clone(), path.to_path_buf());
+        g.insert(tok.clone(), Entry { path: path.to_path_buf(), growing: None });
+        format!("http://127.0.0.1:{}/m/{tok}", self.port)
+    }
+
+    /// 登记一个正在下载的文件（边下边播）。每次登记都换新令牌，旧的播放地址不受影响。
+    pub fn register_growing(&self, g: Growing) -> String {
+        let tok = hex::encode(random_bytes::<16>());
+        self.files.lock().unwrap_or_else(|e| e.into_inner()).insert(tok.clone(), Entry { path: g.final_path.clone(), growing: Some(g) });
         format!("http://127.0.0.1:{}/m/{tok}", self.port)
     }
 
@@ -55,7 +82,7 @@ impl MediaServer {
         self.files.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 
-    fn lookup(&self, token: &str) -> Option<PathBuf> {
+    fn lookup(&self, token: &str) -> Option<Entry> {
         self.files.lock().unwrap_or_else(|e| e.into_inner()).get(token).cloned()
     }
 
@@ -98,9 +125,22 @@ impl MediaServer {
             return respond(&mut stream, 403, &[], b"").await;
         }
         let Some(token) = req.path.strip_prefix("/m/") else { return respond(&mut stream, 404, &[], b"").await };
-        let Some(path) = self.lookup(token) else { return respond(&mut stream, 404, &[], b"").await };
-        let Ok(mut file) = tokio::fs::File::open(&path).await else { return respond(&mut stream, 404, &[], b"").await };
-        let size = file.metadata().await?.len();
+        let Some(entry) = self.lookup(token) else { return respond(&mut stream, 404, &[], b"").await };
+        let path = entry.path.clone();
+        let growing = entry.growing;
+        // 还在下载的文件先试 .part，改名完成后再试最终文件
+        let opened = match &growing {
+            Some(g) => match tokio::fs::File::open(&g.path).await {
+                Ok(f) => Ok(f),
+                Err(_) => tokio::fs::File::open(&g.final_path).await,
+            },
+            None => tokio::fs::File::open(&path).await,
+        };
+        let Ok(mut file) = opened else { return respond(&mut stream, 404, &[], b"").await };
+        let size = match &growing {
+            Some(g) => g.total,
+            None => file.metadata().await?.len(),
+        };
         let mime = mime_for(&path);
         let (status, start, end) = match req.range.as_deref().map(|r| parse_range(r, size)) {
             Some(Ok(Some((s, e)))) => (206, s, e),
@@ -125,11 +165,37 @@ impl MediaServer {
         }
         file.seek(std::io::SeekFrom::Start(start)).await?;
         let mut left = len;
+        let mut pos = start;
         let mut data = vec![0u8; 64 * 1024];
+        let mut waited = std::time::Instant::now();
         while left > 0 {
-            let want = left.min(data.len() as u64) as usize;
-            let n = file.read(&mut data[..want]).await?;
+            let mut want = left.min(data.len() as u64);
+            if let Some(g) = &growing {
+                // 数据还没下载到这里：等一会儿；很久没有进展就结束这次连接
+                let avail = (g.available)();
+                if pos >= avail {
+                    if waited.elapsed() > GROWING_WAIT {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                    continue;
+                }
+                want = want.min(avail - pos);
+                waited = std::time::Instant::now();
+            }
+            let n = file.read(&mut data[..want as usize]).await?;
             if n == 0 {
+                if growing.is_some() {
+                    // .part 刚好改名：重新打开最终文件接着读
+                    if let Some(g) = &growing {
+                        if let Ok(mut f2) = tokio::fs::File::open(&g.final_path).await {
+                            f2.seek(std::io::SeekFrom::Start(pos)).await?;
+                            file = f2;
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                            continue;
+                        }
+                    }
+                }
                 break;
             }
             // 播放器拖动进度条会断开旧连接，写失败直接结束
@@ -137,6 +203,7 @@ impl MediaServer {
                 break;
             }
             left -= n as u64;
+            pos += n as u64;
         }
         Ok(())
     }
@@ -349,6 +416,58 @@ mod tests {
         let r = c.head(&url).send().await.unwrap();
         assert_eq!((r.status().as_u16(), r.headers()["content-length"].to_str().unwrap()), (200, "5000"));
         assert!(r.bytes().await.unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_file_that_is_still_downloading_is_served_as_it_grows() {
+        use std::io::Write;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        let data: Vec<u8> = (0..1000u32).map(|i| (i % 241) as u8).collect();
+        let dir = std::env::temp_dir().join(format!("clearclip-media-grow-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (part, fin) = (dir.join("v.mp4.part"), dir.join("v.mp4"));
+        std::fs::write(&part, &data[..100]).unwrap();
+        let have = Arc::new(AtomicU64::new(100));
+        let (srv, listener) = MediaServer::bind().unwrap();
+        tokio::spawn(srv.clone().serve(listener));
+        let have2 = have.clone();
+        let url = srv.register_growing(Growing {
+            path: part.clone(),
+            final_path: fin.clone(),
+            total: 1000,
+            available: Arc::new(move || have2.load(Ordering::SeqCst)),
+        });
+
+        // 头信息按总大小回应，类型按最终文件名判断
+        let c = client();
+        let r = c.head(&url).send().await.unwrap();
+        assert_eq!((r.headers()["content-length"].to_str().unwrap(), r.headers()["content-type"].to_str().unwrap()), ("1000", "video/mp4"));
+
+        // 后台继续下载：先补到 600，再补完并把 .part 改名
+        let (data2, part2, fin2) = (data.clone(), part.clone(), fin.clone());
+        let writer = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let mut f = std::fs::OpenOptions::new().append(true).open(&part2).unwrap();
+            f.write_all(&data2[100..600]).unwrap();
+            have.store(600, Ordering::SeqCst);
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            f.write_all(&data2[600..]).unwrap();
+            drop(f);
+            std::fs::rename(&part2, &fin2).unwrap();
+            have.store(1000, Ordering::SeqCst);
+        });
+        // 完整读取：会在还没下载到的位置等待，最后拿到全部内容
+        let r = c.get(&url).send().await.unwrap();
+        assert_eq!(r.bytes().await.unwrap().as_ref(), data.as_slice());
+        // 拖动到后面：范围请求同样按总大小计算
+        let r = c.get(&url).header("Range", "bytes=700-799").send().await.unwrap();
+        assert_eq!(
+            (r.status(), r.headers()["content-range"].to_str().unwrap().to_string()),
+            (reqwest::StatusCode::PARTIAL_CONTENT, "bytes 700-799/1000".to_string())
+        );
+        assert_eq!(r.bytes().await.unwrap().as_ref(), &data[700..800]);
+        writer.await.unwrap();
         let _ = std::fs::remove_dir_all(dir);
     }
 

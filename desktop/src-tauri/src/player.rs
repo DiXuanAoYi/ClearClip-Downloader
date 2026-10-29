@@ -124,6 +124,15 @@ pub async fn player_source(state: St<'_>, path: String) -> AppResult<PlayerSourc
     Ok(PlayerSource { path, url, title, kind, ext, tracks })
 }
 
+/// 边下边播：播放一个还在下载的任务。数据没下载到的位置会等待，所以拖到很后面会卡住直到下载过去。
+#[tauri::command]
+pub async fn preview_source(state: St<'_>, task_id: i64) -> AppResult<PlayerSource> {
+    let (growing, title, kind, ext) = crate::download::preview_growing(&state, task_id)?;
+    let path = growing.final_path.to_string_lossy().into_owned();
+    let url = state.media.register_growing(growing);
+    Ok(PlayerSource { path, url, title, kind, ext, tracks: vec![] })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
