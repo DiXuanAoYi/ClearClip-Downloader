@@ -2,6 +2,20 @@
 
 版本号与 `tauri.conf.json` 一致；每个版本对应一个 `desktop-v<版本>` 的 Release。
 
+## 0.7.0
+
+这一版的主题是**协议扩展**：除了网页视频和 HTTP 文件，现在 FTP / SFTP、BT / 磁力、ed2k、thunder:// 等链接粘贴进来就能下载。详细说明见 [docs/protocols.md](../docs/protocols.md)，规划见 [docs/roadmap.md](../docs/roadmap.md)。
+
+**新增**
+- **FTP / SFTP**：`ftp://`、`sftp://` 链接（可带 `user:pass@`），支持断点续传、限速和取消；SFTP 首次连接记住服务器指纹，之后指纹变化会拒绝连接
+- **专用链接解码**：`thunder://`（迅雷）、`flashget://`（快车）、`qqdl://`（旋风）自动解码成原链接再下载
+- **RTMP / RTSP / MMS 等流**：交给 ffmpeg 抓取，与直播录制共用
+- **ed2k（电驴）**：自行用 Rust 实现，粘贴 `ed2k://|file|…|/` 链接即可下载。支持从链接里的来源和已配置服务器（含 server.met 列表）查找来源、多个来源并行按块下载、逐块 MD4 校验（坏块自动换来源重下）、断点续传。没有内置搜索，也没有内置任何资源索引
+- **BT / 磁力**：内置 librqbit，支持 `magnet:` 链接和 `.torrent` 地址，DHT、PEX、UPnP 已启用，多文件的种子展开成列表供选择，支持限速、断点续传和暂停 / 取消。下载完成后不做种
+- **Tracker 列表自动更新**（“设置 → BT 与 ed2k”）：默认从 ngosang/trackerslist 的 best 列表更新（经 jsDelivr / GitHub），默认 7 天一次，可改间隔、可手动“立即更新”、可增删列表来源和自己的 tracker；更新失败保留上次的列表；只接受 udp / http / https 地址并去重
+
+**说明**：BT 和 ed2k 的下载速度取决于网络里有没有可用的来源；ed2k 公开服务器已经很少，需要自己配置可用的服务器。ed2k 不支持低 ID 来源、Kad 网络和搜索；BT 暂不支持代理，不支持直接拖入本地 .torrent 文件。
+
 ## 0.6.1
 
 这一版的主题是**浏览器扩展**（扩展版本 1.3.0）：可以接管浏览器自己的下载，嗅探更完整，右键菜单更好用。扩展的完整说明见 [desktop/extension/README.md](extension/README.md)，规划见 [docs/roadmap.md](../docs/roadmap.md)。

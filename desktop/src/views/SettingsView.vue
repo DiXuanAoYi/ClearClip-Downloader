@@ -16,6 +16,7 @@ import NotifyPanel from '../components/NotifyPanel.vue'
 import UploadPanel from '../components/UploadPanel.vue'
 import RulesPanel from '../components/RulesPanel.vue'
 import SecurityPanel from '../components/SecurityPanel.vue'
+import ProtocolsPanel from '../components/ProtocolsPanel.vue'
 import type { HealthResult } from '../types'
 import { copyDiagnostics } from '../composables/diagnostics'
 import { LANGUAGES } from '../i18n'
@@ -465,6 +466,10 @@ function insertVar(v: string) {
             </div>
           </section>
         </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="BT 与 ed2k" name="p2p">
+        <ProtocolsPanel v-model="form" />
       </el-tab-pane>
 
       <el-tab-pane label="网络" name="network">
