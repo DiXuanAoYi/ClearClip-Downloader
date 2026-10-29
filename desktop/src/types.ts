@@ -24,6 +24,8 @@ export interface Asset {
   hasAudio: boolean | null
   pairAudio: string | null
   formatId: string | null
+  /** 期望的文件哈希，如 sha256:…；下载完成后校验 */
+  checksum?: string | null
   extra: Record<string, unknown> | null
 }
 

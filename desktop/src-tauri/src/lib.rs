@@ -3,6 +3,7 @@ pub mod ai_cmds;
 pub mod api;
 pub mod backup;
 pub mod bt;
+pub mod checksum;
 pub mod cli;
 mod clipboard;
 mod commands;

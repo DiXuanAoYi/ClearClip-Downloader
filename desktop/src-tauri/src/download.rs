@@ -989,6 +989,41 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
             }
         }
     }
+    // 期望的文件哈希：不一致说明下载内容被改动或损坏，清理后从头重新下载一次
+    if outcome.is_ok() && spec.inputs.len() == 1 {
+        if let Some(expect) = spec.inputs[0].checksum.as_deref().and_then(crate::checksum::parse) {
+            set_step(&st, id, "post");
+            set_note(&app, id, Some("正在校验文件…"));
+            match crate::checksum::verify(&final_part, &expect).await {
+                Ok(Ok(())) => {}
+                Ok(Err(actual)) if retry_ok => {
+                    log::warn!("job {id}: {} mismatch (got {actual}), downloading again", expect.algo.name());
+                    for part in parts.iter().chain(std::iter::once(&final_part)) {
+                        remove_part(part);
+                    }
+                    let n = spec.inputs.len();
+                    let st2 = st.clone();
+                    with_entry(&st, id, |e| {
+                        e.meta = JobMeta { inputs: vec![ResumeMeta::default(); n] };
+                        e.snap.received = 0;
+                        e.snap.total = None;
+                        persist(&st2, e);
+                    });
+                    set_note(&app, id, Some("文件校验没通过，正在重新下载…"));
+                    return run_task_inner(app, id, false).await;
+                }
+                Ok(Err(actual)) => {
+                    outcome = Err(DlError::Other(format!(
+                        "文件校验失败：{} 应为 {}，实际是 {actual}。文件可能被改动或下载不完整，请重试或换一个下载源。",
+                        expect.algo.name().to_uppercase(),
+                        expect.hex
+                    )));
+                }
+                Err(e) => outcome = Err(DlError::Other(format!("无法校验文件：{e}"))),
+            }
+            set_note(&app, id, None);
+        }
+    }
     // 按章节另外拆分（保留完整文件）
     if outcome.is_ok() && !spec.post.split_chapters.is_empty() && matches!(spec.primary().kind, AssetKind::Video | AssetKind::Audio) {
         if let Some(ff) = postprocess::find_ffmpeg(&st) {

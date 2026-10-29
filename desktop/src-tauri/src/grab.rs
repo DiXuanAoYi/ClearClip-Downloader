@@ -21,6 +21,8 @@ pub struct GrabRequest {
     pub size: Option<u64>,
     pub mime: String,
     pub user_agent: String,
+    /// 期望的文件哈希（`sha256:…`、`md5:…`，也可只给哈希值），下载完成后校验
+    pub checksum: String,
     /// 扩展的显示名（配对确认时显示）
     pub device_name: String,
 }
@@ -117,6 +119,27 @@ pub(crate) fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// 常见的“文件”扩展名：粘贴这类 http(s) 链接就直接当文件下载，不再交给 yt-dlp 去猜。
+const FILE_EXTS: &[&str] = &[
+    "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "iso", "img", "dmg", "exe", "msi", "pkg", "deb", "rpm", "apk", "ipa", "appimage", "jar", "pdf",
+    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub", "mobi", "csv", "bin", "ttf", "otf", "woff2",
+];
+
+/// 链接的路径是否以常见的文件扩展名结尾。
+pub fn is_file_url(url: &str) -> bool {
+    let Ok(u) = Url::parse(url.trim()) else { return false };
+    if !matches!(u.scheme(), "http" | "https") {
+        return false;
+    }
+    let name = url_name(&u).to_ascii_lowercase();
+    name.rsplit_once('.').is_some_and(|(_, e)| FILE_EXTS.contains(&e))
+}
+
+/// 粘贴进来的文件链接：和接管下载一样按普通 HTTP 文件处理，链接里可以带 `#sha256=…` 之类的期望哈希。
+pub fn media_from_url(url: &str) -> AppResult<MediaInfo> {
+    build_media(&GrabRequest { url: url.trim().to_string(), ..Default::default() })
+}
+
 /// 把接管请求变成一个只含单个文件资源的 `MediaInfo`。
 pub fn build_media(req: &GrabRequest) -> AppResult<MediaInfo> {
     let url = Url::parse(req.url.trim()).map_err(|_| AppError::invalid("下载地址格式不正确。"))?;
@@ -135,7 +158,9 @@ pub fn build_media(req: &GrabRequest) -> AppResult<MediaInfo> {
     if stem.is_empty() {
         stem = host.clone();
     }
-    let clean_url = url.to_string();
+    let mut clean = url.clone();
+    clean.set_fragment(None);
+    let clean_url = clean.to_string();
     let referer = Url::parse(req.referer.trim())
         .ok()
         .filter(|u| matches!(u.scheme(), "http" | "https"))
@@ -143,6 +168,7 @@ pub fn build_media(req: &GrabRequest) -> AppResult<MediaInfo> {
         .unwrap_or_else(|| format!("{}://{host}/", url.scheme()));
 
     let mut asset = Asset::base("file", AssetKind::File, clean_url.clone(), format!("文件 {}", ext.to_uppercase()), ext.clone());
+    asset.checksum = crate::checksum::parse(&req.checksum).or_else(|| crate::checksum::from_url(&url)).map(|c| c.spec());
     asset.filesize = req.size.filter(|s| *s > 0);
     let ua = if req.user_agent.trim().is_empty() { crate::providers::DESKTOP_UA.to_string() } else { req.user_agent.trim().chars().take(300).collect() };
     asset.headers = vec![("Referer".into(), referer), ("User-Agent".into(), ua)];
@@ -217,6 +243,27 @@ pub fn enqueue(app: &tauri::AppHandle, device: &str, device_name: &str, req: &Gr
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plain_file_links_are_recognised() {
+        assert!(is_file_url("https://x.test/dl/setup.EXE"));
+        assert!(is_file_url("http://x.test/a/b.tar.gz?token=1#sha256=ab"));
+        assert!(!is_file_url("https://x.test/watch?v=1"));
+        assert!(!is_file_url("https://x.test/video.mp4"));
+        assert!(!is_file_url("ftp://x.test/a.zip"));
+    }
+
+    #[test]
+    fn expected_hash_comes_from_the_link_or_the_request_and_the_fragment_is_dropped() {
+        let sum = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        let a = media_from_url(&format!("https://x.test/a.zip#sha256={sum}")).unwrap();
+        assert_eq!(a.assets[0].checksum.as_deref(), Some(format!("sha256:{sum}").as_str()));
+        assert_eq!(a.assets[0].url, "https://x.test/a.zip");
+        let b = build_media(&GrabRequest { url: "https://x.test/a.zip".into(), checksum: "MD5:900150983cd24fb0d6963f7d28e17f72".into(), ..Default::default() })
+            .unwrap();
+        assert_eq!(b.assets[0].checksum.as_deref(), Some("md5:900150983cd24fb0d6963f7d28e17f72"));
+        assert!(media_from_url("https://x.test/a.zip").unwrap().assets[0].checksum.is_none());
+    }
+
     use super::*;
 
     fn req(url: &str, filename: &str) -> GrabRequest {

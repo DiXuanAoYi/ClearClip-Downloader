@@ -282,6 +282,10 @@ async fn resolve_generic(ctx: &Ctx<'_>, url: &str) -> AppResult<MediaInfo> {
     if let Some(rule) = custom::find(&ctx.settings.custom_sites, url) {
         return custom::resolve(ctx, rule, url).await;
     }
+    // 压缩包、安装包、文档等普通文件：直接按文件下载
+    if crate::grab::is_file_url(url) {
+        return crate::grab::media_from_url(url);
+    }
     // 直接的音视频文件：不用问 yt-dlp
     if generic::is_direct_media(url) {
         return generic::resolve(ctx, url).await;

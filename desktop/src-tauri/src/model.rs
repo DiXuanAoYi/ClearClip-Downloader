@@ -92,6 +92,9 @@ pub struct Asset {
     /// yt-dlp 的格式 ID（protocol = ytdlp 时使用）
     #[serde(default)]
     pub format_id: Option<String>,
+    /// 期望的文件哈希，`算法:十六进制`（如 `sha256:…`）；下载完成后校验
+    #[serde(default)]
+    pub checksum: Option<String>,
     /// 平台特有的附加数据（如 Pixiv 动图的帧时长）
     #[serde(default)]
     pub extra: Option<serde_json::Value>,
@@ -141,6 +144,7 @@ impl Asset {
             has_audio: None,
             pair_audio: None,
             format_id: None,
+            checksum: None,
             extra: None,
         }
     }
