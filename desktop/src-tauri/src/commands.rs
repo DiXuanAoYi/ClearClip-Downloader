@@ -13,7 +13,7 @@ use url::Url;
 use crate::cookies::{self, AccountSummary};
 use crate::db::{HistoryItem, LibraryFilter, LibraryItem};
 use crate::download::{self, EnqueueResult, OrphanPart, PostOptions, TaskSnapshot};
-use crate::model::{AppError, AppResult, MediaInfo, MediaKind, PlaylistEntry, SeriesInfo};
+use crate::model::{AppError, AppResult, ErrorKind, MediaInfo, MediaKind, PlaylistEntry, SeriesInfo};
 use crate::providers::{self, DetectedLink};
 use crate::settings::Settings;
 use crate::{clipboard, diagnostics, live, phone, quality, subs, tools, tray, AppState};
@@ -57,6 +57,44 @@ pub fn get_app_info(app: AppHandle, state: St<'_>) -> AppInfo {
         commit: crate::COMMIT,
         debug: cfg!(debug_assertions),
     }
+}
+
+/// BT tracker 列表的状态：上次更新时间、来源、条数。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackerStatus {
+    updated_at: Option<i64>,
+    source: String,
+    list_count: usize,
+    /// 自己添加 + 在线列表合并后实际使用的数量
+    effective_count: usize,
+}
+
+fn tracker_status(state: &AppState) -> TrackerStatus {
+    let stored = crate::bt::trackers::load(&state.data_dir);
+    TrackerStatus {
+        updated_at: stored.as_ref().map(|s| s.updated_at),
+        source: stored.as_ref().map(|s| s.source.clone()).unwrap_or_default(),
+        list_count: stored.as_ref().map(|s| s.trackers.len()).unwrap_or(0),
+        effective_count: crate::bt::trackers::effective(&state.data_dir, &state.settings_raw()).len(),
+    }
+}
+
+#[tauri::command]
+pub fn bt_tracker_status(state: St<'_>) -> TrackerStatus {
+    tracker_status(&state)
+}
+
+/// 立即从在线来源更新 tracker 列表（失败时保留原来的列表）。
+#[tauri::command]
+pub async fn bt_update_trackers(state: St<'_>) -> AppResult<TrackerStatus> {
+    let settings = state.settings_raw();
+    let probe = settings.bt_tracker_sources.first().cloned().unwrap_or_else(|| crate::bt::trackers::DEFAULT_SOURCES[0].to_string());
+    let client = state.net.clients_for(&settings.network, &probe)?.api;
+    crate::bt::trackers::update(&client, &state.data_dir, &settings.bt_tracker_sources)
+        .await
+        .map_err(|e| AppError::new(ErrorKind::Network, format!("更新 tracker 列表失败：{e}")))?;
+    Ok(tracker_status(&state))
 }
 
 #[tauri::command]

@@ -92,7 +92,7 @@ impl Md4 {
         let bits = self.total.wrapping_mul(8);
         let mut pad = vec![0x80u8];
         let rem = (self.buf_len + 1) % 64;
-        pad.extend(std::iter::repeat_n(0u8, if rem <= 56 { 56 - rem } else { 120 - rem }));
+        pad.resize(pad.len() + if rem <= 56 { 56 - rem } else { 120 - rem }, 0);
         pad.extend_from_slice(&bits.to_le_bytes());
         let total = self.total;
         self.update(&pad);

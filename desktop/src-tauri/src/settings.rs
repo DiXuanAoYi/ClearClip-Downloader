@@ -241,6 +241,14 @@ pub struct Settings {
     pub ed2k_servers: Vec<String>,
     /// ed2k 服务器列表（server.met）的地址；留空则只用上面手动添加的
     pub ed2k_server_met_url: String,
+    /// BT：定期从在线列表更新 tracker
+    pub bt_tracker_auto_update: bool,
+    /// 在线 tracker 列表的地址，按顺序尝试；留空用内置默认（ngosang/trackerslist）
+    pub bt_tracker_sources: Vec<String>,
+    /// 自动更新间隔（天）
+    pub bt_tracker_interval_days: u32,
+    /// 自己添加的 tracker（http / https / udp），始终使用
+    pub bt_custom_trackers: Vec<String>,
     /// 剧集的命名模板；变量：{series} {episode} {season} {index} {title}
     pub series_template: String,
     /// 内置平台解析失败或不支持时使用 yt-dlp
@@ -780,6 +788,10 @@ impl Default for Settings {
             hls_skip_ads: false,
             ed2k_servers: vec![],
             ed2k_server_met_url: "http://upd.emule-security.org/server.met".into(),
+            bt_tracker_auto_update: true,
+            bt_tracker_sources: crate::bt::trackers::DEFAULT_SOURCES.iter().map(|s| s.to_string()).collect(),
+            bt_tracker_interval_days: 7,
+            bt_custom_trackers: vec![],
             series_template: "{series}/第{episode}集".into(),
             use_ytdlp: true,
             generic_sniffer: true,
@@ -864,6 +876,15 @@ impl Settings {
         }
         self.network.rules.retain(|r| !r.pattern.is_empty());
         self.hls_concurrency = self.hls_concurrency.clamp(1, 16);
+        self.ed2k_servers = self.ed2k_servers.iter().filter_map(|s| crate::ed2k::server::normalize_server(s)).take(50).collect();
+        self.ed2k_server_met_url = self.ed2k_server_met_url.trim().to_string();
+        if !(self.ed2k_server_met_url.starts_with("http://") || self.ed2k_server_met_url.starts_with("https://")) {
+            self.ed2k_server_met_url.clear();
+        }
+        self.bt_tracker_interval_days = self.bt_tracker_interval_days.clamp(1, 90);
+        self.bt_tracker_sources =
+            self.bt_tracker_sources.iter().map(|u| u.trim().to_string()).filter(|u| u.starts_with("http://") || u.starts_with("https://")).take(10).collect();
+        self.bt_custom_trackers = self.bt_custom_trackers.iter().filter_map(|t| crate::bt::trackers::valid_tracker(t)).take(200).collect();
         self.inbox.keep_days = self.inbox.keep_days.min(3650);
         if self.inbox.max_items > 0 {
             self.inbox.max_items = self.inbox.max_items.clamp(50, 100_000);

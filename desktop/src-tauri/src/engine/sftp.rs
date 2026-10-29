@@ -205,8 +205,7 @@ pub async fn download(
     let work = async {
         let rejected = Arc::new(Mutex::new(None));
         let handler = Client { host: format!("{host}:{port}"), known: known_hosts.clone(), rejected: rejected.clone() };
-        let mut config = client::Config::default();
-        config.inactivity_timeout = Some(Duration::from_secs(120));
+        let config = client::Config { inactivity_timeout: Some(Duration::from_secs(120)), ..Default::default() };
         let connect = tokio::time::timeout(Duration::from_secs(20), client::connect(Arc::new(config), (host.as_str(), port), handler))
             .await
             .map_err(|_| DlError::Net(format!("连接 {host}:{port} 超时")))?;

@@ -54,6 +54,16 @@ encoding_rs = "0.8"
 base64 = "0.22"
 russh = { version = "0.65", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "3"
+# BT / 磁力：librqbit 自带 DHT、PEX、UPnP。TLS 提供者（给 https tracker 和种子链接用）由我们安装 ring，避免引入 aws-lc。
+librqbit = { version = "9.0.1", default-features = false }
+bt-http = { package = "reqwest", version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+librqbit-core = { version = "9.0.1", default-features = true }
+
+[target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies]
+librqbit-core = { version = "9.0.1", default-features = false, features = ["sha1-ring"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

@@ -1179,6 +1179,23 @@ async fn download_input(
                     .await
                     .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
                 }
+                Protocol::Bt => {
+                    let probe = if asset.url.starts_with("magnet:") { crate::bt::trackers::DEFAULT_SOURCES[0] } else { asset.url.as_str() };
+                    let client = st.net.clients_for(&settings.network, probe).map_err(|e| DlError::Other(e.message))?.download;
+                    crate::bt::trackers::refresh_if_due(&client, &st.data_dir, settings).await;
+                    let bt_opts = crate::bt::DownloadOptions {
+                        trackers: crate::bt::trackers::effective(&st.data_dir, settings),
+                        speed_limit_kbps: st.net.effective_limit(settings.speed_limit_kbps),
+                        disk_reserve: opts.disk_reserve,
+                        initial_peers: vec![],
+                    };
+                    let idx = asset.format_id.as_deref().and_then(|s| s.parse().ok());
+                    crate::bt::download(&client, &asset.url, idx, part, rx, &bt_opts, |received, total, speed| {
+                        reporter.update(received, Some(total), Some(speed), None)
+                    })
+                    .await
+                    .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
+                }
                 Protocol::Stream => {
                     let ffmpeg = postprocess::find_ffmpeg(st).ok_or_else(|| DlError::Other(postprocess::ffmpeg_missing().message))?;
                     let cred = asset_credentials(&asset);
@@ -1273,6 +1290,7 @@ fn protocol_name(p: Protocol) -> &'static str {
         Protocol::Sftp => "SFTP",
         Protocol::Stream => "流媒体（ffmpeg）",
         Protocol::Ed2k => "ed2k",
+        Protocol::Bt => "BT / 磁力",
     }
 }
 
@@ -1302,6 +1320,8 @@ fn remove_part(p: &Path) {
     }
     let _ = std::fs::remove_dir_all(hls_engine::segment_dir(p));
     let _ = std::fs::remove_dir_all(suffixed(p, ".subs"));
+    crate::bt::remove_staging(p);
+    let _ = std::fs::remove_file(ed2k::download::sidecar_path(p));
 }
 
 fn dir_size(dir: &Path) -> u64 {
@@ -1312,6 +1332,10 @@ fn dir_size(dir: &Path) -> u64 {
 fn input_received(part: &Path, meta: &ResumeMeta) -> u64 {
     if !meta.segments.is_empty() {
         return meta.segmented_received();
+    }
+    // ed2k 的 .part 是预先分配好大小的，实际进度看已校验的分块
+    if let Some(n) = ed2k::download::verified_bytes(part) {
+        return n;
     }
     let done = file_len(part);
     if done > 0 {

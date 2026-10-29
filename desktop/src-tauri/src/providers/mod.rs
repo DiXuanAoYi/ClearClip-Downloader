@@ -233,6 +233,10 @@ pub async fn resolve_url(ctx: &Ctx<'_>, url: &str) -> AppResult<MediaInfo> {
     if let Some(r) = protocols::resolve(url) {
         return r;
     }
+    if crate::links::kind_of(url) == crate::links::LinkKind::Magnet || crate::bt::is_torrent_url(url) {
+        let probe = if url.starts_with("magnet:") { crate::bt::trackers::DEFAULT_SOURCES[0] } else { url };
+        return crate::bt::resolve(&ctx.http(probe), ctx.settings, url).await;
+    }
     let settings = ctx.settings;
     let has_remote = !settings.remote_endpoint.is_empty();
     let parsed = Url::parse(url).map_err(|_| AppError::invalid("链接格式不正确。"))?;

@@ -78,6 +78,13 @@ fn load_sidecar(path: &Path, link: &FileLink) -> Option<Saved> {
     Some(Saved { part_hashes, done })
 }
 
+/// 记录里已校验的分块共多少字节；没有记录时返回 None。
+pub fn verified_bytes(part: &Path) -> Option<u64> {
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(sidecar_path(part)).ok()?).ok()?;
+    let size = v["size"].as_u64()?;
+    Some(v["done"].as_array()?.iter().filter_map(|n| n.as_u64()).map(|p| hash::part_range(size, p)).map(|(s, e)| e - s).sum())
+}
+
 struct PeerState {
     running: bool,
     next_try: Instant,
@@ -106,8 +113,7 @@ pub async fn download(
     let io = |e: std::io::Error| DlError::Io(format!("无法写入文件 {}：{e}", part.display()));
     let mut sched = Sched::new(link.size);
     let mut part_hashes = link.part_hashes.clone();
-    if saved.is_some() && file_ok {
-        let s = saved.unwrap();
+    if let (Some(s), true) = (saved, file_ok) {
         if part_hashes.is_empty() {
             part_hashes = s.part_hashes;
         }
