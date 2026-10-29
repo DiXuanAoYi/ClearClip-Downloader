@@ -2,7 +2,8 @@
 //!
 //! - 默认关闭；只接受局域网和本机地址的请求
 //! - 二维码 / 快捷指令里带访问令牌；新设备第一次发送时在电脑上确认配对，之后可在设置里撤销
-//! - 网页只能发送链接、查看自己发送的任务状态，不能浏览电脑上的文件
+//! - 网页可以发送链接、文字和文件（见 transfer.rs），查看自己发送的任务状态，下载电脑上明确发给手机的项目，
+//!   不能浏览电脑上的其他文件
 //! - 限制请求大小和频率；关闭功能时立即停止服务
 
 use std::collections::HashMap;
@@ -17,16 +18,23 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::error::{AppError, AppResult};
 use crate::inbox::{self, InboxItem, Patch};
+use crate::lan::{self, LanAddr};
 use crate::settings::PairedDevice;
+use crate::transfer::{self, TransferLive};
 use crate::{clipboard, db, providers, tray, AppState};
 
 pub const EVT_PAIR_REQUEST: &str = "phone://pair-request";
 pub const EVT_RECEIVED: &str = "phone://received";
 
 const MAX_HEADER: usize = 8 * 1024;
-const MAX_BODY: usize = 16 * 1024;
-/// 每个地址每分钟最多请求数
-const RATE_PER_MIN: u32 = 60;
+/// 普通接口（发送文字、同步 Cookie 等）的请求正文上限；文件上传走流式，不受这个限制
+const MAX_BODY: usize = 64 * 1024;
+/// 每个地址每分钟最多请求数（已授权的上传和下载不计入）
+const RATE_PER_MIN: u32 = 120;
+/// 读请求头、读普通请求正文、处理普通接口的总时限
+const SMALL_TIMEOUT: Duration = Duration::from_secs(15);
+/// 手机配对状态“最后活跃”更新的最小间隔（秒）
+const SEEN_EVERY: i64 = 60;
 
 #[derive(Default)]
 pub struct PhoneState {
@@ -34,6 +42,8 @@ pub struct PhoneState {
     pending: Mutex<Vec<PairRequest>>,
     rate: Mutex<HashMap<IpAddr, (Instant, u32)>>,
     last_error: Mutex<Option<String>>,
+    /// 文件互传的实时进度
+    pub xfer: Arc<TransferLive>,
 }
 
 struct Server {
@@ -82,6 +92,18 @@ pub struct PhoneInfo {
     pub devices: Vec<PairedDevice>,
     pub pending: Vec<PairRequest>,
     pub error: Option<String>,
+    /// 二维码里使用的电脑地址
+    pub ip: Option<String>,
+    /// 手动指定的地址（空表示自动选择）
+    pub host: String,
+    /// 本机网卡上的候选地址（真实网卡在前，虚拟网卡在后）
+    pub addresses: Vec<LanAddr>,
+    /// 当前自动选择的地址可疑（没有找到真实局域网网卡）
+    pub suspicious: bool,
+    pub receive_dir: String,
+    pub max_upload_mb: u64,
+    pub auto_extract: bool,
+    pub outbox_hours: u32,
 }
 
 fn st(app: &AppHandle) -> Arc<AppState> {
@@ -95,12 +117,9 @@ fn random_token() -> String {
     hex::encode(b)
 }
 
-/// 本机的局域网 IPv4 地址（通过 UDP “连接”选路得到，不会真的发包）。
+/// 手机应该连的电脑地址：手动指定的优先，否则选真实网卡上的局域网地址（避开代理软件的虚拟网卡）。
 pub fn lan_ip() -> Option<IpAddr> {
-    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-    sock.connect("192.168.1.1:9").or_else(|_| sock.connect("10.255.255.255:9")).ok()?;
-    let ip = sock.local_addr().ok()?.ip();
-    (!ip.is_unspecified() && !ip.is_loopback()).then_some(ip)
+    lan::pick("")
 }
 
 /// 只接受局域网、链路本地和本机地址。
@@ -127,9 +146,18 @@ pub fn info(app: &AppHandle) -> PhoneInfo {
     let settings = state.settings();
     let running = state.phone.server.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|s| s.port);
     let pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let ip = lan_ip();
+    let addresses = lan::candidates();
+    let ip = lan::pick(&settings.phone.host);
+    let manual = settings.phone.host.trim().parse::<IpAddr>().is_ok();
+    let suspicious = !manual && !addresses.iter().any(|a| a.likely);
     let (url, api_url) = match (running, ip) {
-        (Some(port), Some(ip)) => (Some(format!("http://{ip}:{port}/?t={}", settings.phone.token)), Some(format!("http://{ip}:{port}/api/send"))),
+        (Some(port), Some(ip)) => {
+            let host = match ip {
+                IpAddr::V6(v6) => format!("[{v6}]"),
+                IpAddr::V4(v4) => v4.to_string(),
+            };
+            (Some(format!("http://{host}:{port}/?t={}", settings.phone.token)), Some(format!("http://{host}:{port}/api/send")))
+        }
         _ => (None, None),
     };
     let qr_svg = url
@@ -151,7 +179,79 @@ pub fn info(app: &AppHandle) -> PhoneInfo {
         devices: settings.phone.devices.clone(),
         pending,
         error,
+        ip: ip.map(|i| i.to_string()),
+        host: settings.phone.host.clone(),
+        addresses,
+        suspicious,
+        receive_dir: transfer::receive_dir(&settings).to_string_lossy().into_owned(),
+        max_upload_mb: settings.phone.max_upload_mb,
+        auto_extract: settings.phone.auto_extract,
+        outbox_hours: settings.phone.outbox_hours,
     }
+}
+
+/// 手机互传的选项。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PhoneOptions {
+    pub host: String,
+    pub receive_dir: String,
+    pub max_upload_mb: u64,
+    pub auto_extract: bool,
+    pub outbox_hours: u32,
+}
+
+pub fn set_options(app: &AppHandle, o: PhoneOptions) -> AppResult<PhoneInfo> {
+    let host = o.host.trim().to_string();
+    if !host.is_empty() && host.parse::<IpAddr>().is_err() {
+        return Err(AppError::invalid("电脑地址请填写 IP，例如 192.168.1.23；留空则自动选择。"));
+    }
+    let dir = o.receive_dir.trim().to_string();
+    if !dir.is_empty() {
+        let p = std::path::Path::new(&dir);
+        if !p.is_absolute() {
+            return Err(AppError::invalid("接收文件夹请填写完整路径。"));
+        }
+        std::fs::create_dir_all(p).map_err(|e| AppError::invalid(format!("无法使用这个接收文件夹：{e}")))?;
+    }
+    update_phone_settings(app, |p| {
+        p.host = host;
+        p.receive_dir = dir;
+        p.max_upload_mb = o.max_upload_mb;
+        p.auto_extract = o.auto_extract;
+        p.outbox_hours = o.outbox_hours.min(24 * 365);
+    })?;
+    Ok(info(app))
+}
+
+/// 手机网页上传 / 下载前确认设备已配对。没有配对时登记一个配对请求（电脑上弹出确认）并返回 false。
+pub fn ensure_paired(app: &AppHandle, device: &str, name: &str, peer: &SocketAddr) -> bool {
+    if device.is_empty() {
+        return false;
+    }
+    let state = st(app);
+    let settings = state.settings();
+    if let Some(d) = settings.phone.devices.iter().find(|d| d.id == device) {
+        let now = db::now();
+        if now - d.last_seen >= SEEN_EVERY {
+            let _ = update_phone_settings(app, |p| {
+                if let Some(d) = p.devices.iter_mut().find(|d| d.id == device) {
+                    d.last_seen = now;
+                }
+            });
+        }
+        return true;
+    }
+    let name: String = if name.trim().is_empty() { "手机".into() } else { name.trim().chars().take(40).collect() };
+    let mut pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner());
+    if !pending.iter().any(|p| p.device_id == device) {
+        let req = PairRequest { device_id: device.to_string(), name, ip: peer.ip().to_string() };
+        pending.push(req.clone());
+        drop(pending);
+        let _ = app.emit(EVT_PAIR_REQUEST, req);
+        tray::show_main(app);
+    }
+    false
 }
 
 fn update_phone_settings(app: &AppHandle, f: impl FnOnce(&mut crate::settings::PhoneSettings)) -> AppResult<()> {
@@ -240,8 +340,9 @@ pub async fn start(app: &AppHandle) -> AppResult<()> {
                 continue;
             }
             let app = app2.clone();
+            // 文件传输可能持续很久，不设总时限；各阶段有各自的超时（读请求头 / 普通接口 15 秒，文件传输 30 秒无数据）
             tokio::spawn(async move {
-                let _ = tokio::time::timeout(Duration::from_secs(15), handle(app, sock, peer)).await;
+                handle(app, sock, peer).await;
             });
         }
     });
@@ -329,9 +430,10 @@ pub fn parse_head(head: &str) -> Option<(Request, usize)> {
     Some((Request { method, path: path.to_string(), query, headers, body: vec![] }, len))
 }
 
-async fn read_request(sock: &mut TcpStream) -> Option<Request> {
+/// 读到请求头结束。返回请求（正文为空）、声明的正文长度，以及读请求头时多读到的正文开头。
+async fn read_head(sock: &mut TcpStream) -> Option<(Request, Option<u64>, Vec<u8>)> {
     let mut buf = Vec::with_capacity(2048);
-    let mut tmp = [0u8; 2048];
+    let mut tmp = [0u8; 4096];
     let head_end = loop {
         let n = sock.read(&mut tmp).await.ok()?;
         if n == 0 {
@@ -345,11 +447,18 @@ async fn read_request(sock: &mut TcpStream) -> Option<Request> {
             return None;
         }
     };
-    let (mut req, len) = parse_head(std::str::from_utf8(&buf[..head_end]).ok()?)?;
-    if len > MAX_BODY {
+    let (req, _) = parse_head(std::str::from_utf8(&buf[..head_end]).ok()?)?;
+    let len = req.headers.get("content-length").and_then(|v| v.trim().parse::<u64>().ok());
+    Some((req, len, buf[head_end + 4..].to_vec()))
+}
+
+/// 读普通接口的请求正文（不超过 MAX_BODY）。
+async fn read_body(sock: &mut TcpStream, len: u64, mut body: Vec<u8>) -> Option<Vec<u8>> {
+    if len > MAX_BODY as u64 {
         return None;
     }
-    let mut body = buf[head_end + 4..].to_vec();
+    let len = len as usize;
+    let mut tmp = [0u8; 4096];
     while body.len() < len {
         let n = sock.read(&mut tmp).await.ok()?;
         if n == 0 {
@@ -358,8 +467,12 @@ async fn read_request(sock: &mut TcpStream) -> Option<Request> {
         body.extend_from_slice(&tmp[..n]);
     }
     body.truncate(len);
-    req.body = body;
-    Some(req)
+    Some(body)
+}
+
+/// 文件传输类的请求：上传 / 下载。
+fn is_streaming(req: &Request) -> bool {
+    (req.method == "POST" && req.path == "/api/upload") || (matches!(req.method.as_str(), "GET" | "HEAD") && req.path.starts_with("/dl/"))
 }
 
 async fn respond(sock: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) {
@@ -372,8 +485,12 @@ async fn respond(sock: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) {
     let _ = sock.flush().await;
 }
 
-async fn json(sock: &mut TcpStream, status: &str, v: serde_json::Value) {
+pub async fn json_response(sock: &mut TcpStream, status: &str, v: serde_json::Value) {
     respond(sock, status, "application/json; charset=utf-8", v.to_string().as_bytes()).await;
+}
+
+async fn json(sock: &mut TcpStream, status: &str, v: serde_json::Value) {
+    json_response(sock, status, v).await;
 }
 
 fn rate_ok(state: &AppState, ip: IpAddr) -> bool {
@@ -397,41 +514,70 @@ struct SendBody {
 }
 
 fn clean_device(id: &str) -> String {
+    clean_device_id(id)
+}
+
+pub fn clean_device_id(id: &str) -> String {
     id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').take(64).collect()
 }
 
 async fn handle(app: AppHandle, mut sock: TcpStream, peer: SocketAddr) {
     let state = st(&app);
-    let Some(req) = read_request(&mut sock).await else { return };
-    if !rate_ok(&state, peer.ip()) {
-        json(&mut sock, "429 Too Many Requests", serde_json::json!({"error": "请求太频繁，请稍后再试"})).await;
-        return;
-    }
+    let Ok(Some((mut req, len, leftover))) = tokio::time::timeout(SMALL_TIMEOUT, read_head(&mut sock)).await else { return };
     let token = state.settings().phone.token;
     let given = req.headers.get("x-token").or_else(|| req.query.get("t")).cloned().unwrap_or_default();
     let authorized = !token.is_empty() && ct_eq(&given, &token);
 
+    // 已授权的上传 / 下载是长连接，单独处理：不限频、不设总时限、正文不读进内存
+    if authorized && is_streaming(&req) {
+        if req.path == "/api/upload" {
+            transfer::handle_upload(&app, &mut sock, &req, len, leftover, &peer).await;
+        } else {
+            transfer::handle_download(&app, &mut sock, &req, &peer).await;
+        }
+        return;
+    }
+    if !rate_ok(&state, peer.ip()) {
+        json(&mut sock, "429 Too Many Requests", serde_json::json!({"error": "请求太频繁，请稍后再试"})).await;
+        return;
+    }
+    if is_streaming(&req) {
+        // 令牌无效
+        json(&mut sock, "403 Forbidden", serde_json::json!({"error": "访问令牌无效，请重新扫码"})).await;
+        return;
+    }
+    let Ok(Some(body)) = tokio::time::timeout(SMALL_TIMEOUT, read_body(&mut sock, len.unwrap_or(0), leftover)).await else {
+        json(&mut sock, "413 Payload Too Large", serde_json::json!({"error": "内容太大。较大的内容请作为文件发送。"})).await;
+        return;
+    };
+    req.body = body;
+    let _ = tokio::time::timeout(SMALL_TIMEOUT, route(&app, &state, &mut sock, &peer, &req, &token, authorized)).await;
+}
+
+async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, peer: &SocketAddr, req: &Request, token: &str, authorized: bool) {
+    let app = app.clone();
+    let peer = *peer;
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/") => {
             if authorized {
-                respond(&mut sock, "200 OK", "text/html; charset=utf-8", page(&token).as_bytes()).await;
+                respond(sock, "200 OK", "text/html; charset=utf-8", page(token).as_bytes()).await;
             } else {
-                respond(&mut sock, "403 Forbidden", "text/html; charset=utf-8", "<meta name=viewport content='width=device-width'><p style='font:16px sans-serif;padding:24px'>二维码已失效，请在电脑上的清影“设置 → 手机与浏览器扩展”重新扫码。</p>".as_bytes()).await;
+                respond(sock, "403 Forbidden", "text/html; charset=utf-8", "<meta name=viewport content='width=device-width'><p style='font:16px sans-serif;padding:24px'>二维码已失效，请在电脑上的清影“设置 → 手机与浏览器扩展”重新扫码。</p>".as_bytes()).await;
             }
         }
-        ("GET", "/favicon.ico") => respond(&mut sock, "404 Not Found", "text/plain", b"").await,
+        ("GET", "/favicon.ico") => respond(sock, "404 Not Found", "text/plain", b"").await,
         // 网页控制台：查看和控制下载（需要令牌，和手机发送页同一个令牌）
         ("GET", "/console") => {
             if authorized {
-                respond(&mut sock, "200 OK", "text/html; charset=utf-8", crate::console::page(&token).as_bytes()).await;
+                respond(sock, "200 OK", "text/html; charset=utf-8", crate::console::page(token).as_bytes()).await;
             } else {
-                respond(&mut sock, "403 Forbidden", "text/html; charset=utf-8", "<meta name=viewport content='width=device-width'><p style='font:16px sans-serif;padding:24px'>访问令牌无效。请在电脑上的清影“设置 → 手机与浏览器扩展”里复制带令牌的地址。</p>".as_bytes()).await;
+                respond(sock, "403 Forbidden", "text/html; charset=utf-8", "<meta name=viewport content='width=device-width'><p style='font:16px sans-serif;padding:24px'>访问令牌无效。请在电脑上的清影“设置 → 手机与浏览器扩展”里复制带令牌的地址。</p>".as_bytes()).await;
             }
         }
-        (_, p) if p.starts_with("/api/") && !authorized => json(&mut sock, "403 Forbidden", serde_json::json!({"error": "访问令牌无效，请重新扫码"})).await,
+        (_, p) if p.starts_with("/api/") && !authorized => json(sock, "403 Forbidden", serde_json::json!({"error": "访问令牌无效，请重新扫码"})).await,
         (_, p) if p.starts_with("/api/v1/") => {
-            let (status, body) = crate::api::handle(&app, &req, &peer).unwrap_or(("404 Not Found", serde_json::json!({"error": "未知接口"})));
-            json(&mut sock, status, body).await;
+            let (status, body) = crate::api::handle(&app, req, &peer).unwrap_or(("404 Not Found", serde_json::json!({"error": "未知接口"})));
+            json(sock, status, body).await;
         }
         ("POST", "/api/send") => {
             let body: Result<SendBody, _> = serde_json::from_slice(&req.body).or_else(|_| {
@@ -444,44 +590,75 @@ async fn handle(app: AppHandle, mut sock: TcpStream, peer: SocketAddr) {
             let name: String = if body.name.trim().is_empty() { "手机".to_string() } else { body.name.trim().chars().take(40).collect() };
             let text: String = body.text.trim().chars().take(4000).collect();
             if providers::extract_urls(&text).is_empty() {
-                json(&mut sock, "400 Bad Request", serde_json::json!({"error": "没有找到链接，请粘贴分享文案或链接"})).await;
+                // 没有链接：作为文字便签保存在电脑的“收到的文件”里（需要先配对）
+                if text.is_empty() {
+                    json(sock, "400 Bad Request", serde_json::json!({"error": "内容是空的"})).await;
+                } else if !ensure_paired(&app, &device, &name, &peer) {
+                    json(sock, "403 Forbidden", serde_json::json!({"state": "pending_pair", "error": "请先在电脑上点“允许”完成配对"})).await;
+                } else {
+                    let full: String = body.text.trim().chars().take(20_000).collect();
+                    match transfer::receive_note(&app, &device, &name, &full) {
+                        Ok(id) => json(sock, "200 OK", serde_json::json!({"id": id, "state": "note"})).await,
+                        Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
+                    }
+                }
                 return;
             }
             match receive(&app, &device, &name, &peer, text) {
-                Some((id, state_name)) => json(&mut sock, "200 OK", serde_json::json!({"id": id, "state": state_name})).await,
-                None => json(&mut sock, "500 Internal Server Error", serde_json::json!({"error": "电脑上保存记录失败，请稍后再试"})).await,
+                Some((id, state_name)) => json(sock, "200 OK", serde_json::json!({"id": id, "state": state_name})).await,
+                None => json(sock, "500 Internal Server Error", serde_json::json!({"error": "电脑上保存记录失败，请稍后再试"})).await,
             }
         }
         ("GET", "/api/status") => {
             let device = clean_device(req.query.get("device").map(String::as_str).unwrap_or(""));
             let list = statuses(&app, &device);
-            json(&mut sock, "200 OK", serde_json::json!({"items": list})).await;
+            json(sock, "200 OK", serde_json::json!({"items": list})).await;
         }
         ("GET", "/api/ping") => {
             let version = app.package_info().version.to_string();
-            json(&mut sock, "200 OK", serde_json::json!({"app": "ClearClip", "version": version})).await;
+            json(sock, "200 OK", serde_json::json!({"app": "ClearClip", "version": version})).await;
+        }
+        // 手机网页打开时调用：登记配对请求，返回是否已配对和上传上限
+        ("GET", "/api/hello") => {
+            let device = clean_device(req.query.get("device").map(String::as_str).unwrap_or(""));
+            let dname = req.query.get("dname").map(|s| s.as_str()).unwrap_or("");
+            let paired = ensure_paired(&app, &device, dname, &peer);
+            let settings = state.settings();
+            json(
+                sock,
+                "200 OK",
+                serde_json::json!({"paired": paired, "maxMb": settings.phone.max_upload_mb, "version": app.package_info().version.to_string()}),
+            )
+            .await;
+        }
+        // 电脑发给手机的项目、这台手机最近上传的文件和发送的链接状态
+        ("GET", "/api/box") => {
+            let device = clean_device(req.query.get("device").map(String::as_str).unwrap_or(""));
+            let mut v = transfer::box_json(&app, &device);
+            v["links"] = serde_json::to_value(statuses(&app, &device)).unwrap_or_default();
+            json(sock, "200 OK", v).await;
         }
         // 浏览器扩展同步 Cookie：只接受本机、已配对设备的请求
         ("POST", "/api/cookies") => {
             if !peer.ip().is_loopback() {
-                json(&mut sock, "403 Forbidden", serde_json::json!({"error": "只能从本机同步 Cookie"})).await;
+                json(sock, "403 Forbidden", serde_json::json!({"error": "只能从本机同步 Cookie"})).await;
                 return;
             }
             let device = clean_device(req.headers.get("x-device").map(String::as_str).unwrap_or(""));
             if !state.settings().phone.devices.iter().any(|d| d.id == device) {
-                json(&mut sock, "403 Forbidden", serde_json::json!({"error": "请先从扩展发送一次链接，在电脑上确认配对后再同步 Cookie"})).await;
+                json(sock, "403 Forbidden", serde_json::json!({"error": "请先从扩展发送一次链接，在电脑上确认配对后再同步 Cookie"})).await;
                 return;
             }
             match import_cookies(&state.cookies, &req.body) {
                 Ok((site, n, automatic)) => {
                     let _ = app.emit("accounts://updated", ());
                     inbox::retry_after_login(&app, &site, automatic);
-                    json(&mut sock, "200 OK", serde_json::json!({"site": site, "count": n})).await
+                    json(sock, "200 OK", serde_json::json!({"site": site, "count": n})).await
                 }
-                Err(e) => json(&mut sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
+                Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
             }
         }
-        _ => respond(&mut sock, "404 Not Found", "text/plain", b"not found").await,
+        _ => respond(sock, "404 Not Found", "text/plain", b"not found").await,
     }
 }
 
@@ -607,45 +784,7 @@ fn page(token: &str) -> String {
     PAGE.replace("__TOKEN__", token)
 }
 
-const PAGE: &str = r#"<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>发送到清影</title>
-<style>
-:root{--bg:#f6f4f1;--card:#fff;--fg:#1f1d1a;--mute:#7b756d;--acc:#d9772f;--line:#e6e1da;--ok:#2f8a57;--err:#c4423a}
-@media (prefers-color-scheme:dark){:root{--bg:#181715;--card:#22201d;--fg:#ece8e2;--mute:#9b948a;--line:#34312c}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
-main{max-width:520px;margin:0 auto;padding:20px 16px 40px}
-h1{font-size:19px;margin:4px 0 2px}h1 b{color:var(--acc)}p.m{color:var(--mute);margin:0 0 14px;font-size:13px}
-textarea{width:100%;min-height:110px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg);font:inherit;resize:vertical}
-button{width:100%;margin-top:10px;padding:13px;border:0;border-radius:10px;background:var(--acc);color:#fff;font:600 16px/1 inherit;font-family:inherit}
-button:disabled{opacity:.6}
-#msg{min-height:20px;margin:10px 0;font-size:13px;color:var(--mute)}
-ul{list-style:none;margin:8px 0 0;padding:0}li{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
-li .t{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}li .s{font-size:12px;color:var(--mute)}
-.ok{color:var(--ok)!important}.err{color:var(--err)!important}
-</style></head><body><main>
-<h1>发送到<b>清影</b></h1>
-<p class="m">长按输入框粘贴分享文案或链接，电脑上的清影会开始下载。</p>
-<textarea id="text" placeholder="粘贴链接，例如 https://v.douyin.com/…"></textarea>
-<button id="send">发送到电脑</button>
-<div id="msg"></div>
-<ul id="list"></ul>
-</main><script>
-const TOKEN="__TOKEN__";
-let dev=localStorage.getItem("cc_device");if(!dev){dev="web-"+Math.random().toString(36).slice(2,12);localStorage.setItem("cc_device",dev)}
-const ua=navigator.userAgent;const name=/iPhone/.test(ua)?"iPhone":/iPad/.test(ua)?"iPad":/Android/.test(ua)?"Android 手机":"浏览器";
-const S={pending_pair:"等待电脑确认配对",rejected:"电脑拒绝了配对",resolving:"解析中",confirm:"已发送，请在电脑上确认",playlist:"是列表，请在电脑上选择条目",queued:"排队中",downloading:"下载中",done:"已完成",failed:"失败",ignored:"已忽略"};
-const $=id=>document.getElementById(id);
-async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{"X-Token":TOKEN,"Content-Type":"application/json"}});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||("HTTP "+r.status));return j}
-$("send").onclick=async()=>{const text=$("text").value.trim();if(!text){$("msg").textContent="请先粘贴链接";return}
-$("send").disabled=true;try{const r=await api("/api/send",{method:"POST",body:JSON.stringify({text,device:dev,name})});$("text").value="";$("msg").textContent=r.state==="pending_pair"?"第一次使用：请在电脑上点“允许”完成配对":"已发送";refresh()}catch(e){$("msg").textContent=e.message;$("msg").className="err"}finally{$("send").disabled=false}};
-let timer;async function refresh(){clearTimeout(timer);try{const r=await api("/api/status?device="+encodeURIComponent(dev));const ul=$("list");ul.innerHTML="";
-let busy=false;for(const it of r.items){const li=document.createElement("li");const t=document.createElement("div");t.className="t";t.textContent=it.title||it.text;
-const s=document.createElement("div");s.className="s"+(it.state==="done"?" ok":it.state==="failed"||it.state==="rejected"?" err":"");s.textContent=(S[it.state]||it.state)+(it.message?" · "+it.message:"");
-li.append(t,s);ul.append(li);if(!["done","failed","rejected","ignored","playlist"].includes(it.state))busy=true}
-timer=setTimeout(refresh,busy?2000:10000)}catch(e){timer=setTimeout(refresh,10000)}}
-refresh();
-</script></body></html>"#;
+const PAGE: &str = include_str!("phone_page.html");
 
 #[cfg(test)]
 mod tests {

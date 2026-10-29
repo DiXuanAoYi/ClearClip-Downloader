@@ -15,6 +15,7 @@ pub mod engine;
 pub mod error;
 pub mod i18n;
 pub mod inbox;
+pub mod lan;
 pub mod library;
 pub mod library_cmds;
 pub mod library_media;
@@ -46,6 +47,7 @@ pub mod subtitle_io;
 pub mod subtitle_tools;
 pub mod tools;
 pub mod track;
+pub mod transfer;
 mod tray;
 pub mod upload;
 pub mod vault;
@@ -350,6 +352,7 @@ pub fn run() {
             tray::spawn_speed_ticker(&handle);
             commands::apply_shortcut(&handle, &settings.shortcut);
             clipboard::start_watcher(handle.clone());
+            transfer::restore(&handle);
             phone::restore(&handle);
             subs::spawn_scheduler(&handle);
             live::spawn_monitor(&handle);
@@ -441,6 +444,12 @@ pub fn run() {
             commands::phone_reset_token,
             commands::phone_revoke,
             commands::phone_pair_respond,
+            commands::phone_set_options,
+            commands::transfer_list,
+            commands::transfer_send_files,
+            commands::transfer_send_text,
+            commands::transfer_remove,
+            commands::transfer_clear,
             commands::list_tasks,
             commands::task_detail,
             commands::pause_task,

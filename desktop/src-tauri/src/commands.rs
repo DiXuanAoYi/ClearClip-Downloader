@@ -274,6 +274,46 @@ pub fn phone_pair_respond(app: AppHandle, device_id: String, accept: bool) -> Ap
     phone::respond_pair(&app, &device_id, accept)
 }
 
+#[tauri::command]
+pub fn phone_set_options(app: AppHandle, options: phone::PhoneOptions) -> AppResult<phone::PhoneInfo> {
+    phone::set_options(&app, options)
+}
+
+// ---------- 手机与电脑互传 ----------
+
+#[tauri::command]
+pub fn transfer_list(app: AppHandle) -> AppResult<crate::transfer::TransferList> {
+    crate::transfer::list(&app)
+}
+
+#[derive(Serialize)]
+pub struct SendResult {
+    pub added: usize,
+    pub skipped: Vec<String>,
+}
+
+/// 把电脑上的文件发给手机（只是加入“电脑发来的”列表，手机点开才会传输）。
+#[tauri::command]
+pub fn transfer_send_files(app: AppHandle, paths: Vec<String>) -> AppResult<SendResult> {
+    let (added, skipped) = crate::transfer::send_files(&app, &paths)?;
+    Ok(SendResult { added, skipped })
+}
+
+#[tauri::command]
+pub fn transfer_send_text(app: AppHandle, text: String) -> AppResult<i64> {
+    crate::transfer::send_text(&app, &text)
+}
+
+#[tauri::command]
+pub fn transfer_remove(app: AppHandle, id: i64, delete_file: bool) -> AppResult<()> {
+    crate::transfer::remove(&app, id, delete_file)
+}
+
+#[tauri::command]
+pub fn transfer_clear(app: AppHandle, direction: String) -> AppResult<()> {
+    crate::transfer::clear(&app, &direction)
+}
+
 // ---------- 图集合成视频 ----------
 
 /// 下载图集图片（和背景音乐），合成为一个视频，保存在下载目录并记入媒体库。返回文件路径。

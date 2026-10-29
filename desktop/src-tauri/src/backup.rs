@@ -43,6 +43,8 @@ fn scrub_settings(mut v: serde_json::Value) -> serde_json::Value {
             phone.insert("token".into(), "".into());
             phone.insert("devices".into(), serde_json::json!([]));
             phone.insert("enabled".into(), false.into());
+            phone.insert("host".into(), "".into());
+            phone.insert("receiveDir".into(), "".into());
         }
     }
     v

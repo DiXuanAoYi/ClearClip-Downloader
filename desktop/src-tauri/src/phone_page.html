@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>清影</title>
+<style>
+:root{--bg:#f6f4f1;--card:#fff;--fg:#1f1d1a;--mute:#7b756d;--acc:#d9772f;--line:#e6e1da;--ok:#2f8a57;--err:#c4423a;--bar:#ece7e0}
+@media (prefers-color-scheme:dark){:root{--bg:#181715;--card:#22201d;--fg:#ece8e2;--mute:#9b948a;--line:#34312c;--bar:#34312c}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+main{max-width:560px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:19px;margin:4px 0 2px}h1 b{color:var(--acc)}p.m{color:var(--mute);margin:0 0 12px;font-size:13px}
+.banner{background:#fff4e5;color:#8a4b00;border:1px solid #f1d3a6;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:14px}
+@media (prefers-color-scheme:dark){.banner{background:#3a2a14;color:#f2c88f;border-color:#5a4020}}
+.tabs{display:flex;gap:6px;margin:12px 0}.tabs button{flex:1;margin:0;padding:10px;background:var(--card);color:var(--fg);border:1px solid var(--line);font-weight:500;font-size:15px}
+.tabs button.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--err);color:#fff;font-size:12px;line-height:18px}
+textarea{width:100%;min-height:96px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg);font:inherit;resize:vertical}
+button{width:100%;margin-top:10px;padding:13px;border:0;border-radius:10px;background:var(--acc);color:#fff;font:600 16px/1 inherit;font-family:inherit}
+button.ghost{background:var(--card);color:var(--fg);border:1px solid var(--line);font-weight:500}
+button.sm{width:auto;margin:0;padding:7px 12px;font-size:13px;border-radius:8px}
+button:disabled{opacity:.55}
+.row{display:flex;gap:8px}.row button{margin-top:10px}
+#msg{min-height:20px;margin:8px 0;font-size:13px;color:var(--mute)}
+#drop{display:none;margin-top:10px;padding:18px;border:2px dashed var(--line);border-radius:10px;text-align:center;color:var(--mute);font-size:13px}
+#drop.over{border-color:var(--acc);color:var(--acc)}
+@media (hover:hover) and (pointer:fine){#drop{display:block}}
+h2{font-size:14px;color:var(--mute);margin:18px 0 6px;font-weight:600}
+ul{list-style:none;margin:0;padding:0}li{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.t{font-size:14px;word-break:break-all}.s{font-size:12px;color:var(--mute)}
+.top{display:flex;gap:10px;align-items:center;justify-content:space-between}.top .t{flex:1;min-width:0}
+.bar{height:6px;border-radius:3px;background:var(--bar);margin-top:8px;overflow:hidden}.bar i{display:block;height:100%;background:var(--acc);width:0;transition:width .2s}
+.ok{color:var(--ok)!important}.err{color:var(--err)!important}
+a.dl{display:inline-block;padding:7px 14px;border-radius:8px;background:var(--acc);color:#fff;text-decoration:none;font-size:14px;font-weight:600;white-space:nowrap}
+pre{margin:6px 0 0;padding:8px;background:var(--bg);border-radius:8px;white-space:pre-wrap;word-break:break-all;max-height:9em;overflow:auto;font:13px/1.5 ui-monospace,Menlo,monospace}
+img.th{max-width:100%;max-height:220px;border-radius:8px;margin-top:8px;display:block}video{width:100%;margin-top:8px;border-radius:8px;background:#000}
+.empty{color:var(--mute);text-align:center;padding:24px 0;font-size:13px}
+</style></head><body><main>
+<h1>清影 <b>隔空传送</b></h1>
+<p class="m">手机和电脑在同一个 Wi-Fi 下，文件只在局域网内传输。</p>
+<div id="pair" class="banner" hidden>第一次使用：请在电脑上的清影点“允许”完成配对，然后这里会自动继续。</div>
+<div class="tabs"><button id="tabSend" class="on">发送到电脑</button><button id="tabGet">电脑发来的<span id="badge" class="badge" hidden></span></button></div>
+
+<section id="vSend">
+<textarea id="text" placeholder="粘贴链接或分享文案（电脑会开始下载），也可以直接写一段文字发给电脑"></textarea>
+<button id="send">发送文字 / 链接</button>
+<div class="row">
+<button id="pickMedia" class="ghost">照片和视频</button>
+<button id="pickFile" class="ghost">选择文件</button>
+</div>
+<input id="inMedia" type="file" accept="image/*,video/*" multiple hidden>
+<input id="inFile" type="file" multiple hidden>
+<div id="drop">把文件拖到这里发送（可多个）</div>
+<div id="msg"></div>
+<ul id="ups"></ul>
+<h2>最近发送</h2>
+<ul id="hist"></ul>
+</section>
+
+<section id="vGet" hidden>
+<ul id="outs"></ul>
+<div id="outEmpty" class="empty" hidden>电脑上还没有发给手机的内容。<br>在电脑的清影里点“发送到手机”，或把文件拖进窗口。</div>
+</section>
+</main><script>
+const TOKEN="__TOKEN__";
+let dev=localStorage.getItem("cc_device");if(!dev){dev="web-"+Math.random().toString(36).slice(2,12);localStorage.setItem("cc_device",dev)}
+const ua=navigator.userAgent;const dname=/iPhone/.test(ua)?"iPhone":/iPad/.test(ua)?"iPad":/Android/.test(ua)?"Android 手机":"浏览器";
+const S={pending_pair:"等待电脑确认配对",rejected:"电脑拒绝了配对",resolving:"解析中",confirm:"已发送，请在电脑上确认",playlist:"是列表，请在电脑上选择条目",queued:"排队中",downloading:"下载中",done:"已完成",failed:"失败",ignored:"已忽略",receiving:"接收中",note:"已发送"};
+const $=id=>document.getElementById(id);
+const enc=encodeURIComponent;
+function h(tag,cls,...kids){const e=document.createElement(tag);if(cls)e.className=cls;for(const k of kids){if(k!=null)e.append(k)}return e}
+function fmt(n){if(n<1024)return n+" B";const u=["KB","MB","GB","TB"];let i=-1;do{n/=1024;i++}while(n>=1024&&i<3);return n.toFixed(n<10?1:0)+" "+u[i]}
+function bar(p){const b=h("div","bar"),i=h("i");i.style.width=Math.max(0,Math.min(100,p))+"%";b.append(i);return b}
+async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{"X-Token":TOKEN,"Content-Type":"application/json"}});const j=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(j.error||("HTTP "+r.status));e.state=j.state;throw e}return j}
+function say(t,bad){$("msg").textContent=t;$("msg").className=bad?"err":""}
+
+let paired=false,maxMb=0;
+async function hello(){try{const r=await api("/api/hello?device="+enc(dev)+"&dname="+enc(dname));paired=r.paired;maxMb=r.maxMb;$("pair").hidden=paired;$("pickMedia").disabled=$("pickFile").disabled=!paired;if(!paired)setTimeout(hello,2000);else refresh()}catch(e){setTimeout(hello,5000)}}
+
+// ---------- 发送文字 / 链接 ----------
+$("send").onclick=async()=>{const text=$("text").value.trim();if(!text){say("请先输入内容",1);return}
+$("send").disabled=true;try{const r=await api("/api/send",{method:"POST",body:JSON.stringify({text,device:dev,name:dname})});$("text").value="";say(r.state==="pending_pair"?"第一次使用：请在电脑上点“允许”完成配对":r.state==="note"?"已发送到电脑的“收到的文件”":"已发送");refresh()}catch(e){say(e.state==="pending_pair"?"请先在电脑上点“允许”完成配对":e.message,1)}finally{$("send").disabled=false}};
+
+// ---------- 上传文件（直接把文件作为请求正文，浏览器边读边发，不进内存） ----------
+const queue=[];let running=0;const PAR=2;
+function addFiles(files){let n=0;for(const f of files){if(maxMb>0&&f.size>maxMb*1048576){queue.push({file:f,state:"err",msg:"超过上限 "+maxMb+" MB（可在电脑设置里调整）",done:0});continue}queue.push({file:f,state:"wait",done:0});n++}renderUps();pump();if(n)say("")}
+function pump(){while(running<PAR){const r=queue.find(q=>q.state==="wait");if(!r)break;start(r)}}
+function start(r){running++;r.state="up";const x=new XMLHttpRequest();r.xhr=x;
+x.open("POST","/api/upload?device="+enc(dev)+"&dname="+enc(dname)+"&name="+enc(r.file.name));x.setRequestHeader("X-Token",TOKEN);
+x.upload.onprogress=e=>{r.done=e.loaded;renderUps()};
+const end=(st,msg)=>{if(r.state!=="up")return;running--;r.state=st;r.msg=msg;renderUps();pump();refresh()};
+x.onload=()=>{let j={};try{j=JSON.parse(x.responseText)}catch(e){}if(x.status===200){r.done=r.file.size;end("ok","已保存到电脑"+(j.name&&j.name!==r.file.name?"，重名已改为 "+j.name:""))}else end("err",j.error||("HTTP "+x.status))};
+x.onerror=()=>end("err","连接中断，请确认手机和电脑在同一个 Wi-Fi");
+x.onabort=()=>end("err","已取消");
+x.send(r.file)}
+function renderUps(){const ul=$("ups");ul.innerHTML="";for(const r of queue.slice(-30)){const li=h("li");const top=h("div","top");
+top.append(h("div","t",r.file.name));
+if(r.state==="up"||r.state==="wait"){const c=h("button","ghost sm","取消");c.onclick=()=>{if(r.state==="up"){r.xhr.abort()}else{r.state="err";r.msg="已取消";renderUps()}};top.append(c)}
+else{const c=h("button","ghost sm","移除");c.onclick=()=>{queue.splice(queue.indexOf(r),1);renderUps()};top.append(c)}
+li.append(top);
+const pct=r.file.size?r.done*100/r.file.size:(r.state==="ok"?100:0);
+const s=h("div","s"+(r.state==="ok"?" ok":r.state==="err"?" err":""));
+s.textContent=r.state==="wait"?fmt(r.file.size)+" · 排队中":r.state==="up"?fmt(r.done)+" / "+fmt(r.file.size)+" · "+Math.floor(pct)+"%":fmt(r.file.size)+" · "+(r.msg||"");
+li.append(s);if(r.state==="up")li.append(bar(pct));ul.append(li)}}
+$("pickMedia").onclick=()=>$("inMedia").click();$("pickFile").onclick=()=>$("inFile").click();
+for(const id of ["inMedia","inFile"])$(id).onchange=e=>{addFiles([...e.target.files]);e.target.value=""};
+// 拖拽（用电脑浏览器打开时）
+addEventListener("dragover",e=>{e.preventDefault();$("drop").classList.add("over")});
+addEventListener("dragleave",e=>{if(!e.relatedTarget)$("drop").classList.remove("over")});
+addEventListener("drop",e=>{e.preventDefault();$("drop").classList.remove("over");if(!paired){say("请先在电脑上点“允许”完成配对",1);return}
+const files=[];let dirs=0;for(const it of e.dataTransfer.items||[]){if(it.kind!=="file")continue;const en=it.webkitGetAsEntry&&it.webkitGetAsEntry();if(en&&en.isDirectory){dirs++;continue}const f=it.getAsFile();if(f)files.push(f)}
+if(!e.dataTransfer.items)files.push(...e.dataTransfer.files);
+if(dirs)say("文件夹不能直接发送，请先压缩成压缩包",1);addFiles(files)});
+addEventListener("beforeunload",e=>{if(running>0){e.preventDefault();e.returnValue=""}});
+
+// ---------- 列表 ----------
+let timer,seen=null,tab="send";
+function setTab(t){tab=t;$("vSend").hidden=t!=="send";$("vGet").hidden=t!=="get";$("tabSend").classList.toggle("on",t==="send");$("tabGet").classList.toggle("on",t==="get");refresh()}
+$("tabSend").onclick=()=>setTab("send");$("tabGet").onclick=()=>setTab("get");
+async function copy(t){try{await navigator.clipboard.writeText(t);return true}catch(e){const ta=document.createElement("textarea");ta.value=t;document.body.append(ta);ta.select();let ok=false;try{ok=document.execCommand("copy")}catch(_){}ta.remove();return ok}}
+function dlUrl(it,inl){return "/dl/"+enc(it.key)+"?t="+enc(TOKEN)+"&d="+enc(dev)+(inl?"&inline=1":"")}
+function outItem(it){const li=h("li");const top=h("div","top");
+const info=h("div","t");info.append(h("div","",it.kind==="text"?"文字":it.name),h("div","s",it.kind==="text"?"":fmt(it.size)+(it.downloads?" · 已下载 "+it.downloads+" 次":"")));top.append(info);
+if(it.missing){li.append(top,h("div","s err","电脑上的文件已被移动或删除"));return li}
+if(it.kind==="text"){const b=h("button","ghost sm","复制");b.onclick=async()=>{b.textContent=(await copy(it.text))?"已复制":"请长按文字复制";setTimeout(()=>b.textContent="复制",1500)};top.append(b);li.append(top,h("pre","",it.text));return li}
+const a=h("a","dl","下载");a.href=dlUrl(it);top.append(a);li.append(top);
+if(it.active&&it.size>0){const p=it.sent*100/it.size;li.append(h("div","s","正在发送 "+Math.floor(p)+"%"),bar(p))}
+if(it.kind==="image"&&it.size<8*1048576){const im=h("img","th");im.loading="lazy";im.src=dlUrl(it,1);im.onerror=()=>im.remove();li.append(im)}
+if(it.kind==="video"||it.kind==="audio"){const b=h("button","ghost sm","在线播放");b.style.marginTop="8px";b.onclick=()=>{const v=document.createElement(it.kind==="video"?"video":"audio");v.controls=true;v.autoplay=true;v.preload="none";v.src=dlUrl(it,1);b.replaceWith(v)};li.append(b)}
+return li}
+async function refresh(){clearTimeout(timer);let busy=false;try{const r=await api("/api/box?device="+enc(dev));
+const o=$("outs");o.innerHTML="";for(const it of r.out){o.append(outItem(it));if(it.active)busy=true}
+$("outEmpty").hidden=r.out.length>0;
+const keys=r.out.map(i=>i.key);if(seen===null||tab==="get")seen=new Set(keys);
+const unseen=keys.filter(k=>!seen.has(k)).length;$("badge").textContent=unseen;$("badge").hidden=!unseen;
+const hist=$("hist");hist.innerHTML="";
+for(const it of r.links){const li=h("li");li.append(h("div","t",it.title||it.text));const s=h("div","s"+(it.state==="done"?" ok":it.state==="failed"||it.state==="rejected"?" err":""),(S[it.state]||it.state)+(it.message?" · "+it.message:""));li.append(s);hist.append(li);if(!["done","failed","rejected","ignored","playlist","confirm"].includes(it.state))busy=true}
+for(const it of r.in){const li=h("li");li.append(h("div","t",it.name));li.append(h("div","s"+(it.state==="done"?" ok":it.state==="failed"?" err":""),fmt(it.size)+" · "+(S[it.state]||it.state)+(it.message?" · "+it.message:"")));hist.append(li)}
+if(!hist.children.length)hist.append(h("div","empty","还没有发送记录"));
+timer=setTimeout(refresh,busy||running?1500:6000)}catch(e){timer=setTimeout(refresh,8000)}}
+hello();
+</script></body></html>

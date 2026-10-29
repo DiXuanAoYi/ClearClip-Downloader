@@ -693,7 +693,7 @@ pub struct PairedDevice {
     pub last_seen: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PhoneSettings {
     pub enabled: bool,
@@ -702,6 +702,32 @@ pub struct PhoneSettings {
     /// 访问令牌（写在二维码和快捷指令里）
     pub token: String,
     pub devices: Vec<PairedDevice>,
+    /// 手动指定二维码里的电脑地址（开了虚拟网卡 / 增强模式、自动选的地址手机连不上时用）；空表示自动选择
+    pub host: String,
+    /// 手机发来的文件保存到哪里；空表示“下载目录/接收”
+    pub receive_dir: String,
+    /// 手机上传的单个文件上限（MB）；0 表示不限制
+    pub max_upload_mb: u64,
+    /// 收到 .zip 后自动解压到同名文件夹（默认关闭）
+    pub auto_extract: bool,
+    /// 电脑发给手机的文件多久后自动撤回（小时）；0 表示不自动撤回
+    pub outbox_hours: u32,
+}
+
+impl Default for PhoneSettings {
+    fn default() -> Self {
+        PhoneSettings {
+            enabled: false,
+            port: 0,
+            token: String::new(),
+            devices: Vec::new(),
+            host: String::new(),
+            receive_dir: String::new(),
+            max_upload_mb: 4096,
+            auto_extract: false,
+            outbox_hours: 24,
+        }
+    }
 }
 
 /// 剪贴板默认额外识别的常用网站。
