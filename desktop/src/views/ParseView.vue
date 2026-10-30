@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../api'
 import { useAppStore, useParseStore } from '../stores/app'
@@ -382,6 +382,21 @@ async function batch() {
   app.view = 'queue'
 }
 
+async function clearRecent() {
+  try {
+    await ElMessageBox.confirm('清空“最近解析”？这些记录同时在“媒体库 → 历史”里，会一起清掉；已下载的文件不受影响。', '清空最近解析', { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' })
+  } catch {
+    return
+  }
+  try {
+    await api.clearHistory()
+    await parse.loadRecent()
+    ElMessage.success('已清空')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+
 function openRecent(item: HistoryItem) {
   parse.result = item.info
   parse.text = item.sourceUrl
@@ -556,7 +571,10 @@ function sizeText(a: Asset) {
     </section>
 
     <section v-if="!result && !parse.loading && parse.recent.length" class="recent">
-      <div class="label">最近解析</div>
+      <div class="label rhead">
+        <span>最近解析</span>
+        <el-button link size="small" @click="clearRecent">清空</el-button>
+      </div>
       <button v-for="r in parse.recent" :key="r.id" type="button" class="ritem" @click="openRecent(r)">
         <img v-if="r.cover" :src="r.cover" class="thumb" referrerpolicy="no-referrer" alt="" />
         <div v-else class="thumb" />
@@ -855,6 +873,11 @@ function sizeText(a: Asset) {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.recent .rhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 .recent .label {
   font-size: 11px;

@@ -125,6 +125,10 @@
     <label>访问令牌（X-Token）</label><input id="token" type="password" />
     <button id="save">保存并测试</button>
 
+    <h2>便签</h2>
+    <label>存成清影便签的字数上限（0 = 不限制）</label><input id="noteLimit" type="number" min="0" step="1000" placeholder="0" />
+    <p class="mute">用于视频摘要“存进清影的便签”。默认不限制；填了数字，超出的部分会被截掉。</p>
+
     <h2>功能开关</h2>
     <p class="mute">“常驻”表示在你打开的每个网页里运行，默认关闭；“无页面注入”的功能只在后台和弹窗里工作。</p>
     <div id="featureList"></div>

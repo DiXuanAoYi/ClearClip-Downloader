@@ -815,7 +815,8 @@ fn after_received(app: &AppHandle, id: i64, name: &str, kind: &str, path: &Path,
 
 /// 手机发来没有链接的文字：存为文字便签。
 pub fn receive_note(app: &AppHandle, device: &str, device_name: &str, text: &str) -> AppResult<i64> {
-    let text: String = text.trim().chars().take(MAX_NOTE).collect();
+    // 收到的便签不再截断：长度由发送方的设置和请求体上限（phone.rs）决定
+    let text = text.trim();
     if text.is_empty() {
         return Err(AppError::invalid("内容是空的。"));
     }
@@ -826,7 +827,7 @@ pub fn receive_note(app: &AppHandle, device: &str, device_name: &str, text: &str
         kind: "text",
         name: &title,
         path: "",
-        text: &text,
+        text,
         size,
         status: "done",
         key: "",

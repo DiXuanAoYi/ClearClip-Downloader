@@ -176,8 +176,13 @@ const HANDLERS = {
   'cc-ai-run': async (m) => ({ ...(await call('/api/v1/ai/run', m.req && typeof m.req === 'object' ? m.req : {})) }),
   'cc-ai-job': async (m) => ({ ...(await call(`/api/v1/ai/job?id=${encodeURIComponent(String(m.id))}`)) }),
   'cc-ai-cancel': async (m) => ({ ...(await call(`/api/v1/ai/cancel?id=${encodeURIComponent(String(m.id))}`, {})) }),
-  // 把笔记存成清影里的文字便签（接口一次最多收 64 KB，所以截断）
-  'cc-note': async (m) => ({ pairing: await sendText(String(m.text || '').slice(0, 15000), { note: true }) }),
+  // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）
+  'cc-note': async (m) => {
+    const { noteLimit } = await api.storage.local.get('noteLimit')
+    const max = Math.max(0, Math.floor(Number(noteLimit) || 0))
+    const text = String(m.text || '')
+    return { pairing: await sendText(max ? text.slice(0, max) : text, { note: true }) }
+  },
   // 视频画布被跨域污染时，用浏览器对可见区域的截图代替（只在用户点了截图之后）
   'cc-capture': async (_m, sender) => ({ dataUrl: await api.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }) }),
 }

@@ -436,6 +436,7 @@ async function loadSettings() {
   const c = await getConfig()
   $('port').value = c.port || ''
   $('token').value = c.token || ''
+  $('noteLimit').value = Number((await api.storage.local.get('noteLimit')).noteLimit) || 0
   $('setupHint').classList.toggle('hidden', !!(c.port && c.token))
   const features = await getFeatures()
   const box = $('featureList')
@@ -764,6 +765,11 @@ $('autoSite').onchange = async () => {
   renderSync()
 }
 
+$('noteLimit').onchange = async () => {
+  const n = Math.max(0, Math.floor(Number($('noteLimit').value) || 0))
+  $('noteLimit').value = n
+  await api.storage.local.set({ noteLimit: n })
+}
 $('autoSync').onchange = async () => {
   await api.storage.local.set({ autoSync: $('autoSync').checked })
   renderSync()

@@ -31,6 +31,8 @@ const MAX_HEADER: usize = 8 * 1024;
 const MAX_BODY: usize = 64 * 1024;
 /// 视频摘要接口要带整篇文稿，正文上限放宽（只对已授权的 `/api/v1/ai/` 生效）。
 const AI_BODY: usize = 2 * 1024 * 1024;
+/// 浏览器扩展存便签（视频文稿、摘要）可以很长；只对已授权的 `/api/send` 放宽。
+const NOTE_BODY: usize = 16 * 1024 * 1024;
 /// 每个地址每分钟最多请求数（已授权的上传和下载不计入）
 const RATE_PER_MIN: u32 = 120;
 /// 读请求头、读普通请求正文、处理普通接口的总时限
@@ -454,10 +456,12 @@ async fn read_head(sock: &mut TcpStream) -> Option<(Request, Option<u64>, Vec<u8
     Some((req, len, buf[head_end + 4..].to_vec()))
 }
 
-/// 请求正文上限：普通接口 64 KB；已授权的视频摘要接口要带整篇文稿，放宽到 2 MiB。
+/// 请求正文上限：普通接口 64 KB；已授权的视频摘要接口要带整篇文稿，放宽到 2 MiB；已授权的 `/api/send` 放宽到 16 MiB（便签）。
 fn body_limit(authorized: bool, path: &str) -> usize {
     if authorized && path.starts_with("/api/v1/ai/") {
         AI_BODY
+    } else if authorized && path == "/api/send" {
+        NOTE_BODY
     } else {
         MAX_BODY
     }
@@ -620,8 +624,7 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                 } else if !ensure_paired(&app, &device, &name, &peer) {
                     json(sock, "403 Forbidden", serde_json::json!({"state": "pending_pair", "error": "请先在电脑上点“允许”完成配对"})).await;
                 } else {
-                    let full: String = body.text.trim().chars().take(20_000).collect();
-                    match transfer::receive_note(&app, &device, &name, &full) {
+                    match transfer::receive_note(&app, &device, &name, &body.text) {
                         Ok(id) => json(sock, "200 OK", serde_json::json!({"id": id, "state": "note"})).await,
                         Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
                     }
@@ -962,7 +965,9 @@ mod tests {
     fn only_authorized_ai_routes_get_the_large_body_limit() {
         assert_eq!(body_limit(true, "/api/v1/ai/run"), AI_BODY);
         assert_eq!(body_limit(false, "/api/v1/ai/run"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/send"), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/send"), NOTE_BODY);
+        assert_eq!(body_limit(false, "/api/send"), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/cookies"), MAX_BODY);
         assert_eq!(body_limit(true, "/api/v1/tasks"), MAX_BODY);
         assert_eq!(body_limit(true, "/api/v1/aix"), MAX_BODY);
     }
