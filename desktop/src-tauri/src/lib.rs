@@ -593,6 +593,7 @@ pub fn run() {
             commands::install_update,
             player::player_source,
             player::preview_source,
+            player::preview_asset,
             security_cmds::lock_status,
             security_cmds::lock_set_password,
             security_cmds::lock_remove_password,

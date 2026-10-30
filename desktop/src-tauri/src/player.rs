@@ -133,6 +133,28 @@ pub async fn preview_source(state: St<'_>, task_id: i64) -> AppResult<PlayerSour
     Ok(PlayerSource { path, url, title, kind, ext, tracks: vec![] })
 }
 
+/// 解析界面的预览：把解析出来的一个视频 / 音频 / 图片资源经本机服务代理播放（带站点要求的 Referer / Cookie，走用户设置的代理）。
+/// 只支持单个 HTTP 文件；m3u8 / mpd / 站点解析的流要下载后才能看。
+#[tauri::command]
+pub async fn preview_asset(state: St<'_>, media: crate::model::MediaInfo, asset_id: String) -> AppResult<PlayerSource> {
+    use crate::model::{AssetKind, Protocol};
+    let asset = media.assets.iter().find(|a| a.id == asset_id).ok_or_else(|| AppError::not_found("没有找到这个资源"))?;
+    let ext = asset.ext.to_ascii_lowercase();
+    if asset.protocol != Protocol::Http || matches!(ext.as_str(), "m3u8" | "mpd") || !asset.url.starts_with("http") {
+        return Err(AppError::unsupported("这个资源是分片 / 流媒体，不能直接预览，下载后即可播放。"));
+    }
+    let kind = match asset.kind {
+        AssetKind::Video => "video",
+        AssetKind::Audio => "audio",
+        _ => return Err(AppError::unsupported("只能预览视频和音频。")),
+    };
+    let req = crate::download::build_request(&state, &media, asset);
+    let client = state.net.clients_for(&state.settings().network, &asset.url)?.download;
+    let mime = crate::media_server::mime_for(Path::new(&format!("x.{ext}")));
+    let url = state.media.register_remote(crate::media_server::Remote { url: asset.url.clone(), headers: req.headers, client, mime });
+    Ok(PlayerSource { path: String::new(), url, title: media.title.clone(), kind: kind.into(), ext, tracks: vec![] })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

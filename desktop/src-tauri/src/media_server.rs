@@ -26,10 +26,22 @@ pub struct Growing {
     pub available: Arc<dyn Fn() -> u64 + Send + Sync>,
 }
 
+/// 还没下载的远程文件（解析界面的预览）：本机服务代为请求，带上站点要求的 Referer / Cookie，
+/// 并把播放器的 Range 请求原样转给源站，所以防盗链的地址和拖动进度条都能用。
+#[derive(Clone)]
+pub struct Remote {
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub client: reqwest::Client,
+    /// 源站没有给出可用的 Content-Type 时用这个（按资源扩展名猜的）
+    pub mime: &'static str,
+}
+
 #[derive(Clone)]
 struct Entry {
     path: PathBuf,
     growing: Option<Growing>,
+    remote: Option<Remote>,
 }
 
 #[derive(Clone)]
@@ -63,18 +75,25 @@ impl MediaServer {
     pub fn register(&self, path: &Path) -> String {
         let mut g = self.files.lock().unwrap_or_else(|e| e.into_inner());
         // 同一个文件重复登记时沿用原来的令牌
-        if let Some((tok, _)) = g.iter().find(|(_, e)| e.growing.is_none() && e.path.as_path() == path) {
+        if let Some((tok, _)) = g.iter().find(|(_, e)| e.growing.is_none() && e.remote.is_none() && e.path.as_path() == path) {
             return format!("http://127.0.0.1:{}/m/{tok}", self.port);
         }
         let tok = hex::encode(random_bytes::<16>());
-        g.insert(tok.clone(), Entry { path: path.to_path_buf(), growing: None });
+        g.insert(tok.clone(), Entry { path: path.to_path_buf(), growing: None, remote: None });
         format!("http://127.0.0.1:{}/m/{tok}", self.port)
     }
 
     /// 登记一个正在下载的文件（边下边播）。每次登记都换新令牌，旧的播放地址不受影响。
     pub fn register_growing(&self, g: Growing) -> String {
         let tok = hex::encode(random_bytes::<16>());
-        self.files.lock().unwrap_or_else(|e| e.into_inner()).insert(tok.clone(), Entry { path: g.final_path.clone(), growing: Some(g) });
+        self.files.lock().unwrap_or_else(|e| e.into_inner()).insert(tok.clone(), Entry { path: g.final_path.clone(), growing: Some(g), remote: None });
+        format!("http://127.0.0.1:{}/m/{tok}", self.port)
+    }
+
+    /// 登记一个远程文件，返回可以直接给 `<video>` 用的本机地址。
+    pub fn register_remote(&self, r: Remote) -> String {
+        let tok = hex::encode(random_bytes::<16>());
+        self.files.lock().unwrap_or_else(|e| e.into_inner()).insert(tok.clone(), Entry { path: PathBuf::new(), growing: None, remote: Some(r) });
         format!("http://127.0.0.1:{}/m/{tok}", self.port)
     }
 
@@ -126,6 +145,9 @@ impl MediaServer {
         }
         let Some(token) = req.path.strip_prefix("/m/") else { return respond(&mut stream, 404, &[], b"").await };
         let Some(entry) = self.lookup(token) else { return respond(&mut stream, 404, &[], b"").await };
+        if let Some(remote) = entry.remote {
+            return proxy_remote(&mut stream, &req, &remote).await;
+        }
         let path = entry.path.clone();
         let growing = entry.growing;
         // 还在下载的文件先试 .part，改名完成后再试最终文件
@@ -209,6 +231,49 @@ impl MediaServer {
     }
 }
 
+/// 把播放器的请求转给源站，再把应答原样（状态、长度、范围）回给播放器。
+async fn proxy_remote(stream: &mut TcpStream, req: &Req, remote: &Remote) -> std::io::Result<()> {
+    let mut rb = if req.method == "HEAD" { remote.client.head(&remote.url) } else { remote.client.get(&remote.url) };
+    for (k, v) in &remote.headers {
+        rb = rb.header(k.as_str(), v.as_str());
+    }
+    // 不让源站压缩：压缩后字节范围和长度对不上
+    rb = rb.header("Accept-Encoding", "identity");
+    if let Some(r) = &req.range {
+        rb = rb.header("Range", r.as_str());
+    }
+    let mut resp = match rb.send().await {
+        Ok(r) => r,
+        Err(e) => return respond(stream, 502, &[("X-Upstream-Error", e.to_string().replace(['\r', '\n'], " "))], b"").await,
+    };
+    let status = resp.status().as_u16();
+    if !(status == 200 || status == 206 || status == 416) {
+        return respond(stream, 502, &[("X-Upstream-Status", status.to_string())], b"").await;
+    }
+    let h = resp.headers();
+    let get = |k: &str| h.get(k).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let ctype =
+        get("content-type").filter(|c| !c.starts_with("application/octet-stream") && !c.starts_with("text/")).unwrap_or_else(|| remote.mime.to_string());
+    let mut headers = vec![("Content-Type", ctype), ("Accept-Ranges", "bytes".into()), ("Cache-Control", "no-store".into())];
+    if let Some(l) = get("content-length") {
+        headers.push(("Content-Length", l));
+    }
+    if let Some(cr) = get("content-range") {
+        headers.push(("Content-Range", cr));
+    }
+    write_head(stream, status, &headers).await?;
+    if req.method == "HEAD" || status == 416 {
+        return Ok(());
+    }
+    // 播放器拖动进度条会断开旧连接，写失败直接结束
+    while let Ok(Some(chunk)) = resp.chunk().await {
+        if stream.write_all(&chunk).await.is_err() {
+            break;
+        }
+    }
+    Ok(())
+}
+
 struct Req {
     method: String,
     path: String,
@@ -270,7 +335,7 @@ fn parse_range(h: &str, size: u64) -> Result<Option<(u64, u64)>, ()> {
     Ok(Some((start, end)))
 }
 
-fn mime_for(p: &Path) -> &'static str {
+pub(crate) fn mime_for(p: &Path) -> &'static str {
     match p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref() {
         Some("mp4" | "m4v") => "video/mp4",
         Some("webm") => "video/webm",
@@ -311,6 +376,7 @@ fn reason(status: u16) -> &'static str {
         405 => "Method Not Allowed",
         416 => "Range Not Satisfiable",
         431 => "Request Header Fields Too Large",
+        502 => "Bad Gateway",
         _ => "Error",
     }
 }
@@ -388,6 +454,70 @@ mod tests {
 
     fn client() -> reqwest::Client {
         reqwest::Client::builder().no_proxy().build().unwrap()
+    }
+
+    /// 一个只认 Referer 的“源站”：缺 Referer 回 403，否则按 Range 回数据。
+    async fn hotlink_origin(data: Vec<u8>) -> String {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = l.accept().await else { return };
+                let data = data.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let n = s.read(&mut buf).await.unwrap_or(0);
+                    let head = String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase();
+                    if !head.contains("referer: https://site.example/") {
+                        let _ = s.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+                        return;
+                    }
+                    let (status, body, extra) = match head.split("range: bytes=").nth(1).and_then(|r| r.split("\r\n").next()).and_then(|r| r.split_once('-')) {
+                        Some((a, b)) => {
+                            let a: usize = a.parse().unwrap();
+                            let b: usize = b.parse().unwrap_or(data.len() - 1);
+                            (206, data[a..=b].to_vec(), format!("Content-Range: bytes {a}-{b}/{}\r\n", data.len()))
+                        }
+                        None => (200, data.clone(), String::new()),
+                    };
+                    let head = format!(
+                        "HTTP/1.1 {status} X\r\nContent-Type: application/octet-stream\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = s.write_all(head.as_bytes()).await;
+                    let _ = s.write_all(&body).await;
+                });
+            }
+        });
+        format!("http://127.0.0.1:{port}/v.mp4")
+    }
+
+    #[tokio::test]
+    async fn remote_preview_sends_site_headers_and_forwards_ranges() {
+        let data: Vec<u8> = (0..3000u32).map(|i| (i % 199) as u8).collect();
+        let origin = hotlink_origin(data.clone()).await;
+        let (srv, listener) = MediaServer::bind().unwrap();
+        tokio::spawn(srv.clone().serve(listener));
+        let c = client();
+        // 不带 Referer：源站拒绝，本机服务回 502
+        let bad = srv.register_remote(Remote { url: origin.clone(), headers: vec![], client: c.clone(), mime: "video/mp4" });
+        assert_eq!(c.get(&bad).send().await.unwrap().status(), 502);
+
+        let good = srv.register_remote(Remote {
+            url: origin,
+            headers: vec![("Referer".into(), "https://site.example/".into())],
+            client: c.clone(),
+            mime: "video/mp4",
+        });
+        let r = c.get(&good).send().await.unwrap();
+        assert_eq!(r.status(), 200);
+        assert_eq!(r.headers()["content-type"], "video/mp4", "octet-stream from the origin is replaced by the guessed type");
+        assert_eq!(r.bytes().await.unwrap().as_ref(), data.as_slice());
+
+        let r = c.get(&good).header("Range", "bytes=100-199").send().await.unwrap();
+        assert_eq!(r.status(), 206);
+        assert_eq!(r.headers()["content-range"], "bytes 100-199/3000");
+        assert_eq!(r.bytes().await.unwrap().as_ref(), &data[100..200]);
     }
 
     #[tokio::test]

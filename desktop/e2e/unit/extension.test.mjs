@@ -88,6 +88,7 @@ const take = (c, item) => X('shouldTake')(c, { url: 'https://example.com/a', ...
   assert.equal(X('cookieHeader')([{ name: 'a', value: '1' }, { name: 'b', value: '2' }]), 'a=1; b=2')
   assert.equal(X('cookieHeader')(undefined), '')
   assert.equal(X('shortUrl')('https://a.com/x/y.zip?token=secret#h'), 'https://a.com/x/y.zip')
+  assert.equal(X('shortUrl')('blob:https://example.com/3f2a-1?x=1'), 'blob:https://example.com/3f2a-1')
   const act = X('linkAction')
   assert.equal(act('https://a.com/pkg/tool.zip?x=1'), 'grab')
   assert.equal(act('https://a.com/doc/manual.pdf'), 'grab')
