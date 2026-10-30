@@ -2,7 +2,7 @@
 // 排布规则和后端 `src-tauri/src/edit/spec.rs` 的 `layout` 保持一致，改那边时要一起改这里。
 // 这个文件不要引入别的运行时模块（用 node 直接跑 scripts 里的检查时需要）。
 
-import type { EditAudio, EditBeats, EditChroma, EditClip, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
+import type { EditBackground, EditAudio, EditBeats, EditChroma, EditClip, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
 
 export const MIN_MS = 100
 export const MIN_TRANSITION_MS = 100
@@ -76,7 +76,7 @@ export function normalizeProject(raw: Partial<EditProject> | null | undefined): 
   const r = raw ?? {}
   p.title = typeof r.title === 'string' ? r.title : ''
   p.out = { ...defaultOutput(), ...(r.out ?? {}) }
-  p.clips = (r.clips ?? []).map((c, i) => ({ ...blankClip(), ...c, id: c.id ?? i + 1, regions: (c.regions ?? []).map((g, j) => ({ ...blankRegion(), ...g, id: g.id ?? j + 1 })) }))
+  p.clips = (r.clips ?? []).map((c, i) => ({ ...blankClip(), ...c, id: c.id ?? i + 1, regions: (c.regions ?? []).map((g, j) => ({ ...blankRegion(), ...g, id: g.id ?? j + 1 })), bg: { ...blankBackground(), ...(c.bg ?? {}), chroma: { ...blankChroma(), ...(c.bg?.chroma ?? {}) } } }))
   p.overlays = (r.overlays ?? []).map((o, i) => ({ ...blankOverlay(), ...o, id: o.id ?? i + 1, keyframes: kfClean(o.keyframes), chroma: { ...blankChroma(), ...(o.chroma ?? {}) } }))
   p.texts = (r.texts ?? []).map((t, i) => ({ ...blankText(), ...t, id: t.id ?? i + 1, keyframes: kfClean(t.keyframes) }))
   p.audio = (r.audio ?? []).map((a, i) => ({ ...blankAudio(), ...a, id: a.id ?? i + 1, beats: cleanBeats(a.beats) }))
@@ -107,6 +107,7 @@ function blankClip(): EditClip {
     reverse: false,
     freeze: false,
     regions: [],
+    bg: blankBackground(),
     transition: null,
   }
 }
@@ -142,6 +143,10 @@ export function blankOverlay(): EditOverlay {
     keyframes: {},
     chroma: blankChroma(),
   }
+}
+
+export function blankBackground(): EditBackground {
+  return { on: false, matte: 'chroma', chroma: blankChroma(), mode: 'color', color: '#000000', image: '', blur: 20, feather: 1.5 }
 }
 
 export function blankChroma(): EditChroma {

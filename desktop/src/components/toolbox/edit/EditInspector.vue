@@ -8,8 +8,8 @@ import { api, errorText, events } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { RegionApi } from '../../../composables/useRegions'
 import type { OverlayAnim } from '../../../types'
-import type { EditChroma, EditClip, EditOutput, EditOverlay } from '../../../types'
-import type { SpeedPoint } from '../../../utils/edit'
+import type { EditBackground, EditChroma, EditClip, EditOutput, EditOverlay } from '../../../types'
+import { EDIT_IMAGE_EXTS, type SpeedPoint } from '../../../utils/edit'
 import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, OVERLAY_KEY_PROPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
 import EditField from './EditField.vue'
 import EditKeyframes from './EditKeyframes.vue'
@@ -61,6 +61,27 @@ const et = computed(() => (text.value ? withKeys(text.value, txLocal.value) : nu
 const pk = (patch: Parameters<typeof ed.setOverlayProps>[1], key: string) => overlay.value && ed.setOverlayProps(overlay.value.id, patch, `${key}:${overlay.value.id}`)
 const ptk = (patch: Parameters<typeof ed.setTextProps>[1], key: string) => text.value && ed.setTextProps(text.value.id, patch, `${key}:${text.value.id}`)
 // ---- 抠像 ----
+const pbg = (patch: Partial<EditBackground>, key: string) => clip.value && ed.patchClip(clip.value.id, { bg: { ...clip.value.bg, ...patch } }, `${key}:${clip.value.id}`)
+const pbgc = (patch: Partial<EditChroma>, key: string) => clip.value && pbg({ chroma: { ...clip.value.bg.chroma, ...patch } }, key)
+const detecting = ref(false)
+/** 取一帧找绿幕 / 蓝幕，找到就把颜色和相似度填进去（`apply` 决定填到哪里） */
+async function detectKey(path: string, atMs: number, apply: (g: { color: string; similarity: number; blend: number }) => void) {
+  detecting.value = true
+  try {
+    const g = await api.editDetectKey(path, Math.max(0, Math.round(atMs)))
+    if (!g) return void ElMessage.warning('没有在画面四周找到大片的绿色 / 蓝色。请手动选颜色，或换一个背景更干净的时间点。')
+    apply(g)
+    ElMessage.success(`已识别：${g.color}，相似度 ${Math.round(g.similarity * 100)}%（画面里约 ${Math.round(g.coverage * 100)}% 是背景色）`)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    detecting.value = false
+  }
+}
+async function pickBgImage() {
+  const r = await open({ multiple: false, filters: [{ name: '图片', extensions: EDIT_IMAGE_EXTS }] })
+  if (typeof r === 'string') pbg({ image: r, mode: 'image' }, 'bgimg')
+}
 const pch = (patch: Partial<EditChroma>, key: string) => overlay.value && ed.patchOverlay(overlay.value.id, { chroma: { ...overlay.value.chroma, ...patch } }, `${key}:${overlay.value.id}`)
 const KEY_COLORS = [
   { label: '绿幕', color: '#00FF00' },
@@ -401,6 +422,44 @@ async function pickDir() {
           </template>
           <span v-else class="mute small">定格片段：没有声音；预览里是静止画面</span>
         </EditField>
+        <EditField label="换背景" hint="把前景留下，背景换成纯色、模糊的原画面或一张图片。实时预览里看不到，导出时才生效">
+          <el-checkbox :model-value="clip.bg.on" @update:model-value="(v: unknown) => pbg({ on: !!v }, 'bgon')">换掉背景</el-checkbox>
+        </EditField>
+        <template v-if="clip.bg.on">
+          <EditField label="前景">
+            <el-radio-group :model-value="clip.bg.matte" size="small" @update:model-value="(v: string | number | boolean | undefined) => pbg({ matte: v as EditBackground['matte'] }, 'bgm')">
+              <el-radio-button value="chroma">绿幕 / 蓝幕</el-radio-button>
+              <el-radio-button value="ai">人像抠图</el-radio-button>
+            </el-radio-group>
+          </EditField>
+          <template v-if="clip.bg.matte === 'chroma'">
+            <EditField label="背景色">
+              <el-color-picker :model-value="clip.bg.chroma.color" size="small" @update:model-value="(v: string | null) => v && pbgc({ color: v.toUpperCase() }, 'bgkc')" />
+              <el-button v-for="k in KEY_COLORS" :key="k.color" size="small" link :type="clip.bg.chroma.color === k.color ? 'primary' : undefined" @click="pbgc({ color: k.color }, 'bgkc')">{{ k.label }}</el-button>
+              <el-button size="small" link type="primary" :loading="detecting" @click="detectKey(clip.path, clip.inMs + 500, (g) => pbgc({ color: g.color, similarity: g.similarity, blend: g.blend }, 'bgauto'))">自动识别</el-button>
+            </EditField>
+            <EditSlider label="相似度" :model-value="clip.bg.chroma.similarity" :min="0.01" :max="0.6" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pbgc({ similarity: v }, 'bgks')" />
+            <EditSlider label="边缘柔化" :model-value="clip.bg.chroma.blend" :min="0" :max="0.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pbgc({ blend: v }, 'bgkb')" />
+          </template>
+          <template v-else>
+            <EditSlider label="边缘柔化" :model-value="clip.bg.feather" :min="0" :max="8" :step="0.5" :digits="1" unit=" 像素" @update:model-value="(v) => pbg({ feather: v }, 'bgf')" />
+          </template>
+          <EditField label="新背景">
+            <el-radio-group :model-value="clip.bg.mode" size="small" @update:model-value="(v: string | number | boolean | undefined) => pbg({ mode: v as EditBackground['mode'] }, 'bgmode')">
+              <el-radio-button value="color">纯色</el-radio-button>
+              <el-radio-button value="blur">模糊原画面</el-radio-button>
+              <el-radio-button value="image">图片</el-radio-button>
+            </el-radio-group>
+          </EditField>
+          <EditField v-if="clip.bg.mode === 'color'" label="颜色">
+            <el-color-picker :model-value="clip.bg.color" size="small" @update:model-value="(v: string | null) => v && pbg({ color: v.toUpperCase() }, 'bgc')" />
+          </EditField>
+          <EditSlider v-if="clip.bg.mode === 'blur'" label="模糊强度" :model-value="clip.bg.blur" :min="1" :max="60" :step="1" :digits="0" @update:model-value="(v) => pbg({ blur: v }, 'bgb')" />
+          <EditField v-if="clip.bg.mode === 'image'" label="图片">
+            <el-button size="small" @click="pickBgImage">选择图片…</el-button>
+            <span class="mute small">{{ clip.bg.image ? clip.bg.image.split(/[\\/]/).pop() : '还没有选' }}</span>
+          </EditField>
+        </template>
         <template v-if="!clip.freeze && (!src || src.hasAudio)">
           <EditSlider label="音量" :model-value="clip.volume" :min="0" :max="4" :step="0.05" unit="%" :scale="100" :disabled="clip.mute" @update:model-value="(v) => pc({ volume: v }, 'vol')" />
           <EditField label="">
@@ -566,6 +625,7 @@ async function pickDir() {
           <el-color-picker :model-value="overlay.chroma.color" size="small" @update:model-value="(v: string | null) => v && pch({ color: v.toUpperCase() }, 'chc')" />
           <el-button v-for="k in KEY_COLORS" :key="k.color" size="small" link :type="overlay.chroma.color === k.color ? 'primary' : undefined" @click="pch({ color: k.color }, 'chc')">{{ k.label }}</el-button>
           <el-button v-if="hasEyeDropper" size="small" link @click="pickKeyColor">吸管</el-button>
+          <el-button size="small" link type="primary" :loading="detecting" @click="detectKey(overlay.path, overlay.inMs + 500, (g) => pch({ color: g.color, similarity: g.similarity, blend: g.blend }, 'chauto'))">自动识别</el-button>
         </EditField>
         <EditSlider label="相似度" :model-value="overlay.chroma.similarity" :min="0.01" :max="0.6" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pch({ similarity: v }, 'chs')" />
         <EditSlider label="边缘柔化" :model-value="overlay.chroma.blend" :min="0" :max="0.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pch({ blend: v }, 'chb')" />

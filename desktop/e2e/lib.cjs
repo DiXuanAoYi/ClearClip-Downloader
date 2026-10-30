@@ -101,6 +101,7 @@ function initScript(mport) {
         case 'edit_transcribe': (window.__trReqs ||= []).push(args.req); return window.__transcript
         case 'edit_highlights': (window.__hlReqs ||= []).push(args.req); return window.__highlights || []
         case 'edit_highlights_llm': (window.__hlLlmReqs ||= []).push(args.req); return window.__highlightsLlm || []
+        case 'edit_detect_key': (window.__keyReqs ||= []).push(args); return window.__keyGuess ?? null
         case 'edit_beats': (window.__beatReqs ||= []).push(args); return window.__beats
         case 'edit_proxy': window.__proxied = (window.__proxied || 0) + 1; return window.__proxyUrl
         case 'edit_missing': return args.paths.filter((p) => !window.__exists(p))

@@ -557,6 +557,7 @@ pub fn run() {
             edit::analyze::edit_scenes,
             edit::analyze::edit_silences,
             edit::analyze::edit_beats,
+            edit::analyze::edit_detect_key,
             edit::highlights::edit_highlights,
             edit::highlights::edit_highlights_llm,
             edit::analyze::edit_waveform,

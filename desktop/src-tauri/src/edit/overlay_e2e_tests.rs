@@ -480,3 +480,62 @@ async fn chroma_key_removes_the_green_screen_and_keeps_the_subject() {
     assert!(is_green(px_at(&ff, &out, 1.0, 180, 80).await), "绿幕留下");
     let _ = std::fs::remove_dir_all(d);
 }
+
+#[tokio::test]
+async fn main_track_green_screen_gets_a_new_background() {
+    let (ff, d, caps, m) = need!(setup("bgswap").await);
+    if !caps.has_filter("chromakey") || !caps.has_filter("despill") || !caps.has_filter("drawbox") {
+        return;
+    }
+    let vcodec = if caps.encoders.h264 == Some("libx264") { "libx264" } else { "mpeg4" };
+    // 绿幕 320×240，正中红色方块
+    let screen = super::e2e_tests::gen(
+        &ff,
+        &d,
+        "screen2.mp4",
+        &["-f", "lavfi", "-i", "color=c=0x00FF00:s=320x240:r=25:d=3,drawbox=x=100:y=70:w=120:h=100:color=red:t=fill"],
+        &["-c:v", vcodec, "-pix_fmt", "yuv420p"],
+    )
+    .await;
+    let screen = need!(screen);
+    let mut c = main_clip(&screen, 3000);
+    c.bg.on = true;
+    c.bg.color = "#0000FF".into();
+    let (out, _) = render(&ff, &caps, &d, project(c.clone(), vec![]), Mode::Export).await;
+    assert!(is_blue(px_at(&ff, &out, 1.0, 20, 20).await), "纯色背景换成蓝色");
+    assert!(is_red(px_at(&ff, &out, 1.0, 160, 120).await), "前景留下");
+    // 图片背景
+    c.bg.mode = "image".into();
+    c.bg.image = m.yellow.to_string_lossy().into_owned();
+    let (out, _) = render(&ff, &caps, &d, project(c, vec![]), Mode::Export).await;
+    assert!(is_yellow(px_at(&ff, &out, 1.0, 20, 20).await), "图片背景铺满");
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[tokio::test]
+async fn detected_key_settings_really_remove_a_noisy_green_screen() {
+    let (ff, d, caps, m) = need!(setup("autokey").await);
+    if !caps.has_filter("chromakey") || !caps.has_filter("despill") || !caps.has_filter("noise") {
+        return;
+    }
+    let vcodec = if caps.encoders.h264 == Some("libx264") { "libx264" } else { "mpeg4" };
+    let screen = super::e2e_tests::gen(
+        &ff,
+        &d,
+        "noisy.mp4",
+        &["-f", "lavfi", "-i", "color=c=0x16B440:s=320x240:r=25:d=3,drawbox=x=100:y=70:w=120:h=100:color=red:t=fill,noise=alls=12:allf=t"],
+        &["-c:v", vcodec, "-pix_fmt", "yuv420p"],
+    )
+    .await;
+    let screen = need!(screen);
+    let guess = super::keydetect::analyze(&ff, &screen.to_string_lossy(), 1000).await.unwrap().expect("识别出绿幕");
+    let mut o = ov(&screen, 0, 3000, 0.5, 0.5, 0.5);
+    o.chroma.on = true;
+    o.chroma.color = guess.color.clone();
+    o.chroma.similarity = guess.similarity;
+    o.chroma.blend = guess.blend;
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.silent, 3000), vec![o]), Mode::Export).await;
+    assert!(is_blue(px_at(&ff, &out, 1.0, 180, 80).await), "识别出的设置能把有噪点的绿幕抠干净：{guess:?}");
+    assert!(is_red(px_at(&ff, &out, 1.0, 320, 180).await), "方块留下");
+    let _ = std::fs::remove_dir_all(d);
+}

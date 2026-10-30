@@ -168,6 +168,8 @@ struct Regions<'a> {
     /// 成片的宽高比（聚焦“按成片比例取景”用）
     out_aspect: f64,
     masks: Vec<MaskJob>,
+    /// 额外输入（遮罩视频、背景图片）的参数，按输入编号顺序
+    extra: Vec<Vec<String>>,
 }
 
 /// 预览时素材长边超过这个值就先缩小再做区域效果（预览本来就只有 360 高，没必要在 4K 上做模糊）
@@ -241,7 +243,8 @@ fn region_stage(i: usize, c: &Clip, sr: &Source, setpts: String, rg: &mut Region
         if eff == "null" {
             continue; // 没有设置任何调色：不需要这一层
         }
-        let m = rg.first_input + rg.masks.len();
+        let m = rg.first_input + rg.extra.len();
+        rg.extra.push(vec!["-i".into(), rg.tmp.join(format!("mask-{i}-{j}.nut")).to_string_lossy().into_owned()]);
         rg.masks.push(MaskJob::new(rg.tmp.join(format!("mask-{i}-{j}.nut")), r.clone(), c.in_ms, c.speed, dur, (w, h), sr.fps, rg.preview));
         let (base, branch, fx, mask, alpha, next) =
             (format!("rb{i}_{j}"), format!("re{i}_{j}"), format!("rf{i}_{j}"), format!("rm{i}_{j}"), format!("ra{i}_{j}"), format!("rs{i}_{j}"));
@@ -281,6 +284,49 @@ struct Frame<'a> {
     fit: &'a str,
     /// 模糊背景用的模糊滤镜（见 `Caps::background_blur`）
     blur: &'static str,
+}
+
+/// 换背景：`input` 是已经套好 `head`（变速、方向、帧率）的画面，输出合成后的标签。
+#[allow(clippy::too_many_arguments)]
+fn bg_stage(i: usize, c: &Clip, sr: &Source, f: &Frame, input: &str, head: &str, rg: &mut Regions, stmts: &mut Vec<String>) -> String {
+    let bg = &c.bg;
+    let hex = |s: &str| s.trim_start_matches('#').to_string();
+    let swap = matches!(c.rotate, 90 | 270);
+    let (sw, sh) = if swap { (sr.height, sr.width) } else { (sr.width, sr.height) };
+    let needs_copy = bg.mode != "image";
+    let (fg_in, bg_in) = (format!("bk{i}"), format!("bs{i}"));
+    if needs_copy {
+        stmts.push(format!("{input}{head},split[{bg_in}][{fg_in}]"));
+    } else {
+        stmts.push(format!("{input}{head}[{fg_in}]"));
+    }
+    let key = &bg.chroma;
+    let mut k = vec!["format=yuva420p".to_string(), format!("chromakey=color=0x{}:similarity={:.3}:blend={:.3}", hex(&key.color), key.similarity, key.blend)];
+    if key.despill {
+        k.extend(["format=gbrap".into(), format!("despill=type={}:mix=0.5:expand=0.1", key.spill_type()), "format=yuva420p".into()]);
+    }
+    stmts.push(format!("[{fg_in}]{}[bf{i}]", k.join(",")));
+    match bg.mode.as_str() {
+        "blur" => stmts.push(format!("[{bg_in}]{}[bb{i}]", f.blur)),
+        "image" => {
+            let m = rg.first_input + rg.extra.len();
+            rg.extra.push(vec![
+                "-loop".into(),
+                "1".into(),
+                "-framerate".into(),
+                f.fps.into(),
+                "-t".into(),
+                sec(c.duration_ms() + 500),
+                "-i".into(),
+                bg.image.clone(),
+            ]);
+            let (w, h) = (sw.max(2) & !1, sh.max(2) & !1);
+            stmts.push(format!("[{m}:v:0]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,format=yuv420p[bb{i}]"));
+        }
+        _ => stmts.push(format!("[{bg_in}]drawbox=x=0:y=0:w=iw:h=ih:color=0x{}:t=fill[bb{i}]", hex(&bg.color))),
+    }
+    stmts.push(format!("[bb{i}][bf{i}]overlay=format=auto:shortest=1,format=yuv420p[bgv{i}]"));
+    format!("bgv{i}")
 }
 
 /// 一个片段的画面处理，输出 `[v{i}]`。
@@ -323,7 +369,12 @@ fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmt
         tail.push(format!("fade=t=out:st={}:d={}", sec(d.saturating_sub(c.fade_out_ms)), sec(c.fade_out_ms)));
     }
     tail.extend(["format=yuv420p".into(), "setsar=1".into(), "settb=AVTB".into()]);
-    let head = head.join(",");
+    let mut head = head.join(",");
+    let mut input = input;
+    if c.bg.on && c.bg.matte == "chroma" {
+        input = format!("[{}]", bg_stage(i, c, sr, f, &input, &head, rg, stmts));
+        head = "null".into();
+    }
     let tail = tail.join(",");
     match f.fit {
         "cover" => stmts.push(format!(
@@ -764,6 +815,12 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     if p.overlays.iter().any(|o| o.keys("opacity").is_some()) {
         need("geq", "无法给叠加素材做不透明度关键帧")?;
     }
+    if p.clips.iter().any(|c| c.bg.on && c.bg.matte == "chroma") {
+        need("chromakey", "无法换背景")?;
+        if p.clips.iter().any(|c| c.bg.on && c.bg.chroma.despill) {
+            need("despill", "无法去溢色")?;
+        }
+    }
     if p.overlays.iter().any(|o| o.chroma.on) {
         need("chromakey", "无法抠像")?;
         if p.overlays.iter().any(|o| o.chroma.on && o.chroma.despill) {
@@ -847,7 +904,7 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         || ovs.iter().any(|(_, o)| ov_audio(o))
         || p.clips.iter().any(|c| c.kind == ClipKind::Video && !c.mute && src.get(&c.path).is_some_and(|s| s.has_audio));
     let frame = Frame { w, h, fps: &fps_txt, fit: &p.out.fit, blur: caps.background_blur() };
-    let mut rg = Regions { preview, tmp, first_input: ov_first + ovs.len(), out_aspect: f64::from(w) / f64::from(h), masks: vec![] };
+    let mut rg = Regions { preview, tmp, first_input: ov_first + ovs.len(), out_aspect: f64::from(w) / f64::from(h), masks: vec![], extra: vec![] };
     let mut stmts: Vec<String> = vec![];
     let fx = FxCaps::from_caps(caps, None);
     for (i, c) in p.clips.iter().enumerate() {
@@ -1009,8 +1066,8 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     stmts.push(format!("[{video}]format={pix},setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv[vout]"));
 
     // 区域效果的遮罩视频：作为额外的输入，排在片段和音频轨之后
-    for m in &rg.masks {
-        args.extend(["-i".into(), m.path.to_string_lossy().into_owned()]);
+    for a in &rg.extra {
+        args.extend(a.iter().cloned());
     }
     if !rg.masks.is_empty() {
         plan.notes.push(format!("有 {} 个区域效果，导出前会先生成遮罩", rg.masks.len()));

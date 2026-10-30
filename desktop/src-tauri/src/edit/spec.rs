@@ -185,6 +185,8 @@ pub struct Clip {
     pub freeze: bool,
     /// 跟着物体走的区域（只用于视频片段，图片会被忽略）
     pub regions: Vec<Region>,
+    /// 换背景
+    pub bg: Background,
     pub transition: Option<Transition>,
 }
 
@@ -213,6 +215,7 @@ impl Default for Clip {
             reverse: false,
             freeze: false,
             regions: vec![],
+            bg: Background::default(),
             transition: None,
         }
     }
@@ -368,6 +371,47 @@ impl Chroma {
         } else {
             "green"
         }
+    }
+}
+
+/// 换背景：把片段里的“前景”（按颜色抠出，或者人像抠图模型抠出）留下，背景换成纯色、模糊的原画面或一张图片。
+/// 在片段旋转 / 翻转之后、按输出画面适配之前合成，所以背景图铺满的是素材画面，不是输出画面。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Background {
+    pub on: bool,
+    /// 前景怎么来：`chroma` 按颜色抠（绿幕 / 蓝幕），`ai` 人像抠图模型
+    pub matte: String,
+    /// `matte == "chroma"` 时用的抠像设置（`on` 字段不用）
+    pub chroma: Chroma,
+    /// 背景：`color` 纯色、`blur` 模糊的原画面、`image` 一张图片
+    pub mode: String,
+    pub color: String,
+    pub image: String,
+    /// 模糊背景的强度 1–60
+    pub blur: f64,
+    /// 人像抠图的边缘柔化（像素）0–8
+    pub feather: f64,
+}
+
+impl Default for Background {
+    fn default() -> Self {
+        Background {
+            on: false,
+            matte: "chroma".into(),
+            chroma: Chroma::default(),
+            mode: "color".into(),
+            color: "#000000".into(),
+            image: String::new(),
+            blur: 20.0,
+            feather: 1.5,
+        }
+    }
+}
+
+impl Background {
+    pub fn uses_ai(&self) -> bool {
+        self.on && self.matte == "ai"
     }
 }
 
@@ -699,6 +743,21 @@ impl Project {
                 c.regions.clear();
             } else {
                 check_regions(&mut c.regions, n)?;
+            }
+            c.bg.color = hex_color(&c.bg.color, "#000000");
+            c.bg.chroma.color = hex_color(&c.bg.chroma.color, "#00FF00");
+            c.bg.chroma.similarity = clamp(c.bg.chroma.similarity, 0.01, 0.6, 0.18);
+            c.bg.chroma.blend = clamp(c.bg.chroma.blend, 0.0, 0.5, 0.08);
+            c.bg.blur = clamp(c.bg.blur, 1.0, 60.0, 20.0);
+            c.bg.feather = clamp(c.bg.feather, 0.0, 8.0, 1.5);
+            if !matches!(c.bg.matte.as_str(), "chroma" | "ai") {
+                c.bg.matte = "chroma".into();
+            }
+            if !matches!(c.bg.mode.as_str(), "color" | "blur" | "image") {
+                c.bg.mode = "color".into();
+            }
+            if c.bg.mode == "image" && c.bg.image.trim().is_empty() {
+                c.bg.mode = "color".into();
             }
             if c.kind == ClipKind::Image {
                 c.reverse = false;

@@ -265,6 +265,13 @@ pub async fn edit_beats(state: St<'_>, path: String, from_ms: u64, to_ms: u64) -
     super::beats::analyze(&ff, &path, from_ms, to_ms).await
 }
 
+/// 自动识别绿幕 / 蓝幕：取 `at_ms` 处一帧，找画面四周的大片纯色。识别不出来返回空。
+#[tauri::command]
+pub async fn edit_detect_key(state: St<'_>, path: String, at_ms: u64) -> AppResult<Option<super::keydetect::KeyGuess>> {
+    let ff = need_ffmpeg(&state)?;
+    super::keydetect::analyze(&ff, &path, at_ms).await
+}
+
 #[tauri::command]
 pub async fn edit_waveform(state: St<'_>, path: String, from_ms: u64, to_ms: u64, width: u32, height: u32) -> AppResult<String> {
     let ff = need_ffmpeg(&state)?;

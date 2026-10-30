@@ -1453,6 +1453,7 @@ export interface EditClip {
   reverse: boolean
   freeze: boolean
   regions: EditRegion[]
+  bg: EditBackground
   transition: EditTransition | null
 }
 
@@ -1617,6 +1618,26 @@ export interface EditChroma {
   similarity: number
   blend: number
   despill: boolean
+}
+
+/** 自动识别绿幕的结果 */
+export interface KeyGuess {
+  color: string
+  similarity: number
+  blend: number
+  coverage: number
+}
+
+/** 换背景：前景按颜色（chroma）或人像模型（ai）抠出，背景换成纯色 / 模糊原画面 / 图片 */
+export interface EditBackground {
+  on: boolean
+  matte: 'chroma' | 'ai'
+  chroma: EditChroma
+  mode: 'color' | 'blur' | 'image'
+  color: string
+  image: string
+  blur: number
+  feather: number
 }
 
 export interface EditOutput {

@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   AccountStatus,
   HighlightCandidate,
+  KeyGuess,
   HighlightReq,
   TrackerStatus,
   AiStatus,
@@ -263,6 +264,7 @@ export const api = {
   editSilences: (path: string, fromMs: number, toMs: number, noiseDb: number, minMs: number) => invoke<TimeSpan[]>('edit_silences', { path, fromMs, toMs, noiseDb, minMs }),
   editHighlights: (req: HighlightReq) => invoke<HighlightCandidate[]>('edit_highlights', { req }),
   editHighlightsLlm: (req: HighlightReq) => invoke<HighlightCandidate[]>('edit_highlights_llm', { req }),
+  editDetectKey: (path: string, atMs: number) => invoke<KeyGuess | null>('edit_detect_key', { path, atMs }),
   editBeats: (path: string, fromMs: number, toMs: number) => invoke<{ bpm: number; confidence: number; beatsMs: number[] }>('edit_beats', { path, fromMs, toMs }),
   editWaveform: (path: string, fromMs: number, toMs: number, width: number, height: number) => invoke<string>('edit_waveform', { path, fromMs, toMs, width, height }),
   editNoiseFloor: (path: string, fromMs: number, toMs: number) => invoke<number | null>('edit_noise_floor', { path, fromMs, toMs }),
