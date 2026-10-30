@@ -149,3 +149,56 @@ console.log('extension-tools ok')
   assert.equal(vm.runInContext('ccOriginal', ctx2).bestOfSrcset('a.jpg 1x, b.jpg 2x, c.jpg 3x'), 'c.jpg')
   assert.equal(vm.runInContext('ccOriginal', ctx2).bestOfSrcset('a.jpg 320w, b.jpg 1280w, c.jpg 640w'), 'b.jpg')
 }
+
+// ---- 播放增强的纯逻辑
+{
+  const ctx3 = vm.createContext({ URL, console })
+  vm.runInContext(fs.readFileSync(path.join(dir, 'content/video-logic.js'), 'utf8'), ctx3, { filename: 'video-logic.js' })
+  const V = vm.runInContext('ccVideo', ctx3)
+  const json = (x) => JSON.parse(JSON.stringify(x))
+  // 配置：缺的补默认，越界回默认，重复键能查出来
+  const d = json(V.normalizeCfg())
+  assert.equal(d.keys.faster, 'd')
+  assert.equal(d.rateStep, 0.1)
+  const c = json(V.normalizeCfg({ keys: { faster: 'D', slower: 'ArrowDown', back: 'x' }, rateStep: 9, seekStep: 30, skipIntro: { 'A.com': 85, 'b.com': -1, 'c.com': 9999 } }))
+  assert.equal(c.keys.faster, 'd')
+  assert.equal(c.keys.slower, 'ArrowDown')
+  assert.equal(c.rateStep, 0.1)
+  assert.equal(c.seekStep, 30)
+  assert.deepEqual(c.skipIntro, { 'a.com': 85 })
+  assert.deepEqual(json(V.findConflicts(c.keys)), { x: ['back', 'forward'] })
+  assert.deepEqual(json(V.findConflicts(d.keys)), {})
+  // 快捷键匹配：组合键不算，大小写不敏感
+  assert.equal(V.matchKey({ key: 'S' }, d.keys), 'slower')
+  assert.equal(V.matchKey({ key: 's', ctrlKey: true }, d.keys), null)
+  assert.equal(V.matchKey({ key: 'q' }, d.keys), null)
+  // 倍速：步进、上下限
+  assert.equal(V.stepRate(1, 1, 0.1), 1.1)
+  assert.equal(V.stepRate(1.1, 1, 0.1), 1.2)
+  assert.equal(V.stepRate(0.1, -1, 0.1), 0.1)
+  assert.equal(V.stepRate(16, 1, 0.5), 16)
+  assert.equal(V.clampRate(99), 16)
+  assert.equal(V.clampRate('x'), 1)
+  assert.equal(V.fmtRate(1.25), '1.25×')
+  assert.equal(V.fmtRate(2), '2×')
+  // 画面
+  assert.equal(V.filterCss({}), '')
+  assert.equal(V.filterCss({ brightness: 120, contrast: 100, saturate: 80 }), 'brightness(1.2) saturate(0.8)')
+  assert.equal(V.transformCss({ mirror: true, rotate: 90 }), 'rotate(90deg) scaleX(-1)')
+  // 片头片尾：太短的视频不跳
+  assert.equal(V.skipIntroTarget(0.3, 85, 1500), 85)
+  assert.equal(V.skipIntroTarget(90, 85, 1500), null)
+  assert.equal(V.skipIntroTarget(0, 85, 100), null)
+  assert.equal(V.skipIntroTarget(0, 0, 1500), null)
+  assert.equal(V.inOutro(1450, 60, 1500), true)
+  assert.equal(V.inOutro(1000, 60, 1500), false)
+  assert.equal(V.inOutro(40, 60, 100), false)
+  // 音量增益：跨域且没有 CORS 才不安全
+  assert.equal(V.audioGraphUnsafe('https://cdn.other.com/a.mp4', 'https://site.test', null), true)
+  assert.equal(V.audioGraphUnsafe('https://cdn.other.com/a.mp4', 'https://site.test', 'anonymous'), false)
+  assert.equal(V.audioGraphUnsafe('https://site.test/a.mp4', 'https://site.test', null), false)
+  assert.equal(V.audioGraphUnsafe('blob:https://site.test/xyz', 'https://site.test', null), false)
+  // 文件名
+  assert.equal(V.fmtTime(3725), '01-02-05')
+  assert.equal(V.shotName('第1集: a/b?', 65, 'png'), '第1集 a b -00-01-05.png'.replace(' -', '-'))
+}

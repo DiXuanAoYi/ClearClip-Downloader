@@ -31,7 +31,7 @@ function normalizeFeatures(raw) {
 const RESIDENT_SCRIPTS = [
   { id: 'cc-float', js: ['content/ui.js', 'content/float-button.js'], need: (f) => f.floatButton },
   { id: 'cc-zoom', js: ['content/ui.js', 'content/original.js', 'content/hover-zoom.js'], need: (f) => f.hoverZoom },
-  { id: 'cc-video', js: ['content/ui.js', 'content/video-control.js'], need: (f) => f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced },
+  { id: 'cc-video', js: ['content/ui.js', 'content/video-logic.js', 'content/video-control.js'], need: (f) => f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced },
   { id: 'cc-unlock', js: ['content/unlock.js'], need: (f) => f.unlock },
 ]
 

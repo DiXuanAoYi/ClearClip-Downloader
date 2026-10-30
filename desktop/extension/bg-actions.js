@@ -142,13 +142,15 @@ const HANDLERS = {
     await searchImage(m.url, m.engine)
     return {}
   },
+  // 视频画布被跨域污染时，用浏览器对可见区域的截图代替（只在用户点了截图之后）
+  'cc-capture': async (_m, sender) => ({ dataUrl: await api.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }) }),
 }
 
 api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handler = msg && HANDLERS[msg.type]
   if (!handler) return false
   // 内容脚本只能从有标签页的发送者来；扩展页面的消息 sender.tab 可能为空
-  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save)$/.test(msg.type) && !sender.tab) return false
+  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save|capture)$/.test(msg.type) && !sender.tab) return false
   handler(msg, sender)
     .then((r) => sendResponse({ ok: true, ...r }))
     .catch(async (e) => {

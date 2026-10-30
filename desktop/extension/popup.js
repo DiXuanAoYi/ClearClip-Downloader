@@ -482,6 +482,66 @@ async function loadSettings() {
   $('ruleParams').value = rules.extraParams
   $('ruleEngines').value = engines || enginesToText(DEFAULT_ENGINES)
   renderSync()
+  renderVideoCfg()
+}
+
+let videoCfgDraft = ccVideo.normalizeCfg()
+async function renderVideoCfg() {
+  const { videoCfg, shotFormat } = await api.storage.local.get(['videoCfg', 'shotFormat'])
+  videoCfgDraft = ccVideo.normalizeCfg(videoCfg)
+  $('vRateStep').value = videoCfgDraft.rateStep
+  $('vSeekStep').value = videoCfgDraft.seekStep
+  $('vShotFmt').value = shotFormat === 'jpg' ? 'jpg' : 'png'
+  const box = $('videoKeys')
+  box.innerHTML = ''
+  for (const a of ccVideo.ACTIONS) {
+    const row = document.createElement('div')
+    row.className = 'row spread'
+    const n = document.createElement('span')
+    n.textContent = a.name
+    const inp = document.createElement('input')
+    inp.readOnly = true
+    inp.style.width = '80px'
+    inp.value = videoCfgDraft.keys[a.id]
+    inp.dataset.id = a.id
+    inp.onkeydown = (e) => {
+      if (e.key === 'Tab' || e.key === 'Shift') return
+      e.preventDefault()
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      videoCfgDraft.keys[a.id] = e.key.length === 1 ? e.key.toLowerCase() : e.key
+      inp.value = videoCfgDraft.keys[a.id]
+      checkVideoKeys()
+    }
+    row.append(n, inp)
+    box.append(row)
+  }
+  checkVideoKeys()
+}
+function checkVideoKeys() {
+  const c = ccVideo.findConflicts(videoCfgDraft.keys)
+  const names = Object.fromEntries(ccVideo.ACTIONS.map((a) => [a.id, a.name]))
+  const txt = Object.entries(c).map(([k, ids]) => `“${k}”被 ${ids.map((i) => names[i]).join('、')} 同时使用`).join('；')
+  $('videoKeyWarn').textContent = txt
+  $('videoKeyWarn').classList.toggle('hidden', !txt)
+  for (const i of $('videoKeys').querySelectorAll('input')) i.style.borderColor = c[i.value] ? 'var(--err)' : ''
+  return !txt
+}
+$('saveVideo').onclick = async () => {
+  if (!checkVideoKeys()) return msg('有快捷键重复，请先改掉', 'err')
+  const old = (await api.storage.local.get('videoCfg')).videoCfg
+  const keep = ccVideo.normalizeCfg(old)
+  await api.storage.local.set({
+    videoCfg: ccVideo.normalizeCfg({ ...videoCfgDraft, rateStep: $('vRateStep').value, seekStep: $('vSeekStep').value, skipIntro: keep.skipIntro, skipOutro: keep.skipOutro }),
+    shotFormat: $('vShotFmt').value,
+  })
+  msg('已保存播放设置', 'ok')
+  renderVideoCfg()
+}
+$('resetVideo').onclick = async (e) => {
+  e.preventDefault()
+  videoCfgDraft.keys = { ...ccVideo.DEFAULT_KEYS }
+  for (const i of $('videoKeys').querySelectorAll('input')) i.value = videoCfgDraft.keys[i.dataset.id]
+  checkVideoKeys()
 }
 
 async function saveRules() {

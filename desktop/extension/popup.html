@@ -127,6 +127,18 @@
     <div id="featureList"></div>
     <label class="row"><input id="notifyDone" type="checkbox" /> 下载完成时弹出通知</label>
 
+    <h2>播放增强快捷键</h2>
+    <p class="mute">鼠标指着的视频优先，其次是正在播放的。在输入框里打字时不会触发。点输入框后按一个键即可修改。</p>
+    <div id="videoKeys"></div>
+    <div id="videoKeyWarn" class="err hidden"></div>
+    <div class="rowBtns">
+      <div class="col"><label>倍速步长</label><input id="vRateStep" type="number" min="0.01" max="2" step="0.01" /></div>
+      <div class="col"><label>快进快退（秒）</label><input id="vSeekStep" type="number" min="1" max="600" step="1" /></div>
+      <div class="col"><label>截图格式</label><select id="vShotFmt"><option value="png">PNG</option><option value="jpg">JPG</option></select></div>
+    </div>
+    <button id="saveVideo">保存播放设置</button>
+    <a id="resetVideo" class="lnk" href="#">恢复默认快捷键</a>
+
     <h2>自动同步 Cookie</h2>
     <label class="row"><input id="autoSync" type="checkbox" /> 开启自动同步</label>
     <p class="mute">开启后，下面列出的网站登录状态变化时，或清影提示“需要登录”时，扩展会自动把这个网站的 Cookie 同步给清影，每个网站最多 5 分钟一次。只同步列表里的网站。</p>
@@ -164,6 +176,7 @@
   <script src="takeover.js"></script>
   <script src="sniff.js"></script>
   <script src="engines.js"></script>
+  <script src="content/video-logic.js"></script>
   <script src="vendor/qrcode.js"></script>
   <script src="qr.js"></script>
   <script src="popup.js"></script>
