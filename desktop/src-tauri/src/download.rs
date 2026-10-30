@@ -1324,7 +1324,7 @@ async fn download_input(
 }
 
 /// 流地址按“设置 → 网络”的分流规则得到的出口。
-fn stream_route(settings: &Settings, url: &str) -> stream_engine::StreamRoute {
+pub(crate) fn stream_route(settings: &Settings, url: &str) -> stream_engine::StreamRoute {
     use crate::settings::Route;
     let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(String::from)).unwrap_or_default();
     match settings.network.route_for_host(&host) {

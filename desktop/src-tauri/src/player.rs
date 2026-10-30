@@ -133,26 +133,46 @@ pub async fn preview_source(state: St<'_>, task_id: i64) -> AppResult<PlayerSour
     Ok(PlayerSource { path, url, title, kind, ext, tracks: vec![] })
 }
 
-/// 解析界面的预览：把解析出来的一个视频 / 音频 / 图片资源经本机服务代理播放（带站点要求的 Referer / Cookie，走用户设置的代理）。
-/// 只支持单个 HTTP 文件；m3u8 / mpd / 站点解析的流要下载后才能看。
+/// 解析界面的预览。图片、浏览器能直接播放的 HTTP 视频 / 音频经本机服务代理（带站点要求的 Referer / Cookie，走设置里的代理，
+/// 支持拖动进度条）；m3u8 / mpd、flv / mkv、HEVC、音视频分离、yt-dlp 的流等由 ffmpeg 取开头一段转成 MP4 再播放。
+/// `transcode`：强制重新编码（直接播放失败后，界面用它重试）。
 #[tauri::command]
-pub async fn preview_asset(state: St<'_>, media: crate::model::MediaInfo, asset_id: String) -> AppResult<PlayerSource> {
+pub async fn preview_asset(state: St<'_>, media: crate::model::MediaInfo, asset_id: String, transcode: Option<bool>) -> AppResult<PlayerSource> {
     use crate::model::{AssetKind, Protocol};
     let asset = media.assets.iter().find(|a| a.id == asset_id).ok_or_else(|| AppError::not_found("没有找到这个资源"))?;
+    let transcode = transcode.unwrap_or(false);
     let ext = asset.ext.to_ascii_lowercase();
-    if asset.protocol != Protocol::Http || matches!(ext.as_str(), "m3u8" | "mpd") || !asset.url.starts_with("http") {
-        return Err(AppError::unsupported("这个资源是分片 / 流媒体，不能直接预览，下载后即可播放。"));
-    }
-    let kind = match asset.kind {
-        AssetKind::Video => "video",
-        AssetKind::Audio => "audio",
-        _ => return Err(AppError::unsupported("只能预览视频和音频。")),
+    let source =
+        |url: String, kind: &str, ext: String| PlayerSource { path: String::new(), url, title: media.title.clone(), kind: kind.into(), ext, tracks: vec![] };
+    let proxy = |mime: &'static str| -> AppResult<String> {
+        let req = crate::download::build_request(&state, &media, asset);
+        let client = state.net.clients_for(&state.settings().network, &asset.url)?.download;
+        Ok(state.media.register_remote(crate::media_server::Remote { url: asset.url.clone(), headers: req.headers, client, mime }))
     };
-    let req = crate::download::build_request(&state, &media, asset);
-    let client = state.net.clients_for(&state.settings().network, &asset.url)?.download;
-    let mime = crate::media_server::mime_for(Path::new(&format!("x.{ext}")));
-    let url = state.media.register_remote(crate::media_server::Remote { url: asset.url.clone(), headers: req.headers, client, mime });
-    Ok(PlayerSource { path: String::new(), url, title: media.title.clone(), kind: kind.into(), ext, tracks: vec![] })
+    match asset.kind {
+        AssetKind::Image | AssetKind::Cover => {
+            if asset.protocol != Protocol::Http || !asset.url.starts_with("http") {
+                return Err(AppError::unsupported("这张图片不能直接预览。"));
+            }
+            let mime = crate::media_server::mime_for(Path::new(&format!("x.{ext}")));
+            Ok(source(proxy(mime)?, "image", ext))
+        }
+        AssetKind::Video | AssetKind::Audio => {
+            let kind = if asset.kind == AssetKind::Video { "video" } else { "audio" };
+            if !transcode
+                && asset.protocol == Protocol::Http
+                && asset.url.starts_with("http")
+                && crate::preview::natively_playable(&ext)
+                && asset.pair_audio.is_none()
+            {
+                let mime = crate::media_server::mime_for(Path::new(&format!("x.{ext}")));
+                return Ok(source(proxy(mime)?, kind, ext));
+            }
+            let clip = crate::preview::make_clip(&state, &media, asset, transcode).await?;
+            Ok(source(state.media.register(&clip), kind, "mp4".into()))
+        }
+        _ => Err(AppError::unsupported("这类资源（文件、字幕）不能预览，下载后再打开。")),
+    }
 }
 
 #[cfg(test)]

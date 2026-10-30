@@ -38,6 +38,7 @@ pub mod phone;
 pub mod player;
 pub mod postprocess;
 pub mod power;
+pub mod preview;
 pub mod providers;
 pub mod quality;
 pub mod rules;
