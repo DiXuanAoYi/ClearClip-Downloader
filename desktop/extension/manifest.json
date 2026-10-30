@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "发送到清影 ClearClip",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "把当前网页、链接或视频一键发送到电脑上的清影下载，自动发现网页里的视频流，可接管浏览器下载，并可同步当前网站的登录 Cookie。",
   "icons": {
     "32": "icons/32.png",
@@ -20,7 +20,9 @@
       "progress.js",
       "takeover.js",
       "sniff.js",
+      "engines.js",
       "bg-link.js",
+      "bg-actions.js",
       "background.js"
     ]
   },

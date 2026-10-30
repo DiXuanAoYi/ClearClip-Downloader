@@ -1,5 +1,5 @@
 try {
-  importScripts('shared.js', 'features.js', 'clean-link.js', 'progress.js', 'takeover.js', 'sniff.js', 'bg-link.js')
+  importScripts('shared.js', 'features.js', 'clean-link.js', 'progress.js', 'takeover.js', 'sniff.js', 'engines.js', 'bg-link.js', 'bg-actions.js')
 } catch {
   // Firefox 以 background.scripts 加载，脚本需在 manifest 中先加载
 }
@@ -13,12 +13,7 @@ const sessionStore = api.storage.session || api.storage.local
 
 // ---------- 右键菜单 ----------
 
-api.runtime.onInstalled.addListener(async () => {
-  await api.contextMenus.removeAll()
-  api.contextMenus.create({ id: 'cc-page', title: '用清影下载此页面', contexts: ['page'] })
-  api.contextMenus.create({ id: 'cc-link', title: '用清影下载此链接', contexts: ['link'] })
-  api.contextMenus.create({ id: 'cc-media', title: '用清影下载此视频 / 音频 / 图片', contexts: ['video', 'image', 'audio'] })
-})
+// 菜单项由 bg-actions.js 的 buildMenus 创建
 
 /** 把浏览器里的一个文件地址交给清影下载（带 Referer、Cookie、文件名）。item：{ url, finalUrl?, referrer?, filename?, fileSize?, mime? } */
 async function grabUrl(item, extra = {}) {
@@ -99,7 +94,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
         shown = src
         r = await send(sniffedPayload({ url: src }, page, tab?.title))
       }
-    } else {
+    } else if (info.menuItemId === 'cc-page') {
       shown = page
       r = await send(await tidyUrl(page))
     }

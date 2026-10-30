@@ -509,6 +509,7 @@ async function init() {
   const tab = await currentTab()
   $('page').textContent = tab?.title || tab?.url || ''
   const f = await getFeatures()
+  $('pageTools').classList.toggle('hidden', !f.onDemand)
   $('tabLater').classList.toggle('hidden', !(f.readLater && typeof renderLater === 'function'))
   await loadSettings()
   show(location.hash === '#settings' || !c.port || !c.token ? 'settings' : 'main')
@@ -553,6 +554,15 @@ $('toPhone').onclick = async () => {
     msg(e.message, 'err')
   }
 }
+async function runOnPage(action) {
+  const tab = await currentTab()
+  if (!tab?.url?.startsWith('http')) return msg('当前页面不能使用这个功能', 'err')
+  const r = await api.runtime.sendMessage({ type: 'cc-run', action, tabId: tab.id }).catch((e) => ({ ok: false, error: e.message }))
+  if (!r?.ok) return msg(r?.error || '没有完成', 'err')
+  window.close()
+}
+$('openOverview').onclick = () => runOnPage('overview')
+$('startPick').onclick = () => runOnPage('picker')
 $('openSettings').onclick = () => show('settings')
 $('saveRules').onclick = saveRules
 $('notifyDone').onchange = () => api.storage.local.set({ notifyDone: $('notifyDone').checked })
