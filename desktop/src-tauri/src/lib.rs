@@ -556,6 +556,7 @@ pub fn run() {
             edit::cmds::edit_save,
             edit::analyze::edit_scenes,
             edit::analyze::edit_silences,
+            edit::analyze::edit_beats,
             edit::analyze::edit_waveform,
             edit::analyze::edit_noise_floor,
             edit::analyze::edit_auto_reframe,

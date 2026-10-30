@@ -8,8 +8,8 @@ import { api, errorText, events } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { RegionApi } from '../../../composables/useRegions'
 import type { OverlayAnim } from '../../../types'
-import type { EditClip, EditOutput, EditOverlay } from '../../../types'
-import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, MIN_TRANSITION_MS, OVERLAY_KEY_PROPS, SPEED_RAMPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
+import type { EditChroma, EditClip, EditOutput, EditOverlay } from '../../../types'
+import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, OVERLAY_KEY_PROPS, SPEED_RAMPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
 import EditField from './EditField.vue'
 import EditKeyframes from './EditKeyframes.vue'
 import EditRegions from './EditRegions.vue'
@@ -57,6 +57,57 @@ const txLocal = computed(() => (text.value ? clamp(ed.playhead.value - text.valu
 const et = computed(() => (text.value ? withKeys(text.value, txLocal.value) : null))
 const pk = (patch: Parameters<typeof ed.setOverlayProps>[1], key: string) => overlay.value && ed.setOverlayProps(overlay.value.id, patch, `${key}:${overlay.value.id}`)
 const ptk = (patch: Parameters<typeof ed.setTextProps>[1], key: string) => text.value && ed.setTextProps(text.value.id, patch, `${key}:${text.value.id}`)
+// ---- 抠像 ----
+const pch = (patch: Partial<EditChroma>, key: string) => overlay.value && ed.patchOverlay(overlay.value.id, { chroma: { ...overlay.value.chroma, ...patch } }, `${key}:${overlay.value.id}`)
+const KEY_COLORS = [
+  { label: '绿幕', color: '#00FF00' },
+  { label: '蓝幕', color: '#0000FF' },
+]
+const hasEyeDropper = typeof window !== 'undefined' && 'EyeDropper' in window
+async function pickKeyColor() {
+  try {
+    const r = await new (window as unknown as { EyeDropper: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper().open()
+    pch({ color: r.sRGBHex.toUpperCase(), on: true }, 'chc')
+  } catch {
+    // 用户按 Esc 取消
+  }
+}
+
+// ---- 节拍 ----
+const beatBusy = ref(false)
+const perClip = ref(2)
+async function findBeats() {
+  const a = audio.value
+  if (!a) return
+  const end = src.value?.durationMs
+  if (!end) return void ElMessage.warning('读不到这条配乐的长度。')
+  beatBusy.value = true
+  try {
+    const r = await api.editBeats(a.path, 0, end)
+    ed.patchAudio(a.id, { beats: { bpm: r.bpm, confidence: r.confidence, beatsMs: r.beatsMs } })
+    if (r.confidence < LOW_BEAT_CONFIDENCE) ElMessage.warning(`找到 ${r.beatsMs.length} 个拍子（约 ${r.bpm} BPM），但节奏不太清晰，结果可能不准。`)
+    else ElMessage.success(`找到 ${r.beatsMs.length} 个拍子，约 ${r.bpm} BPM。`)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    beatBusy.value = false
+  }
+}
+function arrangeNow() {
+  const a = audio.value
+  if (!a) return
+  const r = ed.arrangeToBeatsOf(a.id, perClip.value)
+  if (!r) return void ElMessage.warning('先分析节拍，并且主轨要有片段。')
+  const parts = [`${r.arranged} 个片段已对齐节拍（转场已去掉）`]
+  if (r.short) parts.push(`${r.short} 个视频素材不够长，已用满它`)
+  if (r.left) parts.push(`${r.left} 个片段没有拍子可用，保持原样`)
+  ElMessage.success(parts.join('；') + '。可以撤回。')
+}
+function fitNow() {
+  const a = audio.value
+  if (a && !ed.fitAudioToVideo(a.id)) ElMessage.warning('成片太短，或配乐开始得太晚，没法适配。')
+}
+
 const keyedCount = (item: { keyframes: Record<string, unknown[]> } | undefined | null) => Object.values(item?.keyframes ?? {}).filter((v) => v.length).length
 
 const clipLimit = computed(() => src.value?.durationMs ?? Number.MAX_SAFE_INTEGER)
@@ -507,6 +558,21 @@ async function pickDir() {
           <el-checkbox :model-value="overlay.mute" @update:model-value="(v: unknown) => po({ mute: !!v }, 'omute')">静音这个素材</el-checkbox>
         </EditField>
       </template>
+      <EditField label="抠像" hint="把一种颜色（绿幕 / 蓝幕）变成透明，露出下面的画面。预览是近似的，导出为准">
+        <el-checkbox :model-value="overlay.chroma.on" @update:model-value="(v: unknown) => pch({ on: !!v }, 'chon')">去掉背景色</el-checkbox>
+      </EditField>
+      <template v-if="overlay.chroma.on">
+        <EditField label="背景色">
+          <el-color-picker :model-value="overlay.chroma.color" size="small" @update:model-value="(v: string | null) => v && pch({ color: v.toUpperCase() }, 'chc')" />
+          <el-button v-for="k in KEY_COLORS" :key="k.color" size="small" link :type="overlay.chroma.color === k.color ? 'primary' : undefined" @click="pch({ color: k.color }, 'chc')">{{ k.label }}</el-button>
+          <el-button v-if="hasEyeDropper" size="small" link @click="pickKeyColor">吸管</el-button>
+        </EditField>
+        <EditSlider label="相似度" :model-value="overlay.chroma.similarity" :min="0.01" :max="0.6" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pch({ similarity: v }, 'chs')" />
+        <EditSlider label="边缘柔化" :model-value="overlay.chroma.blend" :min="0" :max="0.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pch({ blend: v }, 'chb')" />
+        <EditField label="">
+          <el-checkbox :model-value="overlay.chroma.despill" @update:model-value="(v: unknown) => pch({ despill: !!v }, 'chd')">去溢色（压掉边缘的绿 / 蓝反光）</el-checkbox>
+        </EditField>
+      </template>
       <EditSlider label="亮度" :model-value="overlay.brightness" :min="-1" :max="1" :step="0.01" :scale="100" :digits="0" @update:model-value="(v) => po({ brightness: v }, 'otone')" />
       <EditSlider label="对比度" :model-value="overlay.contrast" :min="0" :max="3" :step="0.01" :scale="100" unit="%" @update:model-value="(v) => po({ contrast: v }, 'otone')" />
       <EditSlider label="饱和度" :model-value="overlay.saturation" :min="0" :max="3" :step="0.01" :scale="100" unit="%" @update:model-value="(v) => po({ saturation: v }, 'otone')" />
@@ -601,6 +667,21 @@ async function pickDir() {
       </EditField>
       <EditField label="">
         <el-checkbox :model-value="audio.duck" @update:model-value="(v: unknown) => pa({ duck: !!v }, 'ad')">片段里有人声时自动压低这条配乐</el-checkbox>
+      </EditField>
+      <EditField label="节拍" hint="找出配乐的拍子，时间线上显示成小竖线，拖东西时会吸附上去；也可以让主轨按拍子切换">
+        <el-button size="small" :loading="beatBusy" @click="findBeats">{{ audio.beats ? '重新分析' : '分析节拍' }}</el-button>
+        <span v-if="audio.beats" class="mute small">约 {{ audio.beats.bpm }} BPM · {{ audio.beats.beatsMs.length }} 拍{{ audio.beats.confidence < LOW_BEAT_CONFIDENCE ? '（节奏不清晰，可能不准）' : '' }}</span>
+      </EditField>
+      <EditField v-if="audio.beats" label="卡点">
+        <span class="mute small">每个片段占</span>
+        <el-select v-model="perClip" size="small" style="width: 84px">
+          <el-option v-for="n in [1, 2, 4, 8]" :key="n" :label="`${n} 拍`" :value="n" />
+        </el-select>
+        <el-button size="small" @click="arrangeNow">让主轨按节拍切换</el-button>
+      </EditField>
+      <EditField label="">
+        <el-button size="small" @click="fitNow">适配成片长度</el-button>
+        <span class="mute small">太短就循环，太长就截断并淡出</span>
       </EditField>
       <div class="mute small pad">监视器里配乐的音量最大 100%，自动压低也不会播放出来，导出时才生效。</div>
     </div>

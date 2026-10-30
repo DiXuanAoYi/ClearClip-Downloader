@@ -54,6 +54,9 @@ import {
   trimClipAt,
   trimOverlayAt,
   neighborPoint,
+  arrangeToBeats,
+  beatsOnTimeline,
+  fitAudio,
 } from '../utils/edit'
 
 export interface Sel {
@@ -273,6 +276,33 @@ export function useEditProject() {
       rippleBy(p, from, totalMs(p.clips) - before)
     })
     return ok
+  }
+
+  /** 让主轨按配乐的节拍切换（每个片段占 `perClip` 拍）。返回结果统计，没有可排的返回 null。 */
+  function arrangeToBeatsOf(audioId: number, perClip: number): { arranged: number; short: number; left: number } | null {
+    const a = project.value.audio.find((x) => x.id === audioId)
+    const beats = a ? beatsOnTimeline(a) : []
+    if (!a || beats.length < 2) return null
+    let res: { arranged: number; short: number; left: number } | null = null
+    const before = total.value
+    mutate((p) => {
+      const r = arrangeToBeats(p.clips, beats, perClip, (path) => sources[path]?.durationMs ?? undefined)
+      if (!r) return
+      p.clips = r.clips
+      rippleBy(p, before, totalMs(p.clips) - before)
+      res = { arranged: r.arranged, short: r.short, left: r.left }
+    })
+    return res
+  }
+
+  /** 让配乐适配成片长度（太短循环、太长截断 + 结尾淡出）。成功返回 true。 */
+  function fitAudioToVideo(audioId: number): boolean {
+    const a = project.value.audio.find((x) => x.id === audioId)
+    if (!a) return false
+    const patch = fitAudio(a, sources[a.path], total.value)
+    if (!patch) return false
+    patchAudio(audioId, patch)
+    return true
   }
 
   /** 加一批自动生成的字幕（文字）。`replaceIds` 里的旧字幕先去掉。返回实际加入的条数（受 MAX_TEXTS 限制）。 */
@@ -876,6 +906,8 @@ export function useEditProject() {
     setKey,
     applySpeedRamp,
     freezeAtPlayhead,
+    arrangeToBeatsOf,
+    fitAudioToVideo,
     deleteKey,
     clearKeys,
     patchAudio,

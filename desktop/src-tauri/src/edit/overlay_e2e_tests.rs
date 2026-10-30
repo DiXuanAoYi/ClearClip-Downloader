@@ -441,3 +441,42 @@ async fn reverse_and_freeze_rewrite_a_clip() {
     assert!(is_blue(px_at(&ff, &out, 3.5, w / 2, h / 2).await), "定格之后接着放蓝色");
     let _ = std::fs::remove_dir_all(d);
 }
+
+#[tokio::test]
+async fn chroma_key_removes_the_green_screen_and_keeps_the_subject() {
+    let (ff, d, caps, m) = need!(setup("chroma").await);
+    if !caps.has_filter("chromakey") || !caps.has_filter("despill") {
+        return;
+    }
+    // 绿幕 320×240，正中一个红色方块（画面 100–220 × 70–170）
+    let vcodec = if caps.encoders.h264 == Some("libx264") { "libx264" } else { "mpeg4" };
+    let screen = super::e2e_tests::gen(
+        &ff,
+        &d,
+        "screen.mp4",
+        &["-f", "lavfi", "-i", "color=c=0x00FF00:s=320x240:r=25:d=3,drawbox=x=100:y=70:w=120:h=100:color=red:t=fill"],
+        &["-c:v", vcodec, "-pix_fmt", "yuv420p"],
+    )
+    .await;
+    let screen = need!(screen);
+    // 叠在蓝色主轨正中，宽度 50%：素材 (20, 20) 在成片 (180, 80)，方块正中在 (320, 180)
+    let plain = ov(&screen, 0, 3000, 0.5, 0.5, 0.5);
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.silent, 3000), vec![plain.clone()]), Mode::Export).await;
+    assert!(is_green(px_at(&ff, &out, 1.0, 180, 80).await), "不抠像时绿幕盖住主轨");
+
+    let mut keyed_ov = plain;
+    keyed_ov.chroma.on = true;
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.silent, 3000), vec![keyed_ov.clone()]), Mode::Export).await;
+    assert!(is_blue(px_at(&ff, &out, 1.0, 180, 80).await), "抠像后绿幕透出蓝色主轨");
+    assert!(is_red(px_at(&ff, &out, 1.0, 320, 180).await), "红色方块留下");
+
+    // 关掉去溢色也能出片；颜色选错（抠红色）时方块被抠掉、绿幕留下
+    keyed_ov.chroma.despill = false;
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.silent, 3000), vec![keyed_ov.clone()]), Mode::Export).await;
+    assert!(is_blue(px_at(&ff, &out, 1.0, 180, 80).await));
+    keyed_ov.chroma.color = "#FF0000".into();
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.silent, 3000), vec![keyed_ov]), Mode::Export).await;
+    assert!(is_blue(px_at(&ff, &out, 1.0, 320, 180).await), "抠红色时方块变透明");
+    assert!(is_green(px_at(&ff, &out, 1.0, 180, 80).await), "绿幕留下");
+    let _ = std::fs::remove_dir_all(d);
+}

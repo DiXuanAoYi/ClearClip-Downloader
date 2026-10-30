@@ -259,6 +259,7 @@ export const api = {
   trackDetect: (path: string, atMs: number) => invoke<TrackDetect>('track_detect', { path, atMs }),
   editScenes: (path: string, fromMs: number, toMs: number, threshold: number) => invoke<number[]>('edit_scenes', { path, fromMs, toMs, threshold }),
   editSilences: (path: string, fromMs: number, toMs: number, noiseDb: number, minMs: number) => invoke<TimeSpan[]>('edit_silences', { path, fromMs, toMs, noiseDb, minMs }),
+  editBeats: (path: string, fromMs: number, toMs: number) => invoke<{ bpm: number; confidence: number; beatsMs: number[] }>('edit_beats', { path, fromMs, toMs }),
   editWaveform: (path: string, fromMs: number, toMs: number, width: number, height: number) => invoke<string>('edit_waveform', { path, fromMs, toMs, width, height }),
   editNoiseFloor: (path: string, fromMs: number, toMs: number) => invoke<number | null>('edit_noise_floor', { path, fromMs, toMs }),
   editAutoReframe: (req: { id: number; path: string; fromMs: number; toMs: number; smooth?: number }) => invoke<ReframeResult>('edit_auto_reframe', { req }),

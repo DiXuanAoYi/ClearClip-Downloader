@@ -437,6 +437,13 @@ fn overlay_video(k: usize, idx: usize, o: &Overlay, sr: &Source, frame: (u32, &s
     // 先转成 BT.709 电视范围的 YUV 再带上透明通道（图片是 RGB，不指定的话 ffmpeg 默认用 BT.601，颜色会偏）
     f.push(format!("scale={ow}:{oh}:flags=bicubic:out_color_matrix=bt709:out_range=tv"));
     f.push("format=yuva420p".into());
+    if o.chroma.on {
+        // 先按颜色抠出透明通道，再（可选）在 RGB 里去掉留下部分边缘的溢色
+        f.push(format!("chromakey=color=0x{}:similarity={:.3}:blend={:.3}", o.chroma.color.trim_start_matches('#'), o.chroma.similarity, o.chroma.blend));
+        if o.chroma.despill {
+            f.extend(["format=gbrap".into(), format!("despill=type={}:mix=0.5:expand=0.1", o.chroma.spill_type()), "format=yuva420p".into()]);
+        }
+    }
     f.extend(tone_expr(o.brightness, o.contrast, o.saturation));
     if let Some(k) = o.keys("rotate") {
         // 角度随时间变：输出做成能装下任意角度的正方形（对角线），转的时候中心不动
@@ -756,6 +763,12 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     }
     if p.overlays.iter().any(|o| o.keys("opacity").is_some()) {
         need("geq", "无法给叠加素材做不透明度关键帧")?;
+    }
+    if p.overlays.iter().any(|o| o.chroma.on) {
+        need("chromakey", "无法抠像")?;
+        if p.overlays.iter().any(|o| o.chroma.on && o.chroma.despill) {
+            need("despill", "无法去溢色")?;
+        }
     }
     if p.overlays.iter().any(|o| o.keys("rotate").is_some() || (quarter_turn(o).is_none() && o.angle() > 1e-6)) {
         need("rotate", "无法旋转叠加素材")?;
@@ -1717,5 +1730,24 @@ mod tests {
         assert!(keyed.contains("x=(w*(if(lt((t-1.000),0.000)"), "{keyed}");
         assert!(keyed.contains("alpha='clip(if(lt((t-1.000)"), "{keyed}");
         assert!(keyed.contains("y=(h*0.8500)-(text_h/2)"), "没有关键帧的属性仍用固定值：{keyed}");
+    }
+    #[test]
+    fn chroma_key_goes_into_the_overlay_chain_before_tone_and_rotation() {
+        let mut o = Overlay { path: "o.mp4".into(), out_ms: 2000, brightness: 0.2, rotate: 10.0, ..Default::default() };
+        let sr = Source { has_video: true, has_audio: false, width: 640, height: 360, fps: Some(25.0), duration_ms: Some(2000), hdr: false };
+        let graph = |o: &Overlay| {
+            let mut stmts = vec![];
+            overlay_video(0, 1, o, &sr, (1280, "25"), &mut stmts);
+            stmts.join(";")
+        };
+        assert!(!graph(&o).contains("chromakey"));
+        o.chroma.on = true;
+        o.chroma.color = "#00B140".into();
+        let g = graph(&o);
+        let key = g.find("chromakey=color=0x00B140:similarity=0.180:blend=0.080").expect(&g);
+        assert!(g.find("despill=type=green").unwrap() > key, "{g}");
+        assert!(g.find("rotate=").unwrap() > key, "{g}");
+        o.chroma.despill = false;
+        assert!(!graph(&o).contains("despill"));
     }
 }

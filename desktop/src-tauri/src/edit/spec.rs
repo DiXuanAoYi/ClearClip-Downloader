@@ -337,6 +337,40 @@ impl Default for AudioTrack {
     }
 }
 
+/// 抠像（绿幕 / 蓝幕）：把指定颜色变成透明。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Chroma {
+    pub on: bool,
+    /// 要去掉的颜色（`#RRGGBB`）
+    pub color: String,
+    /// 相似度 0.01–0.6：越大，离这个颜色越远的也被抠掉
+    pub similarity: f64,
+    /// 边缘柔化 0–0.5：越大，抠掉的部分和留下的部分之间过渡越柔
+    pub blend: f64,
+    /// 去溢色：压掉留下的部分边缘上的绿 / 蓝反光
+    pub despill: bool,
+}
+
+impl Default for Chroma {
+    fn default() -> Self {
+        Chroma { on: false, color: "#00FF00".into(), similarity: 0.18, blend: 0.08, despill: true }
+    }
+}
+
+impl Chroma {
+    /// 去溢色该压哪个通道：键色偏蓝就是蓝，否则绿
+    pub fn spill_type(&self) -> &'static str {
+        let h = self.color.trim_start_matches('#');
+        let c = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).unwrap_or(0);
+        if h.len() == 6 && c(4) > c(2) {
+            "blue"
+        } else {
+            "green"
+        }
+    }
+}
+
 /// 叠加轨上的素材（画中画、贴纸、GIF、水印）：盖在主轨画面上面，位置、大小和时间都自由。
 /// 轨道编号越大越在上面；同一条轨道上后开始的盖在先开始的上面。叠加素材不会撑长成片：超出主轨结尾的部分被截掉。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -383,6 +417,8 @@ pub struct Overlay {
     pub saturation: f64,
     /// 关键帧：`x`、`y`、`scale`、`rotate`、`opacity`、`volume`（时间相对 `start_ms`）。有关键帧的属性不再用上面的固定值
     pub keyframes: KeyframeMap,
+    /// 抠像（绿幕 / 蓝幕）
+    pub chroma: Chroma,
 }
 
 impl Default for Overlay {
@@ -415,6 +451,7 @@ impl Default for Overlay {
             contrast: 1.0,
             saturation: 1.0,
             keyframes: KeyframeMap::new(),
+            chroma: Chroma::default(),
         }
     }
 }
@@ -721,6 +758,9 @@ impl Project {
                 &mut o.keyframes,
                 &[("x", -1.0, 2.0), ("y", -1.0, 2.0), ("scale", 0.02, 3.0), ("rotate", -3600.0, 3600.0), ("opacity", 0.0, 1.0), ("volume", 0.0, 4.0)],
             );
+            o.chroma.color = hex_color(&o.chroma.color, "#00FF00");
+            o.chroma.similarity = clamp(o.chroma.similarity, 0.01, 0.6, 0.18);
+            o.chroma.blend = clamp(o.chroma.blend, 0.0, 0.5, 0.08);
             o.brightness = clamp(o.brightness, -1.0, 1.0, 0.0);
             o.contrast = clamp(o.contrast, 0.0, 3.0, 1.0);
             o.saturation = clamp(o.saturation, 0.0, 3.0, 1.0);
@@ -1167,5 +1207,20 @@ mod tests {
         // 定格的时长不受变速影响
         let f = Clip { out_ms: 3000, in_ms: 500, speed: 2.0, freeze: true, ..Default::default() };
         assert_eq!(f.duration_ms(), 2500);
+    }
+
+    #[test]
+    fn chroma_settings_are_tightened_and_old_projects_load() {
+        let old = r#"{"clips":[{"path":"a.mp4","outMs":2000}],"overlays":[{"path":"b.png","kind":"image","outMs":1000}]}"#;
+        let p: Project = serde_json::from_str(old).unwrap();
+        assert!(!p.overlays[0].chroma.on && p.overlays[0].chroma.color == "#00FF00" && p.overlays[0].chroma.despill);
+        let mut p = p;
+        p.overlays[0].chroma = Chroma { on: true, color: "not a colour".into(), similarity: 9.0, blend: -1.0, despill: true };
+        let p = p.checked().unwrap();
+        let c = &p.overlays[0].chroma;
+        assert_eq!((c.color.as_str(), c.similarity, c.blend), ("#00FF00", 0.6, 0.0));
+        assert_eq!(c.spill_type(), "green");
+        assert_eq!(Chroma { color: "#1020FF".into(), ..Default::default() }.spill_type(), "blue");
+        assert_eq!(Chroma { color: "#FF0000".into(), ..Default::default() }.spill_type(), "green");
     }
 }

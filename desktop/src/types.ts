@@ -1531,6 +1531,15 @@ export interface EditAudio {
   fadeOutMs: number
   looped: boolean
   duck: boolean
+  /** 节拍分析结果（`beatsMs` 是素材里的时间，不随配乐在时间线上的位置变）；没分析过是空。只存在工程里，导出用不到 */
+  beats?: EditBeats | null
+}
+
+export interface EditBeats {
+  bpm: number
+  /** 0–1，越大节奏越清晰 */
+  confidence: number
+  beatsMs: number[]
 }
 
 /** 叠加轨上的素材（画中画、贴纸、GIF、水印）：盖在主轨画面上面，位置、大小和时间都自由。轨号越大越在上面 */
@@ -1573,6 +1582,17 @@ export interface EditOverlay {
   saturation: number
   /** 关键帧：x / y / scale / rotate / opacity / volume；有关键帧的属性不再用上面的固定值 */
   keyframes: EditKeyframes
+  /** 抠像（绿幕 / 蓝幕） */
+  chroma: EditChroma
+}
+
+/** 抠像：把 `color` 附近的颜色变透明。相似度 0.01–0.6，边缘柔化 0–0.5，去溢色压掉留下部分边缘的绿 / 蓝反光 */
+export interface EditChroma {
+  on: boolean
+  color: string
+  similarity: number
+  blend: number
+  despill: boolean
 }
 
 export interface EditOutput {

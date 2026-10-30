@@ -8,6 +8,7 @@
 //! - [`job`]：后台任务（导出、生成预览）和界面用的命令
 
 pub mod analyze;
+pub mod beats;
 pub mod build;
 pub mod captions;
 pub mod cmds;

@@ -8,7 +8,7 @@ import { computed, nextTick, onBeforeUnmount, reactive, watch } from 'vue'
 import { errorText } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { EditClip, EditOverlay } from '../../../types'
-import { audioSpan, clamp, isGif, liveFrame, mainGain, overlayAnimPose, overlayBox, overlayEnd, overlayGain, transitionLook } from '../../../utils/edit'
+import { audioSpan, chromaMatrix, clamp, isGif, liveFrame, mainGain, overlayAnimPose, overlayBox, overlayEnd, overlayGain, transitionLook } from '../../../utils/edit'
 import type { LiveMain, LiveOverlay, TransitionLook } from '../../../utils/edit'
 
 const props = defineProps<{
@@ -122,6 +122,9 @@ async function makeProxies() {
   }
 }
 
+/** 开了抠像的叠加素材（预览里用 SVG 滤镜近似） */
+const keyed = computed(() => ed.project.value.overlays.filter((o) => o.chroma.on))
+
 // ---------- 摆放 ----------
 
 function layerStyle(it: Item): Record<string, string> {
@@ -177,6 +180,7 @@ function mediaStyle(it: Item): Record<string, string> {
   const o = it.overlay as EditOverlay
   const s = ed.sources[it.path]
   const b = overlayBox(o, s ? { w: s.width, h: s.height } : undefined, props.stage)
+  if (o.chroma.on) f.push(`url(#cc-key-${o.id})`)
   grade(o)
   return {
     position: 'absolute',
@@ -318,6 +322,11 @@ defineExpose({ sync, pause })
         <img v-else-if="stillSrc(it)" :src="stillSrc(it)" :style="mediaStyle(it)" alt="" draggable="false" @error="onError(it)" />
       </div>
     </div>
+    <svg v-if="keyed.length" class="keydefs" width="0" height="0" aria-hidden="true">
+      <filter v-for="o in keyed" :id="`cc-key-${o.id}`" :key="o.id" color-interpolation-filters="sRGB">
+        <feColorMatrix type="matrix" :values="chromaMatrix(o.chroma).join(' ')" />
+      </filter>
+    </svg>
     <div class="fxslot"><slot name="fx" /></div>
     <audio v-for="a in ed.project.value.audio" :key="a.id" :ref="(el) => setAudio(a.id, el)" :src="ed.sources[a.path]?.url" preload="auto" />
     <div v-if="problem" class="warn">
@@ -333,6 +342,12 @@ defineExpose({ sync, pause })
   inset: 0;
   z-index: 0;
   overflow: hidden;
+  pointer-events: none;
+}
+.keydefs {
+  position: absolute;
+  width: 0;
+  height: 0;
   pointer-events: none;
 }
 .lay {

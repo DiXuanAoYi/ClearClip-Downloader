@@ -4,7 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { EditAudio, EditClip, EditOverlay, EditText } from '../../../types'
-import { MAX_OVERLAY_TRACKS, MIN_MS, audioSpan, clamp, editPoints, overlayDuration, overlayEnd, overlaySourceLimit, snap, textLanes, tickStep } from '../../../utils/edit'
+import { beatSnapPoints, beatsOnTimeline, MAX_OVERLAY_TRACKS, MIN_MS, audioSpan, clamp, editPoints, overlayDuration, overlayEnd, overlaySourceLimit, snap, textLanes, tickStep } from '../../../utils/edit'
 
 const props = withDefaults(defineProps<{ ed: EditApi; pps: number; snapOn?: boolean }>(), { snapOn: true })
 const emit = defineEmits<{ zoom: [pps: number] }>()
@@ -114,7 +114,7 @@ function bgDown(e: PointerEvent) {
 
 /** 吸附用的候选时间：播放位置，加上主轨片段、叠加素材、文字、配乐的边界。 */
 function snapPoints(skip?: { kind: 'text' | 'audio' | 'overlay'; id: number }): number[] {
-  return [ed.playhead.value, ...editPoints(ed.project.value, ed.placed.value, skip)]
+  return [ed.playhead.value, ...editPoints(ed.project.value, ed.placed.value, skip), ...beatSnapPoints(ed.project.value, skip?.kind === 'audio' ? skip.id : undefined)]
 }
 /** 吸附开着时把 v 吸到附近的候选值上，关着就原样返回。 */
 const snapTo = (v: number, pts: number[]) => (props.snapOn ? snap(v, pts, msOf(SNAP_PX)) : v)
@@ -532,6 +532,7 @@ defineExpose({ reveal, targetAt, hover })
             @pointerdown.stop.prevent="audioDown($event, ed.project.value.audio[r - 1])"
           >
             <i class="h l" @pointerdown.stop.prevent="audioTrim($event, ed.project.value.audio[r - 1], 'l')" />
+            <i v-for="b in beatsOnTimeline(ed.project.value.audio[r - 1])" :key="b" class="bt" :style="{ left: px(b - ed.project.value.audio[r - 1].startMs) + 'px' }" />
             <span class="cap ellipsis">{{ audioName(ed.project.value.audio[r - 1]) }}</span>
             <i v-if="!ed.project.value.audio[r - 1].looped" class="h r" @pointerdown.stop.prevent="audioTrim($event, ed.project.value.audio[r - 1], 'r')" />
           </div>
@@ -680,6 +681,14 @@ defineExpose({ reveal, targetAt, hover })
 }
 .ovl.img {
   background-color: #8a5a7c;
+}
+.bt {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
 }
 .kfm {
   position: absolute;

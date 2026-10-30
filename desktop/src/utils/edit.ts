@@ -2,7 +2,7 @@
 // 排布规则和后端 `src-tauri/src/edit/spec.rs` 的 `layout` 保持一致，改那边时要一起改这里。
 // 这个文件不要引入别的运行时模块（用 node 直接跑 scripts 里的检查时需要）。
 
-import type { EditAudio, EditClip, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
+import type { EditAudio, EditBeats, EditChroma, EditClip, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
 
 export const MIN_MS = 100
 export const MIN_TRANSITION_MS = 100
@@ -77,9 +77,9 @@ export function normalizeProject(raw: Partial<EditProject> | null | undefined): 
   p.title = typeof r.title === 'string' ? r.title : ''
   p.out = { ...defaultOutput(), ...(r.out ?? {}) }
   p.clips = (r.clips ?? []).map((c, i) => ({ ...blankClip(), ...c, id: c.id ?? i + 1, regions: (c.regions ?? []).map((g, j) => ({ ...blankRegion(), ...g, id: g.id ?? j + 1 })) }))
-  p.overlays = (r.overlays ?? []).map((o, i) => ({ ...blankOverlay(), ...o, id: o.id ?? i + 1, keyframes: kfClean(o.keyframes) }))
+  p.overlays = (r.overlays ?? []).map((o, i) => ({ ...blankOverlay(), ...o, id: o.id ?? i + 1, keyframes: kfClean(o.keyframes), chroma: { ...blankChroma(), ...(o.chroma ?? {}) } }))
   p.texts = (r.texts ?? []).map((t, i) => ({ ...blankText(), ...t, id: t.id ?? i + 1, keyframes: kfClean(t.keyframes) }))
-  p.audio = (r.audio ?? []).map((a, i) => ({ ...blankAudio(), ...a, id: a.id ?? i + 1 }))
+  p.audio = (r.audio ?? []).map((a, i) => ({ ...blankAudio(), ...a, id: a.id ?? i + 1, beats: cleanBeats(a.beats) }))
   return p
 }
 
@@ -140,7 +140,12 @@ export function blankOverlay(): EditOverlay {
     contrast: 1,
     saturation: 1,
     keyframes: {},
+    chroma: blankChroma(),
   }
+}
+
+export function blankChroma(): EditChroma {
+  return { on: false, color: '#00FF00', similarity: 0.18, blend: 0.08, despill: true }
 }
 
 function blankText(): EditText {
@@ -168,7 +173,7 @@ function blankText(): EditText {
 }
 
 function blankAudio(): EditAudio {
-  return { id: 0, path: '', startMs: 0, inMs: 0, outMs: null, volume: 1, fadeInMs: 0, fadeOutMs: 0, looped: false, duck: false }
+  return { id: 0, path: '', startMs: 0, inMs: 0, outMs: null, volume: 1, fadeInMs: 0, fadeOutMs: 0, looped: false, duck: false, beats: null }
 }
 
 export function nextId(p: EditProject): number {
@@ -1677,4 +1682,131 @@ export function clearTransitions(p: EditProject): number {
     }
   }
   return n
+}
+
+
+// ---------- 节拍卡点 ----------
+
+/** 读旧工程 / 外来数据里的节拍：不合格的丢掉 */
+export function cleanBeats(b: EditBeats | null | undefined): EditBeats | null {
+  if (!b || !Array.isArray(b.beatsMs)) return null
+  const v = [...new Set(b.beatsMs.filter((x) => Number.isFinite(x) && x >= 0).map(Math.round))].sort((x, y) => x - y)
+  if (v.length < 2) return null
+  return { bpm: Number.isFinite(b.bpm) ? b.bpm : 0, confidence: Number.isFinite(b.confidence) ? clamp(b.confidence, 0, 1) : 0, beatsMs: v }
+}
+
+/** 节拍清晰度低于这个就提示“结果不太可信”（和后端 `LOW_CONFIDENCE` 一致） */
+export const LOW_BEAT_CONFIDENCE = 0.12
+
+/** 配乐的节拍在时间线上的位置（毫秒）：只留配乐用到的那一段（入点到出点），循环播放的不重复标。 */
+export function beatsOnTimeline(a: EditAudio): number[] {
+  if (!a.beats) return []
+  const out: number[] = []
+  for (const b of a.beats.beatsMs) {
+    if (b < a.inMs || (a.outMs !== null && b > a.outMs)) continue
+    out.push(a.startMs + b - a.inMs)
+  }
+  return out
+}
+
+/** 吸附用：所有配乐的节拍点（跳过正在拖的那条） */
+export function beatSnapPoints(p: EditProject, skipAudioId?: number): number[] {
+  const v: number[] = []
+  for (const a of p.audio) if (a.id !== skipAudioId) v.push(...beatsOnTimeline(a))
+  return v
+}
+
+export interface BeatArrange {
+  clips: EditClip[]
+  /** 对齐到节拍的片段数 */
+  arranged: number
+  /** 素材不够长、没法撑满一格的视频片段数 */
+  short: number
+  /** 节拍用完了、保持原样的片段数 */
+  left: number
+}
+
+/**
+ * 让主轨按节拍切换：第一个片段从 0 到第 `perClip` 个拍子，之后每个片段占 `perClip` 拍。
+ * 图片、定格直接设时长；视频缩短到那一格（不能拉长，素材不够长就用满、并算进 `short`，后面的片段从实际结尾接着排）。
+ * 被排过的片段去掉转场（转场会让切换点和拍子错开）。`srcDur` 给出素材总长（毫秒），未知返回 undefined。
+ */
+export function arrangeToBeats(clips: EditClip[], beats: number[], perClip: number, srcDur: (path: string) => number | undefined): BeatArrange | null {
+  const per = Math.max(1, Math.round(perClip))
+  const out: EditClip[] = clips.map((c) => ({ ...c }))
+  let cur = 0
+  let arranged = 0
+  let short = 0
+  let left = 0
+  for (let i = 0; i < out.length; i++) {
+    const c = out[i]
+    const target = beats[(i + 1) * per - 1]
+    if (target === undefined || target - cur < MIN_MS) {
+      left++
+      cur += clipDuration(c) - (i > 0 ? Math.min(c.transition?.durationMs ?? 0, clipDuration(c)) : 0)
+      continue
+    }
+    const slot = target - cur
+    if (c.kind === 'image' || c.freeze) {
+      c.outMs = c.inMs + slot
+    } else {
+      const need = Math.round(slot * Math.max(0.01, c.speed))
+      const total = srcDur(c.path)
+      const avail = total === undefined ? c.outMs - c.inMs : Math.max(MIN_MS, total - c.inMs)
+      // 视频只缩短：原来选的范围比一格短就保持原样
+      const have = c.outMs - c.inMs
+      const want = Math.min(need, have)
+      if (need > have) short++
+      if (c.reverse) c.inMs = c.outMs - want
+      else c.outMs = c.inMs + Math.min(want, avail)
+    }
+    c.transition = null
+    c.fadeOutMs = Math.min(c.fadeOutMs, clipDuration(c))
+    c.fadeInMs = Math.min(c.fadeInMs, clipDuration(c))
+    cur += clipDuration(c)
+    arranged++
+  }
+  return arranged ? { clips: out, arranged, short, left } : null
+}
+
+/**
+ * 让配乐适配成片长度：太短就循环；太长就在成片结尾（尽量落在最后一个拍子上）截掉，并加结尾淡出。
+ * 返回要改的字段；`total` 是成片总长（毫秒），`src` 是配乐素材。
+ */
+export function fitAudio(a: EditAudio, src: EditSource | undefined, total: number): Partial<EditAudio> | null {
+  const avail = total - a.startMs
+  if (avail < MIN_MS * 2) return null
+  const have = a.outMs !== null ? a.outMs - a.inMs : src?.durationMs ? src.durationMs - a.inMs : null
+  const fade = Math.min(1500, Math.round(avail / 3))
+  if (have === null) return { fadeOutMs: fade }
+  if (have < avail) return { looped: true, outMs: a.outMs ?? src?.durationMs ?? null, fadeOutMs: fade }
+  let end = a.inMs + avail
+  const beats = beatsOnTimeline({ ...a, outMs: null }).filter((t) => t <= total && t > a.startMs + avail / 2)
+  if (beats.length) end = a.inMs + (beats[beats.length - 1] - a.startMs)
+  return { looped: false, outMs: Math.round(Math.max(a.inMs + MIN_MS, end)), fadeOutMs: Math.min(fade, Math.max(0, Math.round(end - a.inMs))) }
+}
+
+// ---------- 抠像（实时预览） ----------
+
+/**
+ * 实时预览用的近似抠像：浏览器里没有 `chromakey`，用一个 SVG `feColorMatrix` 按“离键色的色相方向有多远”算透明度。
+ * 返回 5×4 矩阵（20 个数）；和导出的结果有差别，导出为准。
+ */
+export function chromaMatrix(c: EditChroma): number[] {
+  const h = c.color.replace('#', '')
+  const rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+  const mean = (rgb[0] + rgb[1] + rgb[2]) / 3
+  let d = rgb.map((v) => v - mean)
+  let n = Math.hypot(d[0], d[1], d[2])
+  // 黑 / 白 / 灰这类没有色相的键色：改用亮度方向
+  if (n < 0.05) {
+    d = [0.3, 0.59, 0.11].map((v) => (mean > 0.5 ? v : -v))
+    n = 1
+  }
+  d = d.map((v) => v / n)
+  const kk = d[0] * rgb[0] + d[1] * rgb[1] + d[2] * rgb[2]
+  const mid = kk * (1 - 1.5 * clamp(c.similarity, 0.01, 0.6))
+  const w = Math.max(0.03, c.blend * 1.5 * Math.abs(kk) + 0.05)
+  const k = (mid + w / 2) / w
+  return [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, -d[0] / w, -d[1] / w, -d[2] / w, 0, k]
 }

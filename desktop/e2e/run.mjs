@@ -7,7 +7,7 @@ import path from 'node:path'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
 const PORT = 5199
-const suites = process.argv.slice(2).length ? process.argv.slice(2) : ['ops.cjs', 'edit.cjs', 'region.cjs', 'hdr.cjs', 'subtitle.cjs', 'proxy.cjs', 'transcript.cjs', 'keyframes.cjs']
+const suites = process.argv.slice(2).length ? process.argv.slice(2) : ['ops.cjs', 'edit.cjs', 'region.cjs', 'hdr.cjs', 'subtitle.cjs', 'proxy.cjs', 'transcript.cjs', 'keyframes.cjs', 'beats.cjs']
 
 for (const tool of ['ffmpeg', 'ffprobe']) {
   if (spawnSync(tool, ['-version'], { stdio: 'ignore' }).status !== 0) {

@@ -226,3 +226,57 @@ console.log('edit utils ok')
   assert.equal(pr.overlays[0].startMs, 1000); assert.equal(pr.overlays[1].startMs, 6500)
   assert.equal(pr.texts[0].startMs, 7500); assert.equal(pr.texts[0].endMs, 9500)
 }
+
+// 节拍卡点、配乐适配、抠像
+{
+  const mk = (o) => ({ ...E.normalizeProject({ clips: [{ id: 1, path: 'a', kind: 'video', inMs: 0, outMs: 10000 }] }).clips[0], ...o })
+  const au = (o) => ({ id: 1, path: 'm', startMs: 0, inMs: 0, outMs: null, volume: 1, fadeInMs: 0, fadeOutMs: 0, looped: false, duck: false, beats: { bpm: 120, confidence: 0.5, beatsMs: Array.from({ length: 40 }, (_, i) => 300 + i * 500) }, ...o })
+  // 旧工程没有这些字段
+  const old = E.normalizeProject({ overlays: [{ id: 1, path: 'x', kind: 'image', startMs: 0, endMs: 1000 }], audio: [{ id: 1, path: 'm', startMs: 0, inMs: 0, outMs: null }] })
+  assert.equal(old.overlays[0].chroma.on, false); assert.equal(old.overlays[0].chroma.color, '#00FF00'); assert.equal(old.audio[0].beats, null)
+  assert.equal(E.cleanBeats({ bpm: 1, confidence: 5, beatsMs: [500, 100, 100, -3, NaN] }).confidence, 1)
+  assert.deepEqual(E.cleanBeats({ bpm: 1, confidence: 1, beatsMs: [500, 100, 100, -3, NaN] }).beatsMs, [100, 500])
+  assert.equal(E.cleanBeats({ bpm: 1, confidence: 1, beatsMs: [5] }), null)
+  // 时间线上的位置：跟着配乐的起点和入点走
+  const tl = E.beatsOnTimeline(au({ startMs: 1000, inMs: 800, outMs: 2300 }))
+  assert.deepEqual(tl, [1000, 1500, 2000, 2500]) // 素材 800、1300、1800、2300 → 1000 + (b - 800)
+  assert.equal(E.beatsOnTimeline(au({ beats: null })).length, 0)
+  // 按节拍排列：每片 2 拍；视频缩短、图片设时长、转场去掉
+  const beats = E.beatsOnTimeline(au({}))
+  const dur = () => 20000
+  const clips = [mk({ id: 1 }), mk({ id: 2, transition: { kind: 'fade', durationMs: 500 } }), mk({ id: 3, kind: 'image', outMs: 1000 })]
+  const r = E.arrangeToBeats(clips, beats, 2, dur)
+  assert.equal(r.arranged, 3); assert.equal(r.short, 0); assert.equal(r.left, 0)
+  // 第一个 0 → 第 2 拍(800)；第二个 → 第 4 拍(1800)；第三个 → 第 6 拍(2800)
+  assert.deepEqual(r.clips.map(E.clipDuration), [800, 1000, 1000])
+  assert.deepEqual(E.layout(r.clips).map((x) => x.startMs), [0, 800, 1800])
+  assert.equal(r.clips[1].transition, null)
+  assert.equal(clips[1].transition.durationMs, 500) // 原数据不动
+  // 视频素材比一格短：用满它，算进 short，后面的从实际结尾接着排
+  const sh = E.arrangeToBeats([mk({ id: 1, outMs: 300 }), mk({ id: 2 })], beats, 2, dur)
+  assert.equal(sh.short, 1)
+  assert.equal(E.clipDuration(sh.clips[0]), 300)
+  assert.equal(E.layout(sh.clips)[1].endMs, 1800)
+  // 拍子用完了
+  assert.equal(E.arrangeToBeats(clips, beats.slice(0, 3), 2, dur).left, 2)
+  assert.equal(E.arrangeToBeats([], beats, 2, dur), null)
+  // 变速的视频：一格里要的素材长度乘上速度
+  const fast = E.arrangeToBeats([mk({ id: 1, speed: 2 })], beats, 2, dur)
+  assert.equal(E.clipDuration(fast.clips[0]), 800)
+  assert.equal(fast.clips[0].outMs, 1600)
+  // 配乐适配
+  const src = { durationMs: 8000 }
+  assert.deepEqual(E.fitAudio(au({ beats: null }), src, 20000), { looped: true, outMs: 8000, fadeOutMs: 1500 })
+  const cut = E.fitAudio(au({ beats: null }), { durationMs: 60000 }, 10000)
+  assert.equal(cut.outMs, 10000); assert.equal(cut.fadeOutMs, 1500)
+  const onBeat = E.fitAudio(au({}), { durationMs: 60000 }, 10100)
+  assert.equal(onBeat.outMs, 9800) // 最后一个不超过 10100 的拍子
+  assert.equal(E.fitAudio(au({ startMs: 9950 }), src, 10000), null)
+  // 抠像近似矩阵：绿色的键色，纯绿像素透明、红色像素不透明
+  const mx = E.chromaMatrix({ on: true, color: '#00FF00', similarity: 0.2, blend: 0.1, despill: true })
+  const alpha = (r, g, b) => Math.min(1, Math.max(0, mx[15] * r + mx[16] * g + mx[17] * b + mx[19]))
+  assert.equal(alpha(0, 1, 0), 0); assert.equal(alpha(1, 0, 0), 1); assert.equal(alpha(0.5, 0.5, 0.5), 1)
+  assert.ok(alpha(0.1, 0.9, 0.1) < 0.05)
+  const blue = E.chromaMatrix({ on: true, color: '#0000FF', similarity: 0.2, blend: 0.1, despill: true })
+  assert.ok(blue[17] < 0 && Math.min(1, Math.max(0, blue[17] * 1 + blue[19])) === 0)
+}

@@ -258,6 +258,13 @@ pub async fn edit_silences(state: St<'_>, path: String, from_ms: u64, to_ms: u64
     silences(&ff, &path, from_ms, to_ms, noise_db, min_ms).await
 }
 
+/// 找出一段声音的节拍（配乐打节拍标记、让主轨按节拍切换用）。
+#[tauri::command]
+pub async fn edit_beats(state: St<'_>, path: String, from_ms: u64, to_ms: u64) -> AppResult<super::beats::Beats> {
+    let ff = need_ffmpeg(&state)?;
+    super::beats::analyze(&ff, &path, from_ms, to_ms).await
+}
+
 #[tauri::command]
 pub async fn edit_waveform(state: St<'_>, path: String, from_ms: u64, to_ms: u64, width: u32, height: u32) -> AppResult<String> {
     let ff = need_ffmpeg(&state)?;

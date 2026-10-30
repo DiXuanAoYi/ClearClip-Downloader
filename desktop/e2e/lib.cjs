@@ -99,6 +99,7 @@ function initScript(mport) {
         case 'edit_subtitle_cues': return window.__cues || []
         case 'edit_stt_status': return window.__stt || { ready: true, engine: 'local', reason: '' }
         case 'edit_transcribe': (window.__trReqs ||= []).push(args.req); return window.__transcript
+        case 'edit_beats': (window.__beatReqs ||= []).push(args); return window.__beats
         case 'edit_proxy': window.__proxied = (window.__proxied || 0) + 1; return window.__proxyUrl
         case 'edit_missing': return args.paths.filter((p) => !window.__exists(p))
         case 'edit_save': window.__files[args.path] = JSON.parse(JSON.stringify(args.project)); return null
