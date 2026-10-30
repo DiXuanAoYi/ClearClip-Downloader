@@ -665,8 +665,8 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             match import_cookies(&state.cookies, &req.body) {
                 Ok((site, n, automatic)) => {
                     let _ = app.emit("accounts://updated", ());
-                    inbox::retry_after_login(&app, &site, automatic);
-                    json(sock, "200 OK", serde_json::json!({"site": site, "count": n})).await
+                    let retried = inbox::retry_after_login(&app, &site, automatic);
+                    json(sock, "200 OK", serde_json::json!({"site": site, "count": n, "retried": retried})).await
                 }
                 Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
             }
@@ -710,6 +710,28 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                     );
                     json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await
                 }
+            }
+        }
+        // 浏览器扩展把当前页面链接放进“电脑发给手机”的盒子：只接受本机、已配对设备的请求
+        ("POST", "/api/to_phone") => {
+            if !peer.ip().is_loopback() {
+                json(sock, "403 Forbidden", serde_json::json!({"error": "只能从本机发送"})).await;
+                return;
+            }
+            let device = clean_device(req.headers.get("x-device").map(String::as_str).unwrap_or(""));
+            if !state.settings().phone.devices.iter().any(|d| d.id == device) {
+                json(sock, "403 Forbidden", serde_json::json!({"error": "请先从扩展发送一次链接，在电脑上确认配对后再使用"})).await;
+                return;
+            }
+            #[derive(serde::Deserialize)]
+            struct ToPhone {
+                #[serde(default)]
+                text: String,
+            }
+            let text = serde_json::from_slice::<ToPhone>(&req.body).map(|b| b.text).unwrap_or_default();
+            match transfer::send_text(&app, &text) {
+                Ok(id) => json(sock, "200 OK", serde_json::json!({"id": id})).await,
+                Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
             }
         }
         _ => respond(sock, "404 Not Found", "text/plain", b"not found").await,

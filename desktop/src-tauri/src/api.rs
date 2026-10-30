@@ -60,7 +60,7 @@ fn task_action(path: &str) -> Option<(i64, &str)> {
     Some((id.parse().ok()?, action))
 }
 
-pub fn handle(app: &AppHandle, req: &Request, _peer: &SocketAddr) -> Option<Reply> {
+pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply> {
     let path = req.path.as_str();
     if !path.starts_with("/api/v1/") {
         return None;
@@ -74,6 +74,14 @@ pub fn handle(app: &AppHandle, req: &Request, _peer: &SocketAddr) -> Option<Repl
             )
         }
         ("GET", "/api/v1/tasks") => ok(json!({"tasks": state.downloads.snapshots().iter().map(task_json).collect::<Vec<_>>()})),
+        // 在这台电脑上显示清影主窗口（浏览器扩展的“在清影里查看”），只接受本机请求
+        ("POST", "/api/v1/show") => {
+            if !peer.ip().is_loopback() {
+                return Some(err("403 Forbidden", "只能在本机打开窗口"));
+            }
+            crate::tray::show_main(app);
+            ok(json!({"ok": true}))
+        }
         ("POST", "/api/v1/tasks/pause_all") => {
             download::pause_all(app);
             ok(json!({"ok": true}))
@@ -92,6 +100,18 @@ pub fn handle(app: &AppHandle, req: &Request, _peer: &SocketAddr) -> Option<Repl
                 return Some(err("404 Not Found", "任务不存在"));
             }
             match action {
+                // 打开所在文件夹：会在这台电脑上弹出窗口，只接受本机（浏览器扩展）的请求
+                "reveal" => {
+                    if !peer.ip().is_loopback() {
+                        return Some(err("403 Forbidden", "只能在本机打开文件夹"));
+                    }
+                    let Some(path) = state.downloads.snapshots().into_iter().find(|t| t.id == id).map(|t| t.file_path) else {
+                        return Some(err("404 Not Found", "任务不存在"));
+                    };
+                    if let Err(e) = reveal_path(app, &path) {
+                        return Some(err("400 Bad Request", &e));
+                    }
+                }
                 "pause" => download::pause(app, id),
                 "resume" => download::resume(app, id),
                 "cancel" => download::cancel(app, id),
@@ -122,6 +142,8 @@ pub fn handle(app: &AppHandle, req: &Request, _peer: &SocketAddr) -> Option<Repl
                 None => err("500 Internal Server Error", "保存记录失败"),
             }
         }
+        // 最近因“需要登录”失败的网站：浏览器扩展据此询问是否同步登录状态
+        ("GET", "/api/v1/login_needed") => ok(json!({"sites": crate::inbox::login_needed(app)})),
         ("GET", "/api/v1/library") => {
             let limit = req.query.get("limit").and_then(|l| l.parse::<i64>().ok()).unwrap_or(50).clamp(1, 500);
             let filter = LibraryFilter {
@@ -141,6 +163,19 @@ pub fn handle(app: &AppHandle, req: &Request, _peer: &SocketAddr) -> Option<Repl
         }
         _ => err("404 Not Found", "未知接口"),
     })
+}
+
+/// 在文件管理器里显示文件；文件已不在时打开它所在的文件夹。
+fn reveal_path(app: &AppHandle, path: &str) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let p = std::path::PathBuf::from(path);
+    if p.exists() {
+        return app.opener().reveal_item_in_dir(&p).map_err(|e| format!("无法打开所在文件夹：{e}"));
+    }
+    match p.parent().filter(|d| d.is_dir()) {
+        Some(dir) => app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(|e| format!("无法打开文件夹：{e}")),
+        None => Err("文件已被移动或删除".into()),
+    }
 }
 
 #[cfg(test)]

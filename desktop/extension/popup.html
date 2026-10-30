@@ -3,61 +3,98 @@
 <head>
 <meta charset="utf-8" />
 <title>发送到清影</title>
-<style>
-  body { width: 340px; margin: 0; padding: 14px; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f1d1a; background: #f6f4f1; }
-  @media (prefers-color-scheme: dark) { body { background: #1b1a18; color: #ece8e2; } input { background: #26241f; color: inherit; border-color: #3a3630 !important; } }
-  h1 { font-size: 15px; margin: 0 0 10px; } h1 b { color: #d9772f; }
-  button { width: 100%; padding: 9px; margin-top: 8px; border: 0; border-radius: 8px; background: #d9772f; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
-  button.sec { background: transparent; color: inherit; border: 1px solid #d6d0c8; font-weight: 400; }
-  label { display: block; margin-top: 8px; font-size: 12px; color: #7b756d; }
-  input { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid #d6d0c8; border-radius: 6px; font: inherit; }
-  #msg { margin-top: 10px; font-size: 12px; min-height: 18px; word-break: break-all; }
-  label.row { display: flex; gap: 6px; align-items: center; color: inherit; font-size: 12px; margin-top: 10px; }
-  label.row input { width: auto; }
-  #conn { margin-bottom: 8px; } #conn.ok::before { content: "● "; color: #2f8a57; } #conn.err::before { content: "● "; color: #c4423a; }
-  #sites div { display: flex; justify-content: space-between; padding: 2px 0; } #sites a { color: #d9772f; cursor: pointer; }
-  #sniffList .it { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-bottom: 1px solid #d6d0c8; }
-  #sniffList .it span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  #sniffList .it button { width: auto; margin: 0; padding: 3px 10px; font-size: 12px; }
-  textarea { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid #d6d0c8; border-radius: 6px; font: inherit; resize: vertical; min-height: 54px; }
-  @media (prefers-color-scheme: dark) { textarea { background: #26241f; color: inherit; border-color: #3a3630 !important; } }
-  select { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid #d6d0c8; border-radius: 6px; font: inherit; background: transparent; color: inherit; }
-  #sniffList .it input { width: auto; margin: 0; }
-  #sniffList .it .sub { display: block; color: #7b756d; font-size: 11px; }
-  #sniffBar { display: flex; gap: 6px; margin-top: 6px; } #sniffBar button { margin: 0; padding: 5px 8px; font-size: 12px; }
-  #recent .it { display: flex; gap: 6px; align-items: center; padding: 3px 0; border-bottom: 1px solid #d6d0c8; }
-  #recent .it span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  #recent .it button { width: auto; margin: 0; padding: 3px 8px; font-size: 12px; }
-  a.lnk { color: #d9772f; cursor: pointer; }
-  .err { color: #c4423a; } .ok { color: #2f8a57; } .hidden { display: none; } .mute { color: #7b756d; font-size: 12px; }
-</style>
+<link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <h1>发送到<b>清影</b></h1>
-  <div id="conn" class="mute"></div>
+  <header>
+    <span class="logo" aria-hidden="true"></span>
+    <b>清影</b>
+    <span id="conn" class="mute"></span>
+  </header>
+
   <div id="main">
-    <div id="page" class="mute"></div>
-    <button id="send">发送当前页面</button>
-    <button id="cookies" class="sec">同步此网站的登录 Cookie</button>
-    <div id="syncInfo" class="mute"></div>
-    <div id="sniffBox" class="hidden">
-      <label>检测到的内容（<span id="sniffCount">0</span>）</label>
-      <div id="sniffList"></div>
-      <div id="sniffBar">
-        <button id="sniffAll" class="sec">全选</button>
-        <button id="sniffSend">发送所选</button>
+    <nav id="tabs" role="tablist">
+      <button role="tab" data-tab="discover" class="on">发现</button>
+      <button role="tab" data-tab="downloads">下载 <span id="dlBadge" class="num hidden"></span></button>
+      <button role="tab" data-tab="later" id="tabLater" class="hidden">稍后看 <span id="laterBadge" class="num gray hidden"></span></button>
+      <button role="tab" data-tab="tools">工具</button>
+    </nav>
+
+    <section id="v-discover" class="view">
+      <div id="page" class="mute pageTitle"></div>
+      <button id="send">发送当前页面</button>
+      <button id="cookies" class="sec">同步此网站的登录 Cookie</button>
+      <div id="syncInfo" class="mute"></div>
+      <div id="sniffBox" class="hidden">
+        <label>检测到的内容（<span id="sniffCount">0</span>）</label>
+        <div id="sniffList"></div>
+        <div id="sniffBar">
+          <button id="sniffAll" class="sec">全选</button>
+          <button id="sniffSend">发送所选</button>
+        </div>
       </div>
-    </div>
-    <label class="row"><input id="tkOn" type="checkbox" /> 接管浏览器下载（默认关闭）</label>
-    <div id="tkInfo" class="mute"></div>
-    <div id="recentBox" class="hidden">
-      <label>最近接管的下载</label>
-      <div id="recent"></div>
-    </div>
-    <label class="row"><input id="autoSite" type="checkbox" /> 登录状态变化时自动同步此网站</label>
-    <button id="openTakeover" class="sec">接管下载设置</button>
-    <button id="openSettings" class="sec">连接设置</button>
+      <div id="pageTools" class="rowBtns hidden">
+        <button id="openOverview" class="sec">页面媒体总览</button>
+        <button id="startPick" class="sec">批量选取</button>
+      </div>
+      <label class="row"><input id="tkOn" type="checkbox" /> 接管浏览器下载（默认关闭）</label>
+      <div id="tkInfo" class="mute"></div>
+      <div id="recentBox" class="hidden">
+        <label>最近接管的下载</label>
+        <div id="recent"></div>
+      </div>
+      <label class="row"><input id="autoSite" type="checkbox" /> 登录状态变化时自动同步此网站</label>
+    </section>
+
+    <section id="v-downloads" class="view hidden">
+      <div class="row spread"><span id="dlSummary" class="mute"></span><button id="dlToggleAll" class="sec small">全部暂停</button></div>
+      <div id="dlList"></div>
+      <div id="dlEmpty" class="mute hidden">清影里没有下载任务。</div>
+      <div class="foot mute"><span id="dlFoot"></span><a id="openApp" class="lnk" href="#">在清影里查看</a></div>
+    </section>
+
+    <section id="v-later" class="view hidden">
+      <button id="laterSave">保存当前页，稍后再看</button>
+      <label>待看</label>
+      <div id="laterList"></div>
+      <div id="laterEmpty" class="mute hidden">还没有待看的页面。同一链接会自动去重。</div>
+    </section>
+
+    <section id="v-tools" class="view hidden">
+      <label>链接</label>
+      <div class="card">
+        <div id="cleanBefore" class="mono mute"></div>
+        <div class="row spread"><span id="cleanInfo" class="mute"></span><button id="copyClean" class="small">复制干净链接</button></div>
+      </div>
+      <div class="row top">
+        <div id="qrBox" class="qr"></div>
+        <div class="col">
+          <div>用手机扫码打开这一页</div>
+          <div class="mute">本地生成，不联网</div>
+          <button id="toPhone" class="sec small">发到手机盒子</button>
+        </div>
+      </div>
+      <label>此网站 · <span id="siteName"></span></label>
+      <div id="siteToggles"></div>
+<div id="pageSave" class="hidden">
+        <label>页面保存</label>
+        <div class="rowBtns">
+          <button id="shotVisible" class="sec">截图：可见区域</button>
+          <button id="shotArea" class="sec">截图：选取区域</button>
+        </div>
+        <div class="rowBtns">
+          <button id="shotFull" class="sec">截图：整页</button>
+          <button id="savePdf" class="sec">另存为 PDF</button>
+        </div>
+        <div class="rowBtns">
+          <button id="saveMd" class="sec">保存为 Markdown</button>
+          <button id="clipText" class="sec">摘录选中文字</button>
+        </div>
+      </div>
+      <button id="openSettings" class="sec">设置</button>
+    </section>
   </div>
+
   <div id="takeover" class="hidden">
     <p class="mute">开启后，浏览器要下载的文件会交给清影下载（带上登录状态和来源页）。按住 Alt 点击下载链接可以临时用浏览器下载。清影没有运行或没接住时，会自动交还给浏览器。</p>
     <label class="row"><input id="tkEnabled" type="checkbox" /> 接管浏览器下载</label>
@@ -65,7 +102,7 @@
     <select id="tkMode"><option value="types">只接管下面列出的文件类型</option><option value="all">所有下载（仍受大小和网站限制）</option></select>
     <label>文件类型（扩展名，用逗号或空格分隔）</label>
     <textarea id="tkTypes"></textarea>
-    <a id="tkDefaultTypes" class="lnk">恢复默认类型</a>
+    <a id="tkDefaultTypes" class="lnk" href="#">恢复默认类型</a>
     <label>最小文件大小（MB，已知大小小于它的不接管）</label>
     <input id="tkMin" type="number" min="0" step="1" />
     <label>只接管这些网站（每行一个，留空表示所有网站）</label>
@@ -76,21 +113,59 @@
     <button id="tkSave">保存</button>
     <button id="tkBack" class="sec">返回</button>
   </div>
+
   <div id="settings" class="hidden">
     <p id="setupHint" class="mute hidden"><b>还差一步：</b>填好下面的端口和访问令牌，右键菜单和发送按钮才能使用。</p>
+    <h2>连接</h2>
     <p class="mute">打开电脑上的清影，进入“设置 → 手机与浏览器扩展”，开启服务，把“分享菜单”里的端口和访问令牌复制到这里，再点“保存并测试”。</p>
     <label>端口</label><input id="port" type="number" placeholder="例如 42031" />
     <label>访问令牌（X-Token）</label><input id="token" type="password" />
-    <label class="row"><input id="autoSync" type="checkbox" /> 开启自动同步</label>
-    <p class="mute">开启后，下面列出的网站登录状态变化时（重新登录、Cookie 更新），扩展会自动把这个网站的 Cookie 同步给清影，每个网站最多 5 分钟一次。只同步列表里的网站。</p>
-    <div id="sites" class="mute"></div>
     <button id="save">保存并测试</button>
+
+    <h2>功能开关</h2>
+    <p class="mute">“常驻”表示在你打开的每个网页里运行，默认关闭；“无页面注入”的功能只在后台和弹窗里工作。</p>
+    <div id="featureList"></div>
+    <label class="row"><input id="notifyDone" type="checkbox" /> 下载完成时弹出通知</label>
+
+    <h2>自动同步 Cookie</h2>
+    <label class="row"><input id="autoSync" type="checkbox" /> 开启自动同步</label>
+    <p class="mute">开启后，下面列出的网站登录状态变化时，或清影提示“需要登录”时，扩展会自动把这个网站的 Cookie 同步给清影，每个网站最多 5 分钟一次。只同步列表里的网站。</p>
+    <div id="sites" class="mute"></div>
+
+    <h2>规则与名单</h2>
+    <label class="row"><input id="unlockAll" type="checkbox" /> 解除复制 / 右键限制：所有网站都开启（不建议）</label>
+    <label>解除限制只对这些网站生效（每行一个，含子域名）</label>
+    <textarea id="ruleUnlock" placeholder="example.com"></textarea>
+    <label>不显示视频悬浮下载按钮的网站</label>
+    <textarea id="ruleFloat"></textarea>
+    <label>不启用播放增强的网站</label>
+    <textarea id="ruleVideo"></textarea>
+    <label>不启用图片悬停放大的网站</label>
+    <textarea id="ruleZoom"></textarea>
+    <label>取原图的自定义规则（每行一条：匹配正则 =&gt; 替换，例如 <code>_small\.jpg$ =&gt; .jpg</code>）</label>
+    <textarea id="ruleZoomRules"></textarea>
+    <label>追踪参数的自定义名单（每行一个参数名）</label>
+    <textarea id="ruleParams"></textarea>
+    <label>以图搜图引擎（每行一个：名称 | 地址，用 {url} 代表图片地址；留空使用默认）</label>
+    <textarea id="ruleEngines" rows="6"></textarea>
+    <button id="saveRules">保存名单与规则</button>
+    <button id="openTakeover" class="sec">接管下载设置</button>
+
+    <h2>隐私与权限</h2>
+    <p class="mute">所有功能只和本机的清影通信。不上传页面内容，不做统计，不下发远程规则。Cookie 只在你确认后读取，只读取对应的网站。以图搜图只在你点击后，把图片地址交给你选的搜索引擎。新增权限：scripting（按需注入）、alarms（进度检查）。</p>
     <button id="back" class="sec">返回</button>
   </div>
+
   <div id="msg"></div>
   <script src="shared.js"></script>
+  <script src="features.js"></script>
+  <script src="clean-link.js"></script>
+  <script src="progress.js"></script>
   <script src="takeover.js"></script>
   <script src="sniff.js"></script>
+  <script src="engines.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script src="qr.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
