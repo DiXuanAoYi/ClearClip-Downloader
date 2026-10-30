@@ -35,6 +35,9 @@ import {
   rippleBy,
   freezeAt,
   speedRamp,
+  curveSteps,
+  rampPieceCount,
+  type SpeedPoint,
   textFromCue,
   normalizeProject,
   outputSize,
@@ -257,6 +260,19 @@ export function useEditProject() {
       rippleBy(p, from, totalMs(p.clips) - before)
     })
     return n
+  }
+
+  /**
+   * 给一个片段套平滑变速曲线：按曲线取样拆成 12–60 个小段，相邻两段速度只差一点点，看起来是连续变速。
+   * 返回新的片段数；太短、已经倒放 / 定格、或者会让片段超过上限时返回 0。
+   */
+  function applySmoothRamp(id: number, points: SpeedPoint[]): number {
+    const i = project.value.clips.findIndex((x) => x.id === id)
+    const c = project.value.clips[i]
+    if (!c || c.kind !== 'video' || c.reverse || c.freeze || points.length < 2) return 0
+    const n = rampPieceCount(c.outMs - c.inMs)
+    if (!n || project.value.clips.length - 1 + n > MAX_CLIPS) return 0
+    return applySpeedRamp(id, curveSteps(points, n))
   }
 
   /** 在播放头处定格 `holdMs` 毫秒（只对播放头所在的普通视频片段有效）。成功返回 true。 */
@@ -905,6 +921,7 @@ export function useEditProject() {
     setTextProps,
     setKey,
     applySpeedRamp,
+    applySmoothRamp,
     freezeAtPlayhead,
     arrangeToBeatsOf,
     fitAudioToVideo,

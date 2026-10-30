@@ -9,12 +9,14 @@ import type { EditApi } from '../../../composables/useEditProject'
 import type { RegionApi } from '../../../composables/useRegions'
 import type { OverlayAnim } from '../../../types'
 import type { EditChroma, EditClip, EditOutput, EditOverlay } from '../../../types'
-import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, OVERLAY_KEY_PROPS, SPEED_RAMPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
+import type { SpeedPoint } from '../../../utils/edit'
+import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, OVERLAY_KEY_PROPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
 import EditField from './EditField.vue'
 import EditKeyframes from './EditKeyframes.vue'
 import EditRegions from './EditRegions.vue'
 import EditSmart from './EditSmart.vue'
 import EditHighlights from './EditHighlights.vue'
+import EditSpeedCurve from './EditSpeedCurve.vue'
 import EditTranscript from './EditTranscript.vue'
 import EditSlider from './EditSlider.vue'
 import TimeInput from './TimeInput.vue'
@@ -114,13 +116,15 @@ const keyedCount = (item: { keyframes: Record<string, unknown[]> } | undefined |
 const clipLimit = computed(() => src.value?.durationMs ?? Number.MAX_SAFE_INTEGER)
 
 const holdSec = ref(2)
-function applyRamp(id: string) {
+const rampOpen = ref(false)
+function applyRamp(points: SpeedPoint[]) {
   const c = clip.value
-  const r = SPEED_RAMPS.find((x) => x.id === id)
-  if (!c || !r) return
-  const n = ed.applySpeedRamp(c.id, r.steps)
-  if (n) ElMessage.success(`已拆成 ${n} 段，各段速度不同；可以在时间线上选中某一段继续调`)
-  else ElMessage.warning('这个片段太短，或已经倒放 / 定格，不能套变速曲线。')
+  if (!c) return
+  const n = ed.applySmoothRamp(c.id, points)
+  if (n) {
+    rampOpen.value = false
+    ElMessage.success(`已按曲线拆成 ${n} 小段，相邻两段速度只差一点点；可以撤回。`)
+  } else ElMessage.warning('这个片段太短，或已经倒放 / 定格，或者会让片段超过上限，不能套变速曲线。')
 }
 function freezeNow() {
   if (!ed.freezeAtPlayhead(Math.round(holdSec.value * 1000))) ElMessage.warning('播放头不在一个普通视频片段上。把播放头移到要定格的画面再点。')
@@ -385,16 +389,10 @@ async function pickDir() {
           <EditField label="">
             <el-checkbox :model-value="clip.reverse" @update:model-value="(v: unknown) => pc({ reverse: !!v }, 'rev')">倒放（声音也倒过来）</el-checkbox>
           </EditField>
-          <EditField label="变速曲线" hint="把这个片段拆成几段，每段用不同的速度；之后每一段都可以单独调">
-            <el-dropdown trigger="click" :disabled="clip.reverse" @command="(id: string) => applyRamp(id)">
-              <el-button size="small" :disabled="clip.reverse">选一个曲线…</el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item v-for="r in SPEED_RAMPS" :key="r.id" :command="r.id">{{ r.label }}<span class="mute small">　{{ r.hint }}</span></el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+          <EditField label="变速曲线" hint="画一条速度曲线，按曲线把片段拆成许多小段，连续地变快 / 变慢">
+            <el-button size="small" :disabled="clip.reverse" @click="rampOpen = !rampOpen">{{ rampOpen ? '收起曲线' : '编辑曲线…' }}</el-button>
           </EditField>
+          <EditSpeedCurve v-if="rampOpen && !clip.reverse" :clip="clip" @apply="applyRamp" @cancel="rampOpen = false" />
         </template>
         <EditField label="定格" :hint="clip.freeze ? '这一段就是定格的画面，停多久由出点 − 入点决定' : '在播放头处把画面停住几秒（要先把播放头放在这个片段上）'">
           <template v-if="!clip.freeze">

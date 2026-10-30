@@ -208,6 +208,16 @@ console.log('edit utils ok')
   assert.equal(ramp.reduce((s, p) => s + (p.outMs - p.inMs), 0), 6000)
   assert.equal(E.speedRamp(rev, [1, 2], ids), null)
   assert.equal(E.speedRamp(base({ outMs: 100 }), [1, 2, 3, 4, 5, 6], ids), null)
+  // 平滑变速：对数余弦过渡，经过控制点，两端保持
+  const pts = [{ x: 0, speed: 0.5 }, { x: 1, speed: 2 }]
+  assert.ok(Math.abs(E.speedAt(pts, 0) - 0.5) < 1e-9 && Math.abs(E.speedAt(pts, 1) - 2) < 1e-9)
+  assert.ok(Math.abs(E.speedAt(pts, 0.5) - 1) < 1e-9) // 对数中点
+  assert.equal(E.speedAt([{ x: 0.3, speed: 3 }], 0.9), 3)
+  const st = E.curveSteps(pts, 20)
+  assert.ok(st.every((v, i) => i === 0 || v >= st[i - 1]) && st.every((v) => v >= 0.25 && v <= 4))
+  assert.equal(E.rampPieceCount(500), 0)
+  assert.equal(E.rampPieceCount(6000), 24)
+  assert.equal(E.rampPieceCount(60000), 60)
   // 定格：中间切开，插一段停住的单帧
   const parts = E.freezeAt(c, pl, 2000, 1500, ids)
   assert.equal(parts.length, 3)

@@ -346,6 +346,47 @@ export const SPEED_RAMPS: { id: string; label: string; steps: number[]; hint: st
   { id: 'hit', label: '定点慢放', steps: [1, 1, 0.35, 0.35, 1, 1], hint: '只有中段慢放' },
 ]
 
+/** 平滑变速曲线的控制点：`x` 是在片段素材范围里的位置（0–1），`speed` 是那里的速度（倍） */
+export interface SpeedPoint {
+  x: number
+  speed: number
+}
+export const SPEED_MIN = 0.25
+export const SPEED_MAX = 4
+
+/** 预设的控制点：由上面等分步骤的速度放在每段中点上得到，曲线在点之间按对数速度做余弦过渡（所以是平滑的）。 */
+export function rampPoints(steps: number[]): SpeedPoint[] {
+  return steps.map((speed, i) => ({ x: (i + 0.5) / steps.length, speed }))
+}
+
+/** 曲线在 x（0–1）处的速度：第一个点之前、最后一个点之后保持不变，之间按对数速度做余弦过渡。 */
+export function speedAt(points: SpeedPoint[], x: number): number {
+  const pts = [...points].sort((a, b) => a.x - b.x)
+  if (!pts.length) return 1
+  if (x <= pts[0].x) return pts[0].speed
+  const last = pts[pts.length - 1]
+  if (x >= last.x) return last.speed
+  let i = 0
+  while (pts[i + 1].x < x) i++
+  const a = pts[i]
+  const b = pts[i + 1]
+  const u = b.x === a.x ? 1 : (x - a.x) / (b.x - a.x)
+  const e = (1 - Math.cos(Math.PI * u)) / 2
+  return Math.exp(Math.log(a.speed) + (Math.log(b.speed) - Math.log(a.speed)) * e)
+}
+
+/** 平滑变速要拆成几段：大约每 0.25 秒素材一段（16–60 段），再受片段最小长度限制。素材太短返回 0。 */
+export function rampPieceCount(spanMs: number): number {
+  const fit = Math.floor(spanMs / MIN_MS)
+  if (fit < 6) return 0
+  return Math.min(fit, clamp(Math.ceil(spanMs / 250), 16, 60))
+}
+
+/** 把曲线取样成 n 段的速度（取每段中点），限制在 SPEED_MIN – SPEED_MAX */
+export function curveSteps(points: SpeedPoint[], n: number): number[] {
+  return Array.from({ length: n }, (_, i) => clamp(Math.round(speedAt(points, (i + 0.5) / n) * 1000) / 1000, SPEED_MIN, SPEED_MAX))
+}
+
 /**
  * 变速曲线：把一个视频片段按素材时间等分成 `steps.length` 段，各段用各自的速度（已有的速度乘上去）。
  * 第一段保留转场和淡入，最后一段保留淡出；`ids` 给新片段用（第一段沿用原编号）。太短或不是普通视频片段返回 null。
