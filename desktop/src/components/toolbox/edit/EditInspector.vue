@@ -8,9 +8,9 @@ import { api, errorText, events } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { RegionApi } from '../../../composables/useRegions'
 import type { OverlayAnim } from '../../../types'
-import type { EditBackground, EditChroma, EditClip, EditOutput, EditOverlay } from '../../../types'
+import type { EditBackground, EditChroma, EditClip, EditOutput, EditOverlay, EditShapeMask } from '../../../types'
 import { EDIT_IMAGE_EXTS, type SpeedPoint } from '../../../utils/edit'
-import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, OVERLAY_KEY_PROPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
+import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, CLIP_KEY_PROPS, OVERLAY_KEY_PROPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
 import EditField from './EditField.vue'
 import EditKeyframes from './EditKeyframes.vue'
 import EditRegions from './EditRegions.vue'
@@ -50,6 +50,7 @@ function pc(patch: Partial<EditClip>, key: string) {
   if (clip.value) ed.patchClip(clip.value.id, patch, `${key}:${clip.value.id}`)
 }
 const po = (patch: Partial<EditOverlay>, key: string) => overlay.value && ed.patchOverlay(overlay.value.id, patch, `${key}:${overlay.value.id}`)
+const pm = (patch: Partial<EditShapeMask>, key: string) => overlay.value && po({ mask: { ...overlay.value.mask, ...patch } }, key)
 const pt = (patch: Parameters<typeof ed.patchText>[1], key: string) => text.value && ed.patchText(text.value.id, patch, `${key}:${text.value.id}`)
 const pa = (patch: Parameters<typeof ed.patchAudio>[1], key: string) => audio.value && ed.patchAudio(audio.value.id, patch, `${key}:${audio.value.id}`)
 
@@ -460,6 +461,12 @@ async function pickDir() {
             <span class="mute small">{{ clip.bg.image ? clip.bg.image.split(/[\\/]/).pop() : '还没有选' }}</span>
           </EditField>
         </template>
+        <el-collapse v-if="placed" class="kfc" :model-value="keyedCount(clip) ? ['k'] : []">
+          <el-collapse-item name="k" :title="`缩放 / 平移关键帧${keyedCount(clip) ? `（${keyedCount(clip)} 项）` : ''}`">
+            <EditKeyframes :ed="ed" kind="clip" :item="clip" :defs="CLIP_KEY_PROPS" :duration-ms="placed.durMs" :start-ms="placed.startMs" @goto="(ms) => emit('goto', ms)" />
+            <div class="mute small pad">先适配画面，再按关键帧缩放 / 平移；缩小时四周是黑边。预览里看不到，导出时才生效。</div>
+          </el-collapse-item>
+        </el-collapse>
         <template v-if="!clip.freeze && (!src || src.hasAudio)">
           <EditSlider label="音量" :model-value="clip.volume" :min="0" :max="4" :step="0.05" unit="%" :scale="100" :disabled="clip.mute" @update:model-value="(v) => pc({ volume: v }, 'vol')" />
           <EditField label="">
@@ -616,6 +623,23 @@ async function pickDir() {
         <EditField label="">
           <el-checkbox :model-value="overlay.mute" @update:model-value="(v: unknown) => po({ mute: !!v }, 'omute')">静音这个素材</el-checkbox>
         </EditField>
+      </template>
+      <EditField label="形状蒙版" hint="只留一个矩形 / 椭圆里面（或反过来只留外面）的部分，边缘可以羽化。位置和大小占素材自己画面的比例。预览里看不到，导出时才生效">
+        <el-checkbox :model-value="overlay.mask.on" @update:model-value="(v: unknown) => pm({ on: !!v }, 'mon')">启用蒙版</el-checkbox>
+      </EditField>
+      <template v-if="overlay.mask.on">
+        <EditField label="形状">
+          <el-radio-group :model-value="overlay.mask.shape" size="small" @update:model-value="(v: string | number | boolean | undefined) => pm({ shape: v as EditShapeMask['shape'] }, 'msh')">
+            <el-radio-button value="ellipse">椭圆</el-radio-button>
+            <el-radio-button value="rect">矩形</el-radio-button>
+          </el-radio-group>
+          <el-checkbox :model-value="overlay.mask.invert" @update:model-value="(v: unknown) => pm({ invert: !!v }, 'minv')">反选</el-checkbox>
+        </EditField>
+        <EditSlider label="中心 X" :model-value="overlay.mask.x" :min="0" :max="1" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ x: v }, 'mx')" />
+        <EditSlider label="中心 Y" :model-value="overlay.mask.y" :min="0" :max="1" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ y: v }, 'my')" />
+        <EditSlider label="宽度" :model-value="overlay.mask.w" :min="0.05" :max="1.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ w: v }, 'mw')" />
+        <EditSlider label="高度" :model-value="overlay.mask.h" :min="0.05" :max="1.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ h: v }, 'mh')" />
+        <EditSlider label="羽化" :model-value="overlay.mask.feather" :min="0" :max="0.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ feather: v }, 'mf')" />
       </template>
       <EditField label="抠像" hint="把一种颜色（绿幕 / 蓝幕）变成透明，露出下面的画面。预览是近似的，导出为准">
         <el-checkbox :model-value="overlay.chroma.on" @update:model-value="(v: unknown) => pch({ on: !!v }, 'chon')">去掉背景色</el-checkbox>

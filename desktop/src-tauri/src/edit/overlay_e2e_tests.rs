@@ -539,3 +539,48 @@ async fn detected_key_settings_really_remove_a_noisy_green_screen() {
     assert!(is_red(px_at(&ff, &out, 1.0, 320, 180).await), "方块留下");
     let _ = std::fs::remove_dir_all(d);
 }
+
+#[tokio::test]
+async fn shape_mask_keeps_only_the_inside_of_the_shape() {
+    let (ff, d, caps, m) = need!(setup("shapemask").await);
+    // 红色全屏盖在绿色主轨上；椭圆蒙版只留正中 50%：中心红，四角还是绿
+    let mut o = ov(&m.red, 0, 3000, 0.5, 0.5, 1.0);
+    o.mask.on = true;
+    o.mask.w = 0.5;
+    o.mask.h = 0.5;
+    o.mask.feather = 0.0;
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.main, 3000), vec![o.clone()]), Mode::Export).await;
+    assert!(is_red(px_at(&ff, &out, 1.0, 320, 180).await), "形状里面是叠加素材");
+    assert!(is_green(px_at(&ff, &out, 1.0, 20, 20).await), "形状外面透出主轨");
+    // 反过来：中心透出主轨，四角是红
+    o.mask.invert = true;
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.main, 3000), vec![o]), Mode::Export).await;
+    assert!(is_green(px_at(&ff, &out, 1.0, 320, 180).await), "反选后中心是主轨");
+    assert!(is_red(px_at(&ff, &out, 1.0, 20, 20).await), "反选后四角是叠加素材");
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[tokio::test]
+async fn main_clip_zoom_and_pan_keyframes_move_the_picture() {
+    use super::keyframes::Keyframe;
+    let (ff, d, caps, m) = need!(setup("clipkeys").await);
+    let k = |t: u64, v: f64| Keyframe { t_ms: t, value: v, ease: "linear".into() };
+    // 缩到一半：四周出现黑边，中间还是原画面
+    let mut c = main_clip(&m.main, 3000);
+    c.keyframes.insert("zoom".into(), vec![k(0, 0.5), k(3000, 0.5)]);
+    let (out, _) = render(&ff, &caps, &d, project(c, vec![]), Mode::Export).await;
+    let f = facts_of(&ff, &out).await;
+    assert!(close(f.duration_ms, 3000, 150), "时长不变：{:?}", f.duration_ms);
+    assert!(is_green(px_at(&ff, &out, 1.0, 320, 180).await), "中间是原画面");
+    let b = px_at(&ff, &out, 1.0, 20, 20).await;
+    assert!(b.0 < 40 && b.1 < 40 && b.2 < 40, "四周是黑边：{b:?}");
+    // 向右平移半个画面宽：左半边变黑，右边出画
+    let mut c = main_clip(&m.main, 3000);
+    c.keyframes.insert("zoom".into(), vec![k(0, 0.5), k(3000, 0.5)]);
+    c.keyframes.insert("panX".into(), vec![k(0, 0.25), k(3000, 0.25)]);
+    let (out, _) = render(&ff, &caps, &d, project(c, vec![]), Mode::Export).await;
+    assert!(is_green(px_at(&ff, &out, 1.0, 480, 180).await), "画面右移后 x=480 在画面里");
+    let l = px_at(&ff, &out, 1.0, 160, 180).await;
+    assert!(l.1 < 40, "左边变成黑边：{l:?}");
+    let _ = std::fs::remove_dir_all(d);
+}

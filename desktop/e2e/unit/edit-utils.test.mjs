@@ -290,3 +290,15 @@ console.log('edit utils ok')
   const blue = E.chromaMatrix({ on: true, color: '#0000FF', similarity: 0.2, blend: 0.1, despill: true })
   assert.ok(blue[17] < 0 && Math.min(1, Math.max(0, blue[17] * 1 + blue[19])) === 0)
 }
+
+// ---- 主轨片段的缩放 / 平移关键帧：切开、保留段 ----
+{
+  const kc = clip({ id: 1, inMs: 0, outMs: 10000, speed: 1, keyframes: { zoom: [{ tMs: 0, value: 1, ease: 'linear' }, { tMs: 10000, value: 2, ease: 'linear' }] } })
+  const [k1, k2] = E.splitClip(kc, { startMs: 0, durMs: 10000, overlapMs: 0, endMs: 10000 }, 4000, 9)
+  assert.equal(E.kfEval(k1.keyframes.zoom, 4000), 1.4)
+  assert.equal(E.kfEval(k2.keyframes.zoom, 0), 1.4)
+  assert.equal(E.kfEval(k2.keyframes.zoom, 6000), 2)
+  const [piece] = E.keepRanges(kc, [[2000, 6000]], () => 5)
+  assert.equal(E.kfEval(piece.keyframes.zoom, 0), 1.2)
+  assert.ok(Math.abs(E.kfEval(piece.keyframes.zoom, 4000) - 1.6) < 1e-9)
+}

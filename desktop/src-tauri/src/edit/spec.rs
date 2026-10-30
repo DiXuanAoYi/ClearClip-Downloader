@@ -187,6 +187,8 @@ pub struct Clip {
     pub regions: Vec<Region>,
     /// 换背景
     pub bg: Background,
+    /// 关键帧：`zoom`（0.25–4，1 = 原样）、`panX`、`panY`（-1–1，画面相对中心平移，占画面宽 / 高的比例）；时间相对片段开始（按成片时间算）。有关键帧时先做适配画面再缩放平移，缩小时四周是黑边
+    pub keyframes: KeyframeMap,
     pub transition: Option<Transition>,
 }
 
@@ -216,6 +218,7 @@ impl Default for Clip {
             freeze: false,
             regions: vec![],
             bg: Background::default(),
+            keyframes: KeyframeMap::new(),
             transition: None,
         }
     }
@@ -337,6 +340,31 @@ pub struct AudioTrack {
 impl Default for AudioTrack {
     fn default() -> Self {
         AudioTrack { id: 0, path: String::new(), start_ms: 0, in_ms: 0, out_ms: None, volume: 1.0, fade_in_ms: 0, fade_out_ms: 0, looped: false, duck: false }
+    }
+}
+
+/// 形状蒙版：只留形状里面（或反过来只留外面）的部分，边缘可以羽化。位置、大小都占叠加素材自己画面的比例。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ShapeMask {
+    pub on: bool,
+    /// `rect`、`ellipse`
+    pub shape: String,
+    /// 中心点
+    pub x: f64,
+    pub y: f64,
+    /// 宽、高
+    pub w: f64,
+    pub h: f64,
+    /// 羽化 0–0.5（占形状半径的比例）
+    pub feather: f64,
+    /// 反过来：留下形状外面
+    pub invert: bool,
+}
+
+impl Default for ShapeMask {
+    fn default() -> Self {
+        ShapeMask { on: false, shape: "ellipse".into(), x: 0.5, y: 0.5, w: 0.7, h: 0.7, feather: 0.05, invert: false }
     }
 }
 
@@ -463,6 +491,8 @@ pub struct Overlay {
     pub keyframes: KeyframeMap,
     /// 抠像（绿幕 / 蓝幕）
     pub chroma: Chroma,
+    /// 形状蒙版
+    pub mask: ShapeMask,
 }
 
 impl Default for Overlay {
@@ -496,6 +526,7 @@ impl Default for Overlay {
             saturation: 1.0,
             keyframes: KeyframeMap::new(),
             chroma: Chroma::default(),
+            mask: ShapeMask::default(),
         }
     }
 }
@@ -744,6 +775,7 @@ impl Project {
             } else {
                 check_regions(&mut c.regions, n)?;
             }
+            check_keys(&mut c.keyframes, &[("zoom", 0.25, 4.0), ("panX", -1.0, 1.0), ("panY", -1.0, 1.0)]);
             c.bg.color = hex_color(&c.bg.color, "#000000");
             c.bg.chroma.color = hex_color(&c.bg.chroma.color, "#00FF00");
             c.bg.chroma.similarity = clamp(c.bg.chroma.similarity, 0.01, 0.6, 0.18);
@@ -817,6 +849,14 @@ impl Project {
                 &mut o.keyframes,
                 &[("x", -1.0, 2.0), ("y", -1.0, 2.0), ("scale", 0.02, 3.0), ("rotate", -3600.0, 3600.0), ("opacity", 0.0, 1.0), ("volume", 0.0, 4.0)],
             );
+            o.mask.x = clamp(o.mask.x, -0.5, 1.5, 0.5);
+            o.mask.y = clamp(o.mask.y, -0.5, 1.5, 0.5);
+            o.mask.w = clamp(o.mask.w, 0.02, 3.0, 0.7);
+            o.mask.h = clamp(o.mask.h, 0.02, 3.0, 0.7);
+            o.mask.feather = clamp(o.mask.feather, 0.0, 0.5, 0.05);
+            if !matches!(o.mask.shape.as_str(), "rect" | "ellipse") {
+                o.mask.shape = "ellipse".into();
+            }
             o.chroma.color = hex_color(&o.chroma.color, "#00FF00");
             o.chroma.similarity = clamp(o.chroma.similarity, 0.01, 0.6, 0.18);
             o.chroma.blend = clamp(o.chroma.blend, 0.0, 0.5, 0.08);
@@ -1239,6 +1279,24 @@ mod tests {
         p.audio = vec![AudioTrack { path: "/m/x.mp3".into(), ..Default::default() }];
         assert_eq!(p.media_paths(), vec!["/m/1.mp4", "/o/2.mp4", "/m/x.mp3"]);
     }
+    #[test]
+    fn mask_and_clip_keyframes_are_clamped_and_old_projects_load() {
+        let old = r#"{"clips":[{"path":"a.mp4","outMs":2000}],"overlays":[{"path":"b.png","kind":"image","outMs":1000}]}"#;
+        let mut p: Project = serde_json::from_str(old).unwrap();
+        assert!(!p.overlays[0].mask.on && p.clips[0].keyframes.is_empty());
+        let k = |t: u64, v: f64| Keyframe { t_ms: t, value: v, ease: "linear".into() };
+        p.clips[0].keyframes.insert("zoom".into(), vec![k(0, 99.0)]);
+        p.clips[0].keyframes.insert("panX".into(), vec![k(0, -9.0)]);
+        p.clips[0].keyframes.insert("x".into(), vec![k(0, 1.0)]);
+        p.overlays[0].mask = ShapeMask { on: true, shape: "star".into(), x: 9.0, y: -9.0, w: 0.0, h: 99.0, feather: 7.0, invert: false };
+        let p = p.checked().unwrap();
+        assert_eq!(p.clips[0].keyframes["zoom"][0].value, 4.0);
+        assert_eq!(p.clips[0].keyframes["panX"][0].value, -1.0);
+        assert!(!p.clips[0].keyframes.contains_key("x"), "不认识的属性被丢掉");
+        let m = &p.overlays[0].mask;
+        assert_eq!((m.shape.as_str(), m.x, m.y, m.w, m.h, m.feather), ("ellipse", 1.5, -0.5, 0.02, 3.0, 0.5));
+    }
+
     #[test]
     fn keyframes_are_cleaned_up_and_old_projects_load() {
         // 旧项目没有关键帧 / 倒放 / 定格这些字段，照样能读

@@ -17,7 +17,7 @@ use crate::vidnorm::facts::{Facts, Hdr};
 
 use super::keyframes;
 use super::region::{focus_knots, focus_window, knot_expr, MaskJob};
-use super::spec::{layout, overlay_order, tone_changed, total_ms, AudioTrack, Clip, ClipKind, Overlay, Placed, Project, Region, TextItem};
+use super::spec::{layout, overlay_order, tone_changed, total_ms, AudioTrack, Clip, ClipKind, Overlay, Placed, Project, Region, ShapeMask, TextItem};
 
 /// 命令行总长度的上限。Windows 的上限是 32767 个字符，留一点给 ffmpeg 路径和输出文件。
 const MAX_ARGS_LEN: usize = 30_000;
@@ -375,11 +375,13 @@ fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmt
         input = format!("[{}]", bg_stage(i, c, sr, f, &input, &head, rg, stmts));
         head = "null".into();
     }
+    let keyed = ["zoom", "panX", "panY"].iter().any(|p| keyframes::track(&c.keyframes, p).is_some());
+    // 有缩放 / 平移关键帧时，适配画面这一步先输出到 `[kz{i}]`，缩放平移之后才接淡入淡出、调色
     let tail = tail.join(",");
+    let (tail, out) = if keyed { (String::new(), format!("kz{i}")) } else { (tail, format!("v{i}")) };
+    let end = if tail.is_empty() { format!("[{out}]") } else { format!(",{tail}[{out}]") };
     match f.fit {
-        "cover" => stmts.push(format!(
-            "{input}{head},scale={w}:{h}:force_original_aspect_ratio=increase:{conv},format=yuv420p,crop={w}:{h},{tail}[v{i}]"
-        )),
+        "cover" => stmts.push(format!("{input}{head},scale={w}:{h}:force_original_aspect_ratio=increase:{conv},format=yuv420p,crop={w}:{h}{end}")),
         "blur" => {
             stmts.push(format!("{input}{head},split[bg{i}][fg{i}]"));
             stmts.push(format!(
@@ -387,12 +389,35 @@ fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmt
                 blur = f.blur
             ));
             stmts.push(format!("[fg{i}]scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:{conv},format=yuv420p[ff{i}]"));
-            stmts.push(format!("[bb{i}][ff{i}]overlay=(W-w)/2:(H-h)/2,{tail}[v{i}]"));
+            stmts.push(format!("[bb{i}][ff{i}]overlay=(W-w)/2:(H-h)/2{end}"));
         }
         _ => stmts.push(format!(
-            "{input}{head},scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:{conv},format=yuv420p,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,{tail}[v{i}]"
+            "{input}{head},scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:{conv},format=yuv420p,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black{end}"
         )),
     }
+    if keyed {
+        clip_keys(i, c, f, stmts);
+    }
+}
+
+/// 缩放 / 平移关键帧：整幅画面按 `zoom` 缩放，放在黑底上，位置 = 居中 + 平移。
+fn clip_keys(i: usize, c: &Clip, f: &Frame, stmts: &mut Vec<String>) {
+    let (w, h) = (f.w, f.h);
+    let at = |prop: &str, fixed: &str| keyframes::track(&c.keyframes, prop).map_or_else(|| fixed.to_string(), |k| keyframes::expr(&k, "t"));
+    let (z, px, py) = (at("zoom", "1"), at("panX", "0"), at("panY", "0"));
+    let mut tail: Vec<String> = vec![];
+    tail.extend(tone_filter(c));
+    let d = c.duration_ms();
+    if c.fade_in_ms > 0 {
+        tail.push(format!("fade=t=in:st=0:d={}", sec(c.fade_in_ms)));
+    }
+    if c.fade_out_ms > 0 {
+        tail.push(format!("fade=t=out:st={}:d={}", sec(d.saturating_sub(c.fade_out_ms)), sec(c.fade_out_ms)));
+    }
+    tail.extend(["format=yuv420p".into(), "setsar=1".into(), "settb=AVTB".into()]);
+    stmts.push(format!("color=c=black:s={w}x{h}:r={}:d={}[kb{i}]", f.fps, sec(d + 500)));
+    stmts.push(format!("[kz{i}]scale=w='max(2,trunc({w}*({z})/2)*2)':h='max(2,trunc({h}*({z})/2)*2)':eval=frame[ks{i}]"));
+    stmts.push(format!("[kb{i}][ks{i}]overlay=x='(W-w)/2+({px})*W':y='(H-h)/2+({py})*H':eval=frame:shortest=1:format=auto,{}[v{i}]", tail.join(",")));
 }
 
 /// 淡入淡出（声音）。
@@ -495,6 +520,9 @@ fn overlay_video(k: usize, idx: usize, o: &Overlay, sr: &Source, frame: (u32, &s
             f.extend(["format=gbrap".into(), format!("despill=type={}:mix=0.5:expand=0.1", o.chroma.spill_type()), "format=yuva420p".into()]);
         }
     }
+    if o.mask.on {
+        f.push(mask_filter(&o.mask));
+    }
     f.extend(tone_expr(o.brightness, o.contrast, o.saturation));
     if let Some(k) = o.keys("rotate") {
         // 角度随时间变：输出做成能装下任意角度的正方形（对角线），转的时候中心不动
@@ -523,6 +551,18 @@ fn overlay_video(k: usize, idx: usize, o: &Overlay, sr: &Source, frame: (u32, &s
     }
     f.push(format!("setpts=PTS+{}/TB", sec(o.start_ms)));
     stmts.push(format!("[{idx}:v:0]{}[ov{k}]", f.join(",")));
+}
+
+/// 形状蒙版：逐像素算一个 0–1 的系数乘到透明通道上（形状里 1、外面 0，边上按羽化过渡）。
+fn mask_filter(m: &ShapeMask) -> String {
+    let (hw, hh) = (m.w / 2.0, m.h / 2.0);
+    let (u, v) = (format!("(X/W-{:.5})/{hw:.5}", m.x), format!("(Y/H-{:.5})/{hh:.5}", m.y));
+    // d：到形状边缘的“归一化距离”，边缘上 = 1，中心 = 0
+    let d = if m.shape == "rect" { format!("max(abs({u}),abs({v}))") } else { format!("hypot({u},{v})") };
+    let soft = m.feather.max(0.002);
+    let inside = format!("clip(0.5+(1-{d})/{:.5},0,1)", 2.0 * soft);
+    let k = if m.invert { format!("(1-{inside})") } else { inside };
+    format!("geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='alpha(X,Y)*{k}'")
 }
 
 /// 入场 / 出场动画里“还没走完的比例”（1 = 刚开始入场 / 已经离场，0 = 在正常位置），`t0` 是动画段的开始时间（秒）。

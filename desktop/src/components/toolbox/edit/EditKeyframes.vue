@@ -3,16 +3,16 @@
 // 点菱形在播放头处加（或删）一个关键点；之后拖监视器里的素材、或拖上面的滑块，会在播放头处改（或新建）关键点。
 import { computed } from 'vue'
 import type { EditApi } from '../../../composables/useEditProject'
-import type { EditKeyframe, EditOverlay, EditText } from '../../../types'
+import type { EditClip, EditKeyframe, EditOverlay, EditText } from '../../../types'
 import { KEY_EASES, MAX_KEYFRAMES, clamp, msText, withKeys } from '../../../utils/edit'
 import type { KeyProp } from '../../../utils/edit'
 
-const props = defineProps<{ ed: EditApi; kind: 'overlay' | 'text'; item: EditOverlay | EditText; defs: KeyProp[]; durationMs: number; startMs: number }>()
+const props = defineProps<{ ed: EditApi; kind: 'overlay' | 'text' | 'clip'; item: EditOverlay | EditText | EditClip; defs: KeyProp[]; durationMs: number; startMs: number }>()
 const emit = defineEmits<{ goto: [ms: number] }>()
 
 /** 播放头相对这个素材开头的位置 */
 const local = computed(() => Math.round(clamp(props.ed.playhead.value - props.startMs, 0, props.durationMs)))
-const eff = computed(() => withKeys(props.item, local.value) as unknown as Record<string, number>)
+const eff = computed((): Record<string, number> => ({ zoom: 1, panX: 0, panY: 0, ...(withKeys(props.item, local.value) as unknown as Record<string, number>) }))
 /** 离播放头这么近（毫秒）就算“正好在关键点上” */
 const NEAR = 40
 

@@ -1453,6 +1453,8 @@ export interface EditClip {
   reverse: boolean
   freeze: boolean
   regions: EditRegion[]
+  /** 关键帧：zoom / panX / panY（时间相对片段开头） */
+  keyframes: EditKeyframes
   bg: EditBackground
   transition: EditTransition | null
 }
@@ -1609,9 +1611,23 @@ export interface EditOverlay {
   keyframes: EditKeyframes
   /** 抠像（绿幕 / 蓝幕） */
   chroma: EditChroma
+  /** 形状蒙版 */
+  mask: EditShapeMask
 }
 
 /** 抠像：把 `color` 附近的颜色变透明。相似度 0.01–0.6，边缘柔化 0–0.5，去溢色压掉留下部分边缘的绿 / 蓝反光 */
+/** 叠加素材的形状蒙版（位置、大小占素材自己画面的比例） */
+export interface EditShapeMask {
+  on: boolean
+  shape: 'rect' | 'ellipse'
+  x: number
+  y: number
+  w: number
+  h: number
+  feather: number
+  invert: boolean
+}
+
 export interface EditChroma {
   on: boolean
   color: string

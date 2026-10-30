@@ -380,27 +380,27 @@ export function useEditProject() {
     }, key)
   }
   /** 在 `tMs`（相对开头）给某个属性放一个关键点 / 改它的曲线 / 删掉 */
-  function setKey(kind: 'overlay' | 'text', id: number, prop: string, tMs: number, value: number, ease?: EditKeyframe['ease'], key = '') {
+  function setKey(kind: 'overlay' | 'text' | 'clip', id: number, prop: string, tMs: number, value: number, ease?: EditKeyframe['ease'], key = '') {
     mutate((p) => {
-      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
       if (it) it.keyframes = kfSet(it.keyframes, prop, tMs, value, ease)
     }, key)
   }
-  function deleteKey(kind: 'overlay' | 'text', id: number, prop: string, tMs: number) {
+  function deleteKey(kind: 'overlay' | 'text' | 'clip', id: number, prop: string, tMs: number) {
     mutate((p) => {
-      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
       if (it) it.keyframes = kfDelete(it.keyframes, prop, tMs)
     })
   }
   /** 把某个属性所有的关键点去掉，回到固定值（固定值设成 `keep`，比如当前这一刻的值） */
-  function clearKeys(kind: 'overlay' | 'text', id: number, prop: string, keep?: number) {
+  function clearKeys(kind: 'overlay' | 'text' | 'clip', id: number, prop: string, keep?: number) {
     mutate((p) => {
-      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
       if (!it) return
       const rest = { ...it.keyframes }
       delete rest[prop]
       it.keyframes = rest
-      if (keep !== undefined) (it as unknown as Record<string, number>)[prop] = keep
+      if (keep !== undefined && kind !== 'clip') (it as unknown as Record<string, number>)[prop] = keep
     })
   }
   function patchText(id: number, patch: Partial<EditText>, key = '') {

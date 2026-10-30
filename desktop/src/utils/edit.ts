@@ -2,7 +2,7 @@
 // 排布规则和后端 `src-tauri/src/edit/spec.rs` 的 `layout` 保持一致，改那边时要一起改这里。
 // 这个文件不要引入别的运行时模块（用 node 直接跑 scripts 里的检查时需要）。
 
-import type { EditBackground, EditAudio, EditBeats, EditChroma, EditClip, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
+import type { EditShapeMask, EditBackground, EditAudio, EditBeats, EditChroma, EditClip, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
 
 export const MIN_MS = 100
 export const MIN_TRANSITION_MS = 100
@@ -76,8 +76,8 @@ export function normalizeProject(raw: Partial<EditProject> | null | undefined): 
   const r = raw ?? {}
   p.title = typeof r.title === 'string' ? r.title : ''
   p.out = { ...defaultOutput(), ...(r.out ?? {}) }
-  p.clips = (r.clips ?? []).map((c, i) => ({ ...blankClip(), ...c, id: c.id ?? i + 1, regions: (c.regions ?? []).map((g, j) => ({ ...blankRegion(), ...g, id: g.id ?? j + 1 })), bg: { ...blankBackground(), ...(c.bg ?? {}), chroma: { ...blankChroma(), ...(c.bg?.chroma ?? {}) } } }))
-  p.overlays = (r.overlays ?? []).map((o, i) => ({ ...blankOverlay(), ...o, id: o.id ?? i + 1, keyframes: kfClean(o.keyframes), chroma: { ...blankChroma(), ...(o.chroma ?? {}) } }))
+  p.clips = (r.clips ?? []).map((c, i) => ({ ...blankClip(), ...c, id: c.id ?? i + 1, regions: (c.regions ?? []).map((g, j) => ({ ...blankRegion(), ...g, id: g.id ?? j + 1 })), keyframes: kfClean(c.keyframes), bg: { ...blankBackground(), ...(c.bg ?? {}), chroma: { ...blankChroma(), ...(c.bg?.chroma ?? {}) } } }))
+  p.overlays = (r.overlays ?? []).map((o, i) => ({ ...blankOverlay(), ...o, id: o.id ?? i + 1, keyframes: kfClean(o.keyframes), chroma: { ...blankChroma(), ...(o.chroma ?? {}) }, mask: { ...blankShapeMask(), ...(o.mask ?? {}) } }))
   p.texts = (r.texts ?? []).map((t, i) => ({ ...blankText(), ...t, id: t.id ?? i + 1, keyframes: kfClean(t.keyframes) }))
   p.audio = (r.audio ?? []).map((a, i) => ({ ...blankAudio(), ...a, id: a.id ?? i + 1, beats: cleanBeats(a.beats) }))
   return p
@@ -108,6 +108,7 @@ function blankClip(): EditClip {
     freeze: false,
     regions: [],
     bg: blankBackground(),
+    keyframes: {},
     transition: null,
   }
 }
@@ -142,7 +143,12 @@ export function blankOverlay(): EditOverlay {
     saturation: 1,
     keyframes: {},
     chroma: blankChroma(),
+    mask: blankShapeMask(),
   }
+}
+
+export function blankShapeMask(): EditShapeMask {
+  return { on: false, shape: 'ellipse', x: 0.5, y: 0.5, w: 0.7, h: 0.7, feather: 0.05, invert: false }
 }
 
 export function blankBackground(): EditBackground {
@@ -313,6 +319,10 @@ export function splitClip(c: EditClip, pl: Placed, t: number, newId: number): [E
   }
   first.fadeOutMs = 0
   second.fadeInMs = 0
+  // 缩放 / 平移关键帧在切开处补点，后半从它自己的开头算
+  const [ka, kb] = kfSplit(c.keyframes, local)
+  first.keyframes = ka
+  second.keyframes = kb
   if (c.kind === 'video' && !c.freeze) {
     // 区域的轨迹用的是素材时间，两半各留下自己那一段（边上多留一个点，插值才对得上）
     first.regions = first.regions.map((r) => ({ ...r, track: trimTrack(r.track, first.inMs, first.outMs) }))
@@ -337,6 +347,9 @@ export function keepRanges(c: EditClip, keeps: [number, number][], ids: () => nu
     if (i > 0) piece.fadeInMs = 0
     if (i < spans.length - 1) piece.fadeOutMs = 0
     piece.regions = piece.regions.map((r) => ({ ...r, track: trimTrack(r.track, a, b) }))
+    // 关键帧按成片时间算：取这一段对应的那截
+    const from = (a - c.inMs) / c.speed
+    piece.keyframes = kfSplit(kfSplit(c.keyframes, from)[1], (b - a) / c.speed)[0]
     return piece
   })
   return out
@@ -967,6 +980,11 @@ export const OVERLAY_KEY_PROPS: KeyProp[] = [
   { id: 'rotate', label: '旋转', min: -3600, max: 3600, step: 1, digits: 0, unit: '°' },
   { id: 'opacity', label: '不透明度', min: 0, max: 1, step: 0.01, digits: 0, unit: '%', mult: 100 },
   { id: 'volume', label: '音量', min: 0, max: 4, step: 0.05, digits: 2, unit: '×' },
+]
+export const CLIP_KEY_PROPS: KeyProp[] = [
+  { id: 'zoom', label: '缩放', min: 0.25, max: 4, step: 0.01, digits: 0, unit: '%', mult: 100 },
+  { id: 'panX', label: '水平平移', min: -1, max: 1, step: 0.01, digits: 0, unit: '%', mult: 100 },
+  { id: 'panY', label: '垂直平移', min: -1, max: 1, step: 0.01, digits: 0, unit: '%', mult: 100 },
 ]
 export const TEXT_KEY_PROPS: KeyProp[] = OVERLAY_KEY_PROPS.filter((p) => ['x', 'y', 'opacity'].includes(p.id))
 
