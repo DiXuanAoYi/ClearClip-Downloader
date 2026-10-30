@@ -9,8 +9,9 @@ import type { EditApi } from '../../../composables/useEditProject'
 import type { RegionApi } from '../../../composables/useRegions'
 import type { OverlayAnim } from '../../../types'
 import type { EditClip, EditOutput, EditOverlay } from '../../../types'
-import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, MIN_TRANSITION_MS, TRANSITIONS, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit } from '../../../utils/edit'
+import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, MIN_TRANSITION_MS, OVERLAY_KEY_PROPS, SPEED_RAMPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
 import EditField from './EditField.vue'
+import EditKeyframes from './EditKeyframes.vue'
 import EditRegions from './EditRegions.vue'
 import EditSmart from './EditSmart.vue'
 import EditTranscript from './EditTranscript.vue'
@@ -49,7 +50,29 @@ const po = (patch: Partial<EditOverlay>, key: string) => overlay.value && ed.pat
 const pt = (patch: Parameters<typeof ed.patchText>[1], key: string) => text.value && ed.patchText(text.value.id, patch, `${key}:${text.value.id}`)
 const pa = (patch: Parameters<typeof ed.patchAudio>[1], key: string) => audio.value && ed.patchAudio(audio.value.id, patch, `${key}:${audio.value.id}`)
 
+// 叠加素材 / 文字此刻的实际值（有关键帧的属性随播放头变）；改这些值时，有关键帧的会在播放头处改（或新建）关键点
+const ovLocal = computed(() => (overlay.value ? clamp(ed.playhead.value - overlay.value.startMs, 0, overlayDuration(overlay.value)) : 0))
+const eo = computed(() => (overlay.value ? withKeys(overlay.value, ovLocal.value) : null))
+const txLocal = computed(() => (text.value ? clamp(ed.playhead.value - text.value.startMs, 0, text.value.endMs - text.value.startMs) : 0))
+const et = computed(() => (text.value ? withKeys(text.value, txLocal.value) : null))
+const pk = (patch: Parameters<typeof ed.setOverlayProps>[1], key: string) => overlay.value && ed.setOverlayProps(overlay.value.id, patch, `${key}:${overlay.value.id}`)
+const ptk = (patch: Parameters<typeof ed.setTextProps>[1], key: string) => text.value && ed.setTextProps(text.value.id, patch, `${key}:${text.value.id}`)
+const keyedCount = (item: { keyframes: Record<string, unknown[]> } | undefined | null) => Object.values(item?.keyframes ?? {}).filter((v) => v.length).length
+
 const clipLimit = computed(() => src.value?.durationMs ?? Number.MAX_SAFE_INTEGER)
+
+const holdSec = ref(2)
+function applyRamp(id: string) {
+  const c = clip.value
+  const r = SPEED_RAMPS.find((x) => x.id === id)
+  if (!c || !r) return
+  const n = ed.applySpeedRamp(c.id, r.steps)
+  if (n) ElMessage.success(`已拆成 ${n} 段，各段速度不同；可以在时间线上选中某一段继续调`)
+  else ElMessage.warning('这个片段太短，或已经倒放 / 定格，不能套变速曲线。')
+}
+function freezeNow() {
+  if (!ed.freezeAtPlayhead(Math.round(holdSec.value * 1000))) ElMessage.warning('播放头不在一个普通视频片段上。把播放头移到要定格的画面再点。')
+}
 
 function setTransition(kind: string) {
   if (!clip.value) return
@@ -297,21 +320,43 @@ async function pickDir() {
           <el-button size="small" link @click="emit('goto', placed?.startMs ?? 0)">定位</el-button>
         </EditField>
         <EditField label="出点">
-          <TimeInput :model-value="clip.outMs" :min="clip.inMs + MIN_MS" :max="clipLimit" @update:model-value="(v) => pc({ outMs: v }, 'out')" />
+          <TimeInput :model-value="clip.outMs" :min="clip.inMs + MIN_MS" :max="clip.freeze ? Number.MAX_SAFE_INTEGER : clipLimit" @update:model-value="(v) => pc({ outMs: v }, 'out')" />
           <span class="mute small">素材共 {{ src?.durationMs ? msText(src.durationMs) : '—' }}</span>
         </EditField>
         <EditField label="成片里长">
           <span class="mono">{{ msText(clipDuration(clip)) }}</span>
           <span v-if="clip.speed !== 1" class="mute small">（{{ clip.speed }}× 速度）</span>
         </EditField>
-        <EditSlider label="速度" :model-value="clip.speed" :min="0.25" :max="4" :step="0.05" unit="×" :digits="2" @update:model-value="(v) => pc({ speed: v }, 'spd')" />
-        <template v-if="!src || src.hasAudio">
+        <EditSlider v-if="!clip.freeze" label="速度" :model-value="clip.speed" :min="0.25" :max="4" :step="0.05" unit="×" :digits="2" @update:model-value="(v) => pc({ speed: v }, 'spd')" />
+        <template v-if="!clip.freeze">
+          <EditField label="">
+            <el-checkbox :model-value="clip.reverse" @update:model-value="(v: unknown) => pc({ reverse: !!v }, 'rev')">倒放（声音也倒过来）</el-checkbox>
+          </EditField>
+          <EditField label="变速曲线" hint="把这个片段拆成几段，每段用不同的速度；之后每一段都可以单独调">
+            <el-dropdown trigger="click" :disabled="clip.reverse" @command="(id: string) => applyRamp(id)">
+              <el-button size="small" :disabled="clip.reverse">选一个曲线…</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="r in SPEED_RAMPS" :key="r.id" :command="r.id">{{ r.label }}<span class="mute small">　{{ r.hint }}</span></el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </EditField>
+        </template>
+        <EditField label="定格" :hint="clip.freeze ? '这一段就是定格的画面，停多久由出点 − 入点决定' : '在播放头处把画面停住几秒（要先把播放头放在这个片段上）'">
+          <template v-if="!clip.freeze">
+            <el-input-number v-model="holdSec" :min="0.2" :max="30" :step="0.5" :precision="1" size="small" controls-position="right" />
+            <el-button size="small" @click="freezeNow">在播放头处定格</el-button>
+          </template>
+          <span v-else class="mute small">定格片段：没有声音；预览里是静止画面</span>
+        </EditField>
+        <template v-if="!clip.freeze && (!src || src.hasAudio)">
           <EditSlider label="音量" :model-value="clip.volume" :min="0" :max="4" :step="0.05" unit="%" :scale="100" :disabled="clip.mute" @update:model-value="(v) => pc({ volume: v }, 'vol')" />
           <EditField label="">
             <el-checkbox :model-value="clip.mute" @update:model-value="(v: unknown) => pc({ mute: !!v }, 'mute')">静音这个片段</el-checkbox>
           </EditField>
         </template>
-        <div v-else class="mute small pad">这个素材没有声音。</div>
+        <div v-else-if="!clip.freeze" class="mute small pad">这个素材没有声音。</div>
       </template>
       <template v-else>
         <EditField label="显示时长">
@@ -418,10 +463,10 @@ async function pickDir() {
         <TimeInput :model-value="overlay.outMs" :min="MIN_MS" @update:model-value="(v) => po({ outMs: v }, 'oout')" />
       </EditField>
 
-      <EditSlider label="左右位置" :model-value="overlay.x" :min="-0.5" :max="1.5" :step="0.005" unit="%" :scale="100" hint="素材中心离画面左边的距离。也可以在监视器里直接拖动素材" @update:model-value="(v) => po({ x: v }, 'ox')" />
-      <EditSlider label="上下位置" :model-value="overlay.y" :min="-0.5" :max="1.5" :step="0.005" unit="%" :scale="100" @update:model-value="(v) => po({ y: v }, 'oy')" />
-      <EditSlider label="大小" :model-value="overlay.scale" :min="0.02" :max="3" :step="0.01" unit="%" :scale="100" hint="素材宽度占画面宽度的比例（100% = 和画面一样宽）" @update:model-value="(v) => po({ scale: v }, 'osc')" />
-      <EditSlider label="旋转" :model-value="overlay.rotate" :min="-360" :max="360" :step="1" unit="°" @update:model-value="(v) => po({ rotate: v }, 'orot')" />
+      <EditSlider label="左右位置" :model-value="eo!.x" :min="-0.5" :max="1.5" :step="0.005" unit="%" :scale="100" hint="素材中心离画面左边的距离。也可以在监视器里直接拖动素材" @update:model-value="(v) => pk({ x: v }, 'ox')" />
+      <EditSlider label="上下位置" :model-value="eo!.y" :min="-0.5" :max="1.5" :step="0.005" unit="%" :scale="100" @update:model-value="(v) => pk({ y: v }, 'oy')" />
+      <EditSlider label="大小" :model-value="eo!.scale" :min="0.02" :max="3" :step="0.01" unit="%" :scale="100" hint="素材宽度占画面宽度的比例（100% = 和画面一样宽）" @update:model-value="(v) => pk({ scale: v }, 'osc')" />
+      <EditSlider label="旋转" :model-value="eo!.rotate" :min="-360" :max="360" :step="1" unit="°" @update:model-value="(v) => pk({ rotate: v }, 'orot')" />
       <EditField label="">
         <el-button size="small" @click="turnOverlay(-90)">左转 90°</el-button>
         <el-button size="small" @click="turnOverlay(90)">右转 90°</el-button>
@@ -432,7 +477,7 @@ async function pickDir() {
         <el-button size="small" @click="fitOverlay('cover')">铺满画面</el-button>
         <el-button size="small" @click="resetOverlayBox">还原</el-button>
       </EditField>
-      <EditSlider label="不透明度" :model-value="overlay.opacity" :min="0" :max="1" :step="0.01" unit="%" :scale="100" @update:model-value="(v) => po({ opacity: v }, 'oop')" />
+      <EditSlider label="不透明度" :model-value="eo!.opacity" :min="0" :max="1" :step="0.01" unit="%" :scale="100" @update:model-value="(v) => pk({ opacity: v }, 'oop')" />
       <EditField label="">
         <el-checkbox :model-value="overlay.flipH" @update:model-value="(v: unknown) => po({ flipH: !!v }, 'ofh')">左右翻转</el-checkbox>
         <el-checkbox :model-value="overlay.flipV" @update:model-value="(v: unknown) => po({ flipV: !!v }, 'ofv')">上下翻转</el-checkbox>
@@ -457,7 +502,7 @@ async function pickDir() {
         <el-input-number :model-value="overlay.animMs / 1000" :min="0.1" :max="3" :step="0.1" :precision="1" size="small" controls-position="right" @update:model-value="(v: number | undefined) => po({ animMs: Math.round((v ?? 0.5) * 1000) }, 'oam')" />
       </EditField>
       <template v-if="overlay.kind === 'video' && src && src.hasAudio">
-        <EditSlider label="音量" :model-value="overlay.volume" :min="0" :max="4" :step="0.05" unit="%" :scale="100" :disabled="overlay.mute" @update:model-value="(v) => po({ volume: v }, 'ovol')" />
+        <EditSlider label="音量" :model-value="eo!.volume" :min="0" :max="4" :step="0.05" unit="%" :scale="100" :disabled="overlay.mute" @update:model-value="(v) => pk({ volume: v }, 'ovol')" />
         <EditField label="">
           <el-checkbox :model-value="overlay.mute" @update:model-value="(v: unknown) => po({ mute: !!v }, 'omute')">静音这个素材</el-checkbox>
         </EditField>
@@ -468,6 +513,11 @@ async function pickDir() {
       <EditField label="">
         <el-button size="small" link type="primary" :disabled="!ovToned" @click="resetOverlayTone">调色归零</el-button>
       </EditField>
+      <el-collapse class="kfc" :model-value="keyedCount(overlay) ? ['k'] : []">
+        <el-collapse-item name="k" :title="`关键帧动画${keyedCount(overlay) ? `（${keyedCount(overlay)} 项）` : ''}`">
+          <EditKeyframes :ed="ed" kind="overlay" :item="overlay" :defs="OVERLAY_KEY_PROPS" :duration-ms="overlayDuration(overlay)" :start-ms="overlay.startMs" @goto="(ms) => emit('goto', ms)" />
+        </el-collapse-item>
+      </el-collapse>
       <div class="mute small pad">叠加素材不会撑长成片，超出主轨结尾的部分会被截掉。</div>
     </div>
 
@@ -483,14 +533,19 @@ async function pickDir() {
         <TimeInput :model-value="text.endMs" :min="text.startMs + MIN_MS" @update:model-value="(v) => pt({ endMs: v }, 'te')" />
         <el-button size="small" link @click="stampEnd">取播放位置</el-button>
       </EditField>
-      <EditSlider label="左右位置" :model-value="text.x" :min="0" :max="1" :step="0.005" unit="%" :scale="100" hint="文字中心离画面左边的距离。也可以在监视器里直接拖动文字" @update:model-value="(v) => pt({ x: v }, 'tx')" />
-      <EditSlider label="上下位置" :model-value="text.y" :min="0" :max="1" :step="0.005" unit="%" :scale="100" @update:model-value="(v) => pt({ y: v }, 'ty')" />
+      <EditSlider label="左右位置" :model-value="et!.x" :min="0" :max="1" :step="0.005" unit="%" :scale="100" hint="文字中心离画面左边的距离。也可以在监视器里直接拖动文字" @update:model-value="(v) => ptk({ x: v }, 'tx')" />
+      <EditSlider label="上下位置" :model-value="et!.y" :min="0" :max="1" :step="0.005" unit="%" :scale="100" @update:model-value="(v) => ptk({ y: v }, 'ty')" />
       <EditSlider label="字号" :model-value="text.size" :min="1" :max="30" :step="0.5" unit="%" :digits="1" hint="占画面高度的百分比" @update:model-value="(v) => pt({ size: v }, 'tsz')" />
       <EditField label="颜色">
         <el-color-picker :model-value="text.color" size="small" @update:model-value="(v: string | null) => v && pt({ color: v }, 'tc')" />
       </EditField>
-      <EditSlider label="不透明度" :model-value="text.opacity" :min="0.05" :max="1" :step="0.05" unit="%" :scale="100" @update:model-value="(v) => pt({ opacity: v }, 'to')" />
+      <EditSlider label="不透明度" :model-value="et!.opacity" :min="0" :max="1" :step="0.05" unit="%" :scale="100" @update:model-value="(v) => ptk({ opacity: v }, 'to')" />
       <EditSlider label="淡入淡出" :model-value="text.fadeMs" :min="0" :max="1000" :step="50" :scale="0.001" :digits="2" unit=" 秒" hint="出现和消失时渐变；导出时只作用在字上，描边和底色块不跟着变" @update:model-value="(v) => pt({ fadeMs: v }, 'tfd')" />
+      <el-collapse v-if="!(text.words.length && text.highlight)" class="kfc" :model-value="keyedCount(text) ? ['k'] : []">
+        <el-collapse-item name="k" :title="`关键帧动画${keyedCount(text) ? `（${keyedCount(text)} 项）` : ''}`">
+          <EditKeyframes :ed="ed" kind="text" :item="text" :defs="TEXT_KEY_PROPS" :duration-ms="text.endMs - text.startMs" :start-ms="text.startMs" @goto="(ms) => emit('goto', ms)" />
+        </el-collapse-item>
+      </el-collapse>
       <div v-if="text.words.length" class="mute small pad">这是按词生成的字幕：{{ text.highlight ? '说到哪个词，哪个词变色' : '每个词都有各自的时间' }}。改字后会变成普通文字。</div>
       <EditField v-if="text.words.length" label="高亮色">
         <el-color-picker :model-value="text.highlight || '#FFD400'" size="small" @update:model-value="(v: string | null) => v && pt({ highlight: v }, 'thl')" />
@@ -676,5 +731,9 @@ async function pickDir() {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+.kfc {
+  border: none;
+  margin: 4px 0;
 }
 </style>

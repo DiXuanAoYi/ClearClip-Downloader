@@ -212,6 +212,13 @@ function drive(it: Item, el: HTMLVideoElement, l: LiveMain | LiveOverlay | undef
   const gain = main ? mainGain(l) : overlayGain(l)
   const rate = clamp(main ? l.clip.speed : l.overlay.speed, 0.25, 4)
   const want = l.srcMs / 1000
+  if (main && (l.clip.freeze || l.clip.reverse)) {
+    // 定格和倒放没法让浏览器直接播：停住，随时间线跳到该在的那一帧（倒放时没有声音）
+    el.muted = true
+    if (!el.paused) el.pause()
+    if (el.readyState >= 1 && !el.seeking && Math.abs(el.currentTime - want) > 0.03) el.currentTime = want
+    return
+  }
   if (el.playbackRate !== rate) el.playbackRate = rate
   el.volume = clamp(gain, 0, 1)
   el.muted = !playing || gain <= 0

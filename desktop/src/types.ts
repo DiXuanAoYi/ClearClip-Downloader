@@ -1449,9 +1449,22 @@ export interface EditClip {
   denoise: 'off' | 'light' | 'medium' | 'strong'
   enhance: boolean
   noiseFloorDb: number | null
+  /** 倒放（声音也倒过来）；定格：只取入点处那一帧，停住 `outMs - inMs` 毫秒，没有声音 */
+  reverse: boolean
+  freeze: boolean
   regions: EditRegion[]
   transition: EditTransition | null
 }
+
+/** 关键帧：某个属性在某个时刻（毫秒，相对素材 / 文字自己的开始）的值，`ease` 是到下一个关键帧之间用的曲线 */
+export type KeyEase = 'linear' | 'in' | 'out' | 'inout' | 'hold'
+export interface EditKeyframe {
+  tMs: number
+  value: number
+  ease: KeyEase
+}
+/** 属性名（x / y / scale / rotate / opacity / volume）→ 关键帧列表 */
+export type EditKeyframes = Record<string, EditKeyframe[]>
 
 export interface EditText {
   id: number
@@ -1475,6 +1488,8 @@ export interface EditText {
   highlight: string
   /** 淡入淡出（毫秒） */
   fadeMs: number
+  /** 关键帧：x / y / opacity；逐字高亮的文字不支持 */
+  keyframes: EditKeyframes
 }
 
 export interface EditTextWord {
@@ -1556,6 +1571,8 @@ export interface EditOverlay {
   brightness: number
   contrast: number
   saturation: number
+  /** 关键帧：x / y / scale / rotate / opacity / volume；有关键帧的属性不再用上面的固定值 */
+  keyframes: EditKeyframes
 }
 
 export interface EditOutput {

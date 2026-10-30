@@ -5,7 +5,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import type { EditApi } from '../../../composables/useEditProject'
 import type { RegionApi } from '../../../composables/useRegions'
 import type { EditOverlay, EditRegion, EditText, NRect } from '../../../types'
-import { aspectInSource, boxFromCorners, clamp, clampBox, focusRect, focusWindow, grownBox, liveFrame, monitorGeom, outputSize, overlayBox, regionActiveAt, thin, trackAt } from '../../../utils/edit'
+import { aspectInSource, boxFromCorners, clamp, clampBox, focusRect, focusWindow, grownBox, liveFrame, monitorGeom, outputSize, overlayBox, regionActiveAt, thin, trackAt, withKeys } from '../../../utils/edit'
 import EditLive from './EditLive.vue'
 
 const props = defineProps<{ ed: EditApi; rg: RegionApi; mode: 'live' | 'preview'; previewUrl: string | null }>()
@@ -160,7 +160,8 @@ const curSrc = computed(() => (cur.value ? ed.sources[cur.value.path] : undefine
 const visibleTexts = computed(() => {
   if (props.mode !== 'live') return []
   const t = ed.playhead.value
-  return ed.project.value.texts.filter((x) => t >= x.startMs && t < x.endMs)
+  // 带关键帧的文字换成此刻的位置 / 不透明度
+  return ed.project.value.texts.filter((x) => t >= x.startMs && t < x.endMs).map((x) => withKeys(x, t - x.startMs))
 })
 
 function rgba(hex: string, a: number) {
@@ -215,7 +216,7 @@ function textMove(e: PointerEvent) {
   if (!dragText || !r) return
   const x = clamp((e.clientX - r.left) / r.width + dragText.dx, 0, 1)
   const y = clamp((e.clientY - r.top) / r.height + dragText.dy, 0, 1)
-  ed.patchText(dragText.id, { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 }, `textpos:${dragText.id}`)
+  ed.setTextProps(dragText.id, { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 }, `textpos:${dragText.id}`)
 }
 function textUp() {
   dragText = null
@@ -256,7 +257,8 @@ function ovPoint(o: EditOverlay): { cx: number; cy: number } | null {
 const pointerAngle = (e: PointerEvent, cx: number, cy: number) => (Math.atan2(e.clientX - cx, -(e.clientY - cy)) * 180) / Math.PI
 
 function ovDown(e: PointerEvent, id: number) {
-  const o = ed.overlayOf(id)
+  // 起点用此刻的实际位置（有关键帧时和固定值不同）
+  const o = frame.value.overlays.find((x) => x.overlay.id === id)?.overlay ?? ed.overlayOf(id)
   const r = stageEl.value?.getBoundingClientRect()
   if (!o || !r || !r.width) return
   ed.sel.value = { kind: 'overlay', id }
@@ -290,10 +292,10 @@ function ovMove(e: PointerEvent) {
       if (Math.abs(x - 0.5) < CENTER_SNAP) x = 0.5
       if (Math.abs(y - 0.5) < CENTER_SNAP) y = 0.5
     }
-    ed.patchOverlay(d.id, { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 }, `ovpos:${d.id}`)
+    ed.setOverlayProps(d.id, { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 }, `ovpos:${d.id}`)
   } else if (d.kind === 'scale') {
     const k = Math.hypot(e.clientX - d.cx, e.clientY - d.cy) / d.d0
-    ed.patchOverlay(d.id, { scale: Math.round(clamp(d.scale0 * k, 0.02, 3) * 1000) / 1000 }, `ovscale:${d.id}`)
+    ed.setOverlayProps(d.id, { scale: Math.round(clamp(d.scale0 * k, 0.02, 3) * 1000) / 1000 }, `ovscale:${d.id}`)
   } else {
     let a = d.rot0 + (pointerAngle(e, d.cx, d.cy) - d.a0)
     a = ((((a + 180) % 360) + 360) % 360) - 180
@@ -301,7 +303,7 @@ function ovMove(e: PointerEvent) {
     const step = e.shiftKey ? 15 : 90
     const near = Math.round(a / step) * step
     if (e.shiftKey || Math.abs(a - near) < 3) a = near
-    ed.patchOverlay(d.id, { rotate: Math.round(a * 10) / 10 }, `ovrot:${d.id}`)
+    ed.setOverlayProps(d.id, { rotate: Math.round(a * 10) / 10 }, `ovrot:${d.id}`)
   }
 }
 function ovUp() {

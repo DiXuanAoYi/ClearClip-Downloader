@@ -43,7 +43,7 @@ pub fn fit_to_sources(p: &mut Project, src: &HashMap<String, Source>) -> AppResu
         if c.in_ms + MIN_MS > d {
             return Err(AppError::invalid(format!("第 {} 个片段的开始时间（{}）已经超出素材的长度（{}）。", n + 1, show_ms(c.in_ms), show_ms(d))));
         }
-        if c.out_ms > d {
+        if c.out_ms > d && !c.freeze {
             c.out_ms = d;
             notes.push(format!("第 {} 个片段超出素材的长度，已缩短到素材结尾", n + 1));
         }

@@ -2,7 +2,7 @@
 // 排布规则和后端 `src-tauri/src/edit/spec.rs` 的 `layout` 保持一致，改那边时要一起改这里。
 // 这个文件不要引入别的运行时模块（用 node 直接跑 scripts 里的检查时需要）。
 
-import type { EditAudio, EditClip, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
+import type { EditAudio, EditClip, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
 
 export const MIN_MS = 100
 export const MIN_TRANSITION_MS = 100
@@ -77,8 +77,8 @@ export function normalizeProject(raw: Partial<EditProject> | null | undefined): 
   p.title = typeof r.title === 'string' ? r.title : ''
   p.out = { ...defaultOutput(), ...(r.out ?? {}) }
   p.clips = (r.clips ?? []).map((c, i) => ({ ...blankClip(), ...c, id: c.id ?? i + 1, regions: (c.regions ?? []).map((g, j) => ({ ...blankRegion(), ...g, id: g.id ?? j + 1 })) }))
-  p.overlays = (r.overlays ?? []).map((o, i) => ({ ...blankOverlay(), ...o, id: o.id ?? i + 1 }))
-  p.texts = (r.texts ?? []).map((t, i) => ({ ...blankText(), ...t, id: t.id ?? i + 1 }))
+  p.overlays = (r.overlays ?? []).map((o, i) => ({ ...blankOverlay(), ...o, id: o.id ?? i + 1, keyframes: kfClean(o.keyframes) }))
+  p.texts = (r.texts ?? []).map((t, i) => ({ ...blankText(), ...t, id: t.id ?? i + 1, keyframes: kfClean(t.keyframes) }))
   p.audio = (r.audio ?? []).map((a, i) => ({ ...blankAudio(), ...a, id: a.id ?? i + 1 }))
   return p
 }
@@ -104,6 +104,8 @@ function blankClip(): EditClip {
     denoise: 'off',
     enhance: false,
     noiseFloorDb: null,
+    reverse: false,
+    freeze: false,
     regions: [],
     transition: null,
   }
@@ -137,6 +139,7 @@ export function blankOverlay(): EditOverlay {
     brightness: 0,
     contrast: 1,
     saturation: 1,
+    keyframes: {},
   }
 }
 
@@ -160,6 +163,7 @@ function blankText(): EditText {
     words: [],
     highlight: '',
     fadeMs: 0,
+    keyframes: {},
   }
 }
 
@@ -222,7 +226,7 @@ export function audioFromSource(src: EditSource, id: number, startMs: number): E
 /** 片段在时间线上占的时长（毫秒）。 */
 export function clipDuration(c: EditClip): number {
   const span = Math.max(0, c.outMs - c.inMs)
-  return c.kind === 'image' ? span : Math.round(span / Math.max(0.01, c.speed))
+  return c.kind === 'image' || c.freeze ? span : Math.round(span / Math.max(0.01, c.speed))
 }
 
 export function layout(clips: EditClip[]): Placed[] {
@@ -259,7 +263,9 @@ export function clipIndexAt(placed: Placed[], t: number): number {
 /** t 时刻对应片段里的素材时间（毫秒）。 */
 export function sourceTimeAt(c: EditClip, pl: Placed, t: number): number {
   if (c.kind === 'image') return 0
+  if (c.freeze) return c.inMs
   const local = clamp(t - pl.startMs, 0, pl.durMs)
+  if (c.reverse) return clamp(c.outMs - local * c.speed, c.inMs, c.outMs)
   return clamp(c.inMs + local * c.speed, c.inMs, c.outMs)
 }
 
@@ -281,6 +287,15 @@ export function splitClip(c: EditClip, pl: Placed, t: number, newId: number): [E
   if (c.kind === 'image') {
     first.outMs = local
     second.outMs = pl.durMs - local
+  } else if (c.freeze) {
+    // 定格：两半都停在同一帧，各管一段时长
+    first.outMs = c.inMs + local
+    second.outMs = c.inMs + pl.durMs - local
+  } else if (c.reverse) {
+    // 倒放：时间线上前半段对应素材的后半段
+    const cut = Math.round(c.outMs - local * c.speed)
+    first.inMs = cut
+    second.outMs = cut
   } else {
     const cut = Math.round(c.inMs + local * c.speed)
     first.outMs = cut
@@ -288,7 +303,7 @@ export function splitClip(c: EditClip, pl: Placed, t: number, newId: number): [E
   }
   first.fadeOutMs = 0
   second.fadeInMs = 0
-  if (c.kind === 'video') {
+  if (c.kind === 'video' && !c.freeze) {
     // 区域的轨迹用的是素材时间，两半各留下自己那一段（边上多留一个点，插值才对得上）
     first.regions = first.regions.map((r) => ({ ...r, track: trimTrack(r.track, first.inMs, first.outMs) }))
     second.regions = second.regions.map((r) => ({ ...r, track: trimTrack(r.track, second.inMs, second.outMs) }))
@@ -302,7 +317,7 @@ export function splitClip(c: EditClip, pl: Placed, t: number, newId: number): [E
  * 太短（< MIN_MS）的段被丢掉；没有可保留的返回空数组。图片不处理（返回原样）。
  */
 export function keepRanges(c: EditClip, keeps: [number, number][], ids: () => number): EditClip[] {
-  if (c.kind !== 'video') return [c]
+  if (c.kind !== 'video' || c.reverse || c.freeze) return [c]
   const spans = keeps
     .map(([a, b]) => [Math.max(c.inMs, Math.round(a)), Math.min(c.outMs, Math.round(b))] as [number, number])
     .filter(([a, b]) => b - a >= MIN_MS)
@@ -317,9 +332,46 @@ export function keepRanges(c: EditClip, keeps: [number, number][], ids: () => nu
   return out
 }
 
+/** 变速曲线预设：把片段按素材时间等分成几段，每段一个速度（名字、各段速度）。 */
+export const SPEED_RAMPS: { id: string; label: string; steps: number[]; hint: string }[] = [
+  { id: 'speed-up', label: '渐快', steps: [0.5, 0.7, 1, 1.5, 2, 3], hint: '由慢到快' },
+  { id: 'slow-down', label: '渐慢', steps: [3, 2, 1.5, 1, 0.7, 0.5], hint: '由快到慢' },
+  { id: 'bullet', label: '子弹时间', steps: [2, 1, 0.4, 0.4, 1, 2], hint: '快 → 慢 → 快，中间最慢' },
+  { id: 'pulse', label: '高潮加速', steps: [0.5, 1, 2, 2, 1, 0.5], hint: '慢 → 快 → 慢，中间最快' },
+  { id: 'hit', label: '定点慢放', steps: [1, 1, 0.35, 0.35, 1, 1], hint: '只有中段慢放' },
+]
+
+/**
+ * 变速曲线：把一个视频片段按素材时间等分成 `steps.length` 段，各段用各自的速度（已有的速度乘上去）。
+ * 第一段保留转场和淡入，最后一段保留淡出；`ids` 给新片段用（第一段沿用原编号）。太短或不是普通视频片段返回 null。
+ */
+export function speedRamp(c: EditClip, steps: number[], ids: () => number): EditClip[] | null {
+  if (c.kind !== 'video' || c.reverse || c.freeze || steps.length < 2) return null
+  const span = c.outMs - c.inMs
+  if (span < MIN_MS * steps.length) return null
+  const edges = steps.map((_, i) => Math.round(c.inMs + (span * i) / steps.length)).concat(c.outMs)
+  const keeps = steps.map((_, i) => [edges[i], edges[i + 1]] as [number, number])
+  const pieces = keepRanges(c, keeps, ids)
+  if (pieces.length !== steps.length) return null
+  return pieces.map((p, i) => ({ ...p, speed: clamp(c.speed * steps[i], 0.25, 4) }))
+}
+
+/** 在时间线 t 处插一段定格：把片段切开，中间放一个只有一帧、停 `holdMs` 毫秒的片段。贴着片段两端时插在那一端。返回新的片段列表（替换原来那一个），不是普通视频片段返回 null。 */
+export function freezeAt(c: EditClip, pl: Placed, t: number, holdMs: number, ids: () => number): EditClip[] | null {
+  if (c.kind !== 'video' || c.freeze) return null
+  const frameMs = sourceTimeAt(c, pl, t)
+  const hold: EditClip = { ...c, id: ids(), inMs: Math.round(frameMs), outMs: Math.round(frameMs + Math.max(MIN_MS, holdMs)), speed: 1, reverse: false, freeze: true, fadeInMs: 0, fadeOutMs: 0, transition: null, regions: [] }
+  const parts = splitClip(c, pl, t, ids())
+  if (!parts) {
+    const local = t - pl.startMs
+    return local < pl.durMs / 2 ? [{ ...hold, transition: c.transition ? { ...c.transition } : null }, { ...c, transition: null, fadeInMs: 0 }] : [c, hold]
+  }
+  return [parts[0], hold, parts[1]]
+}
+
 /** 在这些素材时间点把片段切开（贴着两端或太近的忽略）。返回切出的片段，没有有效切点返回 null。 */
 export function cutAtSourceTimes(c: EditClip, cuts: number[], ids: () => number): EditClip[] | null {
-  if (c.kind !== 'video') return null
+  if (c.kind !== 'video' || c.reverse || c.freeze) return null
   const pts = [...new Set(cuts.map(Math.round))].filter((t) => t - c.inMs >= MIN_MS && c.outMs - t >= MIN_MS).sort((a, b) => a - b)
   const good: number[] = []
   for (const t of pts) if (!good.length || t - good[good.length - 1] >= MIN_MS) good.push(t)
@@ -333,7 +385,7 @@ export function cutAtSourceTimes(c: EditClip, cuts: number[], ids: () => number)
  * 返回新的片段列表（没有静音可去时返回 null）和被去掉的素材时长（毫秒）。
  */
 export function removeSilences(c: EditClip, silences: TimeSpan[], keepMs: number, ids: () => number): { clips: EditClip[]; removedMs: number } | null {
-  if (c.kind !== 'video') return null
+  if (c.kind !== 'video' || c.reverse || c.freeze) return null
   const half = Math.max(0, keepMs) / 2
   const cuts: [number, number][] = []
   for (const s of [...silences].sort((a, b) => a.startMs - b.startMs)) {
@@ -460,6 +512,8 @@ export const CAPTION_STYLES: CaptionStyle[] = [
 
 /** 素材时间 → 时间线位置（超出片段的收到片段两端） */
 export function timelineOfSource(c: EditClip, pl: Placed, srcMs: number): number {
+  if (c.freeze) return pl.startMs
+  if (c.reverse) return clamp(pl.startMs + (c.outMs - srcMs) / Math.max(0.01, c.speed), pl.startMs, pl.endMs)
   return clamp(pl.startMs + (srcMs - c.inMs) / Math.max(0.01, c.speed), pl.startMs, pl.endMs)
 }
 
@@ -747,6 +801,10 @@ export function splitOverlay(o: EditOverlay, t: number, newId: number, srcDurMs?
   first.animOut = 'none'
   second.fadeInMs = 0
   second.animIn = 'none'
+  // 关键帧在切开处补一个等值的点，两半的曲线才接得上；后半的时间从它自己的开头算
+  const [ka, kb] = kfSplit(o.keyframes, local)
+  first.keyframes = ka
+  second.keyframes = kb
   return [first, second]
 }
 
@@ -826,6 +884,136 @@ export function overlayToClip(o: EditOverlay, id: number, srcDurMs?: number | nu
   c.saturation = o.saturation
   return c
 }
+
+// ---------- 关键帧 ----------
+// 一个属性随时间变化的几个“关键点”，中间按缓动曲线补值。时间相对叠加素材 / 文字自己的开始（毫秒，按成片时间算）。
+// 求值要和后端 `edit/keyframes.rs` 一致。
+
+export const KEY_EASES: { id: EditKeyframe['ease']; label: string }[] = [
+  { id: 'linear', label: '匀速' },
+  { id: 'in', label: '先慢后快' },
+  { id: 'out', label: '先快后慢' },
+  { id: 'inout', label: '两头慢' },
+  { id: 'hold', label: '保持（到下一点再跳）' },
+]
+export const MAX_KEYFRAMES = 64
+
+export interface KeyProp {
+  id: string
+  label: string
+  min: number
+  max: number
+  step: number
+  digits: number
+  unit?: string
+  /** 倍数（界面上显示 value × mult，比如位置显示成百分比） */
+  mult?: number
+}
+export const OVERLAY_KEY_PROPS: KeyProp[] = [
+  { id: 'x', label: '水平位置', min: -1, max: 2, step: 0.01, digits: 0, unit: '%', mult: 100 },
+  { id: 'y', label: '垂直位置', min: -1, max: 2, step: 0.01, digits: 0, unit: '%', mult: 100 },
+  { id: 'scale', label: '大小', min: 0.02, max: 3, step: 0.01, digits: 0, unit: '%', mult: 100 },
+  { id: 'rotate', label: '旋转', min: -3600, max: 3600, step: 1, digits: 0, unit: '°' },
+  { id: 'opacity', label: '不透明度', min: 0, max: 1, step: 0.01, digits: 0, unit: '%', mult: 100 },
+  { id: 'volume', label: '音量', min: 0, max: 4, step: 0.05, digits: 2, unit: '×' },
+]
+export const TEXT_KEY_PROPS: KeyProp[] = OVERLAY_KEY_PROPS.filter((p) => ['x', 'y', 'opacity'].includes(p.id))
+
+const EASES = new Set(['linear', 'in', 'out', 'inout', 'hold'])
+
+/** 整理一个属性的关键点：去掉不是数的、按时间排序、同一时刻只留最后一个。 */
+export function kfTidy(points: EditKeyframe[] | undefined): EditKeyframe[] {
+  const v = (points ?? []).filter((k) => Number.isFinite(k.value) && Number.isFinite(k.tMs)).map((k) => ({ tMs: Math.max(0, Math.round(k.tMs)), value: k.value, ease: EASES.has(k.ease) ? k.ease : ('linear' as const) }))
+  v.sort((a, b) => a.tMs - b.tMs)
+  const out: EditKeyframe[] = []
+  for (const k of v) {
+    if (out.length && out[out.length - 1].tMs === k.tMs) out[out.length - 1] = k
+    else out.push(k)
+  }
+  return out.slice(0, MAX_KEYFRAMES)
+}
+
+/** 整理整个关键帧表（读旧项目 / 外来数据时用）：空的属性去掉。 */
+export function kfClean(map: EditKeyframes | undefined | null): EditKeyframes {
+  const out: EditKeyframes = {}
+  if (map && typeof map === 'object') {
+    for (const [prop, pts] of Object.entries(map)) {
+      const t = kfTidy(Array.isArray(pts) ? pts : [])
+      if (t.length) out[prop] = t
+    }
+  }
+  return out
+}
+
+function easeAt(kind: string, p: number): number {
+  if (kind === 'in') return p * p
+  if (kind === 'out') return 1 - (1 - p) * (1 - p)
+  if (kind === 'inout') return p * p * (3 - 2 * p)
+  if (kind === 'hold') return 0
+  return p
+}
+
+/** t（毫秒）时刻的值；第一个点之前取第一个点、最后一个点之后取最后一个点。没有关键点返回 null。`points` 要已整理过。 */
+export function kfEval(points: EditKeyframe[] | undefined, t: number): number | null {
+  if (!points?.length) return null
+  if (t <= points[0].tMs) return points[0].value
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = points[i]
+    const b = points[i + 1]
+    if (t < b.tMs) return a.value + (b.value - a.value) * easeAt(a.ease, clamp((t - a.tMs) / (b.tMs - a.tMs), 0, 1))
+  }
+  return points[points.length - 1].value
+}
+
+/** 在 t 处放（或改）一个关键点，返回新的表；原来的不改。`value` 在范围外会收紧。 */
+export function kfSet(map: EditKeyframes, prop: string, t: number, value: number, ease?: EditKeyframe['ease']): EditKeyframes {
+  const cur = map[prop] ?? []
+  const at = Math.max(0, Math.round(t))
+  const old = cur.find((k) => k.tMs === at)
+  const pts = kfTidy([...cur.filter((k) => k.tMs !== at), { tMs: at, value, ease: ease ?? old?.ease ?? 'linear' }])
+  return { ...map, [prop]: pts }
+}
+
+/** 删掉 t 处的关键点（删光了这个属性就回到固定值）。 */
+export function kfDelete(map: EditKeyframes, prop: string, t: number): EditKeyframes {
+  const pts = (map[prop] ?? []).filter((k) => k.tMs !== Math.round(t))
+  const out = { ...map }
+  if (pts.length) out[prop] = pts
+  else delete out[prop]
+  return out
+}
+
+/** 把一个属性的关键点在 `at` 处切成两半（切开处补一个等值点，后半的时间从 0 算）。 */
+export function kfSplit(map: EditKeyframes, at: number): [EditKeyframes, EditKeyframes] {
+  const a: EditKeyframes = {}
+  const b: EditKeyframes = {}
+  const cut = Math.round(at)
+  for (const [prop, raw] of Object.entries(map ?? {})) {
+    const pts = kfTidy(raw)
+    const v = kfEval(pts, cut)
+    if (v === null) continue
+    const prev = [...pts].reverse().find((k) => k.tMs < cut)
+    const ease = prev?.ease ?? 'linear'
+    a[prop] = [...pts.filter((k) => k.tMs < cut), { tMs: cut, value: v, ease }]
+    b[prop] = [{ tMs: 0, value: v, ease }, ...pts.filter((k) => k.tMs > cut).map((k) => ({ ...k, tMs: k.tMs - cut }))]
+  }
+  return [a, b]
+}
+
+/** 带关键帧的素材 / 文字，在 `local`（距它开始多久，毫秒）这一刻各属性的实际值；没有关键帧的属性原样。 */
+export function withKeys<T extends { keyframes: EditKeyframes }>(item: T, local: number): T {
+  const keys = Object.entries(item.keyframes ?? {})
+  if (!keys.length) return item
+  const out: Record<string, unknown> = { ...item }
+  for (const [prop, pts] of keys) {
+    const v = kfEval(pts, local)
+    if (v !== null) out[prop] = v
+  }
+  return out as T
+}
+
+/** 有关键帧的属性名集合 */
+export const keyedProps = (item: { keyframes?: EditKeyframes }): Set<string> => new Set(Object.entries(item.keyframes ?? {}).filter(([, v]) => v.length).map(([k]) => k))
 
 // ---------- 实时画面 ----------
 // 监视器不再先渲染成片再播放，而是直接把每个素材叠在一起显示：主轨的片段（含转场）、叠加轨、文字，声音也实时混合。
@@ -907,7 +1095,7 @@ export function liveFrame(p: EditProject, pl: Placed[], t: number, srcDur: (path
     let f = 1
     if (o.fadeInMs > 0) f = Math.min(f, local / o.fadeInMs)
     if (o.fadeOutMs > 0) f = Math.min(f, (dur - local) / o.fadeOutMs)
-    overlays.push({ overlay: o, srcMs: overlaySourceMs(o, local, srcDur(o.path)), fade: clamp(f, 0, 1), rank, local })
+    overlays.push({ overlay: withKeys(o, local), srcMs: overlaySourceMs(o, local, srcDur(o.path)), fade: clamp(f, 0, 1), rank, local })
   })
   return { main, overlays }
 }
@@ -1357,6 +1545,34 @@ export function detachedAudio(
   a.fadeInMs = item.fadeInMs
   a.fadeOutMs = item.fadeOutMs
   return a
+}
+
+/** 主轨某处变长（delta > 0）或变短（delta < 0）后，起点在 `from` 及以后的叠加素材、文字、配乐跟着后移 / 前移。返回移动了几项。 */
+export function rippleBy(p: EditProject, from: number, delta: number): number {
+  if (delta < 0) return shiftAfter(p, from, -delta)
+  if (delta === 0) return 0
+  let n = 0
+  for (const o of p.overlays) {
+    if (o.startMs >= from) {
+      o.startMs = Math.min(MAX_START_MS, o.startMs + delta)
+      n++
+    }
+  }
+  for (const t of p.texts) {
+    if (t.startMs >= from) {
+      const len = t.endMs - t.startMs
+      t.startMs += delta
+      t.endMs = t.startMs + len
+      n++
+    }
+  }
+  for (const a of p.audio) {
+    if (a.startMs >= from) {
+      a.startMs += delta
+      n++
+    }
+  }
+  return n
 }
 
 /** 把 `from`（含）之后开始的叠加素材、文字、配乐整体往前移 `delta` 毫秒（波纹删除用）。返回移动了几个。 */

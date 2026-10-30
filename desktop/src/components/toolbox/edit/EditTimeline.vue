@@ -173,6 +173,14 @@ function trimClip(e: PointerEvent, c: EditClip, side: 'l' | 'r') {
     if (c.kind === 'image') {
       const out = side === 'r' ? o.outMs + d : o.outMs - d
       ed.patchClip(c.id, { outMs: Math.round(Math.max(MIN_MS, out)) }, `trim:${c.id}`)
+    } else if (c.freeze) {
+      // 定格：拖的是停住多久
+      const out = side === 'r' ? o.outMs + d : o.outMs - d
+      ed.patchClip(c.id, { outMs: Math.round(Math.max(o.inMs + MIN_MS, out)) }, `trim:${c.id}`)
+    } else if (c.reverse) {
+      // 倒放：时间线的左边对应素材的结尾
+      if (side === 'l') ed.patchClip(c.id, { outMs: Math.round(clamp(o.outMs - d * c.speed, o.inMs + minSpan, limit)) }, `trim:${c.id}`)
+      else ed.patchClip(c.id, { inMs: Math.round(clamp(o.inMs - d * c.speed, 0, o.outMs - minSpan)) }, `trim:${c.id}`)
     } else if (side === 'l') {
       ed.patchClip(c.id, { inMs: Math.round(clamp(o.inMs + d * c.speed, 0, o.outMs - minSpan)) }, `trim:${c.id}`)
     } else {
@@ -251,6 +259,12 @@ const ovName = (o: EditOverlay) => ed.sources[o.path]?.name ?? o.path.split(/[\\
 const ovThumb = (o: EditOverlay) => {
   const t = ed.sources[o.path]?.thumb
   return t ? `url("${convertFileSrc(t)}")` : 'none'
+}
+/** 叠加素材条上的关键帧菱形（时间线上的位置，同一时刻不同属性只画一个） */
+function keyMarks(o: EditOverlay): { key: number; t: number }[] {
+  const ts = new Set<number>()
+  for (const pts of Object.values(o.keyframes ?? {})) for (const k of pts) ts.add(k.tMs)
+  return [...ts].sort((a, b) => a - b).map((t) => ({ key: t, t }))
 }
 /** 叠加素材超出主轨结尾的那段（像素宽度，没有超出返回 0）：成片里没有这一段 */
 function cutW(o: EditOverlay): number {
@@ -468,6 +482,7 @@ defineExpose({ reveal, targetAt, hover })
           >
             <i class="h l" @pointerdown.stop.prevent="overlayTrim($event, x.o, 'l')" />
             <span class="cap ellipsis">{{ isBroken(x.o.path) ? '找不到文件 · ' : '' }}{{ ovName(x.o) }}</span>
+            <i v-for="k in keyMarks(x.o)" :key="k.key" class="kfm" :style="{ left: px(k.t) + 'px' }" />
             <span v-if="cutW(x.o) > 0" class="cut" :style="{ width: cutW(x.o) + 'px' }" title="超出了主轨的结尾，成片里没有这一段" />
             <i class="h r" @pointerdown.stop.prevent="overlayTrim($event, x.o, 'r')" />
           </div>
@@ -496,7 +511,7 @@ defineExpose({ reveal, targetAt, hover })
           >
             <span v-if="ed.placed.value[i].overlapMs > 0" class="xf" :style="{ width: px(ed.placed.value[i].overlapMs) + 'px' }" title="转场" />
             <i class="h l" @pointerdown.stop.prevent="trimClip($event, c, 'l')" />
-            <span class="cap ellipsis">{{ isBroken(c.path) ? '找不到文件 · ' : '' }}{{ clipName(c) }}</span>
+            <span class="cap ellipsis">{{ isBroken(c.path) ? '找不到文件 · ' : '' }}{{ c.freeze ? '❄ 定格 · ' : c.reverse ? '⏪ 倒放 · ' : '' }}{{ clipName(c) }}</span>
             <i class="h r" @pointerdown.stop.prevent="trimClip($event, c, 'r')" />
           </div>
           <div v-if="dropAt >= 0" class="drop" :style="{ left: dropX(dropAt, dragIdx) + 'px' }" />
@@ -665,6 +680,17 @@ defineExpose({ reveal, targetAt, hover })
 }
 .ovl.img {
   background-color: #8a5a7c;
+}
+.kfm {
+  position: absolute;
+  bottom: 2px;
+  width: 7px;
+  height: 7px;
+  margin-left: -3px;
+  background: var(--el-color-warning);
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  transform: rotate(45deg);
+  pointer-events: none;
 }
 .cut {
   position: absolute;

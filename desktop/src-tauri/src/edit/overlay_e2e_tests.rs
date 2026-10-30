@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use super::build::Mode;
 use super::e2e_tests::{close, dir, facts_of, ffmpeg, gen, is_blue, is_green, is_red, is_yellow, render, strs};
+use super::keyframes::Keyframe;
 use super::spec::{Clip, ClipKind, Overlay, Project};
 use crate::postprocess::run_ffmpeg_capture;
 use crate::vidcaps::{self, Caps};
@@ -332,5 +333,111 @@ async fn overlays_work_with_transitions_texts_and_speed() {
     let after = px_at(&ff, &out, 4.0, x, y).await;
     assert!(!is_red(after), "2 倍速播完之后消失：{after:?}");
     assert!(plan.out_ms == 5000);
+    let _ = std::fs::remove_dir_all(d);
+}
+
+fn kf(t: u64, v: f64) -> Keyframe {
+    Keyframe { t_ms: t, value: v, ease: "linear".into() }
+}
+
+fn keyed(o: &mut Overlay, prop: &str, pts: Vec<Keyframe>) {
+    o.keyframes.insert(prop.into(), pts);
+}
+
+#[tokio::test]
+async fn keyframes_move_resize_rotate_and_fade_an_overlay() {
+    let (ff, d, caps, m) = need!(setup("keys").await);
+    if !caps.has_filter("geq") {
+        return;
+    }
+    // 位置：黄色方块（宽度 20%，约 128 像素）水平从 20% 移到 80%，垂直不动
+    let mut mv = ov_image(&m.yellow, 0, 4000, 0.5, 0.5, 0.2);
+    keyed(&mut mv, "x", vec![kf(0, 0.2), kf(2000, 0.8)]);
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.main, 4000), vec![mv]), Mode::Export).await;
+    assert!(is_yellow(px_at(&ff, &out, 0.1, 134, 180).await), "开头在左边");
+    assert!(is_green(px_at(&ff, &out, 0.1, 506, 180).await), "开头右边没有它");
+    assert!(is_yellow(px_at(&ff, &out, 3.0, 506, 180).await), "2 秒之后停在右边");
+    assert!(is_green(px_at(&ff, &out, 3.0, 134, 180).await), "2 秒之后左边空了");
+    assert!(is_yellow(px_at(&ff, &out, 1.0, 320, 180).await), "中间时刻在正中");
+
+    // 缩放：宽度从 10%（64 像素）长到 50%（320 像素）
+    let mut sc = ov_image(&m.yellow, 0, 4000, 0.5, 0.5, 0.1);
+    keyed(&mut sc, "scale", vec![kf(0, 0.1), kf(2000, 0.5)]);
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.main, 4000), vec![sc]), Mode::Export).await;
+    assert!(is_yellow(px_at(&ff, &out, 0.1, 320, 180).await));
+    assert!(is_green(px_at(&ff, &out, 0.1, 320 + 100, 180).await), "开头只有 64 像素宽");
+    assert!(is_yellow(px_at(&ff, &out, 3.0, 320 + 100, 180).await), "最后长到 320 像素宽");
+
+    // 旋转：0 → 45 度，角落一开始是黄色，转完露出绿色
+    let mut ro = ov_image(&m.yellow, 0, 4000, 0.5, 0.5, 0.5);
+    keyed(&mut ro, "rotate", vec![kf(0, 0.0), kf(2000, 45.0)]);
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.main, 4000), vec![ro]), Mode::Export).await;
+    let corner = (320 + 144, 180 + 144);
+    assert!(is_yellow(px_at(&ff, &out, 0.05, corner.0, corner.1).await), "开头没转");
+    assert!(is_green(px_at(&ff, &out, 3.0, corner.0, corner.1).await), "转完后角落露出主轨");
+    assert!(is_yellow(px_at(&ff, &out, 3.0, 320, 180).await), "中心不动");
+
+    // 不透明度：0 → 1
+    let mut op = ov_image(&m.yellow, 0, 4000, 0.5, 0.5, 0.5);
+    keyed(&mut op, "opacity", vec![kf(0, 0.0), kf(2000, 1.0)]);
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.main, 4000), vec![op]), Mode::Export).await;
+    let early = px_at(&ff, &out, 0.1, 320, 180).await;
+    assert!(early.0 < 60 && early.1 < 160, "开头几乎看不到：{early:?}");
+    assert!(is_yellow(px_at(&ff, &out, 3.0, 320, 180).await), "2 秒后完全不透明");
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[tokio::test]
+async fn volume_keyframes_ramp_an_overlay_sound() {
+    let (ff, d, caps, m) = need!(setup("keyvol").await);
+    // 红色素材（440 Hz，3 秒）音量 0 → 1（1.5 秒内），主轨没有声音
+    let mut o = ov(&m.red, 0, 3000, 0.5, 0.5, 0.3);
+    keyed(&mut o, "volume", vec![kf(0, 0.0), kf(1500, 1.0)]);
+    let (out, _) = render(&ff, &caps, &d, project(main_clip(&m.silent, 3000), vec![o]), Mode::Export).await;
+    let quiet = mean_db(&ff, &out, 0.0, 0.3).await;
+    let loud = mean_db(&ff, &out, 2.0, 0.8).await;
+    assert!(loud - quiet > 15.0, "开头几乎无声、后面正常：{quiet} dB → {loud} dB");
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[tokio::test]
+async fn reverse_and_freeze_rewrite_a_clip() {
+    let (ff, d, caps, m) = need!(setup("revfreeze").await);
+    if !["reverse", "tpad", "concat"].iter().all(|f| caps.has_filter(f)) || !caps.has_filter("areverse") {
+        return;
+    }
+    // 前 1 秒红、后 1 秒蓝
+    let vcodec = if caps.encoders.h264 == Some("libx264") { "libx264" } else { "mpeg4" };
+    let rb = super::e2e_tests::gen(
+        &ff,
+        &d,
+        "redblue.mp4",
+        &["-f", "lavfi", "-i", "color=c=red:s=320x240:r=25:d=1", "-f", "lavfi", "-i", "color=c=blue:s=320x240:r=25:d=1"],
+        &["-filter_complex", "[0][1]concat=n=2:v=1:a=0", "-c:v", vcodec, "-pix_fmt", "yuv420p"],
+    )
+    .await;
+    let rb = need!(rb);
+    let _ = &m;
+
+    let mut rev = Clip { id: 1, path: s(&rb), out_ms: 2000, ..Default::default() };
+    rev.reverse = true;
+    let p = Project { clips: vec![rev], ..Default::default() };
+    let (out, _) = render(&ff, &caps, &d, p, Mode::Export).await;
+    let f = facts_of(&ff, &out).await;
+    assert!(close(f.duration_ms, 2000, 150), "倒放不改变长度：{:?}", f.duration_ms);
+    let (w, h) = f.video.as_ref().map(|v| (v.width, v.height)).unwrap();
+    assert!(is_blue(px_at(&ff, &out, 0.4, w / 2, h / 2).await), "倒放后先是蓝色");
+    assert!(is_red(px_at(&ff, &out, 1.6, w / 2, h / 2).await), "倒放后最后是红色");
+
+    // 定格：从 0.5 秒处（红色）停住 3 秒，之后接着正常放蓝色那一段
+    let hold = Clip { id: 1, path: s(&rb), in_ms: 500, out_ms: 3500, freeze: true, ..Default::default() };
+    let after = Clip { id: 2, path: s(&rb), in_ms: 1000, out_ms: 2000, ..Default::default() };
+    let p = Project { clips: vec![hold, after], ..Default::default() };
+    let (out, _) = render(&ff, &caps, &d, p, Mode::Export).await;
+    let f = facts_of(&ff, &out).await;
+    assert!(close(f.duration_ms, 4000, 200), "定格 3 秒 + 1 秒：{:?}", f.duration_ms);
+    assert!(is_red(px_at(&ff, &out, 0.2, w / 2, h / 2).await));
+    assert!(is_red(px_at(&ff, &out, 2.8, w / 2, h / 2).await), "整个定格期间都是同一帧");
+    assert!(is_blue(px_at(&ff, &out, 3.5, w / 2, h / 2).await), "定格之后接着放蓝色");
     let _ = std::fs::remove_dir_all(d);
 }

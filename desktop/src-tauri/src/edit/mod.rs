@@ -13,6 +13,7 @@ pub mod captions;
 pub mod cmds;
 pub mod fonts;
 pub mod job;
+pub mod keyframes;
 pub mod region;
 pub mod spec;
 pub mod transcript;

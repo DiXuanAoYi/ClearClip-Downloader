@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::keyframes::{self, Keyframe, KeyframeMap};
 use crate::track::TrackPt;
 
 pub const MAX_CLIPS: usize = 300;
@@ -26,6 +27,8 @@ pub const MIN_MS: u64 = 100;
 pub const MIN_TRANSITION_MS: u64 = 100;
 /// 叠加素材、文字、音频最晚从多久开始（10 小时），防止数值溢出
 pub const MAX_START_MS: u64 = 36_000_000;
+/// 一个属性最多几个关键点
+pub const MAX_KEYFRAMES: usize = 64;
 
 /// 可选的转场（xfade 的名字）。用真实的 ffmpeg 逐个试过，见端到端测试。
 pub const TRANSITIONS: &[&str] = &[
@@ -176,6 +179,10 @@ pub struct Clip {
     pub enhance: bool,
     /// 实测的底噪电平（dBFS），降噪按它设置；没有就让 afftdn 自己跟踪
     pub noise_floor_db: Option<f64>,
+    /// 倒放（整段缓冲后反着播，片段别太长）。声音也倒过来
+    pub reverse: bool,
+    /// 定格：只取 `in_ms` 处的一帧，停住 `out_ms - in_ms` 毫秒；没有声音。变速和倒放在定格片段上不起作用
+    pub freeze: bool,
     /// 跟着物体走的区域（只用于视频片段，图片会被忽略）
     pub regions: Vec<Region>,
     pub transition: Option<Transition>,
@@ -203,6 +210,8 @@ impl Default for Clip {
             denoise: "off".into(),
             enhance: false,
             noise_floor_db: None,
+            reverse: false,
+            freeze: false,
             regions: vec![],
             transition: None,
         }
@@ -215,6 +224,7 @@ impl Clip {
         let span = self.out_ms.saturating_sub(self.in_ms);
         match self.kind {
             ClipKind::Image => span,
+            ClipKind::Video if self.freeze => span,
             ClipKind::Video => (span as f64 / self.speed.max(0.01)).round() as u64,
         }
     }
@@ -254,6 +264,8 @@ pub struct TextItem {
     pub highlight: String,
     /// 淡入淡出的时长（毫秒），0 为没有
     pub fade_ms: u64,
+    /// 关键帧：`x`、`y`、`opacity`（时间相对 `start_ms`）。有关键帧的属性不再用上面的固定值；逐字高亮的文字不支持
+    pub keyframes: KeyframeMap,
 }
 
 /// 逐字高亮里的一个词。
@@ -294,6 +306,7 @@ impl Default for TextItem {
             words: vec![],
             highlight: String::new(),
             fade_ms: 0,
+            keyframes: KeyframeMap::new(),
         }
     }
 }
@@ -368,6 +381,8 @@ pub struct Overlay {
     pub brightness: f64,
     pub contrast: f64,
     pub saturation: f64,
+    /// 关键帧：`x`、`y`、`scale`、`rotate`、`opacity`、`volume`（时间相对 `start_ms`）。有关键帧的属性不再用上面的固定值
+    pub keyframes: KeyframeMap,
 }
 
 impl Default for Overlay {
@@ -399,6 +414,7 @@ impl Default for Overlay {
             brightness: 0.0,
             contrast: 1.0,
             saturation: 1.0,
+            keyframes: KeyframeMap::new(),
         }
     }
 }
@@ -419,6 +435,16 @@ impl Overlay {
 
     pub fn needs_tone(&self) -> bool {
         tone_changed(self.brightness, self.contrast, self.saturation)
+    }
+
+    /// 某个属性的关键点（整理过）；没有关键点返回 None
+    pub fn keys(&self, prop: &str) -> Option<Vec<Keyframe>> {
+        keyframes::track(&self.keyframes, prop)
+    }
+
+    /// 缩放的最大值：有关键帧时素材先按最大的那一档缩放，再逐帧缩小，画质才够
+    pub fn scale_max(&self) -> f64 {
+        self.keys("scale").map_or(self.scale, |k| k.iter().map(|p| p.value).fold(0.01, f64::max))
     }
 
     /// 旋转角度换算到 0–360 度
@@ -574,6 +600,28 @@ fn check_regions(regions: &mut Vec<Region>, clip_no: usize) -> Result<(), String
     Ok(())
 }
 
+/// 整理关键帧：只留认识的属性、值收紧到范围里、点排序去重、曲线名不对的改成线性。
+fn check_keys(map: &mut KeyframeMap, allowed: &[(&str, f64, f64)]) {
+    map.retain(|k, _| allowed.iter().any(|(n, _, _)| n == k));
+    for (name, lo, hi) in allowed {
+        let Some(points) = map.get_mut(*name) else { continue };
+        let mut v = keyframes::tidy(points);
+        v.truncate(MAX_KEYFRAMES);
+        for k in &mut v {
+            k.t_ms = k.t_ms.min(MAX_START_MS);
+            k.value = k.value.clamp(*lo, *hi);
+            if !matches!(k.ease.as_str(), "linear" | "in" | "out" | "inout" | "hold") {
+                k.ease = "linear".into();
+            }
+        }
+        if v.is_empty() {
+            map.remove(*name);
+        } else {
+            *points = v;
+        }
+    }
+}
+
 impl Project {
     /// 校验并整理：超出范围的数值收紧，结构性的错误（没有片段、素材路径为空、起止颠倒）返回提示。
     pub fn checked(mut self) -> Result<Project, String> {
@@ -614,6 +662,10 @@ impl Project {
                 c.regions.clear();
             } else {
                 check_regions(&mut c.regions, n)?;
+            }
+            if c.kind == ClipKind::Image {
+                c.reverse = false;
+                c.freeze = false;
             }
             c.volume = clamp(c.volume, 0.0, 4.0, 1.0);
             c.brightness = clamp(c.brightness, -1.0, 1.0, 0.0);
@@ -665,6 +717,10 @@ impl Project {
             o.rotate = clamp(o.rotate, -3600.0, 3600.0, 0.0);
             o.opacity = clamp(o.opacity, 0.0, 1.0, 1.0);
             o.volume = clamp(o.volume, 0.0, 4.0, 1.0);
+            check_keys(
+                &mut o.keyframes,
+                &[("x", -1.0, 2.0), ("y", -1.0, 2.0), ("scale", 0.02, 3.0), ("rotate", -3600.0, 3600.0), ("opacity", 0.0, 1.0), ("volume", 0.0, 4.0)],
+            );
             o.brightness = clamp(o.brightness, -1.0, 1.0, 0.0);
             o.contrast = clamp(o.contrast, 0.0, 3.0, 1.0);
             o.saturation = clamp(o.saturation, 0.0, 3.0, 1.0);
@@ -687,6 +743,7 @@ impl Project {
             t.y = clamp(t.y, 0.0, 1.0, 0.85);
             t.size = clamp(t.size, 1.0, 40.0, 6.0);
             t.opacity = clamp(t.opacity, 0.0, 1.0, 1.0);
+            check_keys(&mut t.keyframes, &[("x", -1.0, 2.0), ("y", -1.0, 2.0), ("opacity", 0.0, 1.0)]);
             t.box_opacity = clamp(t.box_opacity, 0.0, 1.0, 0.5);
             t.color = hex_color(&t.color, "#FFFFFF");
             t.outline_color = hex_color(&t.outline_color, "#000000");
@@ -1082,5 +1139,33 @@ mod tests {
         p.overlays[1].path = p.overlays[0].path.clone();
         p.audio = vec![AudioTrack { path: "/m/x.mp3".into(), ..Default::default() }];
         assert_eq!(p.media_paths(), vec!["/m/1.mp4", "/o/2.mp4", "/m/x.mp3"]);
+    }
+    #[test]
+    fn keyframes_are_cleaned_up_and_old_projects_load() {
+        // 旧项目没有关键帧 / 倒放 / 定格这些字段，照样能读
+        let old = r#"{"clips":[{"path":"a.mp4","outMs":2000}],"overlays":[{"path":"b.png","kind":"image","outMs":1000}]}"#;
+        let p: Project = serde_json::from_str(old).unwrap();
+        assert!(p.overlays[0].keyframes.is_empty() && !p.clips[0].reverse && !p.clips[0].freeze);
+        let mut p = p;
+        let k = |t: u64, v: f64, e: &str| Keyframe { t_ms: t, value: v, ease: e.into() };
+        p.overlays[0].keyframes.insert("x".into(), vec![k(500, 9.0, "bogus"), k(0, 0.1, "linear"), k(500, 0.9, "in")]);
+        p.overlays[0].keyframes.insert("nonsense".into(), vec![k(0, 1.0, "linear")]);
+        p.overlays[0].keyframes.insert("opacity".into(), vec![]);
+        let p = p.checked().unwrap();
+        let o = &p.overlays[0];
+        assert_eq!(o.keyframes.len(), 1, "只留认识的、非空的属性");
+        let x = &o.keyframes["x"];
+        assert_eq!((x.len(), x[0].t_ms, x[1].t_ms), (2, 0, 500));
+        assert_eq!(x[1].value, 0.9, "同一时刻只留最后一个");
+        // 图片没有倒放和定格
+        let mut q = Project {
+            clips: vec![Clip { path: "i.png".into(), kind: ClipKind::Image, out_ms: 1000, reverse: true, freeze: true, ..Default::default() }],
+            ..Default::default()
+        };
+        q = q.checked().unwrap();
+        assert!(!q.clips[0].reverse && !q.clips[0].freeze);
+        // 定格的时长不受变速影响
+        let f = Clip { out_ms: 3000, in_ms: 500, speed: 2.0, freeze: true, ..Default::default() };
+        assert_eq!(f.duration_ms(), 2500);
     }
 }

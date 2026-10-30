@@ -2,7 +2,7 @@
 
 import { computed, reactive, ref, watch } from 'vue'
 import { api, errorText } from '../api'
-import type { EditAudio, EditClip, EditOverlay, EditProject, EditRegion, EditSource, EditText, TimeSpan } from '../types'
+import type { EditAudio, EditClip, EditKeyframe, EditOverlay, EditProject, EditRegion, EditSource, EditText, TimeSpan } from '../types'
 import {
   MAX_AUDIO,
   MAX_CLIPS,
@@ -23,6 +23,8 @@ import {
   cutAtSourceTimes,
   detachedAudio,
   editPoints,
+  kfDelete,
+  kfSet,
   emptyProject,
   layout,
   mediaPaths,
@@ -30,6 +32,9 @@ import {
   nextId,
   nextRegionId,
   removeSilences,
+  rippleBy,
+  freezeAt,
+  speedRamp,
   textFromCue,
   normalizeProject,
   outputSize,
@@ -233,6 +238,43 @@ export function useEditProject() {
     return removed
   }
 
+  /** 给一个片段套变速曲线（拆成几段不同速度）。后面的内容跟着前后移。返回新的片段数，不能套返回 0。 */
+  function applySpeedRamp(id: number, steps: number[]): number {
+    const i = project.value.clips.findIndex((x) => x.id === id)
+    if (i < 0) return 0
+    const from = placed.value[i].endMs
+    const before = total.value
+    let n = 0
+    mutate((p) => {
+      let next = nextId(p)
+      const pieces = speedRamp(p.clips[i], steps, () => next++)
+      if (!pieces) return
+      p.clips.splice(i, 1, ...pieces)
+      n = pieces.length
+      rippleBy(p, from, totalMs(p.clips) - before)
+    })
+    return n
+  }
+
+  /** 在播放头处定格 `holdMs` 毫秒（只对播放头所在的普通视频片段有效）。成功返回 true。 */
+  function freezeAtPlayhead(holdMs: number): boolean {
+    const t = playhead.value
+    const i = clipIndexAt(placed.value, t)
+    if (i < 0) return false
+    const from = placed.value[i].endMs
+    const before = total.value
+    let ok = false
+    mutate((p) => {
+      let next = nextId(p)
+      const pieces = freezeAt(p.clips[i], placed.value[i], t, holdMs, () => next++)
+      if (!pieces) return
+      p.clips.splice(i, 1, ...pieces)
+      ok = true
+      rippleBy(p, from, totalMs(p.clips) - before)
+    })
+    return ok
+  }
+
   /** 加一批自动生成的字幕（文字）。`replaceIds` 里的旧字幕先去掉。返回实际加入的条数（受 MAX_TEXTS 限制）。 */
   function addCaptions(make: (ids: () => number) => EditText[], replaceIds: number[] = []): number {
     let added = 0
@@ -263,6 +305,57 @@ export function useEditProject() {
       const c = p.overlays.find((x) => x.id === id)
       if (c) Object.assign(c, patch)
     }, key)
+  }
+  /** 播放头相对这个素材 / 文字开头的位置（毫秒，收紧在它自己的时长里） */
+  function localMs(startMs: number, durMs: number): number {
+    return Math.round(Math.min(Math.max(0, playhead.value - startMs), durMs))
+  }
+  /** 改叠加素材的位置 / 大小 / 旋转 / 不透明度 / 音量：有关键帧的属性在播放头处加（或改）一个关键点，没有的直接改固定值 */
+  function setOverlayProps(id: number, patch: Partial<Record<'x' | 'y' | 'scale' | 'rotate' | 'opacity' | 'volume', number>>, key = '') {
+    mutate((p) => {
+      const o = p.overlays.find((x) => x.id === id)
+      if (!o) return
+      const at = localMs(o.startMs, overlayDuration(o))
+      for (const [prop, v] of Object.entries(patch) as [string, number][]) {
+        if (o.keyframes[prop]?.length) o.keyframes = kfSet(o.keyframes, prop, at, v)
+        else (o as unknown as Record<string, number>)[prop] = v
+      }
+    }, key)
+  }
+  function setTextProps(id: number, patch: Partial<Record<'x' | 'y' | 'opacity', number>>, key = '') {
+    mutate((p) => {
+      const t = p.texts.find((x) => x.id === id)
+      if (!t) return
+      const at = localMs(t.startMs, t.endMs - t.startMs)
+      for (const [prop, v] of Object.entries(patch) as [string, number][]) {
+        if (t.keyframes[prop]?.length) t.keyframes = kfSet(t.keyframes, prop, at, v)
+        else (t as unknown as Record<string, number>)[prop] = v
+      }
+    }, key)
+  }
+  /** 在 `tMs`（相对开头）给某个属性放一个关键点 / 改它的曲线 / 删掉 */
+  function setKey(kind: 'overlay' | 'text', id: number, prop: string, tMs: number, value: number, ease?: EditKeyframe['ease'], key = '') {
+    mutate((p) => {
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      if (it) it.keyframes = kfSet(it.keyframes, prop, tMs, value, ease)
+    }, key)
+  }
+  function deleteKey(kind: 'overlay' | 'text', id: number, prop: string, tMs: number) {
+    mutate((p) => {
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      if (it) it.keyframes = kfDelete(it.keyframes, prop, tMs)
+    })
+  }
+  /** 把某个属性所有的关键点去掉，回到固定值（固定值设成 `keep`，比如当前这一刻的值） */
+  function clearKeys(kind: 'overlay' | 'text', id: number, prop: string, keep?: number) {
+    mutate((p) => {
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      if (!it) return
+      const rest = { ...it.keyframes }
+      delete rest[prop]
+      it.keyframes = rest
+      if (keep !== undefined) (it as unknown as Record<string, number>)[prop] = keep
+    })
   }
   function patchText(id: number, patch: Partial<EditText>, key = '') {
     mutate((p) => {
@@ -778,6 +871,13 @@ export function useEditProject() {
     putRegion,
     patchOverlay,
     patchText,
+    setOverlayProps,
+    setTextProps,
+    setKey,
+    applySpeedRamp,
+    freezeAtPlayhead,
+    deleteKey,
+    clearKeys,
     patchAudio,
     probe,
     addClips,

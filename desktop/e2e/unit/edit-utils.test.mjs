@@ -151,3 +151,78 @@ console.log('edit utils ok')
   const t = E.normalizeProject({ texts: [{ id: 1, text: 'x' }] }).texts[0]
   assert.deepEqual(t.words, []); assert.equal(t.highlight, ''); assert.equal(t.fadeMs, 0)
 }
+
+// 关键帧：插值、删改、切开、带关键帧的取值
+{
+  const k = (tMs, value, ease = 'linear') => ({ tMs, value, ease })
+  const pts = [k(0, 0), k(1000, 10)]
+  assert.equal(E.kfEval(pts, -5), 0)
+  assert.equal(E.kfEval(pts, 500), 5)
+  assert.equal(E.kfEval(pts, 5000), 10)
+  assert.equal(E.kfEval([], 5), null)
+  assert.equal(E.kfEval([k(0, 0, 'hold'), k(1000, 10)], 999), 0)
+  assert.equal(E.kfEval([k(0, 0, 'in'), k(1000, 10)], 500), 2.5)
+  assert.equal(E.kfEval([k(0, 0, 'out'), k(1000, 10)], 500), 7.5)
+  assert.equal(E.kfEval([k(0, 0, 'inout'), k(1000, 10)], 500), 5)
+  // 整理：按时间排序、同一时刻留最后一个、坏数据去掉
+  const t = E.kfTidy([k(500, 1), k(100, 2), k(500, 3), { tMs: NaN, value: 1, ease: 'linear' }, { tMs: 5, value: 1, ease: 'bogus' }])
+  assert.deepEqual(t.map((x) => [x.tMs, x.value, x.ease]), [[5, 1, 'linear'], [100, 2, 'linear'], [500, 3, 'linear']])
+  // 放 / 改 / 删
+  let m = E.kfSet({}, 'x', 200, 0.3)
+  m = E.kfSet(m, 'x', 800, 0.9, 'out')
+  m = E.kfSet(m, 'x', 200, 0.4)
+  assert.deepEqual(m.x.map((x) => [x.tMs, x.value, x.ease]), [[200, 0.4, 'linear'], [800, 0.9, 'out']])
+  m = E.kfDelete(m, 'x', 800)
+  m = E.kfDelete(m, 'x', 200)
+  assert.deepEqual(m, {})
+  // 切开：切点补等值点，后半从 0 算
+  const [a, b] = E.kfSplit({ x: [k(0, 0), k(1000, 10)] }, 400)
+  assert.deepEqual(a.x.map((x) => [x.tMs, x.value]), [[0, 0], [400, 4]])
+  assert.deepEqual(b.x.map((x) => [x.tMs, x.value]), [[0, 4], [600, 10]])
+  // 带关键帧的取值：没有关键帧的属性原样
+  const ov = { x: 0.5, y: 0.5, scale: 1, keyframes: { x: [k(0, 0), k(1000, 1)] } }
+  const w = E.withKeys(ov, 250)
+  assert.equal(w.x, 0.25); assert.equal(w.y, 0.5); assert.equal(E.withKeys({ x: 1, keyframes: {} }, 10).x, 1)
+  assert.deepEqual(E.kfClean({ x: [], y: [k(0, 1)], z: 'bad' }), { y: [k(0, 1)] })
+}
+
+// 倒放 / 定格 / 变速曲线 / 顺延
+{
+  let n = 1000
+  const ids = () => n++
+  const base = (o) => ({ ...E.normalizeProject({ clips: [{ id: 1, path: 'a', kind: 'video', inMs: 0, outMs: 6000 }] }).clips[0], ...o })
+  const rev = base({ reverse: true })
+  const pl = { startMs: 0, endMs: 6000, durMs: 6000, overlapMs: 0 }
+  assert.equal(E.clipDuration(rev), 6000)
+  assert.equal(E.sourceTimeAt(rev, pl, 1000), 5000)
+  assert.equal(E.cutAtSourceTimes(rev, [3000], ids), null)
+  const fz = base({ freeze: true, inMs: 2000, outMs: 5000 })
+  assert.equal(E.clipDuration(fz), 3000)
+  assert.equal(E.sourceTimeAt(fz, { startMs: 0, endMs: 3000, durMs: 3000, overlapMs: 0 }, 1500), 2000)
+  // 变速曲线：N 段，总素材不变，速度相乘
+  const c = base({ speed: 1 })
+  const ramp = E.speedRamp(c, [0.5, 1, 2], ids)
+  assert.equal(ramp.length, 3)
+  assert.deepEqual(ramp.map((p) => p.speed), [0.5, 1, 2])
+  assert.equal(ramp[0].inMs, 0); assert.equal(ramp[2].outMs, 6000)
+  assert.equal(ramp.reduce((s, p) => s + (p.outMs - p.inMs), 0), 6000)
+  assert.equal(E.speedRamp(rev, [1, 2], ids), null)
+  assert.equal(E.speedRamp(base({ outMs: 100 }), [1, 2, 3, 4, 5, 6], ids), null)
+  // 定格：中间切开，插一段停住的单帧
+  const parts = E.freezeAt(c, pl, 2000, 1500, ids)
+  assert.equal(parts.length, 3)
+  assert.equal(parts[1].freeze, true)
+  assert.equal(parts[1].inMs, 2000)
+  assert.equal(E.clipDuration(parts[1]), 1500)
+  assert.equal(parts[0].outMs, 2000); assert.equal(parts[2].inMs, 2000)
+  // 贴着开头：只多一段，不切开
+  const head = E.freezeAt(c, pl, 10, 1000, ids)
+  assert.equal(head.length, 2); assert.equal(head[0].freeze, true)
+  assert.equal(E.freezeAt(fz, pl, 10, 1000, ids), null)
+  // 顺延：起点在 from 及以后的叠加素材后移
+  const pr = E.normalizeProject({ overlays: [{ id: 1, path: 'x', kind: 'image', startMs: 1000, endMs: 3000 }, { id: 2, path: 'y', kind: 'image', startMs: 5000, endMs: 7000 }], texts: [{ id: 3, text: 't', startMs: 6000, endMs: 8000 }] })
+  const moved = E.rippleBy(pr, 4000, 1500)
+  assert.equal(moved, 2)
+  assert.equal(pr.overlays[0].startMs, 1000); assert.equal(pr.overlays[1].startMs, 6500)
+  assert.equal(pr.texts[0].startMs, 7500); assert.equal(pr.texts[0].endMs, 9500)
+}
