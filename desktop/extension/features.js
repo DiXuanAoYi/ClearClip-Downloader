@@ -32,8 +32,23 @@ const RESIDENT_SCRIPTS = [
   { id: 'cc-float', js: ['content/ui.js', 'content/float-button.js'], need: (f) => f.floatButton },
   { id: 'cc-zoom', js: ['content/ui.js', 'content/original.js', 'content/hover-zoom.js'], need: (f) => f.hoverZoom },
   { id: 'cc-video', js: ['content/ui.js', 'content/video-logic.js', 'content/video-control.js'], need: (f) => f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced },
-  { id: 'cc-unlock', js: ['content/unlock.js'], need: (f) => f.unlock },
+  // 解除限制：只在用户开启过的网站里注册（unlockAll 才是所有网站），在页面自己的环境（MAIN）里尽早运行
+  { id: 'cc-unlock', js: ['content/unlock.js'], need: (f) => f.unlock, world: 'MAIN', runAt: 'document_start', matches: (rules) => unlockMatches(rules) },
 ]
+
+const ALL_WEB = ['http://*/*', 'https://*/*']
+
+/** 解除限制要注册到哪些网址：名单里的网站及其子域名；unlockAll 时是所有网页；名单是空的就不注册。 */
+function unlockMatches(rules) {
+  const r = normalizeSiteRules(rules)
+  if (r.unlockAll) return ALL_WEB
+  const out = []
+  for (const h of r.unlockOn) {
+    if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(h)) continue
+    out.push(`*://${h}/*`, `*://*.${h}/*`)
+  }
+  return out
+}
 
 /** 当前设置下需要注册的常驻脚本编号。 */
 function neededScripts(features) {

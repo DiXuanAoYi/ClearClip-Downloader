@@ -414,6 +414,13 @@ async function renderSiteToggles(tab) {
       const cur = await getSiteRules()
       t.set(cur, host, box2.checked)
       await api.storage.local.set({ siteRules: cur })
+      if (t.id === 'unlock' && box2.checked) {
+        // 给这个网站明确打开了：功能总开关一并打开，并在当前页面立刻生效
+        const f = await getFeatures()
+        if (!f.unlock) await api.storage.local.set({ features: { ...f, unlock: true } })
+        const r = await api.runtime.sendMessage({ type: 'cc-unlock-now', tabId: tab.id }).catch(() => null)
+        return msg(r?.ok ? '已在此网站解除复制 / 右键限制，当前页面已生效' : '已记住，刷新页面后生效', 'ok')
+      }
       msg(box2.checked ? '已记住，刷新页面后生效' : '已取消，刷新页面后生效', 'ok')
     }
     row.append(name, box2)

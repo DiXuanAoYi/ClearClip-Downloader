@@ -12,14 +12,23 @@ function syncResident(reset = false) {
 async function syncResidentNow(reset) {
   const sc = api.scripting
   if (!sc?.registerContentScripts) return
-  const want = new Set(neededScripts(await getFeatures()))
+  const features = await getFeatures()
+  const rules = await getSiteRules()
+  // 编号 → 要匹配的网址；匹配范围为空的（比如解除限制的名单是空的）不注册
+  const want = new Map()
+  for (const s of RESIDENT_SCRIPTS) {
+    if (!s.need(normalizeFeatures(features))) continue
+    const matches = s.matches ? s.matches(rules) : CONTENT_MATCHES
+    if (matches.length) want.set(s.id, matches)
+  }
   const have = (await sc.getRegisteredContentScripts()).filter((s) => s.id.startsWith('cc-'))
-  const drop = have.filter((s) => reset || !want.has(s.id)).map((s) => s.id)
+  const same = (a, b) => a.length === b.length && a.every((x) => b.includes(x))
+  const drop = have.filter((s) => reset || !want.has(s.id) || !same(s.matches || [], want.get(s.id))).map((s) => s.id)
   if (drop.length) await sc.unregisterContentScripts({ ids: drop })
   const keep = new Set(have.map((s) => s.id).filter((id) => !drop.includes(id)))
   for (const s of RESIDENT_SCRIPTS) {
     if (!want.has(s.id) || keep.has(s.id)) continue
-    const def = { id: s.id, js: s.js, matches: CONTENT_MATCHES, allFrames: true, runAt: s.runAt || 'document_idle', ...(s.world ? { world: s.world } : {}) }
+    const def = { id: s.id, js: s.js, matches: want.get(s.id), allFrames: true, runAt: s.runAt || 'document_idle', ...(s.world ? { world: s.world } : {}) }
     try {
       await sc.registerContentScripts([{ ...def, persistAcrossSessions: true }])
     } catch {
@@ -148,6 +157,13 @@ const HANDLERS = {
     await captureArea(sender.tab, m.rect, m.vw)
     return {}
   },
+  // 在当前页面立刻启用解除限制（不用刷新）：弹窗里给这个网站打开开关之后调用
+  'cc-unlock-now': async (m) => {
+    const tab = await api.tabs.get(Number(m.tabId))
+    if (!isWebPage(tab)) throw new Error('当前页面不能使用这个功能')
+    await api.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ['content/unlock.js'], world: 'MAIN' })
+    return {}
+  },
   // 视频画布被跨域污染时，用浏览器对可见区域的截图代替（只在用户点了截图之后）
   'cc-capture': async (_m, sender) => ({ dataUrl: await api.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }) }),
 }
@@ -249,5 +265,6 @@ api.storage.onChanged.addListener((ch, area) => {
     rebuildMenusSoon()
   }
   if (ch.engines) rebuildMenusSoon()
+  if (ch.siteRules) syncResident()
 })
 syncResident()

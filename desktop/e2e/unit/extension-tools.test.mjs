@@ -246,3 +246,14 @@ console.log('extension-tools ok')
   assert.equal(X('captureName')('', new Date(2026, 0, 2, 3, 4, 5), 'png', 1, 3), 'page-20260102-030405-2.png')
   assert.equal(X('excerptText')(' 内容 ', '标题', 'https://x.test/'), '内容\n\n—— 标题\nhttps://x.test/')
 }
+
+// ---- 解除限制的注册范围
+{
+  const um = (r) => plain(X('unlockMatches')(r))
+  assert.deepEqual(um({}), []) // 名单是空的：不注册
+  assert.deepEqual(um({ unlockOn: ['Example.com'] }), ['*://example.com/*', '*://*.example.com/*'])
+  assert.deepEqual(um({ unlockOn: ['bad host!', 'a-b.co'] }), ['*://a-b.co/*', '*://*.a-b.co/*']) // 不合法的主机名丢掉
+  assert.deepEqual(um({ unlockAll: true, unlockOn: ['x.com'] }), ['http://*/*', 'https://*/*'])
+  assert.ok(X('neededScripts')({ unlock: true }).includes('cc-unlock'))
+  assert.ok(!X('neededScripts')({}).includes('cc-unlock'))
+}
