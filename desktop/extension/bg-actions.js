@@ -132,6 +132,12 @@ const HANDLERS = {
     return {}
   },
   'cc-send-items': async (m) => ({ ...(await sendBatch(Array.isArray(m.items) ? m.items : [], { url: m.page || '', title: m.title || '' })) }),
+  'cc-engines': async () => ({ engines: await getEngines() }),
+  'cc-save': async (m) => {
+    if (!/^https?:/i.test(String(m.url))) throw new Error('这张图片不能保存')
+    await api.downloads.download({ url: String(m.url), conflictAction: 'uniquify' })
+    return {}
+  },
   'cc-search': async (m) => {
     await searchImage(m.url, m.engine)
     return {}
@@ -142,7 +148,7 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handler = msg && HANDLERS[msg.type]
   if (!handler) return false
   // 内容脚本只能从有标签页的发送者来；扩展页面的消息 sender.tab 可能为空
-  if (/^cc-(sniffed|send-page|send-media|send-batch)$/.test(msg.type) && !sender.tab) return false
+  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save)$/.test(msg.type) && !sender.tab) return false
   handler(msg, sender)
     .then((r) => sendResponse({ ok: true, ...r }))
     .catch(async (e) => {

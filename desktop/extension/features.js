@@ -30,7 +30,7 @@ function normalizeFeatures(raw) {
 /** 常驻内容脚本：key 是脚本编号，need 判断当前设置下是否要注册。文件在内容脚本里按顺序加载。 */
 const RESIDENT_SCRIPTS = [
   { id: 'cc-float', js: ['content/ui.js', 'content/float-button.js'], need: (f) => f.floatButton },
-  { id: 'cc-zoom', js: ['content/ui.js', 'content/hover-zoom.js'], need: (f) => f.hoverZoom },
+  { id: 'cc-zoom', js: ['content/ui.js', 'content/original.js', 'content/hover-zoom.js'], need: (f) => f.hoverZoom },
   { id: 'cc-video', js: ['content/ui.js', 'content/video-control.js'], need: (f) => f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced },
   { id: 'cc-unlock', js: ['content/unlock.js'], need: (f) => f.unlock },
 ]
