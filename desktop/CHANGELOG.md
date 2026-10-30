@@ -2,9 +2,9 @@
 
 版本号与 `tauri.conf.json` 一致；每个版本对应一个 `desktop-v<版本>` 的 Release。
 
-## 未发布
+## 0.9.0
 
-这一版的主题是**浏览器扩展 1.4 – 1.9**：把扩展从“发送 + 接管下载”扩成一组页面小工具。规划与取舍见 [docs/extension-plan.md](../docs/extension-plan.md)，用法见 [extension/README.md](extension/README.md)。需要常驻在网页里运行的功能默认关闭。
+这一版的主题是**浏览器扩展 1.4 – 1.9**，以及**剪辑里的 AI 抠像、换背景和人声分离**：把扩展从“发送 + 接管下载”扩成一组页面小工具。规划与取舍见 [docs/extension-plan.md](../docs/extension-plan.md)，用法见 [extension/README.md](extension/README.md)。需要常驻在网页里运行的功能默认关闭。
 
 **新增**
 - **工具箱 → 视频与音频 → 音效 / 混响**：独立的高级混响（参考 PotPlayer 的思路，但是离线渲染进文件）。八个空间预设 + 混响量 / 时间 / 高频保留 / 预延迟可调；可同时降噪（自动测底噪）、人声增强、响度标准化；“试听 15 秒”对比原声与处理后。视频只重新编码声音，音频文件保留混响余音。规划见 [docs/clip-plan.md](../docs/clip-plan.md)
