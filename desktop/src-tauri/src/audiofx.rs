@@ -226,7 +226,8 @@ fn impulse_graph(r: &ReverbSpec, caps: &FxCaps) -> String {
         g.push(format!("[n{i}b]highpass=f=1800:p=2,volume='pow(10,-3*t/{rt_hi:.4})':eval=frame[n{i}hi]"));
         g.push(mix2(&format!("n{i}lo"), &format!("n{i}hi"), &format!("n{i}")));
     }
-    let mut tail = String::from("[n0][n1]amerge=inputs=2");
+    // 旧版 ffmpeg 的 amerge 要求两路声道布局互不重叠，所以明确标成左、右
+    let mut tail = String::from("[n0]aformat=channel_layouts=FL[irl];[n1]aformat=channel_layouts=FR[irr];[irl][irr]amerge=inputs=2");
     if r.pre_delay_ms > 0 {
         tail.push_str(&format!(",adelay=delays={0}|{0}", r.pre_delay_ms));
     }
