@@ -6,6 +6,7 @@ const FEATURES = [
   { id: 'hoverZoom', group: 'page', name: '图片悬停放大 / 画廊', desc: '按“取原图”规则找大图；规则可以自己加', tag: '常驻', def: false },
   { id: 'unlock', group: 'page', name: '解除复制 / 右键限制', desc: '只对你开启过的网站生效', tag: '常驻 · 主世界', def: false },
   { id: 'onDemand', group: 'page', name: '页面媒体总览 / 批量选取 / 截图 / 摘录', desc: '点了才注入，不常驻', tag: '按需', def: true },
+  { id: 'vsum', group: 'video', name: '视频摘要 / 总结 / 问答 / 思维导图', desc: '读取字幕，交给清影调用你设置的大模型；点了才注入，不常驻（Alt+Shift+S）', tag: '按需', def: true },
   { id: 'speed', group: 'video', name: '倍速控制与快捷键', desc: '0.1×–16×；网站把倍速改回去时自动恢复', tag: '常驻', def: true },
   { id: 'speedMemory', group: 'video', name: '记住每个网站的倍速', desc: '新视频沿用上次的倍速', tag: '同上', def: true },
   { id: 'seek', group: 'video', name: '快进快退 ±10 秒', desc: '', tag: '同上', def: true },

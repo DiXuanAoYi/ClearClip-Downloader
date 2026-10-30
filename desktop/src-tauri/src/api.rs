@@ -161,6 +161,23 @@ pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply
                 Err(e) => err("500 Internal Server Error", &e.message),
             }
         }
+        // 视频摘要（浏览器扩展用）：提交 → 轮询
+        ("GET", "/api/v1/ai/status") => ok(crate::vsum::status(&state)),
+        ("POST", "/api/v1/ai/run") => match serde_json::from_slice::<crate::vsum::Req>(&req.body) {
+            Ok(r) => match crate::vsum::start(app, r) {
+                Ok(id) => ok(json!({"id": id})),
+                Err(e) => err("400 Bad Request", &e.message),
+            },
+            Err(_) => err("400 Bad Request", "请求格式不对"),
+        },
+        ("GET", "/api/v1/ai/job") => match req.query.get("id").and_then(|i| i.parse::<u64>().ok()).and_then(crate::vsum::job_json) {
+            Some(v) => ok(v),
+            None => err("404 Not Found", "任务不存在或已过期"),
+        },
+        ("POST", "/api/v1/ai/cancel") => {
+            let id = req.query.get("id").and_then(|i| i.parse::<u64>().ok()).unwrap_or(0);
+            ok(json!({"ok": crate::vsum::cancel(id)}))
+        }
         _ => err("404 Not Found", "未知接口"),
     })
 }
