@@ -14,6 +14,7 @@ import EditField from './EditField.vue'
 import EditKeyframes from './EditKeyframes.vue'
 import EditRegions from './EditRegions.vue'
 import EditSmart from './EditSmart.vue'
+import EditHighlights from './EditHighlights.vue'
 import EditTranscript from './EditTranscript.vue'
 import EditSlider from './EditSlider.vue'
 import TimeInput from './TimeInput.vue'
@@ -23,12 +24,12 @@ const emit = defineEmits<{ goto: [ms: number] }>()
 const ed = props.ed
 const outDir = defineModel<string>('outDir', { default: '' })
 
-const tab = ref<'item' | 'region' | 'smart' | 'script' | 'out'>('item')
+const tab = ref<'item' | 'region' | 'smart' | 'script' | 'hl' | 'out'>('item')
 watch(
   () => ed.sel.value,
   (s) => {
     // 选了别的片段时留在“区域”页，方便连着给几个镜头加；选了文字、配乐就回到“属性”
-    if (s && !((tab.value === 'region' || tab.value === 'smart' || tab.value === 'script') && s.kind === 'clip')) tab.value = 'item'
+    if (s && !((tab.value === 'region' || tab.value === 'smart' || tab.value === 'script' || tab.value === 'hl') && s.kind === 'clip')) tab.value = 'item'
   },
 )
 
@@ -346,6 +347,7 @@ async function pickDir() {
       <el-radio-button value="region">区域</el-radio-button>
       <el-radio-button value="smart">智能</el-radio-button>
       <el-radio-button value="script">文稿</el-radio-button>
+      <el-radio-button value="hl">精彩</el-radio-button>
       <el-radio-button value="out">输出</el-radio-button>
     </el-radio-group>
 
@@ -704,6 +706,11 @@ async function pickDir() {
     <!-- 文稿 -->
     <div v-if="tab === 'script'" class="sec">
       <EditTranscript :ed="ed" @goto="(ms) => emit('goto', ms)" />
+    </div>
+
+    <!-- 精彩 -->
+    <div v-if="tab === 'hl'" class="sec">
+      <EditHighlights :ed="ed" @goto="(ms) => emit('goto', ms)" />
     </div>
 
     <!-- 输出 -->

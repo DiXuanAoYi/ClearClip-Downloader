@@ -1535,6 +1535,30 @@ export interface EditAudio {
   beats?: EditBeats | null
 }
 
+/** 精彩片段分析：文稿里的一句话（素材时间）和候选结果 */
+export interface HighlightSentence {
+  startMs: number
+  endMs: number
+  text: string
+}
+export interface HighlightReq {
+  path: string
+  fromMs: number
+  toMs: number
+  sentences: HighlightSentence[]
+  count: number
+  minSecs: number
+  maxSecs: number
+}
+export interface HighlightCandidate {
+  startMs: number
+  endMs: number
+  /** 0–100 */
+  score: number
+  title: string
+  reasons: string[]
+}
+
 export interface EditBeats {
   bpm: number
   /** 0–1，越大节奏越清晰 */
