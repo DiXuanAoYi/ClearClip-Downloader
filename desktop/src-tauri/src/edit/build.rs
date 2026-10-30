@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::audiofx::{simple_chain, AudioFxSpec, FxCaps};
 use crate::error::{AppError, AppResult};
 use crate::media_tools::{atempo_chain, s, target_kbps, video_codec_for, VideoCodec};
 use crate::vidcaps::Caps;
@@ -343,7 +344,7 @@ fn audio_fades(f: &mut Vec<String>, len_ms: u64, fade_in: u64, fade_out: u64) {
 const AFORMAT: &str = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
 
 /// 一个片段的声音，输出 `[a{i}]`，长度严格等于片段在时间线上的长度；没有声音（图片、静音、素材没有音轨）时用静音补上。
-fn clip_audio(i: usize, c: &Clip, has_audio: bool, stmts: &mut Vec<String>) {
+fn clip_audio(i: usize, c: &Clip, has_audio: bool, fx: &FxCaps, stmts: &mut Vec<String>, warnings: &mut Vec<String>) {
     let d = c.duration_ms();
     if c.kind == ClipKind::Video && has_audio && !c.mute {
         let mut f: Vec<String> = vec!["asetpts=PTS-STARTPTS".into()];
@@ -351,6 +352,16 @@ fn clip_audio(i: usize, c: &Clip, has_audio: bool, stmts: &mut Vec<String>) {
             f.push(atempo_chain(c.speed));
         }
         f.push(AFORMAT.into());
+        if c.denoise != "off" || c.enhance {
+            let spec = AudioFxSpec { denoise: c.denoise.clone(), enhance: c.enhance, ..Default::default() };
+            let (chain, notes) = simple_chain(&spec, &FxCaps { noise_floor_db: c.noise_floor_db, ..fx.clone() });
+            f.extend(chain);
+            for n in notes.into_iter().filter(|n| n.contains("没有降噪滤镜")) {
+                if !warnings.contains(&n) {
+                    warnings.push(n);
+                }
+            }
+        }
         // 素材的声音比画面短一点点很常见，补齐再裁到片段长度，拼接时才不会错位
         f.push(format!("apad=whole_dur={}", sec(d)));
         f.push(format!("atrim=duration={}", sec(d)));
@@ -770,10 +781,11 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     let frame = Frame { w, h, fps: &fps_txt, fit: &p.out.fit, blur: caps.background_blur() };
     let mut rg = Regions { preview, tmp, first_input: ov_first + ovs.len(), out_aspect: f64::from(w) / f64::from(h), masks: vec![] };
     let mut stmts: Vec<String> = vec![];
+    let fx = FxCaps::from_caps(caps, None);
     for (i, c) in p.clips.iter().enumerate() {
         clip_video(i, c, src.get(&c.path).expect("checked above"), &frame, &mut rg, &mut stmts);
         if has_audio {
-            clip_audio(i, c, src.get(&c.path).is_some_and(|s| s.has_audio), &mut stmts);
+            clip_audio(i, c, src.get(&c.path).is_some_and(|s| s.has_audio), &fx, &mut stmts, &mut plan.warnings);
         }
     }
     let (mut video, main_audio) = assemble(&placed, &p.clips, has_audio, &mut stmts, caps)?;

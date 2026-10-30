@@ -317,6 +317,17 @@ export interface AudioFxPreview {
   notes: string[]
 }
 
+export interface TimeSpan {
+  startMs: number
+  endMs: number
+}
+
+export interface ReframeResult {
+  region: EditRegion
+  note: string | null
+  tracked: boolean
+}
+
 export type ToolJob = ToolOp & { inputs: string[]; outputDir?: string | null }
 
 // ---------- 视频规整 ----------
@@ -1434,6 +1445,10 @@ export interface EditClip {
   brightness: number
   contrast: number
   saturation: number
+  /** 声音处理：降噪（关 / 轻 / 中 / 强）、人声增强；底噪电平是实测的（dBFS），降噪按它设置 */
+  denoise: 'off' | 'light' | 'medium' | 'strong'
+  enhance: boolean
+  noiseFloorDb: number | null
   regions: EditRegion[]
   transition: EditTransition | null
 }

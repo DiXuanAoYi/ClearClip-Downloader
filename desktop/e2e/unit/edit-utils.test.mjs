@@ -61,3 +61,45 @@ assert.ok(E.tickStep(100) >= 800)
 const src = { a: { width: 1920, height: 1080 } }
 assert.deepEqual(E.outputSize({ ...E.emptyProject(), clips: [clip({ rotate: 90 })] }, src), { w: 1080, h: 1920 })
 console.log('edit utils ok')
+
+// ---- 场景切分 / 去静音 ----
+{
+  let n = 100
+  const ids = () => ++n
+  const base = clip({ id: 1, inMs: 1000, outMs: 11000, fadeInMs: 300, fadeOutMs: 400, transition: { kind: 'fade', durationMs: 500 } })
+  // 切点：贴着两端的、太近的、重复的都被忽略；乱序也行
+  const parts = E.cutAtSourceTimes(base, [6000, 1050, 3000, 3000, 10990, 3050], ids)
+  assert.deepEqual(parts.map((p) => [p.inMs, p.outMs]), [[1000, 3000], [3000, 6000], [6000, 11000]])
+  assert.equal(parts[0].id, 1); assert.equal(parts[1].id, 101); assert.equal(parts[2].id, 102)
+  assert.equal(parts[0].fadeInMs, 300); assert.equal(parts[0].fadeOutMs, 0)
+  assert.equal(parts[1].fadeInMs, 0); assert.equal(parts[1].fadeOutMs, 0)
+  assert.equal(parts[2].fadeInMs, 0); assert.equal(parts[2].fadeOutMs, 400)
+  assert.ok(parts[0].transition); assert.equal(parts[1].transition, null)
+  assert.equal(E.cutAtSourceTimes(base, [1050, 11000, 50], ids), null)
+  assert.equal(E.cutAtSourceTimes(clip({ kind: 'image', outMs: 3000 }), [1000], ids), null)
+  // 区域轨迹各留各的那一段
+  const tracked = clip({ id: 1, inMs: 0, outMs: 6000, regions: [{ ...E.newRegion(1, { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, 0, 'focus'), track: [0, 1000, 2000, 3000, 4000, 5000, 6000].map((t) => ({ tMs: t, x: t / 10000, y: 0.1, w: 0.2, h: 0.2 })) }] })
+  const [t1, t2] = E.cutAtSourceTimes(tracked, [3000], ids)
+  assert.ok(t1.regions[0].track.at(-1).tMs <= 4000 && t1.regions[0].track.at(-1).tMs >= 3000)
+  assert.ok(t2.regions[0].track[0].tMs >= 2000 && t2.regions[0].track[0].tMs <= 3000)
+
+  // 去静音：1.5–3 秒静音、留 0.4 秒停顿 → 剪掉 1.7–2.8 秒；结尾的静音（9–11 秒）也剪
+  const sil = [{ startMs: 2500, endMs: 4000 }, { startMs: 10000, endMs: 11000 }]
+  const r = E.removeSilences(base, sil, 400, ids)
+  assert.deepEqual(r.clips.map((p) => [p.inMs, p.outMs]), [[1000, 2700], [3800, 10200]])
+  assert.equal(r.removedMs, 10000 - (1700 + 6400))
+  assert.equal(r.clips[0].fadeInMs, 300); assert.equal(r.clips[1].fadeOutMs, 400)
+  // 静音比要留的停顿短就不剪
+  assert.equal(E.removeSilences(base, [{ startMs: 2000, endMs: 2300 }], 400, ids), null)
+  // 整段都是静音：不动（不能把片段删光）
+  assert.equal(E.removeSilences(base, [{ startMs: 0, endMs: 20000 }], 0, ids), null)
+  // 静音段超出片段范围：按范围收紧
+  const edge = E.removeSilences(base, [{ startMs: 0, endMs: 3000 }], 0, ids)
+  assert.deepEqual(edge.clips.map((p) => [p.inMs, p.outMs]), [[3000, 11000]])
+  assert.equal(edge.clips[0].fadeInMs, 300)
+}
+// 旧工程里没有声音处理字段：补默认值
+{
+  const c = E.normalizeProject({ clips: [{ id: 1, path: 'a', kind: 'video', inMs: 0, outMs: 1000 }] }).clips[0]
+  assert.equal(c.denoise, 'off'); assert.equal(c.enhance, false); assert.equal(c.noiseFloorDb, null)
+}

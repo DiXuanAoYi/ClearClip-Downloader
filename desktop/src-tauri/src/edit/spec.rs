@@ -171,6 +171,11 @@ pub struct Clip {
     pub brightness: f64,
     pub contrast: f64,
     pub saturation: f64,
+    /// 声音处理：降噪 off / light / medium / strong；人声增强。这两项都不改变片段长度
+    pub denoise: String,
+    pub enhance: bool,
+    /// 实测的底噪电平（dBFS），降噪按它设置；没有就让 afftdn 自己跟踪
+    pub noise_floor_db: Option<f64>,
     /// 跟着物体走的区域（只用于视频片段，图片会被忽略）
     pub regions: Vec<Region>,
     pub transition: Option<Transition>,
@@ -195,6 +200,9 @@ impl Default for Clip {
             brightness: 0.0,
             contrast: 1.0,
             saturation: 1.0,
+            denoise: "off".into(),
+            enhance: false,
+            noise_floor_db: None,
             regions: vec![],
             transition: None,
         }
@@ -585,6 +593,10 @@ impl Project {
             c.brightness = clamp(c.brightness, -1.0, 1.0, 0.0);
             c.contrast = clamp(c.contrast, 0.0, 3.0, 1.0);
             c.saturation = clamp(c.saturation, 0.0, 3.0, 1.0);
+            if !matches!(c.denoise.as_str(), "off" | "light" | "medium" | "strong") {
+                c.denoise = "off".into();
+            }
+            c.noise_floor_db = c.noise_floor_db.filter(|v| v.is_finite()).map(|v| v.clamp(-80.0, -20.0));
             if !matches!(c.rotate, 0 | 90 | 180 | 270) {
                 c.rotate = (c.rotate % 360) / 90 * 90;
             }

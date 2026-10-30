@@ -124,7 +124,7 @@ pub struct VideoPreview {
     pub changed: bool,
 }
 
-fn short_hash(text: &str) -> String {
+pub(crate) fn short_hash(text: &str) -> String {
     use sha2::{Digest, Sha256};
     hex::encode(&Sha256::digest(text.as_bytes())[..8])
 }

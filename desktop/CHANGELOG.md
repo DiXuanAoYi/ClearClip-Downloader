@@ -8,6 +8,7 @@
 
 **新增**
 - **工具箱 → 视频与音频 → 音效 / 混响**：独立的高级混响（参考 PotPlayer 的思路，但是离线渲染进文件）。八个空间预设 + 混响量 / 时间 / 高频保留 / 预延迟可调；可同时降噪（自动测底噪）、人声增强、响度标准化；“试听 15 秒”对比原声与处理后。视频只重新编码声音，音频文件保留混响余音。规划见 [docs/clip-plan.md](../docs/clip-plan.md)
+- **剪辑 → 智能（第一期）**：检查器新增“智能”页。场景分割（按镜头切换点切开）、去静音（列出静音段，一键波纹删除，带波形）、片段降噪（自动测底噪，轻 / 中 / 强）与人声增强、一键重构画幅（自动找出运动的物体并跟随取景）。规划见 [docs/clip-plan.md](../docs/clip-plan.md)，说明见 [docs/video-edit.md](../docs/video-edit.md)
 
 **改进**
 - **BT tracker 的默认列表来源增加三个**：`https://trackerslist.com/best.txt`、`https://cf.trackerslist.com/best.txt`、`https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/best.txt`（“BT 与 ed2k → 列表来源”，按顺序尝试，第一个成功的为准）。没改过默认来源的，升级后自动补上；改过的保持原样。

@@ -2,7 +2,7 @@
 
 import { computed, reactive, ref, watch } from 'vue'
 import { api, errorText } from '../api'
-import type { EditAudio, EditClip, EditOverlay, EditProject, EditSource, EditText } from '../types'
+import type { EditAudio, EditClip, EditOverlay, EditProject, EditRegion, EditSource, EditText, TimeSpan } from '../types'
 import {
   MAX_AUDIO,
   MAX_CLIPS,
@@ -20,6 +20,7 @@ import {
   clipIndexAt,
   clipToOverlay,
   copyRegion,
+  cutAtSourceTimes,
   detachedAudio,
   editPoints,
   emptyProject,
@@ -27,6 +28,8 @@ import {
   mediaPaths,
   moveItem,
   nextId,
+  nextRegionId,
+  removeSilences,
   textFromCue,
   normalizeProject,
   outputSize,
@@ -195,6 +198,52 @@ export function useEditProject() {
       if (c) Object.assign(c, patch)
     }, key)
   }
+
+  /** 把片段在这些素材时间点切开（场景分割）。返回切出了几段，没有有效切点返回 0。 */
+  function cutClipAt(id: number, cuts: number[]): number {
+    const c = clipOf(id)
+    if (!c) return 0
+    let n = 0
+    mutate((p) => {
+      const i = p.clips.findIndex((x) => x.id === id)
+      let next = nextId(p)
+      const pieces = cutAtSourceTimes(p.clips[i], cuts, () => next++)
+      if (!pieces) return
+      p.clips.splice(i, 1, ...pieces)
+      n = pieces.length
+    })
+    return n
+  }
+
+  /** 去掉片段里的静音段；后面的叠加素材、文字、配乐一起前移。返回去掉了多少毫秒（时间线上的），没有可去的返回 0。 */
+  function removeClipSilences(id: number, spans: TimeSpan[], keepMs: number): number {
+    const i = project.value.clips.findIndex((x) => x.id === id)
+    if (i < 0) return 0
+    const from = placed.value[i].endMs
+    const before = total.value
+    let removed = 0
+    mutate((p) => {
+      let next = nextId(p)
+      const r = removeSilences(p.clips[i], spans, keepMs, () => next++)
+      if (!r) return
+      p.clips.splice(i, 1, ...r.clips)
+      removed = Math.max(0, before - totalMs(p.clips))
+      shiftAfter(p, from, removed)
+    })
+    return removed
+  }
+
+  /** 给片段放一个自动生成的区域（聚焦只能有一个：旧的聚焦被替掉）。 */
+  function putRegion(clipId: number, region: EditRegion) {
+    mutate((p) => {
+      const c = p.clips.find((x) => x.id === clipId)
+      if (!c) return
+      const r = { ...region, id: nextRegionId(c) }
+      if (r.effect === 'focus') c.regions = c.regions.filter((x) => x.effect !== 'focus')
+      c.regions.push(r)
+    })
+  }
+
   function patchOverlay(id: number, patch: Partial<EditOverlay>, key = '') {
     mutate((p) => {
       const c = p.overlays.find((x) => x.id === id)
@@ -709,6 +758,9 @@ export function useEditProject() {
     textOf,
     audioOf,
     patchClip,
+    cutClipAt,
+    removeClipSilences,
+    putRegion,
     patchOverlay,
     patchText,
     patchAudio,

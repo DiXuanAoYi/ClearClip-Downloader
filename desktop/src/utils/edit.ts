@@ -2,7 +2,7 @@
 // 排布规则和后端 `src-tauri/src/edit/spec.rs` 的 `layout` 保持一致，改那边时要一起改这里。
 // 这个文件不要引入别的运行时模块（用 node 直接跑 scripts 里的检查时需要）。
 
-import type { EditAudio, EditClip, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TrackPt } from '../types'
+import type { EditAudio, EditClip, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt } from '../types'
 
 export const MIN_MS = 100
 export const MIN_TRANSITION_MS = 100
@@ -101,6 +101,9 @@ function blankClip(): EditClip {
     brightness: 0,
     contrast: 1,
     saturation: 1,
+    denoise: 'off',
+    enhance: false,
+    noiseFloorDb: null,
     regions: [],
     transition: null,
   }
@@ -288,6 +291,66 @@ export function splitClip(c: EditClip, pl: Placed, t: number, newId: number): [E
     second.regions = second.regions.map((r) => ({ ...r, track: trimTrack(r.track, second.inMs, second.outMs) }))
   }
   return [first, second]
+}
+
+/**
+ * 把一个主轨片段按“保留这些素材时间段”重新切成几个片段（段与段之间的部分被丢掉）。
+ * 第一段保留淡入和转场，最后一段保留淡出；区域的轨迹各留各的那一段。`ids` 是给新片段用的编号（第一段沿用原来的）。
+ * 太短（< MIN_MS）的段被丢掉；没有可保留的返回空数组。图片不处理（返回原样）。
+ */
+export function keepRanges(c: EditClip, keeps: [number, number][], ids: () => number): EditClip[] {
+  if (c.kind !== 'video') return [c]
+  const spans = keeps
+    .map(([a, b]) => [Math.max(c.inMs, Math.round(a)), Math.min(c.outMs, Math.round(b))] as [number, number])
+    .filter(([a, b]) => b - a >= MIN_MS)
+    .sort((x, y) => x[0] - y[0])
+  const out = spans.map(([a, b], i) => {
+    const piece: EditClip = { ...c, id: i === 0 ? c.id : ids(), inMs: a, outMs: b, transition: i === 0 && c.transition ? { ...c.transition } : null, regions: c.regions.map(copyRegion) }
+    if (i > 0) piece.fadeInMs = 0
+    if (i < spans.length - 1) piece.fadeOutMs = 0
+    piece.regions = piece.regions.map((r) => ({ ...r, track: trimTrack(r.track, a, b) }))
+    return piece
+  })
+  return out
+}
+
+/** 在这些素材时间点把片段切开（贴着两端或太近的忽略）。返回切出的片段，没有有效切点返回 null。 */
+export function cutAtSourceTimes(c: EditClip, cuts: number[], ids: () => number): EditClip[] | null {
+  if (c.kind !== 'video') return null
+  const pts = [...new Set(cuts.map(Math.round))].filter((t) => t - c.inMs >= MIN_MS && c.outMs - t >= MIN_MS).sort((a, b) => a - b)
+  const good: number[] = []
+  for (const t of pts) if (!good.length || t - good[good.length - 1] >= MIN_MS) good.push(t)
+  if (!good.length) return null
+  const edges = [c.inMs, ...good, c.outMs]
+  return keepRanges(c, edges.slice(0, -1).map((a, i) => [a, edges[i + 1]] as [number, number]), ids)
+}
+
+/**
+ * 去掉静音段：每个静音段两头各多留 `keepMs / 2`（让停顿不至于生硬），其余剪掉。
+ * 返回新的片段列表（没有静音可去时返回 null）和被去掉的素材时长（毫秒）。
+ */
+export function removeSilences(c: EditClip, silences: TimeSpan[], keepMs: number, ids: () => number): { clips: EditClip[]; removedMs: number } | null {
+  if (c.kind !== 'video') return null
+  const half = Math.max(0, keepMs) / 2
+  const cuts: [number, number][] = []
+  for (const s of [...silences].sort((a, b) => a.startMs - b.startMs)) {
+    // 静音贴着片段的开头 / 结尾时，那一侧不用再留停顿
+    const a = s.startMs <= c.inMs ? c.inMs : s.startMs + half
+    const b = s.endMs >= c.outMs ? c.outMs : s.endMs - half
+    if (b - a >= MIN_MS) cuts.push([a, b])
+  }
+  if (!cuts.length) return null
+  const keeps: [number, number][] = []
+  let cursor = c.inMs
+  for (const [a, b] of cuts) {
+    if (a > cursor) keeps.push([cursor, a])
+    cursor = Math.max(cursor, b)
+  }
+  if (cursor < c.outMs) keeps.push([cursor, c.outMs])
+  const clips = keepRanges(c, keeps, ids)
+  if (!clips.length) return null
+  const kept = clips.reduce((n, k) => n + (k.outMs - k.inMs), 0)
+  return { clips, removedMs: c.outMs - c.inMs - kept }
 }
 
 /** 文字块排到哪一行：时间上重叠的错开，免得在时间线上叠在一起。 */

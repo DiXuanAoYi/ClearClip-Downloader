@@ -12,6 +12,7 @@ import type { EditClip, EditOutput, EditOverlay } from '../../../types'
 import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, MIN_TRANSITION_MS, TRANSITIONS, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit } from '../../../utils/edit'
 import EditField from './EditField.vue'
 import EditRegions from './EditRegions.vue'
+import EditSmart from './EditSmart.vue'
 import EditSlider from './EditSlider.vue'
 import TimeInput from './TimeInput.vue'
 
@@ -20,12 +21,12 @@ const emit = defineEmits<{ goto: [ms: number] }>()
 const ed = props.ed
 const outDir = defineModel<string>('outDir', { default: '' })
 
-const tab = ref<'item' | 'region' | 'out'>('item')
+const tab = ref<'item' | 'region' | 'smart' | 'out'>('item')
 watch(
   () => ed.sel.value,
   (s) => {
     // 选了别的片段时留在“区域”页，方便连着给几个镜头加；选了文字、配乐就回到“属性”
-    if (s && !(tab.value === 'region' && s.kind === 'clip')) tab.value = 'item'
+    if (s && !((tab.value === 'region' || tab.value === 'smart') && s.kind === 'clip')) tab.value = 'item'
   },
 )
 
@@ -268,6 +269,7 @@ async function pickDir() {
     <el-radio-group v-model="tab" size="small" class="seg">
       <el-radio-button value="item">属性</el-radio-button>
       <el-radio-button value="region">区域</el-radio-button>
+      <el-radio-button value="smart">智能</el-radio-button>
       <el-radio-button value="out">输出</el-radio-button>
     </el-radio-group>
 
@@ -548,6 +550,11 @@ async function pickDir() {
     <!-- 区域 -->
     <div v-if="tab === 'region'" class="sec">
       <EditRegions :ed="ed" :rg="rg" @goto="(ms) => emit('goto', ms)" />
+    </div>
+
+    <!-- 智能 -->
+    <div v-if="tab === 'smart'" class="sec">
+      <EditSmart :ed="ed" @goto="(ms) => emit('goto', ms)" />
     </div>
 
     <!-- 输出 -->
