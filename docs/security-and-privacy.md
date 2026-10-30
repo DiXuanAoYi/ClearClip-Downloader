@@ -73,6 +73,8 @@
 
 ## 浏览器扩展
 
+- 视频摘要（扩展 1.10）：字幕只发给本机清影，由清影调用你配置的模型；`/api/v1/ai/*` 和其他接口一样需要访问令牌，请求体上限放宽到 2 MiB（普通接口 64 KB）。详见 [video-summary.md](video-summary.md)。
+
 浏览器扩展（Chrome / Edge / Firefox）只和本机的清影通信（`127.0.0.1`），需要端口和访问令牌，新设备要在电脑上确认配对。要点：
 
 - **不上传、不统计、没有远程代码**。完整的数据去向见[隐私政策](release-guide/privacy-policy.md)，权限理由见[扩展说明](../desktop/extension/README.md)。

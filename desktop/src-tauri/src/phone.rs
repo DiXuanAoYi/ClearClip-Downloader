@@ -29,6 +29,8 @@ pub const EVT_RECEIVED: &str = "phone://received";
 const MAX_HEADER: usize = 8 * 1024;
 /// 普通接口（发送文字、同步 Cookie 等）的请求正文上限；文件上传走流式，不受这个限制
 const MAX_BODY: usize = 64 * 1024;
+/// 视频摘要接口要带整篇文稿，正文上限放宽（只对已授权的 `/api/v1/ai/` 生效）。
+const AI_BODY: usize = 2 * 1024 * 1024;
 /// 每个地址每分钟最多请求数（已授权的上传和下载不计入）
 const RATE_PER_MIN: u32 = 120;
 /// 读请求头、读普通请求正文、处理普通接口的总时限
@@ -452,9 +454,18 @@ async fn read_head(sock: &mut TcpStream) -> Option<(Request, Option<u64>, Vec<u8
     Some((req, len, buf[head_end + 4..].to_vec()))
 }
 
-/// 读普通接口的请求正文（不超过 MAX_BODY）。
-async fn read_body(sock: &mut TcpStream, len: u64, mut body: Vec<u8>) -> Option<Vec<u8>> {
-    if len > MAX_BODY as u64 {
+/// 请求正文上限：普通接口 64 KB；已授权的视频摘要接口要带整篇文稿，放宽到 2 MiB。
+fn body_limit(authorized: bool, path: &str) -> usize {
+    if authorized && path.starts_with("/api/v1/ai/") {
+        AI_BODY
+    } else {
+        MAX_BODY
+    }
+}
+
+/// 读普通接口的请求正文（不超过 max）。
+async fn read_body(sock: &mut TcpStream, len: u64, mut body: Vec<u8>, max: usize) -> Option<Vec<u8>> {
+    if len > max as u64 {
         return None;
     }
     let len = len as usize;
@@ -552,7 +563,8 @@ async fn handle(app: AppHandle, mut sock: TcpStream, peer: SocketAddr) {
         json(&mut sock, "403 Forbidden", serde_json::json!({"error": "访问令牌无效，请重新扫码"})).await;
         return;
     }
-    let Ok(Some(body)) = tokio::time::timeout(SMALL_TIMEOUT, read_body(&mut sock, len.unwrap_or(0), leftover)).await else {
+    let max_body = body_limit(authorized, &req.path);
+    let Ok(Some(body)) = tokio::time::timeout(SMALL_TIMEOUT, read_body(&mut sock, len.unwrap_or(0), leftover, max_body)).await else {
         json(&mut sock, "413 Payload Too Large", serde_json::json!({"error": "内容太大。较大的内容请作为文件发送。"})).await;
         return;
     };
@@ -944,6 +956,32 @@ mod tests {
         assert!(!is_streaming(&mk("GET", "/api/upload")));
         assert!(!is_streaming(&mk("POST", "/api/send")));
         assert!(!is_streaming(&mk("POST", "/dl/abc")));
+    }
+
+    #[test]
+    fn only_authorized_ai_routes_get_the_large_body_limit() {
+        assert_eq!(body_limit(true, "/api/v1/ai/run"), AI_BODY);
+        assert_eq!(body_limit(false, "/api/v1/ai/run"), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/send"), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/v1/tasks"), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/v1/aix"), MAX_BODY);
+    }
+
+    #[tokio::test]
+    async fn read_body_enforces_the_given_limit() {
+        use tokio::io::AsyncWriteExt as _;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let writer = tokio::spawn(async move {
+            let mut c = TcpStream::connect(addr).await.unwrap();
+            c.write_all(&vec![b'x'; 100_000]).await.unwrap();
+        });
+        let (mut sock, _) = listener.accept().await.unwrap();
+        // 100 KB 超过普通上限，被拒；放宽到 AI_BODY 就能读完
+        assert!(read_body(&mut sock, 100_000, vec![], MAX_BODY).await.is_none());
+        let body = read_body(&mut sock, 100_000, vec![], AI_BODY).await.unwrap();
+        assert_eq!(body.len(), 100_000);
+        writer.await.unwrap();
     }
 
     #[test]

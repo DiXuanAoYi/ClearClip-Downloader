@@ -121,7 +121,7 @@ pub fn translate_system(lang: &str) -> String {
     )
 }
 
-fn strip_fences(s: &str) -> &str {
+pub(crate) fn strip_fences(s: &str) -> &str {
     let t = s.trim();
     let t = t.strip_prefix("```json").or_else(|| t.strip_prefix("```JSON")).or_else(|| t.strip_prefix("```")).unwrap_or(t);
     t.strip_suffix("```").unwrap_or(t).trim()
@@ -259,7 +259,7 @@ pub struct Summary {
     pub chapters: Vec<Chapter>,
 }
 
-fn clock_label(ms: u64) -> String {
+pub(crate) fn clock_label(ms: u64) -> String {
     let s = ms / 1000;
     if s >= 3600 {
         format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)

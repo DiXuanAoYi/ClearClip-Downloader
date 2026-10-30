@@ -61,6 +61,7 @@ pub mod upload;
 pub mod vault;
 pub mod vidcaps;
 pub mod vidnorm;
+pub mod vsum;
 mod winframe;
 
 use std::path::PathBuf;

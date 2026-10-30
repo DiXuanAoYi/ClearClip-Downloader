@@ -681,6 +681,7 @@ async function init() {
   $('page').textContent = tab?.title || tab?.url || ''
   const f = await getFeatures()
   $('pageTools').classList.toggle('hidden', !f.onDemand)
+  $('vsumTools').classList.toggle('hidden', !f.vsum)
   $('tabLater').classList.toggle('hidden', !(f.readLater && typeof renderLater === 'function'))
   await loadSettings()
   refreshLaterBadge()
@@ -735,6 +736,7 @@ async function runOnPage(action) {
 }
 $('openOverview').onclick = () => runOnPage('overview')
 $('startPick').onclick = () => runOnPage('picker')
+$('startVsum').onclick = () => runOnPage('vsum')
 $('openSettings').onclick = () => show('settings')
 $('saveRules').onclick = saveRules
 $('notifyDone').onchange = () => api.storage.local.set({ notifyDone: $('notifyDone').checked })
