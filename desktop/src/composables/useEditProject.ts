@@ -520,7 +520,7 @@ export function useEditProject() {
   }
 
   /** 添加配乐（音频文件，或者想用它声音的视频）。从 `startMs`（默认播放位置）开始。 */
-  async function addMusic(paths: string[], startMs?: number): Promise<AddReport> {
+  async function addMusic(paths: string[], startMs?: number, select = true): Promise<AddReport> {
     const report: AddReport = { added: 0, errors: [] }
     busy.value = true
     try {
@@ -532,7 +532,7 @@ export function useEditProject() {
           if (p.audio.length >= MAX_AUDIO) return report.errors.push(`音频轨最多 ${MAX_AUDIO} 条，${info.name} 没有加入。`)
           const a = audioFromSource(info, nextId(p), Math.round(Math.max(0, startMs ?? playhead.value)))
           p.audio.push(a)
-          sel.value = { kind: 'audio', id: a.id }
+          if (select) sel.value = { kind: 'audio', id: a.id }
           report.added++
         })
       })

@@ -107,6 +107,15 @@ function initScript(mport) {
           { id: 'vocal_mdx', label: 'Kim Vocal 2', kind: 'vocals', url: 'https://example.invalid/v.onnx', sizeHint: '66 MB', note: '人声分离', installed: false, sizeBytes: 0 },
         ]
         case 'ml_model_download': case 'ml_model_import': { (window.__mlReqs ||= []).push({ cmd, ...args }); const m = window.__models.find((x) => x.id === args.id); m.installed = true; m.sizeBytes = 26214400; return m }
+        case 'edit_vocals': {
+          const req = args.req
+          ;(window.__vocReqs ||= []).push(req)
+          window.__emit('edit://track', { id: req.id, percent: 40 })
+          for (let i = 0; i < 400 && window.__hold && !window.__canceled[req.id]; i++) await new Promise((r) => setTimeout(r, 25))
+          if (window.__canceled[req.id]) throw { kind: 'invalid', message: 'canceled' }
+          window.__emit('edit://track', { id: req.id, percent: 100 })
+          return window.__vocResult
+        }
         case 'ml_model_remove': { const m = window.__models.find((x) => x.id === args.id); m.installed = false; m.sizeBytes = 0; return null }
         case 'edit_detect_key': (window.__keyReqs ||= []).push(args); return window.__keyGuess ?? null
         case 'edit_beats': (window.__beatReqs ||= []).push(args); return window.__beats

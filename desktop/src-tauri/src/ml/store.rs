@@ -35,6 +35,8 @@ pub struct ModelDef {
     pub norm: Norm,
     /// 输入边长不是动态的模型会固定用这个边长（0 表示按画面比例自己定）
     pub fixed_side: usize,
+    /// 人声分离模型的 FFT 点数（抠图模型填 0）
+    pub n_fft: usize,
     pub note: &'static str,
 }
 
@@ -48,6 +50,7 @@ pub const MODELS: &[ModelDef] = &[
         size_hint: "约 25 MB",
         norm: Norm::Half,
         fixed_side: 0,
+        n_fft: 0,
         note: "边缘细（头发丝），适合人像；输入输出都是任意尺寸的 ONNX",
     },
     ModelDef {
@@ -58,6 +61,7 @@ pub const MODELS: &[ModelDef] = &[
         size_hint: "约 170 MB",
         norm: Norm::ImageNet,
         fixed_side: 320,
+        n_fft: 0,
         note: "分割为主，边缘比 MODNet 粗，但对全身 / 复杂姿势更稳",
     },
     ModelDef {
@@ -68,6 +72,7 @@ pub const MODELS: &[ModelDef] = &[
         size_hint: "约 60 MB",
         norm: Norm::Half,
         fixed_side: 0,
+        n_fft: 7680,
         note: "把人声和伴奏分开；也可以导入同类的 MDX-Net ONNX 模型",
     },
 ];

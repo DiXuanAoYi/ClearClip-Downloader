@@ -78,6 +78,24 @@ pub(crate) mod testing {
         }
     }
 
+    /// 输入 `[1,4,F,T]`，原样输出（人声分离管线的测试用：模型认为“全是人声”）。
+    pub fn identity_model(f: i64, t: i64) -> pb::ModelProto {
+        let node = pb::NodeProto { input: vec!["x".into()], output: vec!["y".into()], name: "id".into(), op_type: "Identity".into(), ..Default::default() };
+        let dims = [Some(1), Some(4), Some(f), Some(t)];
+        pb::ModelProto {
+            ir_version: 7,
+            opset_import: vec![pb::OperatorSetIdProto { domain: String::new(), version: 13 }],
+            graph: Some(pb::GraphProto {
+                name: "g".into(),
+                node: vec![node],
+                input: vec![value_info("x", &dims)],
+                output: vec![value_info("y", &dims)],
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
     /// 输入 `[1,3,H,W]`（H、W 动态或固定），输出 `[1,1,H,W]` = 三个通道的平均。
     pub fn channel_mean_model(fixed: Option<(i64, i64)>) -> pb::ModelProto {
         let (h, w) = (fixed.map(|f| f.0), fixed.map(|f| f.1));

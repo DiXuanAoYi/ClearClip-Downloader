@@ -7,9 +7,10 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { ElMessage } from 'element-plus'
 import { api, errorText, events } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
-import type { AudioFxPreview, EditClip, TimeSpan } from '../../../types'
+import type { AudioFxPreview, EditClip, ModelStatus, TimeSpan, VocalsResult } from '../../../types'
 import { clipDuration, clamp, msText } from '../../../utils/edit'
 import EditField from './EditField.vue'
+import EditModels from './EditModels.vue'
 import EditSlider from './EditSlider.vue'
 
 const props = defineProps<{ ed: EditApi }>()
@@ -193,12 +194,46 @@ let unlisten: UnlistenFn | undefined
 onMounted(async () => {
   unlisten = await events.onTrackProgress((p) => {
     if (tracking.running && p.id === tracking.id) tracking.percent = clamp(p.percent, 0, 100)
+    if (voc.running && p.id === voc.id) voc.percent = clamp(p.percent, 0, 100)
   })
 })
 onBeforeUnmount(() => {
   unlisten?.()
   if (tracking.running) api.trackCancel(tracking.id).catch(() => undefined)
+  if (voc.running) api.trackCancel(voc.id).catch(() => undefined)
 })
+
+// ---- 人声分离 ----
+const voc = reactive({ running: false, id: 0, percent: 0, model: 'vocal_mdx', nFft: null as number | null, result: null as VocalsResult | null, forClip: 0 })
+const vocModelReady = ref(false)
+const onModels = (list: ModelStatus[]) => (vocModelReady.value = !!list.find((m) => m.id === voc.model)?.installed)
+async function separateVocals() {
+  const c = clip.value
+  if (!c || voc.running) return
+  voc.id = ++seq
+  Object.assign(voc, { running: true, percent: 0, result: null, forClip: c.id })
+  try {
+    voc.result = await api.editVocals({ id: voc.id, path: c.path, fromMs: c.inMs, toMs: c.outMs, model: voc.model, nFft: voc.nFft || undefined })
+    ElMessage.success('已分离出人声和伴奏，可以加入音频轨。')
+  } catch (e) {
+    const msg = errorText(e)
+    if (msg !== 'canceled') ElMessage.error(msg)
+    else ElMessage.info('已取消。')
+  } finally {
+    voc.running = false
+    voc.percent = 0
+  }
+}
+const cancelVocals = () => voc.running && api.trackCancel(voc.id).catch(() => undefined)
+/** 把分离结果放上音频轨，从片段的起点开始；`replace` 时把原片段的声音静音 */
+async function addStem(which: 'vocals' | 'instrumental', replace: boolean) {
+  const r = voc.result
+  const c = ed.clipOf(voc.forClip)
+  if (!r || !c) return
+  const rep = await ed.addMusic([r[which]], ed.placed.value[ed.project.value.clips.findIndex((x) => x.id === c.id)]?.startMs ?? 0, false)
+  if (rep.errors.length) return void ElMessage.error(rep.errors.join(' '))
+  if (replace) ed.patchClip(c.id, { mute: true }, `mute:${c.id}`)
+}
 
 async function reframe() {
   const r = RATIOS.find((x) => x.key === rf.ratio)
@@ -271,6 +306,42 @@ const hasFocus = computed(() => !!clip.value?.regions.some((r) => r.effect === '
         <div v-if="sil.spans.length" class="mute small">双击一段可以跳到那个位置听一下。去掉静音后，这个片段之后的叠加素材、文字、配乐会一起前移；片段中间的不会动。</div>
       </template>
       <div v-else class="mute small">这个片段没有声音（或已静音）。</div>
+
+      <h4>人声分离</h4>
+      <template v-if="hasAudio">
+        <EditModels kind="vocals" :selected="voc.model" @select="(id) => (voc.model = id)" @changed="onModels" />
+        <EditField label="FFT 点数" hint="只在导入了别的模型时才需要改。内置的 Kim Vocal 2 是 7680，很多 MDX-Net 模型是 6144。留空用默认值">
+          <el-input-number v-model="voc.nFft" size="small" :min="256" :max="32768" :step="512" :controls="false" placeholder="默认" />
+        </EditField>
+        <div class="row">
+          <el-button v-if="!voc.running" size="small" type="primary" :disabled="!vocModelReady" @click="separateVocals">分离人声和伴奏</el-button>
+          <template v-else>
+            <el-progress :percentage="voc.percent" :stroke-width="6" class="prog" />
+            <el-button size="small" @click="cancelVocals">取消</el-button>
+          </template>
+        </div>
+        <div v-if="voc.result && ed.clipOf(voc.forClip)" class="stems">
+          <div class="row">
+            <span class="mute small">人声</span>
+            <audio class="aud" :src="convertFileSrc(voc.result.vocals)" controls preload="none" />
+            <el-button size="small" @click="addStem('vocals', false)">加入音频轨</el-button>
+          </div>
+          <div class="row">
+            <span class="mute small">伴奏</span>
+            <audio class="aud" :src="convertFileSrc(voc.result.instrumental)" controls preload="none" />
+            <el-button size="small" @click="addStem('instrumental', false)">加入音频轨</el-button>
+          </div>
+          <div class="row">
+            <el-button size="small" type="primary" @click="addStem('instrumental', true)">用伴奏替换原声</el-button>
+            <el-button size="small" @click="addStem('vocals', true)">只留人声</el-button>
+          </div>
+          <div v-if="ed.clipOf(voc.forClip)?.speed !== 1" class="note small">这个片段变了速，分离出来的声音不会跟着变速，对不上画面。</div>
+        </div>
+        <div class="mute small">
+          用 MDX-Net 的 ONNX 模型在本机 CPU 上算，不上传。三分钟的歌大约要几分钟；一次最多处理 20 分钟。结果是 44.1 kHz 立体声 WAV，存在应用数据目录的 vocals 文件夹里。
+        </div>
+      </template>
+      <div v-else class="mute small">这个片段没有声音（或已静音），没有可以分离的。</div>
 
       <h4>降噪 / 人声增强</h4>
       <template v-if="hasAudio">
@@ -363,6 +434,11 @@ h4:first-of-type {
   object-fit: fill;
   border-radius: 6px;
   background: rgba(127, 127, 127, 0.12);
+}
+.stems {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .aud {
   height: 32px;

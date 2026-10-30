@@ -560,6 +560,7 @@ pub fn run() {
             edit::analyze::edit_beats,
             edit::analyze::edit_detect_key,
             ml::store::ml_models,
+            ml::vocals::edit_vocals,
             ml::store::ml_model_download,
             ml::store::ml_model_import,
             ml::store::ml_model_remove,

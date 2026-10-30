@@ -1722,3 +1722,10 @@ export interface ModelProgress {
   got: number
   total: number
 }
+
+/** 人声分离的结果：两个 WAV 文件 */
+export interface VocalsResult {
+  vocals: string
+  instrumental: string
+  durationMs: number
+}
