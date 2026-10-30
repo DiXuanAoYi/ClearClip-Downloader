@@ -117,7 +117,7 @@ export const api = {
   clearFinished: () => invoke<void>('clear_finished'),
   playerSource: (path: string) => invoke<PlayerSource>('player_source', { path }),
   previewSource: (taskId: number) => invoke<PlayerSource>('preview_source', { taskId }),
-  previewAsset: (media: MediaInfo, assetId: string) => invoke<PlayerSource>('preview_asset', { media, assetId }),
+  previewAsset: (media: MediaInfo, assetId: string, transcode = false) => invoke<PlayerSource>('preview_asset', { media, assetId, transcode }),
   taskDetail: (id: number) => invoke<TaskDetail>('task_detail', { id }),
   pauseAll: () => invoke<void>('pause_all'),
   resumeAll: () => invoke<void>('resume_all'),

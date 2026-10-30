@@ -123,7 +123,7 @@ export const SITE_GUIDES: SiteGuide[] = [
     site: 'pornhub.com',
     name: 'Pornhub',
     anonymous: '大多数视频可以下载。',
-    needLogin: '高清或会员内容。',
+    needLogin: '高清或会员内容；有的地区 / 网络下，没有登录状态会返回“HTTP Error 410: Gone”，同步登录 Cookie 即可。',
     methods: ['extension', 'cookies', 'embedded'],
   },
 ]

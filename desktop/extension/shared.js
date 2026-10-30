@@ -14,7 +14,7 @@ async function getConfig() {
 
 async function call(path, body) {
   const c = await getConfig()
-  if (!c.port || !c.token) throw new Error('请先在扩展设置里填写清影的端口和访问令牌')
+  if (!c.port || !c.token) throw Object.assign(new Error('请先在扩展设置里填写清影的端口和访问令牌'), { code: 'unconfigured' })
   let r
   try {
     r = await fetch(`http://127.0.0.1:${c.port}${path}`, {

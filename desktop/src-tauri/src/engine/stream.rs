@@ -33,14 +33,14 @@ pub enum StreamRoute {
 }
 
 /// 按出口准备 ffmpeg 的启动方式：改写后的地址、输入前的参数、是否清掉环境变量里的代理，以及要保持存活的代理桥。
-struct Prepared {
-    url: String,
-    pre_input: Vec<String>,
-    clear_proxy_env: bool,
+pub(crate) struct Prepared {
+    pub(crate) url: String,
+    pub(crate) pre_input: Vec<String>,
+    pub(crate) clear_proxy_env: bool,
     _bridge: Option<Bridge>,
 }
 
-async fn prepare(url: &str, route: &StreamRoute) -> Result<Prepared, DlError> {
+pub(crate) async fn prepare(url: &str, route: &StreamRoute) -> Result<Prepared, DlError> {
     let plain = |clear| Prepared { url: url.to_string(), pre_input: vec![], clear_proxy_env: clear, _bridge: None };
     let proxy = match route {
         StreamRoute::System => return Ok(plain(false)),
@@ -79,7 +79,7 @@ async fn prepare(url: &str, route: &StreamRoute) -> Result<Prepared, DlError> {
 }
 
 /// ffmpeg 读取的环境变量里的代理。
-const PROXY_ENV: [&str; 8] = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "no_proxy", "NO_PROXY"];
+pub(crate) const PROXY_ENV: [&str; 8] = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "no_proxy", "NO_PROXY"];
 
 /// ffmpeg 的命令行参数。`pre_input` 是放在 `-i` 前面的输入选项。
 pub fn build_args(url: &str, out: &Path, pre_input: &[String]) -> Vec<String> {

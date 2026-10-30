@@ -62,37 +62,81 @@ const subtitleAssets = computed(() => result.value?.assets.filter((a) => a.kind 
 const extras = computed(() => result.value?.assets.filter((a) => a.kind !== 'image' && a.kind !== 'video' && a.kind !== 'subtitle') ?? [])
 const videoSelected = computed(() => videoFormats.value.some((v) => selected.value.has(v.id)))
 const canClip = computed(() => !!result.value && !isPlaylist.value && (result.value.kind === 'video' || result.value.kind === 'audio') && !audioOnly.value)
-/** 预览用的资源：优先用户选中的清晰度；只能预览单个 HTTP 文件（m3u8 / 站点解析的流要下载后才能看）。 */
-const previewable = (a: Asset) => (a.kind === 'video' || a.kind === 'audio') && a.protocol === 'http' && !['m3u8', 'mpd'].includes(a.ext.toLowerCase())
+/** 预览用的资源：优先用户选中的清晰度。FTP / SFTP / ed2k / BT 要连上对方才有数据，其余（含 m3u8、yt-dlp 的流）都能预览。 */
+const previewable = (a: Asset) => (a.kind === 'video' || a.kind === 'audio') && !['ftp', 'sftp', 'ed2k', 'bt'].includes(a.protocol)
 const previewAsset = computed(() => {
   const list = result.value?.assets.filter(previewable) ?? []
   return list.find((a) => selected.value.has(a.id)) ?? list.find((a) => a.kind === 'video') ?? list[0]
 })
+const NATIVE_EXTS = ['mp4', 'm4v', 'webm', 'mov', 'mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'flac']
+/** 这个资源是不是由清影转成一小段再播放（而不是直接代理原文件）。 */
+const previewIsClip = (a: Asset, transcoded: boolean) => transcoded || a.protocol !== 'http' || !!a.pairAudio || !NATIVE_EXTS.includes(a.ext.toLowerCase())
 const previewUrl = ref('')
+const previewKind = ref<'video' | 'audio'>('video')
 const previewError = ref('')
 const previewFail = ref('')
+const previewBusy = ref('')
+const previewNote = ref('')
+const previewImages = ref<Record<string, string>>({})
+let previewTranscoded = false
+let previewRun = 0
+
+async function loadPreview(transcode: boolean) {
+  const r = result.value
+  const a = previewAsset.value
+  if (!r || !a) return
+  const run = ++previewRun
+  previewTranscoded = transcode
+  previewFail.value = ''
+  previewError.value = ''
+  previewUrl.value = ''
+  const clip = previewIsClip(a, transcode)
+  previewBusy.value = clip ? (transcode ? '正在转成通用格式（取前 90 秒），可能要十几秒…' : '正在从源站取前 90 秒并转成可播放的格式，可能要十几秒…') : '正在加载预览…'
+  try {
+    const src = await api.previewAsset(r, a.id, transcode)
+    if (run !== previewRun) return
+    previewKind.value = src.kind === 'audio' ? 'audio' : 'video'
+    previewNote.value = clip ? '这是前 90 秒的预览片段；完整内容下载后播放。' : ''
+    previewUrl.value = src.url
+  } catch (e) {
+    if (run !== previewRun) return
+    previewError.value = errorText(e)
+  } finally {
+    if (run === previewRun) previewBusy.value = ''
+  }
+}
 
 watch(preview, async (on) => {
+  previewRun++
   previewUrl.value = ''
   previewError.value = ''
   previewFail.value = ''
+  previewBusy.value = ''
+  previewNote.value = ''
+  previewImages.value = {}
   const r = result.value
   if (!on || !r) return
-  const a = previewAsset.value
-  if (!a) {
-    if (!images.value.length) previewError.value = '这个资源是分片 / 流媒体（m3u8、站点解析的流等），不能直接预览，下载后即可播放。'
-    return
-  }
-  try {
-    previewUrl.value = (await api.previewAsset(r, a.id)).url
-  } catch (e) {
-    previewError.value = errorText(e)
+  if (previewAsset.value) await loadPreview(false)
+  else if (!images.value.length) previewError.value = '这个资源（FTP / SFTP / ed2k / BT 等）要连上对方才有数据，不能预览，下载后即可播放。'
+  // 图片经本机服务代理：防盗链的站点直接显示会是裂图
+  for (const img of images.value) {
+    api
+      .previewAsset(r, img.id)
+      .then((s) => {
+        if (preview.value) previewImages.value = { ...previewImages.value, [img.id]: s.url }
+      })
+      .catch(() => {})
   }
 })
 
 function onPreviewError(e: Event) {
-  const err = (e.target as HTMLVideoElement).error
-  previewFail.value = err?.code === 4 ? '预览打不开：格式或编码不支持（常见于 HEVC / mkv / flv），不影响下载。' : `预览加载失败（错误码 ${err?.code ?? '?'}），可能是链接已过期或网站不允许预览，不影响下载。`
+  const err = (e.target as HTMLMediaElement).error
+  // 直接播放 / 原样封装播不出来（编码不支持、封装不对）：自动换成转码再试一次
+  if (!previewTranscoded && err?.code !== 1) {
+    void loadPreview(true)
+    return
+  }
+  previewFail.value = err?.code === 4 ? '预览打不开：这种编码没法转成可播放的格式，不影响下载。' : `预览加载失败（错误码 ${err?.code ?? '?'}），可能是链接已过期或网站不允许预览，不影响下载。`
 }
 const entries = computed(() => result.value?.entries ?? [])
 const isPlaylist = computed(() => result.value?.kind === 'playlist')
@@ -545,13 +589,15 @@ function sizeText(a: Asset) {
         <template v-if="previewAsset">
           <p v-if="previewError" class="selectable mute">{{ previewError }}</p>
           <p v-else-if="previewFail" class="selectable mute">{{ previewFail }}</p>
-          <video v-if="previewUrl && !previewFail" :src="previewUrl" controls autoplay @error="onPreviewError" />
-          <p v-if="!previewUrl && !previewError" class="mute">正在加载预览…</p>
+          <video v-if="previewUrl && !previewFail && previewKind === 'video'" :src="previewUrl" controls autoplay @error="onPreviewError" />
+          <audio v-else-if="previewUrl && !previewFail" :src="previewUrl" controls autoplay @error="onPreviewError" />
+          <p v-if="previewBusy" class="mute">{{ previewBusy }}</p>
+          <p v-else-if="previewUrl && previewNote && !previewFail" class="mute">{{ previewNote }}</p>
         </template>
         <p v-else-if="previewError" class="selectable mute">{{ previewError }}</p>
         <el-carousel v-else-if="images.length" height="460px" indicator-position="outside" :autoplay="false">
           <el-carousel-item v-for="img in images" :key="img.id">
-            <img :src="img.url" referrerpolicy="no-referrer" alt="" />
+            <img :src="previewImages[img.id] || img.url" referrerpolicy="no-referrer" alt="" />
           </el-carousel-item>
         </el-carousel>
       </div>
@@ -847,6 +893,10 @@ function sizeText(a: Asset) {
   padding-left: 18px;
   margin: 0;
   line-height: 1.9;
+}
+.preview audio {
+  width: 100%;
+  display: block;
 }
 .preview video,
 .preview img {

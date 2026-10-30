@@ -77,7 +77,8 @@
     <button id="tkBack" class="sec">返回</button>
   </div>
   <div id="settings" class="hidden">
-    <p class="mute">在清影“设置 → 手机与浏览器扩展”中开启服务，把“分享菜单”里的端口和访问令牌填到这里。</p>
+    <p id="setupHint" class="mute hidden"><b>还差一步：</b>填好下面的端口和访问令牌，右键菜单和发送按钮才能使用。</p>
+    <p class="mute">打开电脑上的清影，进入“设置 → 手机与浏览器扩展”，开启服务，把“分享菜单”里的端口和访问令牌复制到这里，再点“保存并测试”。</p>
     <label>端口</label><input id="port" type="number" placeholder="例如 42031" />
     <label>访问令牌（X-Token）</label><input id="token" type="password" />
     <label class="row"><input id="autoSync" type="checkbox" /> 开启自动同步</label>
