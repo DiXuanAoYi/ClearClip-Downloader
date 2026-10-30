@@ -27,6 +27,8 @@ pub struct GrabRequest {
     pub mirrors: Vec<String>,
     /// 扩展的显示名（配对确认时显示）
     pub device_name: String,
+    /// 用户在右键菜单里明确点了“用清影下载”：电脑上把主窗口带到前台
+    pub reveal: bool,
 }
 
 /// 文件名里去掉目录和非法字符，限制长度。

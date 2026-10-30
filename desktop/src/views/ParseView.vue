@@ -62,7 +62,38 @@ const subtitleAssets = computed(() => result.value?.assets.filter((a) => a.kind 
 const extras = computed(() => result.value?.assets.filter((a) => a.kind !== 'image' && a.kind !== 'video' && a.kind !== 'subtitle') ?? [])
 const videoSelected = computed(() => videoFormats.value.some((v) => selected.value.has(v.id)))
 const canClip = computed(() => !!result.value && !isPlaylist.value && (result.value.kind === 'video' || result.value.kind === 'audio') && !audioOnly.value)
-const videoAsset = computed(() => result.value?.assets.find((a) => a.kind === 'video' && a.protocol === 'http'))
+/** 预览用的资源：优先用户选中的清晰度；只能预览单个 HTTP 文件（m3u8 / 站点解析的流要下载后才能看）。 */
+const previewable = (a: Asset) => (a.kind === 'video' || a.kind === 'audio') && a.protocol === 'http' && !['m3u8', 'mpd'].includes(a.ext.toLowerCase())
+const previewAsset = computed(() => {
+  const list = result.value?.assets.filter(previewable) ?? []
+  return list.find((a) => selected.value.has(a.id)) ?? list.find((a) => a.kind === 'video') ?? list[0]
+})
+const previewUrl = ref('')
+const previewError = ref('')
+const previewFail = ref('')
+
+watch(preview, async (on) => {
+  previewUrl.value = ''
+  previewError.value = ''
+  previewFail.value = ''
+  const r = result.value
+  if (!on || !r) return
+  const a = previewAsset.value
+  if (!a) {
+    if (!images.value.length) previewError.value = '这个资源是分片 / 流媒体（m3u8、站点解析的流等），不能直接预览，下载后即可播放。'
+    return
+  }
+  try {
+    previewUrl.value = (await api.previewAsset(r, a.id)).url
+  } catch (e) {
+    previewError.value = errorText(e)
+  }
+})
+
+function onPreviewError(e: Event) {
+  const err = (e.target as HTMLVideoElement).error
+  previewFail.value = err?.code === 4 ? '预览打不开：格式或编码不支持（常见于 HEVC / mkv / flv），不影响下载。' : `预览加载失败（错误码 ${err?.code ?? '?'}），可能是链接已过期或网站不允许预览，不影响下载。`
+}
 const entries = computed(() => result.value?.entries ?? [])
 const isPlaylist = computed(() => result.value?.kind === 'playlist')
 const kindText = computed(() => {
@@ -511,7 +542,13 @@ function sizeText(a: Asset) {
 
     <el-dialog v-model="preview" :title="result?.title" width="720px" align-center destroy-on-close>
       <div v-if="result" class="preview">
-        <video v-if="videoAsset" :src="videoAsset.url" controls autoplay referrerpolicy="no-referrer" />
+        <template v-if="previewAsset">
+          <p v-if="previewError" class="selectable mute">{{ previewError }}</p>
+          <p v-else-if="previewFail" class="selectable mute">{{ previewFail }}</p>
+          <video v-if="previewUrl && !previewFail" :src="previewUrl" controls autoplay @error="onPreviewError" />
+          <p v-if="!previewUrl && !previewError" class="mute">正在加载预览…</p>
+        </template>
+        <p v-else-if="previewError" class="selectable mute">{{ previewError }}</p>
         <el-carousel v-else-if="images.length" height="460px" indicator-position="outside" :autoplay="false">
           <el-carousel-item v-for="img in images" :key="img.id">
             <img :src="img.url" referrerpolicy="no-referrer" alt="" />

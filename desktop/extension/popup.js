@@ -158,7 +158,7 @@ async function renderTakeover() {
     row.className = 'it'
     const name = document.createElement('span')
     name.textContent = `${g.ok ? '' : '（失败）'}${g.name || shortUrl(g.url)}`
-    name.title = shortUrl(g.url)
+    name.title = g.error || shortUrl(g.url)
     const btn = document.createElement('button')
     btn.className = 'sec'
     btn.textContent = '用浏览器下载'

@@ -511,6 +511,9 @@ struct SendBody {
     device: String,
     #[serde(default)]
     name: String,
+    /// 用户在浏览器里明确点了“用清影下载”：电脑上把主窗口带到前台，让人看到有反应
+    #[serde(default)]
+    reveal: bool,
 }
 
 fn clean_device(id: &str) -> String {
@@ -582,7 +585,12 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
         ("POST", "/api/send") => {
             let body: Result<SendBody, _> = serde_json::from_slice(&req.body).or_else(|_| {
                 // 快捷指令也可以直接发送纯文本
-                Ok::<_, serde_json::Error>(SendBody { text: String::from_utf8_lossy(&req.body).into_owned(), device: String::new(), name: String::new() })
+                Ok::<_, serde_json::Error>(SendBody {
+                    text: String::from_utf8_lossy(&req.body).into_owned(),
+                    device: String::new(),
+                    name: String::new(),
+                    reveal: false,
+                })
             });
             let Ok(body) = body else { return };
             let device = clean_device(if body.device.is_empty() { req.headers.get("x-device").map(String::as_str).unwrap_or("") } else { &body.device });
@@ -605,7 +613,12 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                 return;
             }
             match receive(&app, &device, &name, &peer, text) {
-                Some((id, state_name)) => json(sock, "200 OK", serde_json::json!({"id": id, "state": state_name})).await,
+                Some((id, state_name)) => {
+                    if body.reveal && state_name != "pending_pair" {
+                        tray::show_main(&app);
+                    }
+                    json(sock, "200 OK", serde_json::json!({"id": id, "state": state_name})).await
+                }
                 None => json(sock, "500 Internal Server Error", serde_json::json!({"error": "电脑上保存记录失败，请稍后再试"})).await,
             }
         }
@@ -674,9 +687,29 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                 json(sock, "403 Forbidden", serde_json::json!({"state": "pending_pair", "error": "请先在电脑上点“允许”完成配对"})).await;
                 return;
             }
+            let shown = crate::grab::display_url(&body.url);
             match crate::grab::enqueue(&app, &device, &name, &body) {
-                Ok(v) => json(sock, "200 OK", v).await,
-                Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
+                Ok(v) => {
+                    // 接管下载和右键菜单都是静默入队的：给主窗口一个明确的提示
+                    let file = v["fileNames"].get(0).and_then(|n| n.as_str()).unwrap_or(&shown).to_string();
+                    let message = match (v["state"].as_str(), v["alreadyQueued"].as_u64().unwrap_or(0)) {
+                        (Some("queued"), _) => format!("浏览器扩展已加入下载：{file}"),
+                        (_, n) if n > 0 => format!("已在下载队列中：{file}"),
+                        _ => format!("之前已下载过：{file}"),
+                    };
+                    let _ = app.emit(clipboard::EVT_AUTO_RESULT, clipboard::AutoResult { url: shown, ok: true, message });
+                    if body.reveal {
+                        tray::show_main(&app);
+                    }
+                    json(sock, "200 OK", v).await
+                }
+                Err(e) => {
+                    let _ = app.emit(
+                        clipboard::EVT_AUTO_RESULT,
+                        clipboard::AutoResult { url: shown, ok: false, message: format!("浏览器扩展发来的下载没能加入队列：{}", e.message) },
+                    );
+                    json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await
+                }
             }
         }
         _ => respond(sock, "404 Not Found", "text/plain", b"not found").await,

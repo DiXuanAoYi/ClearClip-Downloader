@@ -125,6 +125,7 @@ function cookieHeader(cookies) {
 function shortUrl(url) {
   try {
     const u = new URL(url)
+    if (u.protocol === 'blob:') return String(url).slice(0, 200).split(/[?#]/)[0]
     return u.origin + u.pathname
   } catch {
     return String(url || '').slice(0, 200)

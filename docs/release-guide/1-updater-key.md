@@ -39,3 +39,7 @@
 - 更新检查地址写在 `desktop/src-tauri/tauri.conf.json` 的 `plugins.updater.endpoints`，指向最新 Release 里的 `latest.json`。
 
 ---
+
+## 迁移仓库或新建仓库后
+
+仓库的 Secrets 不会跟着迁移。新仓库里没有配置 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_UPDATER_PUBKEY` 时，发布依然成功，但 Release 里没有 `latest.json` 和 `.sig` 文件，程序内只能“检查到新版本并打开发布页”，不能一键安装；流水线日志里会出现黄色警告提醒。按上面的步骤把两个 Secret 补上，再发布下一个版本即可。注意：之前发布的、没有编译进公钥的版本（例如 0.8.0）无法程序内更新，需要手动安装一次带公钥的新版，之后才能自动更新。

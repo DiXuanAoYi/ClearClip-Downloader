@@ -21,14 +21,14 @@ api.runtime.onInstalled.addListener(async () => {
 })
 
 /** 把浏览器里的一个文件地址交给清影下载（带 Referer、Cookie、文件名）。item：{ url, finalUrl?, referrer?, filename?, fileSize?, mime? } */
-async function grabUrl(item) {
+async function grabUrl(item, extra = {}) {
   let cookie = ''
   try {
     cookie = cookieHeader(await api.cookies.getAll({ url: item.finalUrl || item.url }))
   } catch {
     // 没有 Cookie 权限或地址无效：不带 Cookie
   }
-  return call('/api/grab', grabPayload(item, cookie, navigator.userAgent, browserName()))
+  return call('/api/grab', { ...grabPayload(item, cookie, navigator.userAgent, browserName()), ...extra })
 }
 
 async function rememberGrab(entry) {
@@ -38,34 +38,68 @@ async function rememberGrab(entry) {
   await api.storage.local.set({ recentGrabs })
 }
 
+/** 在扩展图标上短暂显示结果（✓ 已发送 / ! 失败）：系统通知可能被关掉或被专注模式拦住，图标上的标记总是看得到。 */
+async function flashBadge(tabId, ok) {
+  const action = api.action || api.browserAction
+  if (tabId === undefined || tabId < 0) return
+  try {
+    await action.setBadgeText({ tabId, text: ok ? '✓' : '!' })
+    await action.setBadgeBackgroundColor({ tabId, color: ok ? '#2e9e5b' : '#d64545' })
+    setTimeout(async () => {
+      try {
+        const n = (await getSniffed(tabId)).length
+        await action.setBadgeText({ tabId, text: n ? String(n) : '' })
+        await action.setBadgeBackgroundColor({ tabId, color: '#d9772f' })
+      } catch {
+        // 标签页可能已关闭
+      }
+    }, 4000)
+  } catch {
+    // 标签页可能已关闭
+  }
+}
+
+/** 右键菜单的结果：通知 + 图标标记 + 记到弹窗的“最近发送”里。 */
+async function menuResult(tab, ok, shown, message, name) {
+  notify(ok ? '已发送到清影' : '发送失败', message)
+  await flashBadge(tab?.id, ok)
+  if (shown) await rememberGrab({ url: shown, name, ok, error: ok ? undefined : message })
+}
+
 api.contextMenus.onClicked.addListener(async (info, tab) => {
   const page = info.pageUrl || tab?.url || ''
+  let shown = ''
   try {
     let r
-    let shown
+    // reveal：这是用户明确点的菜单，电脑上的清影把主窗口带到前台
+    const c = await getConfig()
+    const send = (text) => call('/api/send', { text, device: c.device, name: browserName(), reveal: true })
     if (info.menuItemId === 'cc-link') {
       shown = info.linkUrl
-      r = linkAction(info.linkUrl) === 'grab' ? await grabUrl({ url: info.linkUrl, referrer: page }) : await sendUrl(info.linkUrl)
+      r = linkAction(info.linkUrl) === 'grab' ? await grabUrl({ url: info.linkUrl, referrer: page }, { reveal: true }) : await send(info.linkUrl)
     } else if (info.menuItemId === 'cc-media') {
       const src = info.srcUrl || ''
-      shown = src || page
       if (!/^https?:/i.test(src)) {
         // blob: 等地址交给清影也下不了：改为发送所在网页，由清影解析
-        r = await sendUrl(page)
+        shown = page
+        r = await send(page)
       } else if (info.mediaType === 'image') {
-        r = await grabUrl({ url: src, referrer: page })
+        shown = src
+        r = await grabUrl({ url: src, referrer: page }, { reveal: true })
       } else {
         // 视频 / 音频：作为媒体发送，带上所在网页作为 Referer
-        r = await call('/api/send', { text: sniffedPayload({ url: src }, page, tab?.title), device: (await getConfig()).device, name: browserName() })
+        shown = src
+        r = await send(sniffedPayload({ url: src }, page, tab?.title))
       }
     } else {
       shown = page
-      r = await sendUrl(page)
+      r = await send(page)
     }
     if (!shown) return
-    notify('已发送到清影', r.state === 'pending_pair' ? '第一次使用：请在电脑上点“允许”完成配对' : shortUrl(shown))
+    const pairing = r.state === 'pending_pair'
+    await menuResult(tab, !pairing, shown, pairing ? '第一次使用：请在电脑上点“允许”完成配对' : shortUrl(shown), r.fileNames?.[0])
   } catch (e) {
-    notify('发送失败', e.message)
+    await menuResult(tab, false, shown, e.message)
   }
 })
 
