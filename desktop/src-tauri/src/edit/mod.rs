@@ -9,11 +9,13 @@
 
 pub mod analyze;
 pub mod build;
+pub mod captions;
 pub mod cmds;
 pub mod fonts;
 pub mod job;
 pub mod region;
 pub mod spec;
+pub mod transcript;
 
 #[cfg(test)]
 mod analyze_e2e_tests;
@@ -23,3 +25,5 @@ mod e2e_tests;
 mod overlay_e2e_tests;
 #[cfg(test)]
 mod region_e2e_tests;
+#[cfg(test)]
+mod transcript_e2e_tests;

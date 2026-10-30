@@ -2,7 +2,7 @@
 // 排布规则和后端 `src-tauri/src/edit/spec.rs` 的 `layout` 保持一致，改那边时要一起改这里。
 // 这个文件不要引入别的运行时模块（用 node 直接跑 scripts 里的检查时需要）。
 
-import type { EditAudio, EditClip, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt } from '../types'
+import type { EditAudio, EditClip, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
 
 export const MIN_MS = 100
 export const MIN_TRANSITION_MS = 100
@@ -157,6 +157,9 @@ function blankText(): EditText {
     boxColor: '#000000',
     boxOpacity: 0.5,
     font: null,
+    words: [],
+    highlight: '',
+    fadeMs: 0,
   }
 }
 
@@ -351,6 +354,171 @@ export function removeSilences(c: EditClip, silences: TimeSpan[], keepMs: number
   if (!clips.length) return null
   const kept = clips.reduce((n, k) => n + (k.outMs - k.inMs), 0)
   return { clips, removedMs: c.outMs - c.inMs - kept }
+}
+
+// ---------- 文稿：词、句、口头禅、智能字幕 ----------
+
+/** 句末标点：遇到就另起一行 */
+const SENTENCE_END = /[。！？!?.…；;]$/
+const CLAUSE_END = /[，、,：:]$/
+const isCjk = (ch: string) => /[\u2e80-\u9fff\uf900-\ufaff\uac00-\ud7af]/.test(ch)
+/** 一个字在画面上大约占几个“全角字”的宽度 */
+const visualWidth = (s: string) => [...s].reduce((n, ch) => n + (isCjk(ch) ? 1 : /\s/.test(ch) ? 0.3 : 0.55), 0)
+
+export interface Sentence {
+  /** 在词表里的下标范围（含两端） */
+  from: number
+  to: number
+  startMs: number
+  endMs: number
+}
+
+/** 把词分成句：句末标点、停顿超过 `gapMs`、或太长就断开。 */
+export function sentencesOf(words: TranscriptWord[], gapMs = 700, maxWords = 40): Sentence[] {
+  const out: Sentence[] = []
+  let from = 0
+  for (let i = 0; i < words.length; i++) {
+    const last = i === words.length - 1
+    const w = words[i]
+    const gap = last ? 0 : words[i + 1].startMs - w.endMs
+    if (last || SENTENCE_END.test(w.t.trim()) || gap >= gapMs || i - from + 1 >= maxWords) {
+      out.push({ from, to: i, startMs: words[from].startMs, endMs: w.endMs })
+      from = i + 1
+    }
+  }
+  return out
+}
+
+/** 和片段取的素材范围有重叠的词（下标）。 */
+export function wordsInClip(words: TranscriptWord[], c: { inMs: number; outMs: number }): number[] {
+  const out: number[] = []
+  words.forEach((w, i) => {
+    if (w.endMs > c.inMs && w.startMs < c.outMs) out.push(i)
+  })
+  return out
+}
+
+/** 口头禅的默认词表（逗号分隔，用户可改） */
+export const DEFAULT_FILLERS = '嗯,呃,啊,额,那个,就是,然后呢,um,uh,er,erm,you know'
+
+export const parseFillers = (s: string): string[] =>
+  [...new Set(s.split(/[,，、\n]/).map((x) => normWord(x)).filter(Boolean))].sort((a, b) => b.length - a.length)
+
+const normWord = (s: string) => s.replace(/[\s\p{P}]/gu, '').toLowerCase()
+
+/**
+ * 在词里找口头禅：几个相邻的词接起来正好等于词表里的某一项（中文每个字是一个词，所以“那个”是两个词）。
+ * 返回命中的词的下标（升序、不重复）。
+ */
+export function findFillers(words: TranscriptWord[], list: string[]): number[] {
+  const hit = new Set<number>()
+  const norm = words.map((w) => normWord(w.t))
+  for (let i = 0; i < words.length; i++) {
+    for (const f of list) {
+      let acc = ''
+      for (let j = i; j < words.length && acc.length < f.length; j++) {
+        acc += norm[j]
+        if (!f.startsWith(acc)) break
+        if (acc === f) {
+          for (let k = i; k <= j; k++) hit.add(k)
+          break
+        }
+      }
+    }
+  }
+  return [...hit].sort((a, b) => a - b)
+}
+
+/** 选中的词 → 要剪掉的素材时间段（相邻的词合成一段）。 */
+export function wordSpans(words: TranscriptWord[], picked: Iterable<number>): TimeSpan[] {
+  const idx = [...new Set(picked)].filter((i) => i >= 0 && i < words.length).sort((a, b) => a - b)
+  const out: TimeSpan[] = []
+  let prev = -2
+  for (const i of idx) {
+    const w = words[i]
+    if (i === prev + 1 && out.length) out[out.length - 1].endMs = Math.max(out[out.length - 1].endMs, w.endMs)
+    else out.push({ startMs: w.startMs, endMs: w.endMs })
+    prev = i
+  }
+  return out
+}
+
+export interface CaptionStyle {
+  id: string
+  label: string
+  hint: string
+  patch: Partial<EditText>
+}
+
+export const CAPTION_STYLES: CaptionStyle[] = [
+  { id: 'plain', label: '简洁描边', hint: '白字黑边，朴素耐看', patch: { size: 5.5, y: 0.88, color: '#FFFFFF', outline: true, boxed: false } },
+  { id: 'bar', label: '底条', hint: '半透明黑色底条，复杂背景上也看得清', patch: { size: 5, y: 0.9, color: '#FFFFFF', outline: false, boxed: true, boxColor: '#000000', boxOpacity: 0.6 } },
+  { id: 'yellow', label: '大号黄字', hint: '短视频常见的醒目样式', patch: { size: 7.5, y: 0.78, color: '#FFE14D', outline: true, outlineColor: '#000000', boxed: false } },
+  { id: 'hl', label: '逐字高亮', hint: '说到哪个词，哪个词变成黄色', patch: { size: 6.5, y: 0.8, color: '#FFFFFF', highlight: '#FFD400', outline: true, boxed: false } },
+  { id: 'karaoke', label: '卡拉 OK', hint: '逐字变色，整句淡入淡出', patch: { size: 7, y: 0.76, color: '#FFFFFF', highlight: '#FF4D8D', outline: true, boxed: false, fadeMs: 160 } },
+]
+
+/** 素材时间 → 时间线位置（超出片段的收到片段两端） */
+export function timelineOfSource(c: EditClip, pl: Placed, srcMs: number): number {
+  return clamp(pl.startMs + (srcMs - c.inMs) / Math.max(0.01, c.speed), pl.startMs, pl.endMs)
+}
+
+/**
+ * 按词生成字幕：每行不超过画面宽度的 88%，遇到标点、停顿或太长就换一条。
+ * 时间换算到时间线上（考虑片段入点和变速）；带高亮色的样式会记下每个词的起止。
+ */
+export function captionsFromWords(
+  words: TranscriptWord[],
+  c: EditClip,
+  pl: Placed,
+  style: CaptionStyle,
+  frame: { w: number; h: number },
+  ids: () => number,
+): EditText[] {
+  const base = blankText()
+  const patch = { ...base, ...style.patch }
+  const px = (patch.size / 100) * frame.h
+  const limit = Math.max(4, (frame.w * 0.88) / Math.max(8, px))
+  const lines: TranscriptWord[][] = []
+  let cur: TranscriptWord[] = []
+  let width = 0
+  const flush = () => {
+    if (cur.length) lines.push(cur)
+    cur = []
+    width = 0
+  }
+  const inRange = words.filter((w) => w.endMs > c.inMs && w.startMs < c.outMs)
+  inRange.forEach((w, i) => {
+    const vw = visualWidth(w.t.trim()) + (cur.length && !isCjk(w.t.trim()[0] ?? '') ? 0.3 : 0)
+    if (cur.length && width + vw > limit) flush()
+    cur.push(w)
+    width += vw
+    const t = w.t.trim()
+    const gap = i + 1 < inRange.length ? inRange[i + 1].startMs - w.endMs : 0
+    if (SENTENCE_END.test(t) || gap >= 600 || (CLAUSE_END.test(t) && width > limit * 0.6)) flush()
+  })
+  flush()
+  const out: EditText[] = []
+  for (let n = 0; n < lines.length; n++) {
+    const line = lines[n]
+    const start = timelineOfSource(c, pl, line[0].startMs)
+    const nextStart = n + 1 < lines.length ? timelineOfSource(c, pl, lines[n + 1][0].startMs) : pl.endMs
+    let end = timelineOfSource(c, pl, line[line.length - 1].endMs)
+    // 两句之间的空隙很短就让字幕多停一会儿，免得闪烁
+    end = Math.max(end, Math.min(nextStart, end + 250))
+    if (end - start < MIN_MS) continue
+    const pieces = line.map((w, i) => ({ t: i === 0 ? w.t.trimStart() : w.t, a: Math.round(timelineOfSource(c, pl, w.startMs) - start), b: Math.round(timelineOfSource(c, pl, w.endMs) - start) }))
+    const t = blankText()
+    Object.assign(t, patch)
+    t.id = ids()
+    t.text = pieces.map((p) => p.t).join('')
+    t.startMs = Math.round(start)
+    t.endMs = Math.round(end)
+    if (patch.highlight) t.words = pieces
+    else t.highlight = ''
+    out.push(t)
+  }
+  return out
 }
 
 /** 文字块排到哪一行：时间上重叠的错开，免得在时间线上叠在一起。 */

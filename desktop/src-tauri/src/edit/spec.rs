@@ -248,6 +248,29 @@ pub struct TextItem {
     pub box_opacity: f64,
     /// 字体文件（ttf / otf / ttc）；留空用系统里找到的中文字体
     pub font: Option<String>,
+    /// 逐字高亮用：每个词在这条文字里的出现时间（相对 `start_ms`），词接起来就是 `text`
+    pub words: Vec<TextWord>,
+    /// 说到哪个词，哪个词就换成这个颜色（`#RRGGBB`）；留空不高亮
+    pub highlight: String,
+    /// 淡入淡出的时长（毫秒），0 为没有
+    pub fade_ms: u64,
+}
+
+/// 逐字高亮里的一个词。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextWord {
+    pub t: String,
+    /// 开始说的时刻，相对这条文字的出现时间（毫秒）
+    pub a: u64,
+    /// 说完的时刻
+    pub b: u64,
+}
+
+impl TextItem {
+    /// 要不要用逐字高亮来画（有高亮色，并且词和文字对得上）
+    pub fn karaoke(&self) -> bool {
+        !self.highlight.is_empty() && !self.words.is_empty()
+    }
 }
 
 impl Default for TextItem {
@@ -268,6 +291,9 @@ impl Default for TextItem {
             box_color: "#000000".into(),
             box_opacity: 0.5,
             font: None,
+            words: vec![],
+            highlight: String::new(),
+            fade_ms: 0,
         }
     }
 }
@@ -666,6 +692,16 @@ impl Project {
             t.outline_color = hex_color(&t.outline_color, "#000000");
             t.box_color = hex_color(&t.box_color, "#000000");
             t.font = t.font.take().filter(|f| !f.trim().is_empty());
+            t.fade_ms = t.fade_ms.min((t.end_ms - t.start_ms) / 2);
+            // 词和文字对不上（文字被改过）时，逐字高亮作废，按普通文字画
+            let joined: String = t.words.iter().map(|w| w.t.as_str()).collect();
+            if joined != t.text || t.words.len() > 400 {
+                t.words.clear();
+            }
+            for w in &mut t.words {
+                w.b = w.b.max(w.a);
+            }
+            t.highlight = if t.words.is_empty() { String::new() } else { hex_color(&t.highlight, "") };
         }
         for (i, a) in self.audio.iter_mut().enumerate() {
             if a.path.trim().is_empty() {

@@ -187,7 +187,19 @@ function textStyle(t: EditText): Record<string, string> {
     s.background = rgba(t.boxColor, t.boxOpacity)
     s.padding = `${px / 4}px`
   }
+  if (t.fadeMs > 0) {
+    const local = ed.playhead.value - t.startMs
+    s.opacity = String(clamp(Math.min(local / t.fadeMs, (t.endMs - t.startMs - local) / t.fadeMs), 0, 1))
+  }
   return s
+}
+
+/** 逐字高亮的文字：词接起来必须还是原文（改过字就按普通文字显示） */
+function karaoke(t: EditText): boolean {
+  return !!t.highlight && t.words.length > 0 && t.words.map((w) => w.t).join('') === t.text
+}
+function wordStyle(t: EditText, a: number): Record<string, string> {
+  return ed.playhead.value - t.startMs >= a ? { color: rgba(t.highlight, t.opacity) } : {}
 }
 
 let dragText: { id: number; dx: number; dy: number } | null = null
@@ -499,7 +511,8 @@ const empty = computed(() => !clips.value.length && !ed.project.value.overlays.l
           @pointerup="textUp"
           @pointercancel="textUp"
         >
-          {{ t.text }}
+          <template v-if="karaoke(t)"><span v-for="(w, i) in t.words" :key="i" :style="wordStyle(t, w.a)">{{ w.t }}</span></template>
+          <template v-else>{{ t.text }}</template>
         </div>
         <div v-if="selOv" class="ofr" :style="selOv.style">
           <i class="hd nw" data-no-i18n @pointerdown="ovHandleDown($event, 'scale')" @pointermove="ovMove" @pointerup="ovUp" @pointercancel="ovUp" />

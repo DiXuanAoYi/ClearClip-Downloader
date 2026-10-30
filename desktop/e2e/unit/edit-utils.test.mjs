@@ -103,3 +103,51 @@ console.log('edit utils ok')
   const c = E.normalizeProject({ clips: [{ id: 1, path: 'a', kind: 'video', inMs: 0, outMs: 1000 }] }).clips[0]
   assert.equal(c.denoise, 'off'); assert.equal(c.enhance, false); assert.equal(c.noiseFloorDb, null)
 }
+
+// ---------- 文稿 ----------
+{
+  const W = (t, s, e) => ({ t, startMs: s, endMs: e })
+  // 中文每字一个词；英文词前带空格
+  const zh = [W('嗯', 0, 300), W('今', 500, 700), W('天', 700, 900), W('那', 1000, 1200), W('个', 1200, 1400), W('很', 1400, 1600), W('好。', 1600, 2000), W('下', 3500, 3700), W('雨', 3700, 4000)]
+  // 句子：句末标点 + 停顿 ≥ 700 ms
+  const ss = E.sentencesOf(zh)
+  assert.deepEqual(ss.map((s) => [s.from, s.to, s.startMs, s.endMs]), [[0, 6, 0, 2000], [7, 8, 3500, 4000]])
+  // 口头禅：相邻的字接起来等于词表项
+  assert.deepEqual(E.findFillers(zh, E.parseFillers('嗯,那个')), [0, 3, 4])
+  assert.deepEqual(E.findFillers([W(' So', 0, 100), W(' um', 100, 200), W(' you', 200, 300), W(' know,', 300, 400)], E.parseFillers('um, you know')), [1, 2, 3])
+  assert.deepEqual(E.findFillers(zh, []), [])
+  // 词表解析：长的在前，去重去空，忽略大小写
+  assert.deepEqual(E.parseFillers('Um， 那个,,um,you know'), ['youknow', 'um', '那个'])
+  // 选中的词 → 时间段（相邻合并）
+  assert.deepEqual(E.wordSpans(zh, [3, 4, 0]), [{ startMs: 0, endMs: 300 }, { startMs: 1000, endMs: 1400 }])
+  // 属于片段的词
+  assert.deepEqual(E.wordsInClip(zh, { inMs: 900, outMs: 1500 }), [3, 4, 5])
+}
+// 按词生成字幕：时间换算、变速、断行、逐字高亮
+{
+  const W = (t, s, e) => ({ t, startMs: s, endMs: e })
+  const c = clip({ id: 1, inMs: 1000, outMs: 9000, speed: 2 })
+  const pl = { startMs: 5000, endMs: 9000, overlapMs: 0 }
+  const words = [W('今', 1500, 1700), W('天', 1700, 1900), W('很', 1900, 2100), W('好。', 2100, 2500), W('明', 4000, 4200), W('天', 4200, 4400)]
+  let n = 100
+  const frame = { w: 1080, h: 1920 }
+  const hl = E.CAPTION_STYLES.find((s) => s.id === 'hl')
+  const out = E.captionsFromWords(words, c, pl, hl, frame, () => n++)
+  assert.equal(out.length, 2)
+  assert.equal(out[0].text, '今天很好。')
+  // 素材 1500 ms → 时间线 5000 + (1500-1000)/2 = 5250
+  assert.equal(out[0].startMs, 5250)
+  assert.deepEqual(out[0].words.map((w) => [w.t, w.a, w.b]), [['今', 0, 100], ['天', 100, 200], ['很', 200, 300], ['好。', 300, 500]])
+  assert.equal(out[0].highlight, '#FFD400')
+  assert.deepEqual(out.map((t) => t.id), [100, 101])
+  // 不带高亮的样式：不写词
+  const plain = E.captionsFromWords(words, c, pl, E.CAPTION_STYLES[0], frame, () => n++)
+  assert.deepEqual(plain[0].words, []); assert.equal(plain[0].highlight, '')
+  // 过长的一句按画面宽度断开
+  const long = Array.from({ length: 40 }, (_, i) => W('字', 1000 + i * 100, 1100 + i * 100))
+  const many = E.captionsFromWords(long, c, { startMs: 0, endMs: 4000, overlapMs: 0 }, E.CAPTION_STYLES[0], { w: 1080, h: 1920 }, () => n++)
+  assert.ok(many.length >= 2 && many.every((t) => [...t.text].length <= 16), many.map((t) => t.text.length).join())
+  // 旧工程里的文字没有这些字段：补默认值
+  const t = E.normalizeProject({ texts: [{ id: 1, text: 'x' }] }).texts[0]
+  assert.deepEqual(t.words, []); assert.equal(t.highlight, ''); assert.equal(t.fadeMs, 0)
+}

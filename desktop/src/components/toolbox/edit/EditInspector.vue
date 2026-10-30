@@ -13,6 +13,7 @@ import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, MIN_TRANSITION_MS, TRANSITION
 import EditField from './EditField.vue'
 import EditRegions from './EditRegions.vue'
 import EditSmart from './EditSmart.vue'
+import EditTranscript from './EditTranscript.vue'
 import EditSlider from './EditSlider.vue'
 import TimeInput from './TimeInput.vue'
 
@@ -21,12 +22,12 @@ const emit = defineEmits<{ goto: [ms: number] }>()
 const ed = props.ed
 const outDir = defineModel<string>('outDir', { default: '' })
 
-const tab = ref<'item' | 'region' | 'smart' | 'out'>('item')
+const tab = ref<'item' | 'region' | 'smart' | 'script' | 'out'>('item')
 watch(
   () => ed.sel.value,
   (s) => {
     // 选了别的片段时留在“区域”页，方便连着给几个镜头加；选了文字、配乐就回到“属性”
-    if (s && !((tab.value === 'region' || tab.value === 'smart') && s.kind === 'clip')) tab.value = 'item'
+    if (s && !((tab.value === 'region' || tab.value === 'smart' || tab.value === 'script') && s.kind === 'clip')) tab.value = 'item'
   },
 )
 
@@ -270,6 +271,7 @@ async function pickDir() {
       <el-radio-button value="item">属性</el-radio-button>
       <el-radio-button value="region">区域</el-radio-button>
       <el-radio-button value="smart">智能</el-radio-button>
+      <el-radio-button value="script">文稿</el-radio-button>
       <el-radio-button value="out">输出</el-radio-button>
     </el-radio-group>
 
@@ -488,6 +490,12 @@ async function pickDir() {
         <el-color-picker :model-value="text.color" size="small" @update:model-value="(v: string | null) => v && pt({ color: v }, 'tc')" />
       </EditField>
       <EditSlider label="不透明度" :model-value="text.opacity" :min="0.05" :max="1" :step="0.05" unit="%" :scale="100" @update:model-value="(v) => pt({ opacity: v }, 'to')" />
+      <EditSlider label="淡入淡出" :model-value="text.fadeMs" :min="0" :max="1000" :step="50" :scale="0.001" :digits="2" unit=" 秒" hint="出现和消失时渐变；导出时只作用在字上，描边和底色块不跟着变" @update:model-value="(v) => pt({ fadeMs: v }, 'tfd')" />
+      <div v-if="text.words.length" class="mute small pad">这是按词生成的字幕：{{ text.highlight ? '说到哪个词，哪个词变色' : '每个词都有各自的时间' }}。改字后会变成普通文字。</div>
+      <EditField v-if="text.words.length" label="高亮色">
+        <el-color-picker :model-value="text.highlight || '#FFD400'" size="small" @update:model-value="(v: string | null) => v && pt({ highlight: v }, 'thl')" />
+        <el-button v-if="text.highlight" size="small" link @click="pt({ highlight: '' }, 'thl')">不高亮</el-button>
+      </EditField>
       <EditField label="描边">
         <el-checkbox :model-value="text.outline" @update:model-value="(v: unknown) => pt({ outline: !!v }, 'tol')">加描边</el-checkbox>
         <el-color-picker v-if="text.outline" :model-value="text.outlineColor" size="small" @update:model-value="(v: string | null) => v && pt({ outlineColor: v }, 'tolc')" />
@@ -555,6 +563,11 @@ async function pickDir() {
     <!-- 智能 -->
     <div v-if="tab === 'smart'" class="sec">
       <EditSmart :ed="ed" @goto="(ms) => emit('goto', ms)" />
+    </div>
+
+    <!-- 文稿 -->
+    <div v-if="tab === 'script'" class="sec">
+      <EditTranscript :ed="ed" @goto="(ms) => emit('goto', ms)" />
     </div>
 
     <!-- 输出 -->

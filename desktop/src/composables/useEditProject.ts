@@ -233,6 +233,20 @@ export function useEditProject() {
     return removed
   }
 
+  /** 加一批自动生成的字幕（文字）。`replaceIds` 里的旧字幕先去掉。返回实际加入的条数（受 MAX_TEXTS 限制）。 */
+  function addCaptions(make: (ids: () => number) => EditText[], replaceIds: number[] = []): number {
+    let added = 0
+    mutate((p) => {
+      const drop = new Set(replaceIds)
+      p.texts = p.texts.filter((t) => !drop.has(t.id))
+      let next = nextId(p)
+      const list = make(() => next++).slice(0, Math.max(0, MAX_TEXTS - p.texts.length))
+      p.texts.push(...list)
+      added = list.length
+    })
+    return added
+  }
+
   /** 给片段放一个自动生成的区域（聚焦只能有一个：旧的聚焦被替掉）。 */
   function putRegion(clipId: number, region: EditRegion) {
     mutate((p) => {
@@ -760,6 +774,7 @@ export function useEditProject() {
     patchClip,
     cutClipAt,
     removeClipSilences,
+    addCaptions,
     putRegion,
     patchOverlay,
     patchText,

@@ -1469,6 +1469,40 @@ export interface EditText {
   boxColor: string
   boxOpacity: number
   font: string | null
+  /** 逐字高亮：每个词相对这条文字出现时间的起止（毫秒）；词接起来就是 text */
+  words: EditTextWord[]
+  /** 说到的词变成这个颜色；空表示不高亮 */
+  highlight: string
+  /** 淡入淡出（毫秒） */
+  fadeMs: number
+}
+
+export interface EditTextWord {
+  t: string
+  a: number
+  b: number
+}
+
+/** 文稿里的一个词，时间是素材自己的时间（毫秒） */
+export interface TranscriptWord {
+  t: string
+  startMs: number
+  endMs: number
+}
+
+export interface Transcript {
+  words: TranscriptWord[]
+  /** false：接口 / 引擎只给了整句时间，词是按字数摊出来的 */
+  wordLevel: boolean
+  engine: string
+  fromMs: number
+  toMs: number
+}
+
+export interface SttStatus {
+  ready: boolean
+  engine: string
+  reason: string
 }
 
 export interface EditAudio {

@@ -545,6 +545,11 @@ fn drawtext(k: usize, t: &TextItem, h: u32, font: Option<&Path>, tmp: &Path) -> 
     }
     o.push(format!("fontsize={px}"));
     o.push(format!("fontcolor={}", color_arg(&t.color, t.opacity)));
+    if t.fade_ms > 0 {
+        // 淡入淡出：只作用在字上，描边和底色块不跟着变
+        let (s0, s1, f) = (sec(t.start_ms), sec(t.end_ms), sec(t.fade_ms));
+        o.push(format!("alpha='{:.2}*min(1,min((t-{s0})/{f},({s1}-t)/{f}))'", t.opacity));
+    }
     o.push(format!("x=(w*{:.4})-(text_w/2)", t.x));
     o.push(format!("y=(h*{:.4})-(text_h/2)", t.y));
     if t.outline {
@@ -820,13 +825,32 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         if font.is_none() {
             plan.warnings.push("没有找到可用的字体，文字可能显示不出来（特别是中文）。请在文字属性里选择一个字体文件。".into());
         }
-        let mut dt: Vec<String> = vec![];
-        for (k, t) in p.texts.iter().enumerate() {
-            let own = t.font.as_deref().map(Path::new).or(font);
-            dt.push(drawtext(k, t, h, own, tmp)?);
+        // 逐字高亮的文字交给 libass（ASS 滤镜）画；没有这个滤镜时按普通文字画
+        let karaoke_ok = caps.has_filter("ass");
+        let (ass_idx, plain_idx): (Vec<usize>, Vec<usize>) = (0..p.texts.len()).partition(|&k| karaoke_ok && p.texts[k].karaoke());
+        if !karaoke_ok && p.texts.iter().any(TextItem::karaoke) {
+            plan.warnings.push("当前的 ffmpeg 没有“ass”滤镜，逐字高亮的字幕按普通文字显示。".into());
         }
-        stmts.push(format!("[{video}]{}[vtx]", dt.join(",")));
-        video = "vtx".into();
+        let mut chain: Vec<String> = vec![];
+        for &k in &plain_idx {
+            let t = &p.texts[k];
+            let own = t.font.as_deref().map(Path::new).or(font);
+            chain.push(drawtext(k, t, h, own, tmp)?);
+        }
+        if !chain.is_empty() {
+            stmts.push(format!("[{video}]{}[vtx]", chain.join(",")));
+            video = "vtx".into();
+        }
+        if !ass_idx.is_empty() {
+            std::fs::create_dir_all(tmp)?;
+            let items: Vec<&TextItem> = ass_idx.iter().map(|&k| &p.texts[k]).collect();
+            let file = tmp.join("captions.ass");
+            let family = font.and_then(super::fonts::family_name);
+            std::fs::write(&file, super::captions::document(&items, w, h, family.as_deref()))?;
+            let dir = font.and_then(Path::parent).map(|d| format!(":fontsdir={}", filter_path(d))).unwrap_or_default();
+            stmts.push(format!("[{video}]ass=filename={}{dir}[vass]", filter_path(&file)));
+            video = "vass".into();
+        }
     }
 
     // 配乐和叠加素材的声音：混在主轨声音上面
