@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>保存为 Markdown</title>
+<link rel="stylesheet" href="popup.css" />
+</head>
+<body class="wide">
+  <header>
+    <span class="logo" aria-hidden="true"></span>
+    <b>保存为 Markdown</b>
+    <span id="info" class="mute"></span>
+  </header>
+  <p class="mute">正文是按页面结构自动提取的，不同网站准确率不一样，请先检查、修改。想只保存一部分，可以回到原页面先选中那部分文字，再保存一次。</p>
+  <textarea id="md" rows="26" spellcheck="false" style="font-family: ui-monospace, Consolas, monospace; font-size: 12px; min-height: 360px"></textarea>
+  <div class="rowBtns">
+    <button id="save">保存为 .md 文件</button>
+    <button id="copy" class="sec">复制</button>
+    <button id="toApp" class="sec">发送到清影（文字便签）</button>
+  </div>
+  <div id="msg"></div>
+  <script src="shared.js"></script>
+  <script src="features.js"></script>
+  <script src="capture-plan.js"></script>
+  <script src="capture.js"></script>
+</body>
+</html>

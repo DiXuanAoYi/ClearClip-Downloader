@@ -514,6 +514,9 @@ struct SendBody {
     /// 用户在浏览器里明确点了“用清影下载”：电脑上把主窗口带到前台，让人看到有反应
     #[serde(default)]
     reveal: bool,
+    /// 明确要存成文字便签（浏览器里摘录的文字，里面可能有链接，但不是要下载的）
+    #[serde(default)]
+    note: bool,
 }
 
 fn clean_device(id: &str) -> String {
@@ -590,6 +593,7 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                     device: String::new(),
                     name: String::new(),
                     reveal: false,
+                    note: false,
                 })
             });
             let Ok(body) = body else { return };
@@ -597,8 +601,8 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             let device = if device.is_empty() { format!("ip-{}", peer.ip()) } else { device };
             let name: String = if body.name.trim().is_empty() { "手机".to_string() } else { body.name.trim().chars().take(40).collect() };
             let text: String = body.text.trim().chars().take(4000).collect();
-            if providers::extract_urls(&text).is_empty() {
-                // 没有链接：作为文字便签保存在电脑的“收到的文件”里（需要先配对）
+            if body.note || providers::extract_urls(&text).is_empty() {
+                // 没有链接（或明确是摘录）：作为文字便签保存在电脑的“收到的文件”里（需要先配对）
                 if text.is_empty() {
                     json(sock, "400 Bad Request", serde_json::json!({"error": "内容是空的"})).await;
                 } else if !ensure_paired(&app, &device, &name, &peer) {

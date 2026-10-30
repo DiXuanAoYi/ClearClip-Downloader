@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>用手机扫码打开</title>
+<link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header><span class="logo" aria-hidden="true"></span><b>用手机扫码打开</b></header>
+  <div id="qrBox" class="qr" style="width: 280px; height: 280px; margin: 8px auto"></div>
+  <div id="url" class="mono mute"></div>
+  <p class="mute">二维码在本地生成，不联网。手机和电脑不需要在同一个网络。</p>
+  <div class="rowBtns"><button id="copy" class="sec">复制链接</button><button id="toPhone" class="sec">发到手机盒子</button></div>
+  <div id="msg"></div>
+  <script src="vendor/qrcode.js"></script>
+  <script src="shared.js"></script>
+  <script src="qr.js"></script>
+  <script src="qr-page.js"></script>
+</body>
+</html>

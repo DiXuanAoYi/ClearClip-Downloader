@@ -13,7 +13,7 @@ const local = {
   set: async (o) => Object.assign(store, JSON.parse(JSON.stringify(o))),
 }
 const ctx = vm.createContext({ URL, URLSearchParams, TextEncoder, console, api: { storage: { local } } })
-const FILES = ['features.js', 'clean-link.js', 'progress.js', 'engines.js', 'vendor/qrcode.js', 'qr.js']
+const FILES = ['features.js', 'clean-link.js', 'progress.js', 'engines.js', 'vendor/qrcode.js', 'qr.js', 'later.js', 'capture-plan.js']
 for (const f of FILES) vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f })
 const X = (name) => vm.runInContext(name, ctx)
 const plain = (v) => JSON.parse(JSON.stringify(v))
@@ -201,4 +201,48 @@ console.log('extension-tools ok')
   // 文件名
   assert.equal(V.fmtTime(3725), '01-02-05')
   assert.equal(V.shotName('第1集: a/b?', 65, 'png'), '第1集 a b -00-01-05.png'.replace(' -', '-'))
+}
+
+// ---- 稍后看
+{
+  vm.runInContext('async function tidyUrl(u) { return cleanUrl(u, []).url }', ctx) // shared.js 里的版本依赖浏览器接口，这里用等价的简化版
+  const add = X('laterAdd')
+  let r = plain(add([], { url: 'https://a.test/x#frag', title: 'A' }, 100))
+  assert.equal(r.added, true)
+  assert.equal(r.list[0].seen, false)
+  r = plain(add([{ url: 'https://b.test/', title: 'B', at: 1, seen: true }, ...r.list], { url: 'https://a.test/x', title: 'A2' }, 200))
+  assert.equal(r.added, false) // 同一页（忽略 #）：不重复，提到最前面并重新标成未看
+  assert.equal(r.list.length, 2)
+  assert.equal(r.list[0].title, 'A2')
+  assert.equal(plain(add([], { url: 'chrome://settings' })).invalid, true)
+  assert.equal(plain(add([], { url: 'javascript:alert(1)' })).invalid, true)
+  const L = r.list
+  assert.equal(plain(X('laterSeen')(L, 'https://b.test')).find((x) => x.url === 'https://b.test/').seen, true)
+  assert.equal(X('laterUnseen')(L), 1)
+  assert.equal(plain(X('laterRemove')(L, 'https://a.test/x')).length, 1)
+  let big = []
+  for (let i = 0; i < 320; i++) big = plain(add(big, { url: `https://s.test/${i}` }, i)).list
+  assert.equal(big.length, 300)
+  assert.equal(big[0].url, 'https://s.test/319')
+  // 存取：去追踪参数后保存
+  const r2 = await X('addLater')({ url: 'https://c.test/p?utm_source=x&id=1', title: 'C' })
+  assert.equal(r2.added, true)
+  assert.equal((await X('getLater')())[0].url, 'https://c.test/p?id=1')
+}
+
+// ---- 页面截图的分段与分块
+{
+  const slices = plain(X('planSlices')(2500, 1000))
+  assert.equal(slices.length, 3)
+  assert.deepEqual(slices[0], { scrollY: 0, srcTop: 0, destTop: 0, height: 1000 })
+  assert.deepEqual(slices[2], { scrollY: 1500, srcTop: 500, destTop: 2000, height: 500 }) // 最后一屏滚不到底：从截图中间取
+  assert.equal(slices.reduce((n, s) => n + s.height, 0), 2500)
+  assert.deepEqual(plain(X('planSlices')(800, 1000)), [{ scrollY: 0, srcTop: 0, destTop: 0, height: 800 }])
+  assert.equal(X('chunkHeight')(1280, 1), 16384)
+  assert.equal(X('chunkHeight')(1280, 2), 8192)
+  assert.ok(X('chunkHeight')(20000, 1) < 16384) // 太宽：受总面积限制
+  assert.deepEqual(plain(X('planChunks')(40000, 16384)), [{ from: 0, to: 16384 }, { from: 16384, to: 32768 }, { from: 32768, to: 40000 }])
+  assert.equal(X('captureName')('第1集: a/b?', new Date(2026, 0, 2, 3, 4, 5), 'png'), '第1集 a b-20260102-030405.png')
+  assert.equal(X('captureName')('', new Date(2026, 0, 2, 3, 4, 5), 'png', 1, 3), 'page-20260102-030405-2.png')
+  assert.equal(X('excerptText')(' 内容 ', '标题', 'https://x.test/'), '内容\n\n—— 标题\nhttps://x.test/')
 }

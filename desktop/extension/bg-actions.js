@@ -142,6 +142,12 @@ const HANDLERS = {
     await searchImage(m.url, m.engine)
     return {}
   },
+  // 页面保存：弹窗发来（带标签页编号）；选区截图由页面里的选框发来
+  'cc-page-save': async (m) => ({ ...(await pageSave(String(m.action), await api.tabs.get(Number(m.tabId)), '')) }),
+  'cc-area': async (m, sender) => {
+    await captureArea(sender.tab, m.rect, m.vw)
+    return {}
+  },
   // 视频画布被跨域污染时，用浏览器对可见区域的截图代替（只在用户点了截图之后）
   'cc-capture': async (_m, sender) => ({ dataUrl: await api.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }) }),
 }
@@ -150,7 +156,7 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handler = msg && HANDLERS[msg.type]
   if (!handler) return false
   // 内容脚本只能从有标签页的发送者来；扩展页面的消息 sender.tab 可能为空
-  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save|capture)$/.test(msg.type) && !sender.tab) return false
+  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save|capture|area)$/.test(msg.type) && !sender.tab) return false
   handler(msg, sender)
     .then((r) => sendResponse({ ok: true, ...r }))
     .catch(async (e) => {
@@ -170,6 +176,24 @@ async function buildMenus() {
   if (f.onDemand) add({ id: 'cc-overview', title: '打开页面媒体总览', contexts: ['page'] })
   add({ id: 'cc-link', title: '发送此链接到清影', contexts: ['link'] })
   add({ id: 'cc-media', title: '发送此视频 / 音频 / 图片到清影', contexts: ['video', 'image', 'audio'] })
+  if (f.readLater) {
+    add({ id: 'cc-later', title: '稍后看（存进清影的待看列表）', contexts: ['page'] })
+    add({ id: 'cc-later-link', title: '把此链接加入稍后看', contexts: ['link'] })
+  }
+  if (f.cleanLink) {
+    add({ id: 'cc-copy-clean', title: '复制干净的链接', contexts: ['page'] })
+    add({ id: 'cc-copy-clean-link', title: '复制干净的链接', contexts: ['link'] })
+  }
+  add({ id: 'cc-qr', title: '用二维码在手机上打开此页…', contexts: ['page'] })
+  if (f.onDemand) {
+    add({ id: 'cc-clip', title: '摘录选中文字到清影', contexts: ['selection'] })
+    add({ id: 'cc-save', title: '页面保存', contexts: ['page'] })
+    add({ id: 'cc-save:shotVisible', parentId: 'cc-save', title: '截图：可见区域', contexts: ['page'] })
+    add({ id: 'cc-save:shotArea', parentId: 'cc-save', title: '截图：选取区域', contexts: ['page'] })
+    add({ id: 'cc-save:shotFull', parentId: 'cc-save', title: '截图：整页', contexts: ['page'] })
+    add({ id: 'cc-save:pdf', parentId: 'cc-save', title: '另存为 PDF', contexts: ['page'] })
+    add({ id: 'cc-save:md', parentId: 'cc-save', title: '保存为 Markdown', contexts: ['page'] })
+  }
   if (f.onDemand) {
     add({ id: 'cc-search', title: '以图搜图', contexts: ['image'] })
     for (const [i, e] of (await getEngines()).entries()) add({ id: `cc-search:${i}`, parentId: 'cc-search', title: e.name, contexts: ['image'] })
@@ -188,6 +212,24 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   const id = String(info.menuItemId)
   try {
     if (id === 'cc-overview') await openOverview(tab)
+    else if (id === 'cc-later' || id === 'cc-later-link') {
+      const url = id === 'cc-later' ? tab.url : info.linkUrl
+      const r = await addLater({ url, title: id === 'cc-later' ? tab.title : info.selectionText || '', icon: id === 'cc-later' ? tab.favIconUrl : '' })
+      if (r.invalid) throw new Error('这个地址不能加入稍后看')
+      notify(r.added ? '已加入稍后看' : '稍后看里已经有了', '在扩展弹窗的“稍后看”标签里查看')
+      await flashBadge(tab?.id, true)
+    } else if (id === 'cc-copy-clean' || id === 'cc-copy-clean-link') {
+      const r = await copyCleanLink(tab, id === 'cc-copy-clean' ? tab.url : info.linkUrl)
+      if (r.via === 'ok') await flashBadge(tab?.id, true)
+    } else if (id === 'cc-qr') await openQr(tab, tab.url)
+    else if (id === 'cc-clip') {
+      const r = await pageSave('clip', tab, info.selectionText)
+      notify(r.pairing ? '请在电脑上允许配对' : '已摘录到清影', r.pairing ? '第一次使用需要在清影里点“允许”' : '在清影的“收到的文件”里查看')
+      await flashBadge(tab?.id, !r.pairing)
+    } else if (id.startsWith('cc-save:')) {
+      const r = await pageSave(id.slice('cc-save:'.length), tab, '')
+      if (r.note) notify('页面保存', r.note)
+    }
     else if (id === 'cc-search:upload') await api.tabs.create({ url: api.runtime.getURL('search.html') })
     else if (id.startsWith('cc-search:')) await searchImage(info.srcUrl, id.slice('cc-search:'.length))
   } catch (e) {

@@ -1,5 +1,5 @@
 try {
-  importScripts('shared.js', 'features.js', 'clean-link.js', 'progress.js', 'takeover.js', 'sniff.js', 'engines.js', 'bg-link.js', 'bg-actions.js')
+  importScripts('shared.js', 'features.js', 'clean-link.js', 'progress.js', 'takeover.js', 'sniff.js', 'engines.js', 'later.js', 'capture-plan.js', 'bg-link.js', 'bg-capture.js', 'bg-actions.js')
 } catch {
   // Firefox 以 background.scripts 加载，脚本需在 manifest 中先加载
 }
