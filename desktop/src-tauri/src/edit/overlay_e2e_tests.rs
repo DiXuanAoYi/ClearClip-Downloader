@@ -585,6 +585,7 @@ async fn main_clip_zoom_and_pan_keyframes_move_the_picture() {
     let _ = std::fs::remove_dir_all(d);
 }
 
+#[cfg(not(all(windows, target_arch = "aarch64")))]
 /// 把测试用的 ONNX（通道求平均）写成文件。
 fn write_test_model(d: &Path) -> PathBuf {
     use prost::Message;
@@ -593,6 +594,7 @@ fn write_test_model(d: &Path) -> PathBuf {
     p
 }
 
+#[cfg(not(all(windows, target_arch = "aarch64")))]
 #[tokio::test]
 async fn ai_matte_pipeline_keeps_the_bright_subject_and_replaces_the_rest() {
     use super::e2e_tests::render_with_model;

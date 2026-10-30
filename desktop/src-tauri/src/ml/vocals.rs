@@ -442,10 +442,12 @@ mod tests {
         assert_eq!(file_stem("/m/"), "m");
     }
 
+    #[cfg(not(all(windows, target_arch = "aarch64")))]
     fn ffmpeg() -> Option<std::path::PathBuf> {
         std::process::Command::new("ffmpeg").arg("-version").output().ok().filter(|o| o.status.success()).map(|_| "ffmpeg".into())
     }
 
+    #[cfg(not(all(windows, target_arch = "aarch64")))]
     async fn rms(ff: &std::path::Path, wav: &str) -> f64 {
         let args: Vec<String> =
             ["-hide_banner", "-loglevel", "error", "-i", wav, "-ac", "1", "-ar", "44100", "-f", "f32le", "-"].iter().map(|s| s.to_string()).collect();
@@ -454,6 +456,7 @@ mod tests {
         (v.iter().map(|x| x * x).sum::<f64>() / v.len().max(1) as f64).sqrt()
     }
 
+    #[cfg(not(all(windows, target_arch = "aarch64")))]
     #[tokio::test]
     async fn the_whole_pipeline_splits_a_real_file_into_two_wavs() {
         use prost::Message;

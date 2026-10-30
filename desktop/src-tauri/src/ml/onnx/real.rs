@@ -1,4 +1,4 @@
-//! 用 tract 跑 ONNX 模型：读文件、定输入形状、跑一次、取输出。
+//! tract 的真实实现。
 
 use std::path::Path;
 
