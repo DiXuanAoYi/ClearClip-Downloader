@@ -276,6 +276,7 @@ export type ToolOp =
   | { op: 'landscape'; width: number; height: number; mode: 'blur' | 'black' }
   | { op: 'speed'; factor: number }
   | { op: 'loudness'; target: number }
+  | { op: 'audio_fx'; spec: AudioFxSpec }
   | { op: 'rotate'; mode: 'cw' | 'ccw' | 'flip180' | 'hflip' | 'vflip' }
   | { op: 'convert'; format: string; reencode: boolean }
   | { op: 'frame'; atMs: number; format: 'jpg' | 'png' }
@@ -288,6 +289,44 @@ export type ToolOp =
   | { op: 'stabilize'; strength: 'light' | 'normal' | 'strong' }
   | { op: 'edit'; project: EditProject }
   | { op: 'tags'; title?: string | null; artist?: string | null; album?: string | null; year?: string | null; genre?: string | null; comment?: string | null; cover?: string | null }
+
+// ---------- 音效 / 混响 ----------
+
+export interface ReverbSpec {
+  /** 混响相对干声的电平（dB），0 约等于混响和原声一样响 */
+  mixDb: number
+  timeMs: number
+  /** 高频衰减得比低频快多少：1 = 一样，越小越“闷” */
+  hfRatio: number
+  preDelayMs: number
+  inGainDb: number
+}
+
+export interface AudioFxSpec {
+  denoise: 'off' | 'light' | 'medium' | 'strong'
+  enhance: boolean
+  reverb: ReverbSpec | null
+  /** 目标响度（LUFS）；null 表示不做响度标准化 */
+  normalize: number | null
+  preset?: string | null
+}
+
+export interface AudioFxPreview {
+  before: string
+  after: string
+  notes: string[]
+}
+
+export interface TimeSpan {
+  startMs: number
+  endMs: number
+}
+
+export interface ReframeResult {
+  region: EditRegion
+  note: string | null
+  tracked: boolean
+}
 
 export type ToolJob = ToolOp & { inputs: string[]; outputDir?: string | null }
 
@@ -1406,9 +1445,29 @@ export interface EditClip {
   brightness: number
   contrast: number
   saturation: number
+  /** 声音处理：降噪（关 / 轻 / 中 / 强）、人声增强；底噪电平是实测的（dBFS），降噪按它设置 */
+  denoise: 'off' | 'light' | 'medium' | 'strong'
+  enhance: boolean
+  noiseFloorDb: number | null
+  /** 倒放（声音也倒过来）；定格：只取入点处那一帧，停住 `outMs - inMs` 毫秒，没有声音 */
+  reverse: boolean
+  freeze: boolean
   regions: EditRegion[]
+  /** 关键帧：zoom / panX / panY（时间相对片段开头） */
+  keyframes: EditKeyframes
+  bg: EditBackground
   transition: EditTransition | null
 }
+
+/** 关键帧：某个属性在某个时刻（毫秒，相对素材 / 文字自己的开始）的值，`ease` 是到下一个关键帧之间用的曲线 */
+export type KeyEase = 'linear' | 'in' | 'out' | 'inout' | 'hold'
+export interface EditKeyframe {
+  tMs: number
+  value: number
+  ease: KeyEase
+}
+/** 属性名（x / y / scale / rotate / opacity / volume）→ 关键帧列表 */
+export type EditKeyframes = Record<string, EditKeyframe[]>
 
 export interface EditText {
   id: number
@@ -1426,6 +1485,42 @@ export interface EditText {
   boxColor: string
   boxOpacity: number
   font: string | null
+  /** 逐字高亮：每个词相对这条文字出现时间的起止（毫秒）；词接起来就是 text */
+  words: EditTextWord[]
+  /** 说到的词变成这个颜色；空表示不高亮 */
+  highlight: string
+  /** 淡入淡出（毫秒） */
+  fadeMs: number
+  /** 关键帧：x / y / opacity；逐字高亮的文字不支持 */
+  keyframes: EditKeyframes
+}
+
+export interface EditTextWord {
+  t: string
+  a: number
+  b: number
+}
+
+/** 文稿里的一个词，时间是素材自己的时间（毫秒） */
+export interface TranscriptWord {
+  t: string
+  startMs: number
+  endMs: number
+}
+
+export interface Transcript {
+  words: TranscriptWord[]
+  /** false：接口 / 引擎只给了整句时间，词是按字数摊出来的 */
+  wordLevel: boolean
+  engine: string
+  fromMs: number
+  toMs: number
+}
+
+export interface SttStatus {
+  ready: boolean
+  engine: string
+  reason: string
 }
 
 export interface EditAudio {
@@ -1439,6 +1534,39 @@ export interface EditAudio {
   fadeOutMs: number
   looped: boolean
   duck: boolean
+  /** 节拍分析结果（`beatsMs` 是素材里的时间，不随配乐在时间线上的位置变）；没分析过是空。只存在工程里，导出用不到 */
+  beats?: EditBeats | null
+}
+
+/** 精彩片段分析：文稿里的一句话（素材时间）和候选结果 */
+export interface HighlightSentence {
+  startMs: number
+  endMs: number
+  text: string
+}
+export interface HighlightReq {
+  path: string
+  fromMs: number
+  toMs: number
+  sentences: HighlightSentence[]
+  count: number
+  minSecs: number
+  maxSecs: number
+}
+export interface HighlightCandidate {
+  startMs: number
+  endMs: number
+  /** 0–100 */
+  score: number
+  title: string
+  reasons: string[]
+}
+
+export interface EditBeats {
+  bpm: number
+  /** 0–1，越大节奏越清晰 */
+  confidence: number
+  beatsMs: number[]
 }
 
 /** 叠加轨上的素材（画中画、贴纸、GIF、水印）：盖在主轨画面上面，位置、大小和时间都自由。轨号越大越在上面 */
@@ -1479,6 +1607,55 @@ export interface EditOverlay {
   brightness: number
   contrast: number
   saturation: number
+  /** 关键帧：x / y / scale / rotate / opacity / volume；有关键帧的属性不再用上面的固定值 */
+  keyframes: EditKeyframes
+  /** 抠像（绿幕 / 蓝幕） */
+  chroma: EditChroma
+  /** 形状蒙版 */
+  mask: EditShapeMask
+}
+
+/** 抠像：把 `color` 附近的颜色变透明。相似度 0.01–0.6，边缘柔化 0–0.5，去溢色压掉留下部分边缘的绿 / 蓝反光 */
+/** 叠加素材的形状蒙版（位置、大小占素材自己画面的比例） */
+export interface EditShapeMask {
+  on: boolean
+  shape: 'rect' | 'ellipse'
+  x: number
+  y: number
+  w: number
+  h: number
+  feather: number
+  invert: boolean
+}
+
+export interface EditChroma {
+  on: boolean
+  color: string
+  similarity: number
+  blend: number
+  despill: boolean
+}
+
+/** 自动识别绿幕的结果 */
+export interface KeyGuess {
+  color: string
+  similarity: number
+  blend: number
+  coverage: number
+}
+
+/** 换背景：前景按颜色（chroma）或人像模型（ai）抠出，背景换成纯色 / 模糊原画面 / 图片 */
+export interface EditBackground {
+  on: boolean
+  matte: 'chroma' | 'ai'
+  /** 人像抠图用的模型 id（`matte` 为 `ai` 时） */
+  model: string
+  chroma: EditChroma
+  mode: 'color' | 'blur' | 'image'
+  color: string
+  image: string
+  blur: number
+  feather: number
 }
 
 export interface EditOutput {
@@ -1527,4 +1704,28 @@ export interface TrackerStatus {
   source: string
   listCount: number
   effectiveCount: number
+}
+
+/** 本机的 AI 模型（人像抠图 / 人声分离）：装没装、从哪下 */
+export interface ModelStatus {
+  id: string
+  label: string
+  kind: 'matte' | 'vocals'
+  url: string
+  sizeHint: string
+  note: string
+  installed: boolean
+  sizeBytes: number
+}
+export interface ModelProgress {
+  id: string
+  got: number
+  total: number
+}
+
+/** 人声分离的结果：两个 WAV 文件 */
+export interface VocalsResult {
+  vocals: string
+  instrumental: string
+  durationMs: number
 }

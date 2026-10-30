@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::keyframes::{self, Keyframe, KeyframeMap};
 use crate::track::TrackPt;
 
 pub const MAX_CLIPS: usize = 300;
@@ -26,6 +27,8 @@ pub const MIN_MS: u64 = 100;
 pub const MIN_TRANSITION_MS: u64 = 100;
 /// 叠加素材、文字、音频最晚从多久开始（10 小时），防止数值溢出
 pub const MAX_START_MS: u64 = 36_000_000;
+/// 一个属性最多几个关键点
+pub const MAX_KEYFRAMES: usize = 64;
 
 /// 可选的转场（xfade 的名字）。用真实的 ffmpeg 逐个试过，见端到端测试。
 pub const TRANSITIONS: &[&str] = &[
@@ -171,8 +174,21 @@ pub struct Clip {
     pub brightness: f64,
     pub contrast: f64,
     pub saturation: f64,
+    /// 声音处理：降噪 off / light / medium / strong；人声增强。这两项都不改变片段长度
+    pub denoise: String,
+    pub enhance: bool,
+    /// 实测的底噪电平（dBFS），降噪按它设置；没有就让 afftdn 自己跟踪
+    pub noise_floor_db: Option<f64>,
+    /// 倒放（整段缓冲后反着播，片段别太长）。声音也倒过来
+    pub reverse: bool,
+    /// 定格：只取 `in_ms` 处的一帧，停住 `out_ms - in_ms` 毫秒；没有声音。变速和倒放在定格片段上不起作用
+    pub freeze: bool,
     /// 跟着物体走的区域（只用于视频片段，图片会被忽略）
     pub regions: Vec<Region>,
+    /// 换背景
+    pub bg: Background,
+    /// 关键帧：`zoom`（0.25–4，1 = 原样）、`panX`、`panY`（-1–1，画面相对中心平移，占画面宽 / 高的比例）；时间相对片段开始（按成片时间算）。有关键帧时先做适配画面再缩放平移，缩小时四周是黑边
+    pub keyframes: KeyframeMap,
     pub transition: Option<Transition>,
 }
 
@@ -195,7 +211,14 @@ impl Default for Clip {
             brightness: 0.0,
             contrast: 1.0,
             saturation: 1.0,
+            denoise: "off".into(),
+            enhance: false,
+            noise_floor_db: None,
+            reverse: false,
+            freeze: false,
             regions: vec![],
+            bg: Background::default(),
+            keyframes: KeyframeMap::new(),
             transition: None,
         }
     }
@@ -207,6 +230,7 @@ impl Clip {
         let span = self.out_ms.saturating_sub(self.in_ms);
         match self.kind {
             ClipKind::Image => span,
+            ClipKind::Video if self.freeze => span,
             ClipKind::Video => (span as f64 / self.speed.max(0.01)).round() as u64,
         }
     }
@@ -240,6 +264,31 @@ pub struct TextItem {
     pub box_opacity: f64,
     /// 字体文件（ttf / otf / ttc）；留空用系统里找到的中文字体
     pub font: Option<String>,
+    /// 逐字高亮用：每个词在这条文字里的出现时间（相对 `start_ms`），词接起来就是 `text`
+    pub words: Vec<TextWord>,
+    /// 说到哪个词，哪个词就换成这个颜色（`#RRGGBB`）；留空不高亮
+    pub highlight: String,
+    /// 淡入淡出的时长（毫秒），0 为没有
+    pub fade_ms: u64,
+    /// 关键帧：`x`、`y`、`opacity`（时间相对 `start_ms`）。有关键帧的属性不再用上面的固定值；逐字高亮的文字不支持
+    pub keyframes: KeyframeMap,
+}
+
+/// 逐字高亮里的一个词。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextWord {
+    pub t: String,
+    /// 开始说的时刻，相对这条文字的出现时间（毫秒）
+    pub a: u64,
+    /// 说完的时刻
+    pub b: u64,
+}
+
+impl TextItem {
+    /// 要不要用逐字高亮来画（有高亮色，并且词和文字对得上）
+    pub fn karaoke(&self) -> bool {
+        !self.highlight.is_empty() && !self.words.is_empty()
+    }
 }
 
 impl Default for TextItem {
@@ -260,6 +309,10 @@ impl Default for TextItem {
             box_color: "#000000".into(),
             box_opacity: 0.5,
             font: None,
+            words: vec![],
+            highlight: String::new(),
+            fade_ms: 0,
+            keyframes: KeyframeMap::new(),
         }
     }
 }
@@ -287,6 +340,109 @@ pub struct AudioTrack {
 impl Default for AudioTrack {
     fn default() -> Self {
         AudioTrack { id: 0, path: String::new(), start_ms: 0, in_ms: 0, out_ms: None, volume: 1.0, fade_in_ms: 0, fade_out_ms: 0, looped: false, duck: false }
+    }
+}
+
+/// 形状蒙版：只留形状里面（或反过来只留外面）的部分，边缘可以羽化。位置、大小都占叠加素材自己画面的比例。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ShapeMask {
+    pub on: bool,
+    /// `rect`、`ellipse`
+    pub shape: String,
+    /// 中心点
+    pub x: f64,
+    pub y: f64,
+    /// 宽、高
+    pub w: f64,
+    pub h: f64,
+    /// 羽化 0–0.5（占形状半径的比例）
+    pub feather: f64,
+    /// 反过来：留下形状外面
+    pub invert: bool,
+}
+
+impl Default for ShapeMask {
+    fn default() -> Self {
+        ShapeMask { on: false, shape: "ellipse".into(), x: 0.5, y: 0.5, w: 0.7, h: 0.7, feather: 0.05, invert: false }
+    }
+}
+
+/// 抠像（绿幕 / 蓝幕）：把指定颜色变成透明。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Chroma {
+    pub on: bool,
+    /// 要去掉的颜色（`#RRGGBB`）
+    pub color: String,
+    /// 相似度 0.01–0.6：越大，离这个颜色越远的也被抠掉
+    pub similarity: f64,
+    /// 边缘柔化 0–0.5：越大，抠掉的部分和留下的部分之间过渡越柔
+    pub blend: f64,
+    /// 去溢色：压掉留下的部分边缘上的绿 / 蓝反光
+    pub despill: bool,
+}
+
+impl Default for Chroma {
+    fn default() -> Self {
+        Chroma { on: false, color: "#00FF00".into(), similarity: 0.18, blend: 0.08, despill: true }
+    }
+}
+
+impl Chroma {
+    /// 去溢色该压哪个通道：键色偏蓝就是蓝，否则绿
+    pub fn spill_type(&self) -> &'static str {
+        let h = self.color.trim_start_matches('#');
+        let c = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).unwrap_or(0);
+        if h.len() == 6 && c(4) > c(2) {
+            "blue"
+        } else {
+            "green"
+        }
+    }
+}
+
+/// 换背景：把片段里的“前景”（按颜色抠出，或者人像抠图模型抠出）留下，背景换成纯色、模糊的原画面或一张图片。
+/// 在片段旋转 / 翻转之后、按输出画面适配之前合成，所以背景图铺满的是素材画面，不是输出画面。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Background {
+    pub on: bool,
+    /// 前景怎么来：`chroma` 按颜色抠（绿幕 / 蓝幕），`ai` 人像抠图模型
+    pub matte: String,
+    /// `matte == "chroma"` 时用的抠像设置（`on` 字段不用）
+    pub chroma: Chroma,
+    /// `matte == "ai"` 时用哪个抠图模型（见 `ml::store::MODELS`）
+    pub model: String,
+    /// 背景：`color` 纯色、`blur` 模糊的原画面、`image` 一张图片
+    pub mode: String,
+    pub color: String,
+    pub image: String,
+    /// 模糊背景的强度 1–60
+    pub blur: f64,
+    /// 人像抠图的边缘柔化（像素）0–8
+    pub feather: f64,
+}
+
+impl Default for Background {
+    fn default() -> Self {
+        Background {
+            on: false,
+            matte: "chroma".into(),
+            chroma: Chroma::default(),
+            model: "modnet".into(),
+            mode: "color".into(),
+            color: "#000000".into(),
+            image: String::new(),
+            blur: 20.0,
+            feather: 1.5,
+        }
+    }
+}
+
+impl Background {
+    pub fn uses_ai(&self) -> bool {
+        self.on && self.matte == "ai"
     }
 }
 
@@ -334,6 +490,12 @@ pub struct Overlay {
     pub brightness: f64,
     pub contrast: f64,
     pub saturation: f64,
+    /// 关键帧：`x`、`y`、`scale`、`rotate`、`opacity`、`volume`（时间相对 `start_ms`）。有关键帧的属性不再用上面的固定值
+    pub keyframes: KeyframeMap,
+    /// 抠像（绿幕 / 蓝幕）
+    pub chroma: Chroma,
+    /// 形状蒙版
+    pub mask: ShapeMask,
 }
 
 impl Default for Overlay {
@@ -365,6 +527,9 @@ impl Default for Overlay {
             brightness: 0.0,
             contrast: 1.0,
             saturation: 1.0,
+            keyframes: KeyframeMap::new(),
+            chroma: Chroma::default(),
+            mask: ShapeMask::default(),
         }
     }
 }
@@ -385,6 +550,16 @@ impl Overlay {
 
     pub fn needs_tone(&self) -> bool {
         tone_changed(self.brightness, self.contrast, self.saturation)
+    }
+
+    /// 某个属性的关键点（整理过）；没有关键点返回 None
+    pub fn keys(&self, prop: &str) -> Option<Vec<Keyframe>> {
+        keyframes::track(&self.keyframes, prop)
+    }
+
+    /// 缩放的最大值：有关键帧时素材先按最大的那一档缩放，再逐帧缩小，画质才够
+    pub fn scale_max(&self) -> f64 {
+        self.keys("scale").map_or(self.scale, |k| k.iter().map(|p| p.value).fold(0.01, f64::max))
     }
 
     /// 旋转角度换算到 0–360 度
@@ -540,6 +715,28 @@ fn check_regions(regions: &mut Vec<Region>, clip_no: usize) -> Result<(), String
     Ok(())
 }
 
+/// 整理关键帧：只留认识的属性、值收紧到范围里、点排序去重、曲线名不对的改成线性。
+fn check_keys(map: &mut KeyframeMap, allowed: &[(&str, f64, f64)]) {
+    map.retain(|k, _| allowed.iter().any(|(n, _, _)| n == k));
+    for (name, lo, hi) in allowed {
+        let Some(points) = map.get_mut(*name) else { continue };
+        let mut v = keyframes::tidy(points);
+        v.truncate(MAX_KEYFRAMES);
+        for k in &mut v {
+            k.t_ms = k.t_ms.min(MAX_START_MS);
+            k.value = k.value.clamp(*lo, *hi);
+            if !matches!(k.ease.as_str(), "linear" | "in" | "out" | "inout" | "hold") {
+                k.ease = "linear".into();
+            }
+        }
+        if v.is_empty() {
+            map.remove(*name);
+        } else {
+            *points = v;
+        }
+    }
+}
+
 impl Project {
     /// 校验并整理：超出范围的数值收紧，结构性的错误（没有片段、素材路径为空、起止颠倒）返回提示。
     pub fn checked(mut self) -> Result<Project, String> {
@@ -581,10 +778,37 @@ impl Project {
             } else {
                 check_regions(&mut c.regions, n)?;
             }
+            check_keys(&mut c.keyframes, &[("zoom", 0.25, 4.0), ("panX", -1.0, 1.0), ("panY", -1.0, 1.0)]);
+            c.bg.color = hex_color(&c.bg.color, "#000000");
+            c.bg.chroma.color = hex_color(&c.bg.chroma.color, "#00FF00");
+            c.bg.chroma.similarity = clamp(c.bg.chroma.similarity, 0.01, 0.6, 0.18);
+            c.bg.chroma.blend = clamp(c.bg.chroma.blend, 0.0, 0.5, 0.08);
+            c.bg.blur = clamp(c.bg.blur, 1.0, 60.0, 20.0);
+            c.bg.feather = clamp(c.bg.feather, 0.0, 8.0, 1.5);
+            if !crate::ml::store::MODELS.iter().any(|m| m.kind == "matte" && m.id == c.bg.model) {
+                c.bg.model = "modnet".into();
+            }
+            if !matches!(c.bg.matte.as_str(), "chroma" | "ai") {
+                c.bg.matte = "chroma".into();
+            }
+            if !matches!(c.bg.mode.as_str(), "color" | "blur" | "image") {
+                c.bg.mode = "color".into();
+            }
+            if c.bg.mode == "image" && c.bg.image.trim().is_empty() {
+                c.bg.mode = "color".into();
+            }
+            if c.kind == ClipKind::Image {
+                c.reverse = false;
+                c.freeze = false;
+            }
             c.volume = clamp(c.volume, 0.0, 4.0, 1.0);
             c.brightness = clamp(c.brightness, -1.0, 1.0, 0.0);
             c.contrast = clamp(c.contrast, 0.0, 3.0, 1.0);
             c.saturation = clamp(c.saturation, 0.0, 3.0, 1.0);
+            if !matches!(c.denoise.as_str(), "off" | "light" | "medium" | "strong") {
+                c.denoise = "off".into();
+            }
+            c.noise_floor_db = c.noise_floor_db.filter(|v| v.is_finite()).map(|v| v.clamp(-80.0, -20.0));
             if !matches!(c.rotate, 0 | 90 | 180 | 270) {
                 c.rotate = (c.rotate % 360) / 90 * 90;
             }
@@ -627,6 +851,21 @@ impl Project {
             o.rotate = clamp(o.rotate, -3600.0, 3600.0, 0.0);
             o.opacity = clamp(o.opacity, 0.0, 1.0, 1.0);
             o.volume = clamp(o.volume, 0.0, 4.0, 1.0);
+            check_keys(
+                &mut o.keyframes,
+                &[("x", -1.0, 2.0), ("y", -1.0, 2.0), ("scale", 0.02, 3.0), ("rotate", -3600.0, 3600.0), ("opacity", 0.0, 1.0), ("volume", 0.0, 4.0)],
+            );
+            o.mask.x = clamp(o.mask.x, -0.5, 1.5, 0.5);
+            o.mask.y = clamp(o.mask.y, -0.5, 1.5, 0.5);
+            o.mask.w = clamp(o.mask.w, 0.02, 3.0, 0.7);
+            o.mask.h = clamp(o.mask.h, 0.02, 3.0, 0.7);
+            o.mask.feather = clamp(o.mask.feather, 0.0, 0.5, 0.05);
+            if !matches!(o.mask.shape.as_str(), "rect" | "ellipse") {
+                o.mask.shape = "ellipse".into();
+            }
+            o.chroma.color = hex_color(&o.chroma.color, "#00FF00");
+            o.chroma.similarity = clamp(o.chroma.similarity, 0.01, 0.6, 0.18);
+            o.chroma.blend = clamp(o.chroma.blend, 0.0, 0.5, 0.08);
             o.brightness = clamp(o.brightness, -1.0, 1.0, 0.0);
             o.contrast = clamp(o.contrast, 0.0, 3.0, 1.0);
             o.saturation = clamp(o.saturation, 0.0, 3.0, 1.0);
@@ -649,11 +888,22 @@ impl Project {
             t.y = clamp(t.y, 0.0, 1.0, 0.85);
             t.size = clamp(t.size, 1.0, 40.0, 6.0);
             t.opacity = clamp(t.opacity, 0.0, 1.0, 1.0);
+            check_keys(&mut t.keyframes, &[("x", -1.0, 2.0), ("y", -1.0, 2.0), ("opacity", 0.0, 1.0)]);
             t.box_opacity = clamp(t.box_opacity, 0.0, 1.0, 0.5);
             t.color = hex_color(&t.color, "#FFFFFF");
             t.outline_color = hex_color(&t.outline_color, "#000000");
             t.box_color = hex_color(&t.box_color, "#000000");
             t.font = t.font.take().filter(|f| !f.trim().is_empty());
+            t.fade_ms = t.fade_ms.min((t.end_ms - t.start_ms) / 2);
+            // 词和文字对不上（文字被改过）时，逐字高亮作废，按普通文字画
+            let joined: String = t.words.iter().map(|w| w.t.as_str()).collect();
+            if joined != t.text || t.words.len() > 400 {
+                t.words.clear();
+            }
+            for w in &mut t.words {
+                w.b = w.b.max(w.a);
+            }
+            t.highlight = if t.words.is_empty() { String::new() } else { hex_color(&t.highlight, "") };
         }
         for (i, a) in self.audio.iter_mut().enumerate() {
             if a.path.trim().is_empty() {
@@ -1034,5 +1284,76 @@ mod tests {
         p.overlays[1].path = p.overlays[0].path.clone();
         p.audio = vec![AudioTrack { path: "/m/x.mp3".into(), ..Default::default() }];
         assert_eq!(p.media_paths(), vec!["/m/1.mp4", "/o/2.mp4", "/m/x.mp3"]);
+    }
+    #[test]
+    fn unknown_matte_model_falls_back_to_the_default() {
+        let p: Project = serde_json::from_str(r#"{"clips":[{"path":"a.mp4","outMs":2000,"bg":{"on":true,"matte":"ai","model":"vocal_mdx"}}]}"#).unwrap();
+        let mut p = p.checked().unwrap();
+        assert_eq!(p.clips[0].bg.model, "modnet");
+        p.clips[0].bg.model = "u2net_human".into();
+        let p = p.checked().unwrap();
+        assert_eq!(p.clips[0].bg.model, "u2net_human");
+    }
+
+    #[test]
+    fn mask_and_clip_keyframes_are_clamped_and_old_projects_load() {
+        let old = r#"{"clips":[{"path":"a.mp4","outMs":2000}],"overlays":[{"path":"b.png","kind":"image","outMs":1000}]}"#;
+        let mut p: Project = serde_json::from_str(old).unwrap();
+        assert!(!p.overlays[0].mask.on && p.clips[0].keyframes.is_empty());
+        let k = |t: u64, v: f64| Keyframe { t_ms: t, value: v, ease: "linear".into() };
+        p.clips[0].keyframes.insert("zoom".into(), vec![k(0, 99.0)]);
+        p.clips[0].keyframes.insert("panX".into(), vec![k(0, -9.0)]);
+        p.clips[0].keyframes.insert("x".into(), vec![k(0, 1.0)]);
+        p.overlays[0].mask = ShapeMask { on: true, shape: "star".into(), x: 9.0, y: -9.0, w: 0.0, h: 99.0, feather: 7.0, invert: false };
+        let p = p.checked().unwrap();
+        assert_eq!(p.clips[0].keyframes["zoom"][0].value, 4.0);
+        assert_eq!(p.clips[0].keyframes["panX"][0].value, -1.0);
+        assert!(!p.clips[0].keyframes.contains_key("x"), "不认识的属性被丢掉");
+        let m = &p.overlays[0].mask;
+        assert_eq!((m.shape.as_str(), m.x, m.y, m.w, m.h, m.feather), ("ellipse", 1.5, -0.5, 0.02, 3.0, 0.5));
+    }
+
+    #[test]
+    fn keyframes_are_cleaned_up_and_old_projects_load() {
+        // 旧项目没有关键帧 / 倒放 / 定格这些字段，照样能读
+        let old = r#"{"clips":[{"path":"a.mp4","outMs":2000}],"overlays":[{"path":"b.png","kind":"image","outMs":1000}]}"#;
+        let p: Project = serde_json::from_str(old).unwrap();
+        assert!(p.overlays[0].keyframes.is_empty() && !p.clips[0].reverse && !p.clips[0].freeze);
+        let mut p = p;
+        let k = |t: u64, v: f64, e: &str| Keyframe { t_ms: t, value: v, ease: e.into() };
+        p.overlays[0].keyframes.insert("x".into(), vec![k(500, 9.0, "bogus"), k(0, 0.1, "linear"), k(500, 0.9, "in")]);
+        p.overlays[0].keyframes.insert("nonsense".into(), vec![k(0, 1.0, "linear")]);
+        p.overlays[0].keyframes.insert("opacity".into(), vec![]);
+        let p = p.checked().unwrap();
+        let o = &p.overlays[0];
+        assert_eq!(o.keyframes.len(), 1, "只留认识的、非空的属性");
+        let x = &o.keyframes["x"];
+        assert_eq!((x.len(), x[0].t_ms, x[1].t_ms), (2, 0, 500));
+        assert_eq!(x[1].value, 0.9, "同一时刻只留最后一个");
+        // 图片没有倒放和定格
+        let mut q = Project {
+            clips: vec![Clip { path: "i.png".into(), kind: ClipKind::Image, out_ms: 1000, reverse: true, freeze: true, ..Default::default() }],
+            ..Default::default()
+        };
+        q = q.checked().unwrap();
+        assert!(!q.clips[0].reverse && !q.clips[0].freeze);
+        // 定格的时长不受变速影响
+        let f = Clip { out_ms: 3000, in_ms: 500, speed: 2.0, freeze: true, ..Default::default() };
+        assert_eq!(f.duration_ms(), 2500);
+    }
+
+    #[test]
+    fn chroma_settings_are_tightened_and_old_projects_load() {
+        let old = r#"{"clips":[{"path":"a.mp4","outMs":2000}],"overlays":[{"path":"b.png","kind":"image","outMs":1000}]}"#;
+        let p: Project = serde_json::from_str(old).unwrap();
+        assert!(!p.overlays[0].chroma.on && p.overlays[0].chroma.color == "#00FF00" && p.overlays[0].chroma.despill);
+        let mut p = p;
+        p.overlays[0].chroma = Chroma { on: true, color: "not a colour".into(), similarity: 9.0, blend: -1.0, despill: true };
+        let p = p.checked().unwrap();
+        let c = &p.overlays[0].chroma;
+        assert_eq!((c.color.as_str(), c.similarity, c.blend), ("#00FF00", 0.6, 0.0));
+        assert_eq!(c.spill_type(), "green");
+        assert_eq!(Chroma { color: "#1020FF".into(), ..Default::default() }.spill_type(), "blue");
+        assert_eq!(Chroma { color: "#FF0000".into(), ..Default::default() }.spill_type(), "green");
     }
 }

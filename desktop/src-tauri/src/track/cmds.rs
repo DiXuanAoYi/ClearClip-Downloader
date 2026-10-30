@@ -33,13 +33,13 @@ fn lock() -> std::sync::MutexGuard<'static, HashMap<u64, Arc<AtomicBool>>> {
 }
 
 /// 登记一个可取消的追踪，返回取消标记。
-fn begin(id: u64) -> Arc<AtomicBool> {
+pub(crate) fn begin(id: u64) -> Arc<AtomicBool> {
     let flag = Arc::new(AtomicBool::new(false));
     lock().insert(id, flag.clone());
     flag
 }
 
-fn end(id: u64) {
+pub(crate) fn end(id: u64) {
     lock().remove(&id);
 }
 
@@ -88,11 +88,11 @@ pub struct FollowResult {
     pub note: Option<String>,
 }
 
-fn need_ffmpeg(state: &AppState) -> AppResult<std::path::PathBuf> {
+pub(crate) fn need_ffmpeg(state: &AppState) -> AppResult<std::path::PathBuf> {
     crate::postprocess::find_ffmpeg(state).ok_or_else(|| AppError::new(ErrorKind::NeedUpdate, "需要 ffmpeg。请在“设置 → 组件”里安装 ffmpeg 后重试。"))
 }
 
-async fn decoder(state: &AppState) -> AppResult<Decoder> {
+pub(crate) async fn decoder(state: &AppState) -> AppResult<Decoder> {
     let ff = need_ffmpeg(state)?;
     let caps = state.vcaps.get(&ff).await;
     Ok(Decoder::new(&ff, &caps))

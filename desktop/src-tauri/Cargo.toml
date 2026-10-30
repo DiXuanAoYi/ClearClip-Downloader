@@ -1,6 +1,6 @@
 [package]
 name = "clearclip"
-version = "0.8.2"
+version = "0.9.0"
 description = "清影 ClearClip：抖音 / 快手短视频解析与下载桌面程序"
 authors = ["ClearClip contributors"]
 license = "MIT"
@@ -59,6 +59,11 @@ russh-sftp = "3"
 librqbit = { version = "9.0.1", default-features = false }
 bt-http = { package = "reqwest", version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustfft = "6"
+
+# tract 的 ARM64 汇编内核在 MSVC 下编不过（Windows ARM64），那个平台不带 AI 推理
+[target.'cfg(not(all(windows, target_arch = "aarch64")))'.dependencies]
+tract-onnx = "0.21"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 librqbit-core = { version = "9.0.1", default-features = true }
@@ -88,3 +93,6 @@ strip = true
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+
+[dev-dependencies]
+prost = "0.11"

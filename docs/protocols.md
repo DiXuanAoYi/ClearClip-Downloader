@@ -16,7 +16,7 @@
 - 内置 librqbit：DHT、PEX、UPnP。下载完成后**不做种**。
 - 多文件的种子会展开成列表，勾选要下的文件；每个文件是一个下载任务，同一种子里的文件依次下载。
 - Tracker 列表：在“设置 → BT 与 ed2k”里管理。
-  - 默认每 7 天从 ngosang/trackerslist 的 best 列表更新（jsDelivr，失败再试 GitHub），间隔可改。
+  - 默认每 7 天更新，间隔可改。列表来源按顺序尝试、第一个成功的为准，默认依次是：ngosang/trackerslist 的 best 列表（jsDelivr，再试 GitHub）、`https://trackerslist.com/best.txt`、`https://cf.trackerslist.com/best.txt`、XIU2/TrackersListCollection 的 `best.txt`；可在“BT 与 ed2k → 列表来源”里增删、调整顺序。旧版本里没改过默认来源的，升级后自动补上新增的。
   - 可以“立即更新”，也可以增删列表来源，或添加自己的 tracker（始终使用，排在列表前面）。
   - 更新失败会保留上次的列表；只接受 udp / http / https 的地址，自动去重。
 - 没有内置搜索，需要自己找到 magnet 链接。

@@ -8,10 +8,17 @@ import { api, errorText, events } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { RegionApi } from '../../../composables/useRegions'
 import type { OverlayAnim } from '../../../types'
-import type { EditClip, EditOutput, EditOverlay } from '../../../types'
-import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, MIN_TRANSITION_MS, TRANSITIONS, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit } from '../../../utils/edit'
+import type { EditBackground, EditChroma, EditClip, EditOutput, EditOverlay, EditShapeMask } from '../../../types'
+import { EDIT_IMAGE_EXTS, type SpeedPoint } from '../../../utils/edit'
+import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, CLIP_KEY_PROPS, OVERLAY_KEY_PROPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
 import EditField from './EditField.vue'
+import EditModels from './EditModels.vue'
+import EditKeyframes from './EditKeyframes.vue'
 import EditRegions from './EditRegions.vue'
+import EditSmart from './EditSmart.vue'
+import EditHighlights from './EditHighlights.vue'
+import EditSpeedCurve from './EditSpeedCurve.vue'
+import EditTranscript from './EditTranscript.vue'
 import EditSlider from './EditSlider.vue'
 import TimeInput from './TimeInput.vue'
 
@@ -20,12 +27,12 @@ const emit = defineEmits<{ goto: [ms: number] }>()
 const ed = props.ed
 const outDir = defineModel<string>('outDir', { default: '' })
 
-const tab = ref<'item' | 'region' | 'out'>('item')
+const tab = ref<'item' | 'region' | 'smart' | 'script' | 'hl' | 'out'>('item')
 watch(
   () => ed.sel.value,
   (s) => {
     // 选了别的片段时留在“区域”页，方便连着给几个镜头加；选了文字、配乐就回到“属性”
-    if (s && !(tab.value === 'region' && s.kind === 'clip')) tab.value = 'item'
+    if (s && !((tab.value === 'region' || tab.value === 'smart' || tab.value === 'script' || tab.value === 'hl') && s.kind === 'clip')) tab.value = 'item'
   },
 )
 
@@ -44,10 +51,107 @@ function pc(patch: Partial<EditClip>, key: string) {
   if (clip.value) ed.patchClip(clip.value.id, patch, `${key}:${clip.value.id}`)
 }
 const po = (patch: Partial<EditOverlay>, key: string) => overlay.value && ed.patchOverlay(overlay.value.id, patch, `${key}:${overlay.value.id}`)
+const pm = (patch: Partial<EditShapeMask>, key: string) => overlay.value && po({ mask: { ...overlay.value.mask, ...patch } }, key)
 const pt = (patch: Parameters<typeof ed.patchText>[1], key: string) => text.value && ed.patchText(text.value.id, patch, `${key}:${text.value.id}`)
 const pa = (patch: Parameters<typeof ed.patchAudio>[1], key: string) => audio.value && ed.patchAudio(audio.value.id, patch, `${key}:${audio.value.id}`)
 
+// 叠加素材 / 文字此刻的实际值（有关键帧的属性随播放头变）；改这些值时，有关键帧的会在播放头处改（或新建）关键点
+const ovLocal = computed(() => (overlay.value ? clamp(ed.playhead.value - overlay.value.startMs, 0, overlayDuration(overlay.value)) : 0))
+const eo = computed(() => (overlay.value ? withKeys(overlay.value, ovLocal.value) : null))
+const txLocal = computed(() => (text.value ? clamp(ed.playhead.value - text.value.startMs, 0, text.value.endMs - text.value.startMs) : 0))
+const et = computed(() => (text.value ? withKeys(text.value, txLocal.value) : null))
+const pk = (patch: Parameters<typeof ed.setOverlayProps>[1], key: string) => overlay.value && ed.setOverlayProps(overlay.value.id, patch, `${key}:${overlay.value.id}`)
+const ptk = (patch: Parameters<typeof ed.setTextProps>[1], key: string) => text.value && ed.setTextProps(text.value.id, patch, `${key}:${text.value.id}`)
+// ---- 抠像 ----
+const pbg = (patch: Partial<EditBackground>, key: string) => clip.value && ed.patchClip(clip.value.id, { bg: { ...clip.value.bg, ...patch } }, `${key}:${clip.value.id}`)
+const pbgc = (patch: Partial<EditChroma>, key: string) => clip.value && pbg({ chroma: { ...clip.value.bg.chroma, ...patch } }, key)
+const detecting = ref(false)
+/** 取一帧找绿幕 / 蓝幕，找到就把颜色和相似度填进去（`apply` 决定填到哪里） */
+async function detectKey(path: string, atMs: number, apply: (g: { color: string; similarity: number; blend: number }) => void) {
+  detecting.value = true
+  try {
+    const g = await api.editDetectKey(path, Math.max(0, Math.round(atMs)))
+    if (!g) return void ElMessage.warning('没有在画面四周找到大片的绿色 / 蓝色。请手动选颜色，或换一个背景更干净的时间点。')
+    apply(g)
+    ElMessage.success(`已识别：${g.color}，相似度 ${Math.round(g.similarity * 100)}%（画面里约 ${Math.round(g.coverage * 100)}% 是背景色）`)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    detecting.value = false
+  }
+}
+async function pickBgImage() {
+  const r = await open({ multiple: false, filters: [{ name: '图片', extensions: EDIT_IMAGE_EXTS }] })
+  if (typeof r === 'string') pbg({ image: r, mode: 'image' }, 'bgimg')
+}
+const pch = (patch: Partial<EditChroma>, key: string) => overlay.value && ed.patchOverlay(overlay.value.id, { chroma: { ...overlay.value.chroma, ...patch } }, `${key}:${overlay.value.id}`)
+const KEY_COLORS = [
+  { label: '绿幕', color: '#00FF00' },
+  { label: '蓝幕', color: '#0000FF' },
+]
+const hasEyeDropper = typeof window !== 'undefined' && 'EyeDropper' in window
+async function pickKeyColor() {
+  try {
+    const r = await new (window as unknown as { EyeDropper: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper().open()
+    pch({ color: r.sRGBHex.toUpperCase(), on: true }, 'chc')
+  } catch {
+    // 用户按 Esc 取消
+  }
+}
+
+// ---- 节拍 ----
+const beatBusy = ref(false)
+const perClip = ref(2)
+async function findBeats() {
+  const a = audio.value
+  if (!a) return
+  const end = src.value?.durationMs
+  if (!end) return void ElMessage.warning('读不到这条配乐的长度。')
+  beatBusy.value = true
+  try {
+    const r = await api.editBeats(a.path, 0, end)
+    ed.patchAudio(a.id, { beats: { bpm: r.bpm, confidence: r.confidence, beatsMs: r.beatsMs } })
+    if (r.confidence < LOW_BEAT_CONFIDENCE) ElMessage.warning(`找到 ${r.beatsMs.length} 个拍子（约 ${r.bpm} BPM），但节奏不太清晰，结果可能不准。`)
+    else ElMessage.success(`找到 ${r.beatsMs.length} 个拍子，约 ${r.bpm} BPM。`)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    beatBusy.value = false
+  }
+}
+function arrangeNow() {
+  const a = audio.value
+  if (!a) return
+  const r = ed.arrangeToBeatsOf(a.id, perClip.value)
+  if (!r) return void ElMessage.warning('先分析节拍，并且主轨要有片段。')
+  const parts = [`${r.arranged} 个片段已对齐节拍（转场已去掉）`]
+  if (r.short) parts.push(`${r.short} 个视频素材不够长，已用满它`)
+  if (r.left) parts.push(`${r.left} 个片段没有拍子可用，保持原样`)
+  ElMessage.success(parts.join('；') + '。可以撤回。')
+}
+function fitNow() {
+  const a = audio.value
+  if (a && !ed.fitAudioToVideo(a.id)) ElMessage.warning('成片太短，或配乐开始得太晚，没法适配。')
+}
+
+const keyedCount = (item: { keyframes: Record<string, unknown[]> } | undefined | null) => Object.values(item?.keyframes ?? {}).filter((v) => v.length).length
+
 const clipLimit = computed(() => src.value?.durationMs ?? Number.MAX_SAFE_INTEGER)
+
+const holdSec = ref(2)
+const rampOpen = ref(false)
+function applyRamp(points: SpeedPoint[]) {
+  const c = clip.value
+  if (!c) return
+  const n = ed.applySmoothRamp(c.id, points)
+  if (n) {
+    rampOpen.value = false
+    ElMessage.success(`已按曲线拆成 ${n} 小段，相邻两段速度只差一点点；可以撤回。`)
+  } else ElMessage.warning('这个片段太短，或已经倒放 / 定格，或者会让片段超过上限，不能套变速曲线。')
+}
+function freezeNow() {
+  if (!ed.freezeAtPlayhead(Math.round(holdSec.value * 1000))) ElMessage.warning('播放头不在一个普通视频片段上。把播放头移到要定格的画面再点。')
+}
 
 function setTransition(kind: string) {
   if (!clip.value) return
@@ -268,6 +372,9 @@ async function pickDir() {
     <el-radio-group v-model="tab" size="small" class="seg">
       <el-radio-button value="item">属性</el-radio-button>
       <el-radio-button value="region">区域</el-radio-button>
+      <el-radio-button value="smart">智能</el-radio-button>
+      <el-radio-button value="script">文稿</el-radio-button>
+      <el-radio-button value="hl">精彩</el-radio-button>
       <el-radio-button value="out">输出</el-radio-button>
     </el-radio-group>
 
@@ -293,21 +400,84 @@ async function pickDir() {
           <el-button size="small" link @click="emit('goto', placed?.startMs ?? 0)">定位</el-button>
         </EditField>
         <EditField label="出点">
-          <TimeInput :model-value="clip.outMs" :min="clip.inMs + MIN_MS" :max="clipLimit" @update:model-value="(v) => pc({ outMs: v }, 'out')" />
+          <TimeInput :model-value="clip.outMs" :min="clip.inMs + MIN_MS" :max="clip.freeze ? Number.MAX_SAFE_INTEGER : clipLimit" @update:model-value="(v) => pc({ outMs: v }, 'out')" />
           <span class="mute small">素材共 {{ src?.durationMs ? msText(src.durationMs) : '—' }}</span>
         </EditField>
         <EditField label="成片里长">
           <span class="mono">{{ msText(clipDuration(clip)) }}</span>
           <span v-if="clip.speed !== 1" class="mute small">（{{ clip.speed }}× 速度）</span>
         </EditField>
-        <EditSlider label="速度" :model-value="clip.speed" :min="0.25" :max="4" :step="0.05" unit="×" :digits="2" @update:model-value="(v) => pc({ speed: v }, 'spd')" />
-        <template v-if="!src || src.hasAudio">
+        <EditSlider v-if="!clip.freeze" label="速度" :model-value="clip.speed" :min="0.25" :max="4" :step="0.05" unit="×" :digits="2" @update:model-value="(v) => pc({ speed: v }, 'spd')" />
+        <template v-if="!clip.freeze">
+          <EditField label="">
+            <el-checkbox :model-value="clip.reverse" @update:model-value="(v: unknown) => pc({ reverse: !!v }, 'rev')">倒放（声音也倒过来）</el-checkbox>
+          </EditField>
+          <EditField label="变速曲线" hint="画一条速度曲线，按曲线把片段拆成许多小段，连续地变快 / 变慢">
+            <el-button size="small" :disabled="clip.reverse" @click="rampOpen = !rampOpen">{{ rampOpen ? '收起曲线' : '编辑曲线…' }}</el-button>
+          </EditField>
+          <EditSpeedCurve v-if="rampOpen && !clip.reverse" :clip="clip" @apply="applyRamp" @cancel="rampOpen = false" />
+        </template>
+        <EditField label="定格" :hint="clip.freeze ? '这一段就是定格的画面，停多久由出点 − 入点决定' : '在播放头处把画面停住几秒（要先把播放头放在这个片段上）'">
+          <template v-if="!clip.freeze">
+            <el-input-number v-model="holdSec" :min="0.2" :max="30" :step="0.5" :precision="1" size="small" controls-position="right" />
+            <el-button size="small" @click="freezeNow">在播放头处定格</el-button>
+          </template>
+          <span v-else class="mute small">定格片段：没有声音；预览里是静止画面</span>
+        </EditField>
+        <EditField label="换背景" hint="把前景留下，背景换成纯色、模糊的原画面或一张图片。实时预览里看不到，导出时才生效">
+          <el-checkbox :model-value="clip.bg.on" @update:model-value="(v: unknown) => pbg({ on: !!v }, 'bgon')">换掉背景</el-checkbox>
+        </EditField>
+        <template v-if="clip.bg.on">
+          <EditField label="前景">
+            <el-radio-group :model-value="clip.bg.matte" size="small" @update:model-value="(v: string | number | boolean | undefined) => pbg({ matte: v as EditBackground['matte'] }, 'bgm')">
+              <el-radio-button value="chroma">绿幕 / 蓝幕</el-radio-button>
+              <el-radio-button value="ai">人像抠图</el-radio-button>
+            </el-radio-group>
+          </EditField>
+          <template v-if="clip.bg.matte === 'chroma'">
+            <EditField label="背景色">
+              <el-color-picker :model-value="clip.bg.chroma.color" size="small" @update:model-value="(v: string | null) => v && pbgc({ color: v.toUpperCase() }, 'bgkc')" />
+              <el-button v-for="k in KEY_COLORS" :key="k.color" size="small" link :type="clip.bg.chroma.color === k.color ? 'primary' : undefined" @click="pbgc({ color: k.color }, 'bgkc')">{{ k.label }}</el-button>
+              <el-button size="small" link type="primary" :loading="detecting" @click="detectKey(clip.path, clip.inMs + 500, (g) => pbgc({ color: g.color, similarity: g.similarity, blend: g.blend }, 'bgauto'))">自动识别</el-button>
+            </EditField>
+            <EditSlider label="相似度" :model-value="clip.bg.chroma.similarity" :min="0.01" :max="0.6" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pbgc({ similarity: v }, 'bgks')" />
+            <EditSlider label="边缘柔化" :model-value="clip.bg.chroma.blend" :min="0" :max="0.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pbgc({ blend: v }, 'bgkb')" />
+          </template>
+          <template v-else>
+            <EditField label="抠图模型" hint="第一次用要先下载（或从本地文件导入）一个模型，之后离线可用。在 CPU 上逐帧推理，较慢：1 分钟的视频大约要几分钟">
+              <EditModels kind="matte" :selected="clip.bg.model" @select="(id) => pbg({ model: id }, 'bgmodel')" />
+            </EditField>
+            <EditSlider label="边缘柔化" :model-value="clip.bg.feather" :min="0" :max="8" :step="0.5" :digits="1" unit=" 像素" @update:model-value="(v) => pbg({ feather: v }, 'bgf')" />
+          </template>
+          <EditField label="新背景">
+            <el-radio-group :model-value="clip.bg.mode" size="small" @update:model-value="(v: string | number | boolean | undefined) => pbg({ mode: v as EditBackground['mode'] }, 'bgmode')">
+              <el-radio-button value="color">纯色</el-radio-button>
+              <el-radio-button value="blur">模糊原画面</el-radio-button>
+              <el-radio-button value="image">图片</el-radio-button>
+            </el-radio-group>
+          </EditField>
+          <EditField v-if="clip.bg.mode === 'color'" label="颜色">
+            <el-color-picker :model-value="clip.bg.color" size="small" @update:model-value="(v: string | null) => v && pbg({ color: v.toUpperCase() }, 'bgc')" />
+          </EditField>
+          <EditSlider v-if="clip.bg.mode === 'blur'" label="模糊强度" :model-value="clip.bg.blur" :min="1" :max="60" :step="1" :digits="0" @update:model-value="(v) => pbg({ blur: v }, 'bgb')" />
+          <EditField v-if="clip.bg.mode === 'image'" label="图片">
+            <el-button size="small" @click="pickBgImage">选择图片…</el-button>
+            <span class="mute small">{{ clip.bg.image ? clip.bg.image.split(/[\\/]/).pop() : '还没有选' }}</span>
+          </EditField>
+        </template>
+        <el-collapse v-if="placed" class="kfc" :model-value="keyedCount(clip) ? ['k'] : []">
+          <el-collapse-item name="k" :title="`缩放 / 平移关键帧${keyedCount(clip) ? `（${keyedCount(clip)} 项）` : ''}`">
+            <EditKeyframes :ed="ed" kind="clip" :item="clip" :defs="CLIP_KEY_PROPS" :duration-ms="placed.durMs" :start-ms="placed.startMs" @goto="(ms) => emit('goto', ms)" />
+            <div class="mute small pad">先适配画面，再按关键帧缩放 / 平移；缩小时四周是黑边。预览里看不到，导出时才生效。</div>
+          </el-collapse-item>
+        </el-collapse>
+        <template v-if="!clip.freeze && (!src || src.hasAudio)">
           <EditSlider label="音量" :model-value="clip.volume" :min="0" :max="4" :step="0.05" unit="%" :scale="100" :disabled="clip.mute" @update:model-value="(v) => pc({ volume: v }, 'vol')" />
           <EditField label="">
             <el-checkbox :model-value="clip.mute" @update:model-value="(v: unknown) => pc({ mute: !!v }, 'mute')">静音这个片段</el-checkbox>
           </EditField>
         </template>
-        <div v-else class="mute small pad">这个素材没有声音。</div>
+        <div v-else-if="!clip.freeze" class="mute small pad">这个素材没有声音。</div>
       </template>
       <template v-else>
         <EditField label="显示时长">
@@ -414,10 +584,10 @@ async function pickDir() {
         <TimeInput :model-value="overlay.outMs" :min="MIN_MS" @update:model-value="(v) => po({ outMs: v }, 'oout')" />
       </EditField>
 
-      <EditSlider label="左右位置" :model-value="overlay.x" :min="-0.5" :max="1.5" :step="0.005" unit="%" :scale="100" hint="素材中心离画面左边的距离。也可以在监视器里直接拖动素材" @update:model-value="(v) => po({ x: v }, 'ox')" />
-      <EditSlider label="上下位置" :model-value="overlay.y" :min="-0.5" :max="1.5" :step="0.005" unit="%" :scale="100" @update:model-value="(v) => po({ y: v }, 'oy')" />
-      <EditSlider label="大小" :model-value="overlay.scale" :min="0.02" :max="3" :step="0.01" unit="%" :scale="100" hint="素材宽度占画面宽度的比例（100% = 和画面一样宽）" @update:model-value="(v) => po({ scale: v }, 'osc')" />
-      <EditSlider label="旋转" :model-value="overlay.rotate" :min="-360" :max="360" :step="1" unit="°" @update:model-value="(v) => po({ rotate: v }, 'orot')" />
+      <EditSlider label="左右位置" :model-value="eo!.x" :min="-0.5" :max="1.5" :step="0.005" unit="%" :scale="100" hint="素材中心离画面左边的距离。也可以在监视器里直接拖动素材" @update:model-value="(v) => pk({ x: v }, 'ox')" />
+      <EditSlider label="上下位置" :model-value="eo!.y" :min="-0.5" :max="1.5" :step="0.005" unit="%" :scale="100" @update:model-value="(v) => pk({ y: v }, 'oy')" />
+      <EditSlider label="大小" :model-value="eo!.scale" :min="0.02" :max="3" :step="0.01" unit="%" :scale="100" hint="素材宽度占画面宽度的比例（100% = 和画面一样宽）" @update:model-value="(v) => pk({ scale: v }, 'osc')" />
+      <EditSlider label="旋转" :model-value="eo!.rotate" :min="-360" :max="360" :step="1" unit="°" @update:model-value="(v) => pk({ rotate: v }, 'orot')" />
       <EditField label="">
         <el-button size="small" @click="turnOverlay(-90)">左转 90°</el-button>
         <el-button size="small" @click="turnOverlay(90)">右转 90°</el-button>
@@ -428,7 +598,7 @@ async function pickDir() {
         <el-button size="small" @click="fitOverlay('cover')">铺满画面</el-button>
         <el-button size="small" @click="resetOverlayBox">还原</el-button>
       </EditField>
-      <EditSlider label="不透明度" :model-value="overlay.opacity" :min="0" :max="1" :step="0.01" unit="%" :scale="100" @update:model-value="(v) => po({ opacity: v }, 'oop')" />
+      <EditSlider label="不透明度" :model-value="eo!.opacity" :min="0" :max="1" :step="0.01" unit="%" :scale="100" @update:model-value="(v) => pk({ opacity: v }, 'oop')" />
       <EditField label="">
         <el-checkbox :model-value="overlay.flipH" @update:model-value="(v: unknown) => po({ flipH: !!v }, 'ofh')">左右翻转</el-checkbox>
         <el-checkbox :model-value="overlay.flipV" @update:model-value="(v: unknown) => po({ flipV: !!v }, 'ofv')">上下翻转</el-checkbox>
@@ -453,9 +623,42 @@ async function pickDir() {
         <el-input-number :model-value="overlay.animMs / 1000" :min="0.1" :max="3" :step="0.1" :precision="1" size="small" controls-position="right" @update:model-value="(v: number | undefined) => po({ animMs: Math.round((v ?? 0.5) * 1000) }, 'oam')" />
       </EditField>
       <template v-if="overlay.kind === 'video' && src && src.hasAudio">
-        <EditSlider label="音量" :model-value="overlay.volume" :min="0" :max="4" :step="0.05" unit="%" :scale="100" :disabled="overlay.mute" @update:model-value="(v) => po({ volume: v }, 'ovol')" />
+        <EditSlider label="音量" :model-value="eo!.volume" :min="0" :max="4" :step="0.05" unit="%" :scale="100" :disabled="overlay.mute" @update:model-value="(v) => pk({ volume: v }, 'ovol')" />
         <EditField label="">
           <el-checkbox :model-value="overlay.mute" @update:model-value="(v: unknown) => po({ mute: !!v }, 'omute')">静音这个素材</el-checkbox>
+        </EditField>
+      </template>
+      <EditField label="形状蒙版" hint="只留一个矩形 / 椭圆里面（或反过来只留外面）的部分，边缘可以羽化。位置和大小占素材自己画面的比例。预览里看不到，导出时才生效">
+        <el-checkbox :model-value="overlay.mask.on" @update:model-value="(v: unknown) => pm({ on: !!v }, 'mon')">启用蒙版</el-checkbox>
+      </EditField>
+      <template v-if="overlay.mask.on">
+        <EditField label="形状">
+          <el-radio-group :model-value="overlay.mask.shape" size="small" @update:model-value="(v: string | number | boolean | undefined) => pm({ shape: v as EditShapeMask['shape'] }, 'msh')">
+            <el-radio-button value="ellipse">椭圆</el-radio-button>
+            <el-radio-button value="rect">矩形</el-radio-button>
+          </el-radio-group>
+          <el-checkbox :model-value="overlay.mask.invert" @update:model-value="(v: unknown) => pm({ invert: !!v }, 'minv')">反选</el-checkbox>
+        </EditField>
+        <EditSlider label="中心 X" :model-value="overlay.mask.x" :min="0" :max="1" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ x: v }, 'mx')" />
+        <EditSlider label="中心 Y" :model-value="overlay.mask.y" :min="0" :max="1" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ y: v }, 'my')" />
+        <EditSlider label="宽度" :model-value="overlay.mask.w" :min="0.05" :max="1.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ w: v }, 'mw')" />
+        <EditSlider label="高度" :model-value="overlay.mask.h" :min="0.05" :max="1.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ h: v }, 'mh')" />
+        <EditSlider label="羽化" :model-value="overlay.mask.feather" :min="0" :max="0.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pm({ feather: v }, 'mf')" />
+      </template>
+      <EditField label="抠像" hint="把一种颜色（绿幕 / 蓝幕）变成透明，露出下面的画面。预览是近似的，导出为准">
+        <el-checkbox :model-value="overlay.chroma.on" @update:model-value="(v: unknown) => pch({ on: !!v }, 'chon')">去掉背景色</el-checkbox>
+      </EditField>
+      <template v-if="overlay.chroma.on">
+        <EditField label="背景色">
+          <el-color-picker :model-value="overlay.chroma.color" size="small" @update:model-value="(v: string | null) => v && pch({ color: v.toUpperCase() }, 'chc')" />
+          <el-button v-for="k in KEY_COLORS" :key="k.color" size="small" link :type="overlay.chroma.color === k.color ? 'primary' : undefined" @click="pch({ color: k.color }, 'chc')">{{ k.label }}</el-button>
+          <el-button v-if="hasEyeDropper" size="small" link @click="pickKeyColor">吸管</el-button>
+          <el-button size="small" link type="primary" :loading="detecting" @click="detectKey(overlay.path, overlay.inMs + 500, (g) => pch({ color: g.color, similarity: g.similarity, blend: g.blend }, 'chauto'))">自动识别</el-button>
+        </EditField>
+        <EditSlider label="相似度" :model-value="overlay.chroma.similarity" :min="0.01" :max="0.6" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pch({ similarity: v }, 'chs')" />
+        <EditSlider label="边缘柔化" :model-value="overlay.chroma.blend" :min="0" :max="0.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pch({ blend: v }, 'chb')" />
+        <EditField label="">
+          <el-checkbox :model-value="overlay.chroma.despill" @update:model-value="(v: unknown) => pch({ despill: !!v }, 'chd')">去溢色（压掉边缘的绿 / 蓝反光）</el-checkbox>
         </EditField>
       </template>
       <EditSlider label="亮度" :model-value="overlay.brightness" :min="-1" :max="1" :step="0.01" :scale="100" :digits="0" @update:model-value="(v) => po({ brightness: v }, 'otone')" />
@@ -464,6 +667,11 @@ async function pickDir() {
       <EditField label="">
         <el-button size="small" link type="primary" :disabled="!ovToned" @click="resetOverlayTone">调色归零</el-button>
       </EditField>
+      <el-collapse class="kfc" :model-value="keyedCount(overlay) ? ['k'] : []">
+        <el-collapse-item name="k" :title="`关键帧动画${keyedCount(overlay) ? `（${keyedCount(overlay)} 项）` : ''}`">
+          <EditKeyframes :ed="ed" kind="overlay" :item="overlay" :defs="OVERLAY_KEY_PROPS" :duration-ms="overlayDuration(overlay)" :start-ms="overlay.startMs" @goto="(ms) => emit('goto', ms)" />
+        </el-collapse-item>
+      </el-collapse>
       <div class="mute small pad">叠加素材不会撑长成片，超出主轨结尾的部分会被截掉。</div>
     </div>
 
@@ -479,13 +687,24 @@ async function pickDir() {
         <TimeInput :model-value="text.endMs" :min="text.startMs + MIN_MS" @update:model-value="(v) => pt({ endMs: v }, 'te')" />
         <el-button size="small" link @click="stampEnd">取播放位置</el-button>
       </EditField>
-      <EditSlider label="左右位置" :model-value="text.x" :min="0" :max="1" :step="0.005" unit="%" :scale="100" hint="文字中心离画面左边的距离。也可以在监视器里直接拖动文字" @update:model-value="(v) => pt({ x: v }, 'tx')" />
-      <EditSlider label="上下位置" :model-value="text.y" :min="0" :max="1" :step="0.005" unit="%" :scale="100" @update:model-value="(v) => pt({ y: v }, 'ty')" />
+      <EditSlider label="左右位置" :model-value="et!.x" :min="0" :max="1" :step="0.005" unit="%" :scale="100" hint="文字中心离画面左边的距离。也可以在监视器里直接拖动文字" @update:model-value="(v) => ptk({ x: v }, 'tx')" />
+      <EditSlider label="上下位置" :model-value="et!.y" :min="0" :max="1" :step="0.005" unit="%" :scale="100" @update:model-value="(v) => ptk({ y: v }, 'ty')" />
       <EditSlider label="字号" :model-value="text.size" :min="1" :max="30" :step="0.5" unit="%" :digits="1" hint="占画面高度的百分比" @update:model-value="(v) => pt({ size: v }, 'tsz')" />
       <EditField label="颜色">
         <el-color-picker :model-value="text.color" size="small" @update:model-value="(v: string | null) => v && pt({ color: v }, 'tc')" />
       </EditField>
-      <EditSlider label="不透明度" :model-value="text.opacity" :min="0.05" :max="1" :step="0.05" unit="%" :scale="100" @update:model-value="(v) => pt({ opacity: v }, 'to')" />
+      <EditSlider label="不透明度" :model-value="et!.opacity" :min="0" :max="1" :step="0.05" unit="%" :scale="100" @update:model-value="(v) => ptk({ opacity: v }, 'to')" />
+      <EditSlider label="淡入淡出" :model-value="text.fadeMs" :min="0" :max="1000" :step="50" :scale="0.001" :digits="2" unit=" 秒" hint="出现和消失时渐变；导出时只作用在字上，描边和底色块不跟着变" @update:model-value="(v) => pt({ fadeMs: v }, 'tfd')" />
+      <el-collapse v-if="!(text.words.length && text.highlight)" class="kfc" :model-value="keyedCount(text) ? ['k'] : []">
+        <el-collapse-item name="k" :title="`关键帧动画${keyedCount(text) ? `（${keyedCount(text)} 项）` : ''}`">
+          <EditKeyframes :ed="ed" kind="text" :item="text" :defs="TEXT_KEY_PROPS" :duration-ms="text.endMs - text.startMs" :start-ms="text.startMs" @goto="(ms) => emit('goto', ms)" />
+        </el-collapse-item>
+      </el-collapse>
+      <div v-if="text.words.length" class="mute small pad">这是按词生成的字幕：{{ text.highlight ? '说到哪个词，哪个词变色' : '每个词都有各自的时间' }}。改字后会变成普通文字。</div>
+      <EditField v-if="text.words.length" label="高亮色">
+        <el-color-picker :model-value="text.highlight || '#FFD400'" size="small" @update:model-value="(v: string | null) => v && pt({ highlight: v }, 'thl')" />
+        <el-button v-if="text.highlight" size="small" link @click="pt({ highlight: '' }, 'thl')">不高亮</el-button>
+      </EditField>
       <EditField label="描边">
         <el-checkbox :model-value="text.outline" @update:model-value="(v: unknown) => pt({ outline: !!v }, 'tol')">加描边</el-checkbox>
         <el-color-picker v-if="text.outline" :model-value="text.outlineColor" size="small" @update:model-value="(v: string | null) => v && pt({ outlineColor: v }, 'tolc')" />
@@ -537,6 +756,21 @@ async function pickDir() {
       <EditField label="">
         <el-checkbox :model-value="audio.duck" @update:model-value="(v: unknown) => pa({ duck: !!v }, 'ad')">片段里有人声时自动压低这条配乐</el-checkbox>
       </EditField>
+      <EditField label="节拍" hint="找出配乐的拍子，时间线上显示成小竖线，拖东西时会吸附上去；也可以让主轨按拍子切换">
+        <el-button size="small" :loading="beatBusy" @click="findBeats">{{ audio.beats ? '重新分析' : '分析节拍' }}</el-button>
+        <span v-if="audio.beats" class="mute small">约 {{ audio.beats.bpm }} BPM · {{ audio.beats.beatsMs.length }} 拍{{ audio.beats.confidence < LOW_BEAT_CONFIDENCE ? '（节奏不清晰，可能不准）' : '' }}</span>
+      </EditField>
+      <EditField v-if="audio.beats" label="卡点">
+        <span class="mute small">每个片段占</span>
+        <el-select v-model="perClip" size="small" style="width: 84px">
+          <el-option v-for="n in [1, 2, 4, 8]" :key="n" :label="`${n} 拍`" :value="n" />
+        </el-select>
+        <el-button size="small" @click="arrangeNow">让主轨按节拍切换</el-button>
+      </EditField>
+      <EditField label="">
+        <el-button size="small" @click="fitNow">适配成片长度</el-button>
+        <span class="mute small">太短就循环，太长就截断并淡出</span>
+      </EditField>
       <div class="mute small pad">监视器里配乐的音量最大 100%，自动压低也不会播放出来，导出时才生效。</div>
     </div>
 
@@ -548,6 +782,21 @@ async function pickDir() {
     <!-- 区域 -->
     <div v-if="tab === 'region'" class="sec">
       <EditRegions :ed="ed" :rg="rg" @goto="(ms) => emit('goto', ms)" />
+    </div>
+
+    <!-- 智能 -->
+    <div v-if="tab === 'smart'" class="sec">
+      <EditSmart :ed="ed" @goto="(ms) => emit('goto', ms)" />
+    </div>
+
+    <!-- 文稿 -->
+    <div v-if="tab === 'script'" class="sec">
+      <EditTranscript :ed="ed" @goto="(ms) => emit('goto', ms)" />
+    </div>
+
+    <!-- 精彩 -->
+    <div v-if="tab === 'hl'" class="sec">
+      <EditHighlights :ed="ed" @goto="(ms) => emit('goto', ms)" />
     </div>
 
     <!-- 输出 -->
@@ -656,5 +905,9 @@ async function pickDir() {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+.kfc {
+  border: none;
+  margin: 4px 0;
 }
 </style>

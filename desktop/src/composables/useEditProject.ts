@@ -2,7 +2,7 @@
 
 import { computed, reactive, ref, watch } from 'vue'
 import { api, errorText } from '../api'
-import type { EditAudio, EditClip, EditOverlay, EditProject, EditSource, EditText } from '../types'
+import type { EditAudio, EditClip, EditKeyframe, EditOverlay, EditProject, EditRegion, EditSource, EditText, TimeSpan } from '../types'
 import {
   MAX_AUDIO,
   MAX_CLIPS,
@@ -20,13 +20,24 @@ import {
   clipIndexAt,
   clipToOverlay,
   copyRegion,
+  cutAtSourceTimes,
   detachedAudio,
   editPoints,
+  kfDelete,
+  kfSet,
   emptyProject,
   layout,
   mediaPaths,
   moveItem,
   nextId,
+  nextRegionId,
+  removeSilences,
+  rippleBy,
+  freezeAt,
+  speedRamp,
+  curveSteps,
+  rampPieceCount,
+  type SpeedPoint,
   textFromCue,
   normalizeProject,
   outputSize,
@@ -46,6 +57,9 @@ import {
   trimClipAt,
   trimOverlayAt,
   neighborPoint,
+  arrangeToBeats,
+  beatsOnTimeline,
+  fitAudio,
 } from '../utils/edit'
 
 export interface Sel {
@@ -195,11 +209,199 @@ export function useEditProject() {
       if (c) Object.assign(c, patch)
     }, key)
   }
+
+  /** 把片段在这些素材时间点切开（场景分割）。返回切出了几段，没有有效切点返回 0。 */
+  function cutClipAt(id: number, cuts: number[]): number {
+    const c = clipOf(id)
+    if (!c) return 0
+    let n = 0
+    mutate((p) => {
+      const i = p.clips.findIndex((x) => x.id === id)
+      let next = nextId(p)
+      const pieces = cutAtSourceTimes(p.clips[i], cuts, () => next++)
+      if (!pieces) return
+      p.clips.splice(i, 1, ...pieces)
+      n = pieces.length
+    })
+    return n
+  }
+
+  /** 去掉片段里的静音段；后面的叠加素材、文字、配乐一起前移。返回去掉了多少毫秒（时间线上的），没有可去的返回 0。 */
+  function removeClipSilences(id: number, spans: TimeSpan[], keepMs: number): number {
+    const i = project.value.clips.findIndex((x) => x.id === id)
+    if (i < 0) return 0
+    const from = placed.value[i].endMs
+    const before = total.value
+    let removed = 0
+    mutate((p) => {
+      let next = nextId(p)
+      const r = removeSilences(p.clips[i], spans, keepMs, () => next++)
+      if (!r) return
+      p.clips.splice(i, 1, ...r.clips)
+      removed = Math.max(0, before - totalMs(p.clips))
+      shiftAfter(p, from, removed)
+    })
+    return removed
+  }
+
+  /** 给一个片段套变速曲线（拆成几段不同速度）。后面的内容跟着前后移。返回新的片段数，不能套返回 0。 */
+  function applySpeedRamp(id: number, steps: number[]): number {
+    const i = project.value.clips.findIndex((x) => x.id === id)
+    if (i < 0) return 0
+    const from = placed.value[i].endMs
+    const before = total.value
+    let n = 0
+    mutate((p) => {
+      let next = nextId(p)
+      const pieces = speedRamp(p.clips[i], steps, () => next++)
+      if (!pieces) return
+      p.clips.splice(i, 1, ...pieces)
+      n = pieces.length
+      rippleBy(p, from, totalMs(p.clips) - before)
+    })
+    return n
+  }
+
+  /**
+   * 给一个片段套平滑变速曲线：按曲线取样拆成 12–60 个小段，相邻两段速度只差一点点，看起来是连续变速。
+   * 返回新的片段数；太短、已经倒放 / 定格、或者会让片段超过上限时返回 0。
+   */
+  function applySmoothRamp(id: number, points: SpeedPoint[]): number {
+    const i = project.value.clips.findIndex((x) => x.id === id)
+    const c = project.value.clips[i]
+    if (!c || c.kind !== 'video' || c.reverse || c.freeze || points.length < 2) return 0
+    const n = rampPieceCount(c.outMs - c.inMs)
+    if (!n || project.value.clips.length - 1 + n > MAX_CLIPS) return 0
+    return applySpeedRamp(id, curveSteps(points, n))
+  }
+
+  /** 在播放头处定格 `holdMs` 毫秒（只对播放头所在的普通视频片段有效）。成功返回 true。 */
+  function freezeAtPlayhead(holdMs: number): boolean {
+    const t = playhead.value
+    const i = clipIndexAt(placed.value, t)
+    if (i < 0) return false
+    const from = placed.value[i].endMs
+    const before = total.value
+    let ok = false
+    mutate((p) => {
+      let next = nextId(p)
+      const pieces = freezeAt(p.clips[i], placed.value[i], t, holdMs, () => next++)
+      if (!pieces) return
+      p.clips.splice(i, 1, ...pieces)
+      ok = true
+      rippleBy(p, from, totalMs(p.clips) - before)
+    })
+    return ok
+  }
+
+  /** 让主轨按配乐的节拍切换（每个片段占 `perClip` 拍）。返回结果统计，没有可排的返回 null。 */
+  function arrangeToBeatsOf(audioId: number, perClip: number): { arranged: number; short: number; left: number } | null {
+    const a = project.value.audio.find((x) => x.id === audioId)
+    const beats = a ? beatsOnTimeline(a) : []
+    if (!a || beats.length < 2) return null
+    let res: { arranged: number; short: number; left: number } | null = null
+    const before = total.value
+    mutate((p) => {
+      const r = arrangeToBeats(p.clips, beats, perClip, (path) => sources[path]?.durationMs ?? undefined)
+      if (!r) return
+      p.clips = r.clips
+      rippleBy(p, before, totalMs(p.clips) - before)
+      res = { arranged: r.arranged, short: r.short, left: r.left }
+    })
+    return res
+  }
+
+  /** 让配乐适配成片长度（太短循环、太长截断 + 结尾淡出）。成功返回 true。 */
+  function fitAudioToVideo(audioId: number): boolean {
+    const a = project.value.audio.find((x) => x.id === audioId)
+    if (!a) return false
+    const patch = fitAudio(a, sources[a.path], total.value)
+    if (!patch) return false
+    patchAudio(audioId, patch)
+    return true
+  }
+
+  /** 加一批自动生成的字幕（文字）。`replaceIds` 里的旧字幕先去掉。返回实际加入的条数（受 MAX_TEXTS 限制）。 */
+  function addCaptions(make: (ids: () => number) => EditText[], replaceIds: number[] = []): number {
+    let added = 0
+    mutate((p) => {
+      const drop = new Set(replaceIds)
+      p.texts = p.texts.filter((t) => !drop.has(t.id))
+      let next = nextId(p)
+      const list = make(() => next++).slice(0, Math.max(0, MAX_TEXTS - p.texts.length))
+      p.texts.push(...list)
+      added = list.length
+    })
+    return added
+  }
+
+  /** 给片段放一个自动生成的区域（聚焦只能有一个：旧的聚焦被替掉）。 */
+  function putRegion(clipId: number, region: EditRegion) {
+    mutate((p) => {
+      const c = p.clips.find((x) => x.id === clipId)
+      if (!c) return
+      const r = { ...region, id: nextRegionId(c) }
+      if (r.effect === 'focus') c.regions = c.regions.filter((x) => x.effect !== 'focus')
+      c.regions.push(r)
+    })
+  }
+
   function patchOverlay(id: number, patch: Partial<EditOverlay>, key = '') {
     mutate((p) => {
       const c = p.overlays.find((x) => x.id === id)
       if (c) Object.assign(c, patch)
     }, key)
+  }
+  /** 播放头相对这个素材 / 文字开头的位置（毫秒，收紧在它自己的时长里） */
+  function localMs(startMs: number, durMs: number): number {
+    return Math.round(Math.min(Math.max(0, playhead.value - startMs), durMs))
+  }
+  /** 改叠加素材的位置 / 大小 / 旋转 / 不透明度 / 音量：有关键帧的属性在播放头处加（或改）一个关键点，没有的直接改固定值 */
+  function setOverlayProps(id: number, patch: Partial<Record<'x' | 'y' | 'scale' | 'rotate' | 'opacity' | 'volume', number>>, key = '') {
+    mutate((p) => {
+      const o = p.overlays.find((x) => x.id === id)
+      if (!o) return
+      const at = localMs(o.startMs, overlayDuration(o))
+      for (const [prop, v] of Object.entries(patch) as [string, number][]) {
+        if (o.keyframes[prop]?.length) o.keyframes = kfSet(o.keyframes, prop, at, v)
+        else (o as unknown as Record<string, number>)[prop] = v
+      }
+    }, key)
+  }
+  function setTextProps(id: number, patch: Partial<Record<'x' | 'y' | 'opacity', number>>, key = '') {
+    mutate((p) => {
+      const t = p.texts.find((x) => x.id === id)
+      if (!t) return
+      const at = localMs(t.startMs, t.endMs - t.startMs)
+      for (const [prop, v] of Object.entries(patch) as [string, number][]) {
+        if (t.keyframes[prop]?.length) t.keyframes = kfSet(t.keyframes, prop, at, v)
+        else (t as unknown as Record<string, number>)[prop] = v
+      }
+    }, key)
+  }
+  /** 在 `tMs`（相对开头）给某个属性放一个关键点 / 改它的曲线 / 删掉 */
+  function setKey(kind: 'overlay' | 'text' | 'clip', id: number, prop: string, tMs: number, value: number, ease?: EditKeyframe['ease'], key = '') {
+    mutate((p) => {
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      if (it) it.keyframes = kfSet(it.keyframes, prop, tMs, value, ease)
+    }, key)
+  }
+  function deleteKey(kind: 'overlay' | 'text' | 'clip', id: number, prop: string, tMs: number) {
+    mutate((p) => {
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      if (it) it.keyframes = kfDelete(it.keyframes, prop, tMs)
+    })
+  }
+  /** 把某个属性所有的关键点去掉，回到固定值（固定值设成 `keep`，比如当前这一刻的值） */
+  function clearKeys(kind: 'overlay' | 'text' | 'clip', id: number, prop: string, keep?: number) {
+    mutate((p) => {
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      if (!it) return
+      const rest = { ...it.keyframes }
+      delete rest[prop]
+      it.keyframes = rest
+      if (keep !== undefined && kind !== 'clip') (it as unknown as Record<string, number>)[prop] = keep
+    })
   }
   function patchText(id: number, patch: Partial<EditText>, key = '') {
     mutate((p) => {
@@ -318,7 +520,7 @@ export function useEditProject() {
   }
 
   /** 添加配乐（音频文件，或者想用它声音的视频）。从 `startMs`（默认播放位置）开始。 */
-  async function addMusic(paths: string[], startMs?: number): Promise<AddReport> {
+  async function addMusic(paths: string[], startMs?: number, select = true): Promise<AddReport> {
     const report: AddReport = { added: 0, errors: [] }
     busy.value = true
     try {
@@ -330,7 +532,7 @@ export function useEditProject() {
           if (p.audio.length >= MAX_AUDIO) return report.errors.push(`音频轨最多 ${MAX_AUDIO} 条，${info.name} 没有加入。`)
           const a = audioFromSource(info, nextId(p), Math.round(Math.max(0, startMs ?? playhead.value)))
           p.audio.push(a)
-          sel.value = { kind: 'audio', id: a.id }
+          if (select) sel.value = { kind: 'audio', id: a.id }
           report.added++
         })
       })
@@ -709,8 +911,22 @@ export function useEditProject() {
     textOf,
     audioOf,
     patchClip,
+    cutClipAt,
+    removeClipSilences,
+    addCaptions,
+    putRegion,
     patchOverlay,
     patchText,
+    setOverlayProps,
+    setTextProps,
+    setKey,
+    applySpeedRamp,
+    applySmoothRamp,
+    freezeAtPlayhead,
+    arrangeToBeatsOf,
+    fitAudioToVideo,
+    deleteKey,
+    clearKeys,
     patchAudio,
     probe,
     addClips,

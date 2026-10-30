@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod ai_cmds;
 pub mod api;
+pub mod audiofx;
 pub mod backup;
 pub mod bt;
 pub mod checksum;
@@ -29,6 +30,7 @@ pub mod lut;
 pub mod media_cmds;
 pub mod media_server;
 pub mod media_tools;
+pub mod ml;
 pub mod model;
 pub mod naming;
 pub mod net;
@@ -547,11 +549,29 @@ pub fn run() {
             media_cmds::video_analyze,
             media_cmds::video_color,
             media_cmds::video_preview,
+            media_cmds::audio_fx_preview,
             edit::cmds::edit_probe,
             edit::cmds::edit_thumb,
             edit::cmds::edit_preview_url,
             edit::cmds::edit_preview_start,
             edit::cmds::edit_save,
+            edit::analyze::edit_scenes,
+            edit::analyze::edit_silences,
+            edit::analyze::edit_beats,
+            edit::analyze::edit_detect_key,
+            ml::store::ml_models,
+            ml::vocals::edit_vocals,
+            ml::store::ml_model_download,
+            ml::store::ml_model_import,
+            ml::store::ml_model_remove,
+            edit::highlights::edit_highlights,
+            edit::highlights::edit_highlights_llm,
+            edit::analyze::edit_waveform,
+            edit::analyze::edit_noise_floor,
+            edit::analyze::edit_auto_reframe,
+            edit::transcript::edit_transcribe,
+            edit::transcript::edit_stt_status,
+            edit::transcript::edit_translate_lines,
             edit::cmds::edit_open,
             edit::cmds::edit_missing,
             edit::cmds::edit_proxy,

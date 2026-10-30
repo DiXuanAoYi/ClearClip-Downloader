@@ -8,14 +8,18 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::audiofx::{simple_chain, AudioFxSpec, FxCaps};
 use crate::error::{AppError, AppResult};
 use crate::media_tools::{atempo_chain, s, target_kbps, video_codec_for, VideoCodec};
 use crate::vidcaps::Caps;
 use crate::vidnorm::build::{filter_path, fps_fraction, graph_args, hevc_args, nearest_standard_fps};
 use crate::vidnorm::facts::{Facts, Hdr};
 
+use super::keyframes;
 use super::region::{focus_knots, focus_window, knot_expr, MaskJob};
-use super::spec::{layout, overlay_order, tone_changed, total_ms, AudioTrack, Clip, ClipKind, Overlay, Placed, Project, Region, TextItem};
+use super::spec::{layout, overlay_order, tone_changed, total_ms, AudioTrack, Clip, ClipKind, Overlay, Placed, Project, Region, ShapeMask, TextItem};
+use crate::ml::matte::MatteJob;
+use crate::ml::store as models;
 
 /// 命令行总长度的上限。Windows 的上限是 32767 个字符，留一点给 ffmpeg 路径和输出文件。
 const MAX_ARGS_LEN: usize = 30_000;
@@ -72,6 +76,8 @@ pub struct EditPlan {
     pub warnings: Vec<String>,
     /// 区域效果用的遮罩视频：跑 ffmpeg 之前要先生成好（见 `region::render_mask`）
     pub masks: Vec<MaskJob>,
+    /// 人像抠图要先生成的抠图视频（见 `ml::matte::render_matte`）
+    pub mattes: Vec<MatteJob>,
 }
 
 fn sec(ms: u64) -> String {
@@ -166,6 +172,10 @@ struct Regions<'a> {
     /// 成片的宽高比（聚焦“按成片比例取景”用）
     out_aspect: f64,
     masks: Vec<MaskJob>,
+    mattes: Vec<MatteJob>,
+    warnings: Vec<String>,
+    /// 额外输入（遮罩视频、背景图片）的参数，按输入编号顺序
+    extra: Vec<Vec<String>>,
 }
 
 /// 预览时素材长边超过这个值就先缩小再做区域效果（预览本来就只有 360 高，没必要在 4K 上做模糊）
@@ -239,7 +249,8 @@ fn region_stage(i: usize, c: &Clip, sr: &Source, setpts: String, rg: &mut Region
         if eff == "null" {
             continue; // 没有设置任何调色：不需要这一层
         }
-        let m = rg.first_input + rg.masks.len();
+        let m = rg.first_input + rg.extra.len();
+        rg.extra.push(vec!["-i".into(), rg.tmp.join(format!("mask-{i}-{j}.nut")).to_string_lossy().into_owned()]);
         rg.masks.push(MaskJob::new(rg.tmp.join(format!("mask-{i}-{j}.nut")), r.clone(), c.in_ms, c.speed, dur, (w, h), sr.fps, rg.preview));
         let (base, branch, fx, mask, alpha, next) =
             (format!("rb{i}_{j}"), format!("re{i}_{j}"), format!("rf{i}_{j}"), format!("rm{i}_{j}"), format!("ra{i}_{j}"), format!("rs{i}_{j}"));
@@ -281,18 +292,132 @@ struct Frame<'a> {
     blur: &'static str,
 }
 
+/// 换背景：`input` 是已经套好 `head`（变速、方向、帧率）的画面，输出合成后的标签。
+#[allow(clippy::too_many_arguments)]
+fn bg_stage(i: usize, c: &Clip, sr: &Source, f: &Frame, input: &str, head: &str, rg: &mut Regions, stmts: &mut Vec<String>) -> String {
+    let bg = &c.bg;
+    let hex = |s: &str| s.trim_start_matches('#').to_string();
+    let swap = matches!(c.rotate, 90 | 270);
+    let (sw, sh) = if swap { (sr.height, sr.width) } else { (sr.width, sr.height) };
+    let needs_copy = bg.mode != "image";
+    let (fg_in, bg_in) = (format!("bk{i}"), format!("bs{i}"));
+    if needs_copy {
+        stmts.push(format!("{input}{head},split[{bg_in}][{fg_in}]"));
+    } else {
+        stmts.push(format!("{input}{head}[{fg_in}]"));
+    }
+    if bg.matte == "ai" {
+        // 前景 = 原画面 + 抠图模型给的透明度（抠图视频在素材自己的时间里，这里套同样的变速、方向、帧率）
+        let m = rg.first_input + rg.extra.len();
+        let path = rg.tmp.join(format!("matte-{i}.nut"));
+        let def = models::def(&bg.model).expect("checked");
+        rg.mattes.push(MatteJob {
+            path: path.clone(),
+            src: c.path.clone(),
+            image: c.kind == ClipKind::Image,
+            in_ms: c.in_ms,
+            span_ms: c.out_ms.saturating_sub(c.in_ms),
+            model_id: bg.model.clone(),
+            model: Default::default(),
+            norm: def.norm,
+            fixed_side: def.fixed_side,
+            src_size: (sr.width, sr.height),
+            src_fps: sr.fps,
+        });
+        rg.extra.push(vec!["-i".into(), path.to_string_lossy().into_owned()]);
+        let pace = if c.kind == ClipKind::Video && (c.speed - 1.0).abs() > 1e-9 {
+            format!("setpts=(PTS-STARTPTS)/{:.6}", c.speed)
+        } else {
+            "setpts=PTS-STARTPTS".to_string()
+        };
+        let mut mh: Vec<String> = vec![];
+        if c.kind == ClipKind::Image {
+            mh.push(format!("loop=loop=-1:size=1,setpts=N/{}/TB", f.fps));
+        } else {
+            mh.push(pace);
+        }
+        mh.extend(orient(c).into_iter().map(String::from));
+        mh.push(format!("fps={}", f.fps));
+        // 抠图比画面短时（素材尾部、帧数上限）停在最后一帧，不让前景被截短
+        mh.push("tpad=stop_mode=clone:stop_duration=2".into());
+        mh.push(format!("trim=duration={}", sec(c.duration_ms() + 500)));
+        mh.push(format!("scale={}:{}:flags=bicubic", sw.max(2), sh.max(2)));
+        mh.push("format=gray".into());
+        if bg.feather > 0.01 {
+            mh.push(format!("gblur=sigma={:.2}", bg.feather));
+        }
+        stmts.push(format!("[{m}:v:0]{}[mt{i}]", mh.join(",")));
+        stmts.push(format!("[{fg_in}]format=yuv420p[fy{i}]"));
+        stmts.push(format!("[fy{i}][mt{i}]alphamerge,format=yuva420p[bf{i}]"));
+    } else {
+        let key = &bg.chroma;
+        let mut k =
+            vec!["format=yuva420p".to_string(), format!("chromakey=color=0x{}:similarity={:.3}:blend={:.3}", hex(&key.color), key.similarity, key.blend)];
+        if key.despill {
+            k.extend(["format=gbrap".into(), format!("despill=type={}:mix=0.5:expand=0.1", key.spill_type()), "format=yuva420p".into()]);
+        }
+        stmts.push(format!("[{fg_in}]{}[bf{i}]", k.join(",")));
+    }
+    match bg.mode.as_str() {
+        "blur" => stmts.push(format!("[{bg_in}]{}[bb{i}]", f.blur)),
+        "image" => {
+            let m = rg.first_input + rg.extra.len();
+            rg.extra.push(vec![
+                "-loop".into(),
+                "1".into(),
+                "-framerate".into(),
+                f.fps.into(),
+                "-t".into(),
+                sec(c.duration_ms() + 500),
+                "-i".into(),
+                bg.image.clone(),
+            ]);
+            let (w, h) = (sw.max(2) & !1, sh.max(2) & !1);
+            stmts.push(format!("[{m}:v:0]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,format=yuv420p[bb{i}]"));
+        }
+        _ => stmts.push(format!("[{bg_in}]drawbox=x=0:y=0:w=iw:h=ih:color=0x{}:t=fill[bb{i}]", hex(&bg.color))),
+    }
+    stmts.push(format!("[bb{i}][bf{i}]overlay=format=auto:shortest=1,format=yuv420p[bgv{i}]"));
+    format!("bgv{i}")
+}
+
+/// 人像抠图能不能用在这个片段上；不能用时记一条提示（只在第一次判断时）。
+fn ai_matte_allowed(c: &Clip, i: usize, rg: &mut Regions) -> bool {
+    let why = if rg.preview {
+        "预览里不做人像抠图（要逐帧跑模型，太慢），导出时才生效"
+    } else if c.reverse || c.freeze {
+        "倒放 / 定格的片段不能用人像抠图，已跳过"
+    } else {
+        return true;
+    };
+    rg.warnings.push(format!("第 {} 个片段：{why}", i + 1));
+    false
+}
+
 /// 一个片段的画面处理，输出 `[v{i}]`。
 fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmts: &mut Vec<String>) {
     let (w, h) = (f.w, f.h);
     let mut head: Vec<String> = vec![];
-    let setpts =
-        if c.kind == ClipKind::Video && (c.speed - 1.0).abs() > 1e-9 { format!("setpts=(PTS-STARTPTS)/{:.6}", c.speed) } else { "setpts=PTS-STARTPTS".into() };
-    // 有区域效果时，变速之后先做区域（还在素材的方向上，和追踪的坐标一致），再旋转翻转
-    let input = if c.kind == ClipKind::Video && !c.regions.is_empty() {
+    let setpts = if c.kind == ClipKind::Video && !c.freeze && (c.speed - 1.0).abs() > 1e-9 {
+        format!("setpts=(PTS-STARTPTS)/{:.6}", c.speed)
+    } else {
+        "setpts=PTS-STARTPTS".into()
+    };
+    // 有区域效果时，变速之后先做区域（还在素材的方向上，和追踪的坐标一致），再旋转翻转。区域追踪的是正放的素材时间，倒放 / 定格的片段不做区域
+    let input = if c.kind == ClipKind::Video && !c.regions.is_empty() && !c.reverse && !c.freeze {
         let label = region_stage(i, c, sr, setpts, rg, stmts);
         format!("[{label}]")
     } else {
-        head.push(setpts);
+        if c.kind == ClipKind::Video && c.freeze {
+            // 定格：取入点处的第一帧，停住片段那么长
+            let hold = sec(c.duration_ms());
+            head.extend(["trim=end_frame=1".into(), setpts, format!("tpad=stop_mode=clone:stop_duration={hold}"), format!("trim=duration={hold}")]);
+        } else {
+            if c.kind == ClipKind::Video && c.reverse {
+                head.push("reverse".into());
+            }
+            head.push(setpts);
+        }
         format!("[{i}:v:0]")
     };
     head.extend(orient(c).into_iter().map(String::from));
@@ -309,12 +434,20 @@ fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmt
         tail.push(format!("fade=t=out:st={}:d={}", sec(d.saturating_sub(c.fade_out_ms)), sec(c.fade_out_ms)));
     }
     tail.extend(["format=yuv420p".into(), "setsar=1".into(), "settb=AVTB".into()]);
-    let head = head.join(",");
+    let mut head = head.join(",");
+    let mut input = input;
+    let ai_ok = c.bg.matte != "ai" || ai_matte_allowed(c, i, rg);
+    if c.bg.on && ai_ok {
+        input = format!("[{}]", bg_stage(i, c, sr, f, &input, &head, rg, stmts));
+        head = "null".into();
+    }
+    let keyed = ["zoom", "panX", "panY"].iter().any(|p| keyframes::track(&c.keyframes, p).is_some());
+    // 有缩放 / 平移关键帧时，适配画面这一步先输出到 `[kz{i}]`，缩放平移之后才接淡入淡出、调色
     let tail = tail.join(",");
+    let (tail, out) = if keyed { (String::new(), format!("kz{i}")) } else { (tail, format!("v{i}")) };
+    let end = if tail.is_empty() { format!("[{out}]") } else { format!(",{tail}[{out}]") };
     match f.fit {
-        "cover" => stmts.push(format!(
-            "{input}{head},scale={w}:{h}:force_original_aspect_ratio=increase:{conv},format=yuv420p,crop={w}:{h},{tail}[v{i}]"
-        )),
+        "cover" => stmts.push(format!("{input}{head},scale={w}:{h}:force_original_aspect_ratio=increase:{conv},format=yuv420p,crop={w}:{h}{end}")),
         "blur" => {
             stmts.push(format!("{input}{head},split[bg{i}][fg{i}]"));
             stmts.push(format!(
@@ -322,12 +455,35 @@ fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmt
                 blur = f.blur
             ));
             stmts.push(format!("[fg{i}]scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:{conv},format=yuv420p[ff{i}]"));
-            stmts.push(format!("[bb{i}][ff{i}]overlay=(W-w)/2:(H-h)/2,{tail}[v{i}]"));
+            stmts.push(format!("[bb{i}][ff{i}]overlay=(W-w)/2:(H-h)/2{end}"));
         }
         _ => stmts.push(format!(
-            "{input}{head},scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:{conv},format=yuv420p,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,{tail}[v{i}]"
+            "{input}{head},scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:{conv},format=yuv420p,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black{end}"
         )),
     }
+    if keyed {
+        clip_keys(i, c, f, stmts);
+    }
+}
+
+/// 缩放 / 平移关键帧：整幅画面按 `zoom` 缩放，放在黑底上，位置 = 居中 + 平移。
+fn clip_keys(i: usize, c: &Clip, f: &Frame, stmts: &mut Vec<String>) {
+    let (w, h) = (f.w, f.h);
+    let at = |prop: &str, fixed: &str| keyframes::track(&c.keyframes, prop).map_or_else(|| fixed.to_string(), |k| keyframes::expr(&k, "t"));
+    let (z, px, py) = (at("zoom", "1"), at("panX", "0"), at("panY", "0"));
+    let mut tail: Vec<String> = vec![];
+    tail.extend(tone_filter(c));
+    let d = c.duration_ms();
+    if c.fade_in_ms > 0 {
+        tail.push(format!("fade=t=in:st=0:d={}", sec(c.fade_in_ms)));
+    }
+    if c.fade_out_ms > 0 {
+        tail.push(format!("fade=t=out:st={}:d={}", sec(d.saturating_sub(c.fade_out_ms)), sec(c.fade_out_ms)));
+    }
+    tail.extend(["format=yuv420p".into(), "setsar=1".into(), "settb=AVTB".into()]);
+    stmts.push(format!("color=c=black:s={w}x{h}:r={}:d={}[kb{i}]", f.fps, sec(d + 500)));
+    stmts.push(format!("[kz{i}]scale=w='max(2,trunc({w}*({z})/2)*2)':h='max(2,trunc({h}*({z})/2)*2)':eval=frame[ks{i}]"));
+    stmts.push(format!("[kb{i}][ks{i}]overlay=x='(W-w)/2+({px})*W':y='(H-h)/2+({py})*H':eval=frame:shortest=1:format=auto,{}[v{i}]", tail.join(",")));
 }
 
 /// 淡入淡出（声音）。
@@ -343,14 +499,28 @@ fn audio_fades(f: &mut Vec<String>, len_ms: u64, fade_in: u64, fade_out: u64) {
 const AFORMAT: &str = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
 
 /// 一个片段的声音，输出 `[a{i}]`，长度严格等于片段在时间线上的长度；没有声音（图片、静音、素材没有音轨）时用静音补上。
-fn clip_audio(i: usize, c: &Clip, has_audio: bool, stmts: &mut Vec<String>) {
+fn clip_audio(i: usize, c: &Clip, has_audio: bool, fx: &FxCaps, stmts: &mut Vec<String>, warnings: &mut Vec<String>) {
     let d = c.duration_ms();
-    if c.kind == ClipKind::Video && has_audio && !c.mute {
-        let mut f: Vec<String> = vec!["asetpts=PTS-STARTPTS".into()];
+    if c.kind == ClipKind::Video && has_audio && !c.mute && !c.freeze {
+        let mut f: Vec<String> = vec![];
+        if c.reverse {
+            f.push("areverse".into());
+        }
+        f.push("asetpts=PTS-STARTPTS".into());
         if (c.speed - 1.0).abs() > 1e-9 {
             f.push(atempo_chain(c.speed));
         }
         f.push(AFORMAT.into());
+        if c.denoise != "off" || c.enhance {
+            let spec = AudioFxSpec { denoise: c.denoise.clone(), enhance: c.enhance, ..Default::default() };
+            let (chain, notes) = simple_chain(&spec, &FxCaps { noise_floor_db: c.noise_floor_db, ..fx.clone() });
+            f.extend(chain);
+            for n in notes.into_iter().filter(|n| n.contains("没有降噪滤镜")) {
+                if !warnings.contains(&n) {
+                    warnings.push(n);
+                }
+            }
+        }
         // 素材的声音比画面短一点点很常见，补齐再裁到片段长度，拼接时才不会错位
         f.push(format!("apad=whole_dur={}", sec(d)));
         f.push(format!("atrim=duration={}", sec(d)));
@@ -368,13 +538,16 @@ fn clip_audio(i: usize, c: &Clip, has_audio: bool, stmts: &mut Vec<String>) {
 fn overlay_size(o: &Overlay, sr: &Source, w: u32) -> (u32, u32) {
     let quarter = quarter_turn(o);
     let (sw, sh) = if matches!(quarter, Some(90 | 270)) { (sr.height, sr.width) } else { (sr.width, sr.height) };
-    let ow = (f64::from(w) * o.scale).round().clamp(2.0, 16384.0) as u32;
+    let ow = (f64::from(w) * o.scale_max()).round().clamp(2.0, 16384.0) as u32;
     let oh = (f64::from(ow) * f64::from(sh.max(1)) / f64::from(sw.max(1))).round().clamp(2.0, 16384.0) as u32;
     (even(ow), even(oh))
 }
 
 /// 恰好是 90 / 180 / 270 度的旋转用转置 / 翻转做（不重采样，边缘干净）；其他角度返回 None，用 `rotate` 滤镜。
 fn quarter_turn(o: &Overlay) -> Option<u32> {
+    if o.keys("rotate").is_some() {
+        return None;
+    }
     let a = o.angle();
     [90.0, 180.0, 270.0].into_iter().find(|q| (a - q).abs() < 1e-6).map(|q| q as u32)
 }
@@ -406,13 +579,30 @@ fn overlay_video(k: usize, idx: usize, o: &Overlay, sr: &Source, frame: (u32, &s
     // 先转成 BT.709 电视范围的 YUV 再带上透明通道（图片是 RGB，不指定的话 ffmpeg 默认用 BT.601，颜色会偏）
     f.push(format!("scale={ow}:{oh}:flags=bicubic:out_color_matrix=bt709:out_range=tv"));
     f.push("format=yuva420p".into());
+    if o.chroma.on {
+        // 先按颜色抠出透明通道，再（可选）在 RGB 里去掉留下部分边缘的溢色
+        f.push(format!("chromakey=color=0x{}:similarity={:.3}:blend={:.3}", o.chroma.color.trim_start_matches('#'), o.chroma.similarity, o.chroma.blend));
+        if o.chroma.despill {
+            f.extend(["format=gbrap".into(), format!("despill=type={}:mix=0.5:expand=0.1", o.chroma.spill_type()), "format=yuva420p".into()]);
+        }
+    }
+    if o.mask.on {
+        f.push(mask_filter(&o.mask));
+    }
     f.extend(tone_expr(o.brightness, o.contrast, o.saturation));
-    if quarter_turn(o).is_none() && o.angle() > 1e-6 {
+    if let Some(k) = o.keys("rotate") {
+        // 角度随时间变：输出做成能装下任意角度的正方形（对角线），转的时候中心不动
+        let e = keyframes::expr(&k, "t");
+        f.push(format!("rotate=a='({e})*PI/180':ow='trunc(hypot(iw,ih)/2)*2+2':oh='trunc(hypot(iw,ih)/2)*2+2':c=black@0"));
+    } else if quarter_turn(o).is_none() && o.angle() > 1e-6 {
         let rad = o.angle().to_radians();
         // 旋转后的外框变大，空出来的四角是透明的
         f.push(format!("rotate={rad:.6}:ow='rotw({rad:.6})':oh='roth({rad:.6})':c=none"));
     }
-    if o.opacity < 0.999 {
+    if let Some(k) = o.keys("opacity") {
+        // 不透明度随时间变：lutyuv 不认时间，用 geq（逐像素算，叠加素材一般不大）
+        f.push(format!("geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='alpha(X,Y)*clip({},0,1)'", keyframes::expr(&k, "T")));
+    } else if o.opacity < 0.999 {
         f.push(format!("lutyuv=a='val*{:.4}'", o.opacity));
     }
     let d = o.duration_ms();
@@ -427,6 +617,18 @@ fn overlay_video(k: usize, idx: usize, o: &Overlay, sr: &Source, frame: (u32, &s
     }
     f.push(format!("setpts=PTS+{}/TB", sec(o.start_ms)));
     stmts.push(format!("[{idx}:v:0]{}[ov{k}]", f.join(",")));
+}
+
+/// 形状蒙版：逐像素算一个 0–1 的系数乘到透明通道上（形状里 1、外面 0，边上按羽化过渡）。
+fn mask_filter(m: &ShapeMask) -> String {
+    let (hw, hh) = (m.w / 2.0, m.h / 2.0);
+    let (u, v) = (format!("(X/W-{:.5})/{hw:.5}", m.x), format!("(Y/H-{:.5})/{hh:.5}", m.y));
+    // d：到形状边缘的“归一化距离”，边缘上 = 1，中心 = 0
+    let d = if m.shape == "rect" { format!("max(abs({u}),abs({v}))") } else { format!("hypot({u},{v})") };
+    let soft = m.feather.max(0.002);
+    let inside = format!("clip(0.5+(1-{d})/{:.5},0,1)", 2.0 * soft);
+    let k = if m.invert { format!("(1-{inside})") } else { inside };
+    format!("geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='alpha(X,Y)*{k}'")
 }
 
 /// 入场 / 出场动画里“还没走完的比例”（1 = 刚开始入场 / 已经离场，0 = 在正常位置），`t0` 是动画段的开始时间（秒）。
@@ -456,6 +658,7 @@ fn anim_phases(o: &Overlay) -> Vec<(f64, f64, bool, &str)> {
 fn zoom_expr(o: &Overlay) -> Option<String> {
     let dur = o.duration_ms() as f64 / 1000.0;
     let d = o.anim_ms as f64 / 1000.0;
+    let keyed = o.keys("scale").map(|k| format!("({})/{:.5}", keyframes::expr(&k, "t"), o.scale_max()));
     let mut terms = String::new();
     if o.anim_in == "zoom" {
         terms.push_str(&format!("-{}", anim_left(true, 0.0, d)));
@@ -463,10 +666,11 @@ fn zoom_expr(o: &Overlay) -> Option<String> {
     if o.anim_out == "zoom" {
         terms.push_str(&format!("-{}", anim_left(false, dur - d, d)));
     }
-    if terms.is_empty() {
-        None
-    } else {
-        Some(format!("max(0.02,1{terms})"))
+    match (terms.is_empty(), keyed) {
+        (true, None) => None,
+        (true, Some(k)) => Some(format!("max(0.02,{k})")),
+        (false, None) => Some(format!("max(0.02,1{terms})")),
+        (false, Some(k)) => Some(format!("max(0.02,{k})*max(0.02,1{terms})")),
     }
 }
 
@@ -484,10 +688,12 @@ fn overlay_on(k: usize, base: &str, o: &Overlay, stmts: &mut Vec<String>) -> Str
             _ => {}
         }
     }
+    let time = format!("(t-{})", sec(o.start_ms));
+    let pos = |prop: &str, fixed: f64| o.keys(prop).map_or_else(|| format!("{fixed:.5}"), |k| keyframes::expr(&k, &time));
     stmts.push(format!(
-        "[{base}][ov{k}]overlay=x='W*({:.5})-w/2{dx}':y='H*({:.5})-h/2{dy}':enable='between(t,{},{})':eof_action=pass:format=auto[{next}]",
-        o.x,
-        o.y,
+        "[{base}][ov{k}]overlay=x='W*({})-w/2{dx}':y='H*({})-h/2{dy}':enable='between(t,{},{})':eof_action=pass:format=auto[{next}]",
+        pos("x", o.x),
+        pos("y", o.y),
         sec(o.start_ms),
         sec(o.end_ms())
     ));
@@ -496,7 +702,8 @@ fn overlay_on(k: usize, base: &str, o: &Overlay, stmts: &mut Vec<String>) -> Str
 
 /// 叠加素材自带的声音 → `[oa{k}]`（对齐到它在时间线上的起点）；图片、静音、素材没有声音时返回 false。
 fn overlay_audio(k: usize, idx: usize, o: &Overlay, has_audio: bool, stmts: &mut Vec<String>) -> bool {
-    if o.kind != ClipKind::Video || o.mute || !has_audio || o.volume < 1e-6 {
+    let keyed = o.keys("volume");
+    if o.kind != ClipKind::Video || o.mute || !has_audio || (keyed.is_none() && o.volume < 1e-6) {
         return false;
     }
     let d = o.duration_ms();
@@ -508,7 +715,9 @@ fn overlay_audio(k: usize, idx: usize, o: &Overlay, has_audio: bool, stmts: &mut
     f.push(format!("apad=whole_dur={}", sec(d)));
     f.push(format!("atrim=duration={}", sec(d)));
     audio_fades(&mut f, d, o.fade_in_ms, o.fade_out_ms);
-    if (o.volume - 1.0).abs() > 1e-9 {
+    if let Some(k) = keyed {
+        f.push(format!("volume=volume='max(0,{})':eval=frame", keyframes::expr(&k, "t")));
+    } else if (o.volume - 1.0).abs() > 1e-9 {
         f.push(format!("volume={:.4}", o.volume));
     }
     if o.start_ms > 0 {
@@ -534,8 +743,18 @@ fn drawtext(k: usize, t: &TextItem, h: u32, font: Option<&Path>, tmp: &Path) -> 
     }
     o.push(format!("fontsize={px}"));
     o.push(format!("fontcolor={}", color_arg(&t.color, t.opacity)));
-    o.push(format!("x=(w*{:.4})-(text_w/2)", t.x));
-    o.push(format!("y=(h*{:.4})-(text_h/2)", t.y));
+    let time = format!("(t-{})", sec(t.start_ms));
+    let key = |prop: &str| keyframes::track(&t.keyframes, prop).map(|k| keyframes::expr(&k, &time));
+    let opacity = key("opacity").map_or_else(|| format!("{:.2}", t.opacity), |e| format!("clip({e},0,1)"));
+    if t.fade_ms > 0 {
+        // 淡入淡出：只作用在字上，描边和底色块不跟着变
+        let (s0, s1, f) = (sec(t.start_ms), sec(t.end_ms), sec(t.fade_ms));
+        o.push(format!("alpha='{opacity}*min(1,min((t-{s0})/{f},({s1}-t)/{f}))'"));
+    } else if opacity.starts_with("clip(") {
+        o.push(format!("alpha='{opacity}'"));
+    }
+    o.push(format!("x=(w*{})-(text_w/2)", key("x").map_or_else(|| format!("{:.4}", t.x), |e| format!("({e})"))));
+    o.push(format!("y=(h*{})-(text_h/2)", key("y").map_or_else(|| format!("{:.4}", t.y), |e| format!("({e})"))));
     if t.outline {
         o.push(format!("borderw={}", ((f64::from(px) * 0.06).round() as u32).max(2)));
         o.push(format!("bordercolor={}", color_arg(&t.outline_color, t.opacity)));
@@ -670,7 +889,13 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     if p.clips.iter().any(Clip::needs_tone) {
         need("lutyuv", "无法调色")?;
     }
-    let regions = || p.clips.iter().flat_map(|c| c.regions.iter());
+    if p.clips.iter().any(|c| c.freeze) {
+        need("tpad", "无法定格画面")?;
+    }
+    if p.clips.iter().any(|c| c.reverse && !c.freeze) {
+        need("reverse", "无法倒放")?;
+    }
+    let regions = || p.clips.iter().filter(|c| !c.reverse && !c.freeze).flat_map(|c| c.regions.iter());
     if regions().any(|r| !r.is_focus()) {
         need("alphamerge", "无法使用区域效果")?;
         need("overlay", "无法使用区域效果")?;
@@ -690,10 +915,28 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     if !p.overlays.is_empty() {
         need("overlay", "无法使用叠加轨")?;
     }
-    if p.overlays.iter().any(|o| o.needs_tone() || o.opacity < 0.999) {
+    if p.overlays.iter().any(|o| o.needs_tone() || (o.opacity < 0.999 && o.keys("opacity").is_none())) {
         need("lutyuv", "无法调整叠加素材的颜色和透明度")?;
     }
-    if p.overlays.iter().any(|o| quarter_turn(o).is_none() && o.angle() > 1e-6) {
+    if p.overlays.iter().any(|o| o.keys("opacity").is_some()) {
+        need("geq", "无法给叠加素材做不透明度关键帧")?;
+    }
+    if p.clips.iter().any(|c| c.bg.on && c.bg.matte == "chroma") {
+        need("chromakey", "无法换背景")?;
+        if p.clips.iter().any(|c| c.bg.on && c.bg.chroma.despill) {
+            need("despill", "无法去溢色")?;
+        }
+    }
+    if p.clips.iter().any(|c| c.bg.on && c.bg.matte == "ai") {
+        need("alphamerge", "无法用人像抠图换背景")?;
+    }
+    if p.overlays.iter().any(|o| o.chroma.on) {
+        need("chromakey", "无法抠像")?;
+        if p.overlays.iter().any(|o| o.chroma.on && o.chroma.despill) {
+            need("despill", "无法去溢色")?;
+        }
+    }
+    if p.overlays.iter().any(|o| o.keys("rotate").is_some() || (quarter_turn(o).is_none() && o.angle() > 1e-6)) {
         need("rotate", "无法旋转叠加素材")?;
     }
 
@@ -725,7 +968,9 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
                 if c.in_ms > 0 {
                     args.extend(["-ss".into(), sec(c.in_ms)]);
                 }
-                args.extend(["-t".into(), sec(c.out_ms - c.in_ms), "-i".into(), c.path.clone()]);
+                // 定格只要入点那一帧，多读一点点就够
+                let span = if c.freeze { (c.out_ms - c.in_ms).min(500) } else { c.out_ms - c.in_ms };
+                args.extend(["-t".into(), sec(span), "-i".into(), c.path.clone()]);
             }
             ClipKind::Image => {
                 args.extend(["-loop".into(), "1".into(), "-framerate".into(), fps_txt.clone(), "-t".into(), sec(c.out_ms), "-i".into(), c.path.clone()]);
@@ -768,12 +1013,22 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         || ovs.iter().any(|(_, o)| ov_audio(o))
         || p.clips.iter().any(|c| c.kind == ClipKind::Video && !c.mute && src.get(&c.path).is_some_and(|s| s.has_audio));
     let frame = Frame { w, h, fps: &fps_txt, fit: &p.out.fit, blur: caps.background_blur() };
-    let mut rg = Regions { preview, tmp, first_input: ov_first + ovs.len(), out_aspect: f64::from(w) / f64::from(h), masks: vec![] };
+    let mut rg = Regions {
+        preview,
+        tmp,
+        first_input: ov_first + ovs.len(),
+        out_aspect: f64::from(w) / f64::from(h),
+        masks: vec![],
+        mattes: vec![],
+        warnings: vec![],
+        extra: vec![],
+    };
     let mut stmts: Vec<String> = vec![];
+    let fx = FxCaps::from_caps(caps, None);
     for (i, c) in p.clips.iter().enumerate() {
         clip_video(i, c, src.get(&c.path).expect("checked above"), &frame, &mut rg, &mut stmts);
         if has_audio {
-            clip_audio(i, c, src.get(&c.path).is_some_and(|s| s.has_audio), &mut stmts);
+            clip_audio(i, c, src.get(&c.path).is_some_and(|s| s.has_audio), &fx, &mut stmts, &mut plan.warnings);
         }
     }
     let (mut video, main_audio) = assemble(&placed, &p.clips, has_audio, &mut stmts, caps)?;
@@ -808,13 +1063,32 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         if font.is_none() {
             plan.warnings.push("没有找到可用的字体，文字可能显示不出来（特别是中文）。请在文字属性里选择一个字体文件。".into());
         }
-        let mut dt: Vec<String> = vec![];
-        for (k, t) in p.texts.iter().enumerate() {
-            let own = t.font.as_deref().map(Path::new).or(font);
-            dt.push(drawtext(k, t, h, own, tmp)?);
+        // 逐字高亮的文字交给 libass（ASS 滤镜）画；没有这个滤镜时按普通文字画
+        let karaoke_ok = caps.has_filter("ass");
+        let (ass_idx, plain_idx): (Vec<usize>, Vec<usize>) = (0..p.texts.len()).partition(|&k| karaoke_ok && p.texts[k].karaoke());
+        if !karaoke_ok && p.texts.iter().any(TextItem::karaoke) {
+            plan.warnings.push("当前的 ffmpeg 没有“ass”滤镜，逐字高亮的字幕按普通文字显示。".into());
         }
-        stmts.push(format!("[{video}]{}[vtx]", dt.join(",")));
-        video = "vtx".into();
+        let mut chain: Vec<String> = vec![];
+        for &k in &plain_idx {
+            let t = &p.texts[k];
+            let own = t.font.as_deref().map(Path::new).or(font);
+            chain.push(drawtext(k, t, h, own, tmp)?);
+        }
+        if !chain.is_empty() {
+            stmts.push(format!("[{video}]{}[vtx]", chain.join(",")));
+            video = "vtx".into();
+        }
+        if !ass_idx.is_empty() {
+            std::fs::create_dir_all(tmp)?;
+            let items: Vec<&TextItem> = ass_idx.iter().map(|&k| &p.texts[k]).collect();
+            let file = tmp.join("captions.ass");
+            let family = font.and_then(super::fonts::family_name);
+            std::fs::write(&file, super::captions::document(&items, w, h, family.as_deref()))?;
+            let dir = font.and_then(Path::parent).map(|d| format!(":fontsdir={}", filter_path(d))).unwrap_or_default();
+            stmts.push(format!("[{video}]ass=filename={}{dir}[vass]", filter_path(&file)));
+            video = "vass".into();
+        }
     }
 
     // 配乐和叠加素材的声音：混在主轨声音上面
@@ -910,13 +1184,15 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     stmts.push(format!("[{video}]format={pix},setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv[vout]"));
 
     // 区域效果的遮罩视频：作为额外的输入，排在片段和音频轨之后
-    for m in &rg.masks {
-        args.extend(["-i".into(), m.path.to_string_lossy().into_owned()]);
+    for a in &rg.extra {
+        args.extend(a.iter().cloned());
     }
     if !rg.masks.is_empty() {
         plan.notes.push(format!("有 {} 个区域效果，导出前会先生成遮罩", rg.masks.len()));
     }
     plan.masks = rg.masks;
+    plan.mattes = rg.mattes;
+    plan.warnings.extend(rg.warnings);
 
     let graph = stmts.join(";");
     args.extend(graph_args(&graph, caps, tmp)?);
@@ -1617,5 +1893,38 @@ mod tests {
         let g = graph_of(&plan);
         assert!(!g.contains("overlay") && !g.contains("[ov") && !g.contains("[ob"), "{g}");
         assert!(!plan.notes.iter().any(|n| n.contains("叠加")));
+    }
+    #[test]
+    fn text_keyframes_become_drawtext_expressions() {
+        use super::super::keyframes::Keyframe;
+        let mut t = TextItem { text: "hi".into(), start_ms: 1000, end_ms: 4000, ..Default::default() };
+        let plain = drawtext(0, &t, 720, None, &std::env::temp_dir().join("clearclip-kf-text")).unwrap();
+        assert!(plain.contains("x=(w*0.5000)-(text_w/2)"), "{plain}");
+        let k = |t: u64, v: f64| Keyframe { t_ms: t, value: v, ease: "linear".into() };
+        t.keyframes.insert("x".into(), vec![k(0, 0.2), k(1000, 0.8)]);
+        t.keyframes.insert("opacity".into(), vec![k(0, 0.0), k(500, 1.0)]);
+        let keyed = drawtext(0, &t, 720, None, &std::env::temp_dir().join("clearclip-kf-text")).unwrap();
+        assert!(keyed.contains("x=(w*(if(lt((t-1.000),0.000)"), "{keyed}");
+        assert!(keyed.contains("alpha='clip(if(lt((t-1.000)"), "{keyed}");
+        assert!(keyed.contains("y=(h*0.8500)-(text_h/2)"), "没有关键帧的属性仍用固定值：{keyed}");
+    }
+    #[test]
+    fn chroma_key_goes_into_the_overlay_chain_before_tone_and_rotation() {
+        let mut o = Overlay { path: "o.mp4".into(), out_ms: 2000, brightness: 0.2, rotate: 10.0, ..Default::default() };
+        let sr = Source { has_video: true, has_audio: false, width: 640, height: 360, fps: Some(25.0), duration_ms: Some(2000), hdr: false };
+        let graph = |o: &Overlay| {
+            let mut stmts = vec![];
+            overlay_video(0, 1, o, &sr, (1280, "25"), &mut stmts);
+            stmts.join(";")
+        };
+        assert!(!graph(&o).contains("chromakey"));
+        o.chroma.on = true;
+        o.chroma.color = "#00B140".into();
+        let g = graph(&o);
+        let key = g.find("chromakey=color=0x00B140:similarity=0.180:blend=0.080").expect(&g);
+        assert!(g.find("despill=type=green").unwrap() > key, "{g}");
+        assert!(g.find("rotate=").unwrap() > key, "{g}");
+        o.chroma.despill = false;
+        assert!(!graph(&o).contains("despill"));
     }
 }

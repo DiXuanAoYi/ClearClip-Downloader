@@ -66,7 +66,7 @@ onMounted(refresh)
       </div>
       <div class="field">
         <label>列表来源</label>
-        <el-input v-model="sourcesText" type="textarea" :rows="3" class="mono" placeholder="每行一个 http / https 地址；按顺序尝试，留空使用内置的 ngosang/trackerslist" />
+        <el-input v-model="sourcesText" type="textarea" :rows="5" class="mono" placeholder="每行一个 http / https 地址；按顺序尝试，第一个成功的为准，留空使用内置的默认来源" />
       </div>
       <div class="field">
         <label>自己添加的 tracker</label>

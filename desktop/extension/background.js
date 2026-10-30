@@ -1,5 +1,5 @@
 try {
-  importScripts('shared.js', 'takeover.js', 'sniff.js')
+  importScripts('shared.js', 'features.js', 'clean-link.js', 'progress.js', 'takeover.js', 'sniff.js', 'engines.js', 'later.js', 'capture-plan.js', 'bg-link.js', 'bg-capture.js', 'bg-actions.js')
 } catch {
   // Firefox 以 background.scripts 加载，脚本需在 manifest 中先加载
 }
@@ -13,12 +13,7 @@ const sessionStore = api.storage.session || api.storage.local
 
 // ---------- 右键菜单 ----------
 
-api.runtime.onInstalled.addListener(async () => {
-  await api.contextMenus.removeAll()
-  api.contextMenus.create({ id: 'cc-page', title: '用清影下载此页面', contexts: ['page'] })
-  api.contextMenus.create({ id: 'cc-link', title: '用清影下载此链接', contexts: ['link'] })
-  api.contextMenus.create({ id: 'cc-media', title: '用清影下载此视频 / 音频 / 图片', contexts: ['video', 'image', 'audio'] })
-})
+// 菜单项由 bg-actions.js 的 buildMenus 创建
 
 /** 把浏览器里的一个文件地址交给清影下载（带 Referer、Cookie、文件名）。item：{ url, finalUrl?, referrer?, filename?, fileSize?, mime? } */
 async function grabUrl(item, extra = {}) {
@@ -45,15 +40,7 @@ async function flashBadge(tabId, ok) {
   try {
     await action.setBadgeText({ tabId, text: ok ? '✓' : '!' })
     await action.setBadgeBackgroundColor({ tabId, color: ok ? '#2e9e5b' : '#d64545' })
-    setTimeout(async () => {
-      try {
-        const n = (await getSniffed(tabId)).length
-        await action.setBadgeText({ tabId, text: n ? String(n) : '' })
-        await action.setBadgeBackgroundColor({ tabId, color: '#d9772f' })
-      } catch {
-        // 标签页可能已关闭
-      }
-    }, 4000)
+    setTimeout(() => paintBadge(tabId), 4000)
   } catch {
     // 标签页可能已关闭
   }
@@ -92,13 +79,13 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
     const send = (text) => call('/api/send', { text, device: c.device, name: browserName(), reveal: true })
     if (info.menuItemId === 'cc-link') {
       shown = info.linkUrl
-      r = linkAction(info.linkUrl) === 'grab' ? await grabUrl({ url: info.linkUrl, referrer: page }, { reveal: true }) : await send(info.linkUrl)
+      r = linkAction(info.linkUrl) === 'grab' ? await grabUrl({ url: info.linkUrl, referrer: page }, { reveal: true }) : await send(await tidyUrl(info.linkUrl))
     } else if (info.menuItemId === 'cc-media') {
       const src = info.srcUrl || ''
       if (!/^https?:/i.test(src)) {
         // blob: 等地址交给清影也下不了：改为发送所在网页，由清影解析
         shown = page
-        r = await send(page)
+        r = await send(await tidyUrl(page))
       } else if (info.mediaType === 'image') {
         shown = src
         r = await grabUrl({ url: src, referrer: page }, { reveal: true })
@@ -107,9 +94,9 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
         shown = src
         r = await send(sniffedPayload({ url: src }, page, tab?.title))
       }
-    } else {
+    } else if (info.menuItemId === 'cc-page') {
       shown = page
-      r = await send(page)
+      r = await send(await tidyUrl(page))
     }
     if (!shown) return
     const pairing = r.state === 'pending_pair'
@@ -255,14 +242,8 @@ api.webRequest.onResponseStarted.addListener(
     const media = classifyMedia(d.url, h['content-type'], h['content-length'], h['content-range'])
     if (!media) return
     const item = { url: d.url, kind: media.kind, size: media.size, at: Date.now() }
-    const n = await addSniffed(d.tabId, item)
-    try {
-      const action = api.action || api.browserAction
-      await action.setBadgeText({ tabId: d.tabId, text: n ? String(n) : '' })
-      await action.setBadgeBackgroundColor({ tabId: d.tabId, color: '#d9772f' })
-    } catch {
-      // 标签页可能已关闭
-    }
+    await addSniffed(d.tabId, item)
+    await paintBadge(d.tabId)
     enrich(d.tabId, item)
   },
   { urls: ['<all_urls>'] },
@@ -273,11 +254,10 @@ api.webRequest.onResponseStarted.addListener(
 api.tabs.onUpdated.addListener(async (tabId, change) => {
   if (change.status === 'loading' && change.url) {
     await sniffStore.remove(sniffKey(tabId))
-    try {
-      await (api.action || api.browserAction).setBadgeText({ tabId, text: '' })
-    } catch {
-      // ignore
-    }
+    await paintBadge(tabId)
   }
 })
 api.tabs.onRemoved.addListener((tabId) => sniffStore.remove(sniffKey(tabId)))
+
+ensureAlarm()
+pollOnce().catch(() => {})

@@ -124,7 +124,7 @@ pub struct VideoPreview {
     pub changed: bool,
 }
 
-fn short_hash(text: &str) -> String {
+pub(crate) fn short_hash(text: &str) -> String {
     use sha2::{Digest, Sha256};
     hex::encode(&Sha256::digest(text.as_bytes())[..8])
 }
@@ -188,6 +188,59 @@ pub async fn video_preview(state: St<'_>, path: String, spec: crate::vidnorm::No
         notes: vg.notes,
         warnings: vg.warnings.into_iter().chain(color_warning).chain(crop_warning).collect(),
     })
+}
+
+// ---------- 音效 / 混响 ----------
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioFxPreview {
+    pub before: String,
+    pub after: String,
+    pub notes: Vec<String>,
+}
+
+/// 试听：取 `start_ms` 起的 15 秒，输出“处理前 / 处理后”两个 WAV（在预览目录里，两小时后清理）。
+#[tauri::command]
+pub async fn audio_fx_preview(state: St<'_>, path: String, spec: crate::audiofx::AudioFxSpec, start_ms: u64) -> AppResult<AudioFxPreview> {
+    use crate::audiofx;
+    let (ff, caps) =
+        crate::vidcaps::current(&state).await.ok_or_else(|| AppError::new(ErrorKind::NeedUpdate, "需要 ffmpeg。请在“设置 → 组件”里安装 ffmpeg 后重试。"))?;
+    let file = Path::new(&path);
+    if !file.is_file() {
+        return Err(AppError::not_found("找不到文件。"));
+    }
+    let spec = spec.checked()?;
+    let dir = state.data_dir.join("previews");
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > std::time::Duration::from_secs(7200));
+            if old && e.file_name().to_string_lossy().starts_with("fx-") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    let mut fx = audiofx::FxCaps::from_caps(&caps, Some(audiofx::rnn_model_path(&state.data_dir)));
+    if spec.denoise != "off" && fx.rnn_model.is_none() {
+        fx.noise_floor_db = audiofx::estimate_noise_floor(&ff, file, start_ms as f64 / 1000.0, 15).await;
+    }
+    let key = short_hash(&format!("{path}|{start_ms}|{}", serde_json::to_string(&spec).unwrap_or_default()));
+    let before = dir.join(format!("fx-{}-a.wav", short_hash(&format!("{path}|{start_ms}"))));
+    let after = dir.join(format!("fx-{key}-b.wav"));
+    let timeout = std::time::Duration::from_secs(120);
+    let mut notes = vec![];
+    for (out, with) in [(&before, None), (&after, Some((&spec, &fx)))] {
+        if out.is_file() && with.is_none() {
+            continue;
+        }
+        let (mut args, n) = audiofx::preview_args(file, start_ms, 15, with, out)?;
+        notes.extend(n);
+        let mut full = postprocess::base_args();
+        full.append(&mut args);
+        postprocess::run_ffmpeg_capture(&ff, &full, timeout).await.map_err(|e| AppError::msg(format!("生成试听失败：{e}")))?;
+    }
+    Ok(AudioFxPreview { before: before.to_string_lossy().into_owned(), after: after.to_string_lossy().into_owned(), notes })
 }
 
 // ---------- 字幕工具 ----------

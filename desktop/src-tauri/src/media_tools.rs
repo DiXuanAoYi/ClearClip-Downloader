@@ -87,6 +87,10 @@ pub enum ToolOp {
     Stabilize {
         strength: String,
     },
+    /// 音效：降噪、人声增强、混响、响度标准化（见 `audiofx`）
+    AudioFx {
+        spec: crate::audiofx::AudioFxSpec,
+    },
     /// 剪辑：多段素材在时间线上排布，加转场、文字、配乐，导出成一个视频（见 `edit`）。`inputs` 是工程用到的素材文件
     Edit {
         project: crate::edit::spec::Project,
@@ -123,6 +127,13 @@ impl ToolOp {
             ToolOp::Normalize { .. } => "视频规整",
             ToolOp::Stabilize { .. } => "防抖",
             ToolOp::Edit { .. } => "剪辑",
+            ToolOp::AudioFx { spec } => {
+                if spec.reverb.is_some() && spec.denoise == "off" && !spec.enhance {
+                    "混响"
+                } else {
+                    "音效"
+                }
+            }
         }
     }
 }
@@ -289,7 +300,7 @@ pub(crate) fn video_codec_for(enc: &Encoders, quality: &str, want_ext: &str, pix
     }
 }
 
-fn audio_codec(enc: &Encoders, fmt: &str) -> AppResult<Vec<String>> {
+pub(crate) fn audio_codec(enc: &Encoders, fmt: &str) -> AppResult<Vec<String>> {
     Ok(match fmt {
         "mp3" if enc.mp3 => s(&["-c:a", "libmp3lame", "-q:a", "2"]),
         "mp3" => return Err(AppError::invalid("当前的 ffmpeg 没有 MP3 编码器，请改选 M4A 或 FLAC。")),
@@ -752,7 +763,9 @@ pub fn plan_with(job: &ToolJob, inputs: &[Input], enc: &Encoders, blur: &str) ->
             p.args = s(&["-i", &inp, "-i", &path_arg(&meta), "-map", "0", "-map_metadata", "0", "-map_chapters", "1", "-c", "copy"]);
             p.args.extend(muxer_args(ext, &p.output));
         }
-        ToolOp::Normalize { .. } | ToolOp::Stabilize { .. } | ToolOp::Edit { .. } => return Err(AppError::msg("视频规整、防抖和剪辑由专用流程处理。")),
+        ToolOp::Normalize { .. } | ToolOp::Stabilize { .. } | ToolOp::Edit { .. } | ToolOp::AudioFx { .. } => {
+            return Err(AppError::msg("视频规整、防抖、剪辑和音效由专用流程处理。"))
+        }
         ToolOp::Tags { title, artist, album, year, genre, comment, cover } => {
             if !first.probe.has_audio {
                 return Err(AppError::invalid("文件里没有音频。"));
@@ -1173,7 +1186,16 @@ async fn run_job(ctx: &JobCtx, job: &ToolJob) -> AppResult<PathBuf> {
         inputs.push(Input { path, probe: pr });
     }
     let caps = st.vcaps.get(&ffmpeg).await;
-    let plan = plan_with(job, &inputs, &caps.encoders, caps.background_blur())?;
+    let plan = match &job.op {
+        ToolOp::AudioFx { spec } => {
+            let first = inputs.first().ok_or_else(|| AppError::invalid("请先选择文件。"))?;
+            let dir = job.output_dir.as_deref().filter(|d| !d.trim().is_empty()).map(Path::new);
+            let rnn = crate::audiofx::rnn_model_path(&st.data_dir);
+            let nf = if spec.denoise != "off" && !rnn.is_file() { crate::audiofx::estimate_noise_floor(&ffmpeg, &first.path, 0.0, 30).await } else { None };
+            crate::audiofx::plan(first, spec, &caps, &caps.encoders, dir, Some(rnn), nf)?
+        }
+        _ => plan_with(job, &inputs, &caps.encoders, caps.background_blur())?,
+    };
     if let Some(n) = &plan.note {
         ctx.note(n.clone());
     }

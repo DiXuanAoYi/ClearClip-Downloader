@@ -66,7 +66,7 @@ fn api_error(status: u16, body: &str) -> AppError {
     }
 }
 
-async fn send(ep: &Endpoint, path: &str, content_type: &str, body: Vec<u8>, timeout: Duration) -> AppResult<String> {
+pub(crate) async fn send(ep: &Endpoint, path: &str, content_type: &str, body: Vec<u8>, timeout: Duration) -> AppResult<String> {
     let url = format!("{}{path}", ep.base);
     let mut last: Option<AppError> = None;
     for attempt in 0..3u32 {
@@ -503,7 +503,7 @@ pub fn whisper_progress(line: &str) -> Option<f64> {
     rest.trim().trim_end_matches('%').trim().parse::<f64>().ok()
 }
 
-fn find_whisper_bin(settings: &Settings) -> Option<PathBuf> {
+pub(crate) fn find_whisper_bin(settings: &Settings) -> Option<PathBuf> {
     let configured = settings.ai.whisper_bin.trim();
     if !configured.is_empty() {
         let p = PathBuf::from(configured);

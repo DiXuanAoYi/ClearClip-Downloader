@@ -4,18 +4,30 @@
 //! - [`fonts`]：给文字找默认字体
 //! - [`build`]：工程 → ffmpeg 参数（纯函数）
 //! - [`region`]：区域效果（跟着物体走的马赛克 / 模糊 / 局部调色 / 聚焦）的遮罩和路径
+//! - [`analyze`]：场景检测、静音检测、波形、底噪、一键重构画幅
 //! - [`job`]：后台任务（导出、生成预览）和界面用的命令
 
+pub mod analyze;
+pub mod beats;
 pub mod build;
+pub mod captions;
 pub mod cmds;
 pub mod fonts;
+pub mod highlights;
 pub mod job;
+pub mod keydetect;
+pub mod keyframes;
 pub mod region;
 pub mod spec;
+pub mod transcript;
 
+#[cfg(test)]
+mod analyze_e2e_tests;
 #[cfg(test)]
 mod e2e_tests;
 #[cfg(test)]
 mod overlay_e2e_tests;
 #[cfg(test)]
 mod region_e2e_tests;
+#[cfg(test)]
+mod transcript_e2e_tests;

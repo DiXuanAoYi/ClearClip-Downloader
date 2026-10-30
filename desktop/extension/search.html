@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>上传本地图片搜索</title>
+<link rel="stylesheet" href="popup.css" />
+</head>
+<body class="wide">
+  <header><span class="logo" aria-hidden="true"></span><b>上传本地图片，以图搜图</b></header>
+  <p class="mute">选一张本地图片，再点要用的搜索引擎。图片只会发给你点的那个搜索引擎，不经过清影，也不经过其他服务。各家的上传方式可能随改版失效，失效时请直接在对应网站上传。</p>
+  <input id="file" type="file" accept="image/*" />
+  <div class="rowBtns">
+    <button data-e="tineye" class="sec">TinEye</button>
+    <button data-e="bing" class="sec">Bing</button>
+    <button data-e="google" class="sec">Google</button>
+  </div>
+  <div id="msg"></div>
+  <script src="search.js"></script>
+</body>
+</html>

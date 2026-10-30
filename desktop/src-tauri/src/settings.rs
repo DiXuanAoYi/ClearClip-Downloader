@@ -243,7 +243,7 @@ pub struct Settings {
     pub ed2k_server_met_url: String,
     /// BT：定期从在线列表更新 tracker
     pub bt_tracker_auto_update: bool,
-    /// 在线 tracker 列表的地址，按顺序尝试；留空用内置默认（ngosang/trackerslist）
+    /// 在线 tracker 列表的地址，按顺序尝试；留空用内置默认（见 bt::trackers::DEFAULT_SOURCES）
     pub bt_tracker_sources: Vec<String>,
     /// 自动更新间隔（天）
     pub bt_tracker_interval_days: u32,
@@ -849,6 +849,7 @@ impl Settings {
         if s.download_dir.trim().is_empty() {
             s.download_dir = default_download_dir.to_string_lossy().into_owned();
         }
+        crate::bt::trackers::upgrade_default_sources(&mut s.bt_tracker_sources);
         s.normalize();
         s
     }

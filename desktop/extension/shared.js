@@ -88,3 +88,14 @@ async function getTakeover() {
   const { takeover } = await api.storage.local.get('takeover')
   return normalizeTakeover(takeover)
 }
+
+/** 发送网页 / 链接之前去掉追踪参数（可在设置里关闭）。文件地址、嗅探到的媒体地址带签名，不要经过这里。 */
+async function tidyUrl(url) {
+  try {
+    if (!(await getFeatures()).cleanLink) return url
+    const rules = await getSiteRules()
+    return cleanUrl(url, rules.extraParams.split(/[\s,]+/).filter(Boolean)).url
+  } catch {
+    return url
+  }
+}

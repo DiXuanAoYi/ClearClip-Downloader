@@ -514,6 +514,9 @@ struct SendBody {
     /// 用户在浏览器里明确点了“用清影下载”：电脑上把主窗口带到前台，让人看到有反应
     #[serde(default)]
     reveal: bool,
+    /// 明确要存成文字便签（浏览器里摘录的文字，里面可能有链接，但不是要下载的）
+    #[serde(default)]
+    note: bool,
 }
 
 fn clean_device(id: &str) -> String {
@@ -590,6 +593,7 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                     device: String::new(),
                     name: String::new(),
                     reveal: false,
+                    note: false,
                 })
             });
             let Ok(body) = body else { return };
@@ -597,8 +601,8 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             let device = if device.is_empty() { format!("ip-{}", peer.ip()) } else { device };
             let name: String = if body.name.trim().is_empty() { "手机".to_string() } else { body.name.trim().chars().take(40).collect() };
             let text: String = body.text.trim().chars().take(4000).collect();
-            if providers::extract_urls(&text).is_empty() {
-                // 没有链接：作为文字便签保存在电脑的“收到的文件”里（需要先配对）
+            if body.note || providers::extract_urls(&text).is_empty() {
+                // 没有链接（或明确是摘录）：作为文字便签保存在电脑的“收到的文件”里（需要先配对）
                 if text.is_empty() {
                     json(sock, "400 Bad Request", serde_json::json!({"error": "内容是空的"})).await;
                 } else if !ensure_paired(&app, &device, &name, &peer) {
@@ -665,8 +669,8 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             match import_cookies(&state.cookies, &req.body) {
                 Ok((site, n, automatic)) => {
                     let _ = app.emit("accounts://updated", ());
-                    inbox::retry_after_login(&app, &site, automatic);
-                    json(sock, "200 OK", serde_json::json!({"site": site, "count": n})).await
+                    let retried = inbox::retry_after_login(&app, &site, automatic);
+                    json(sock, "200 OK", serde_json::json!({"site": site, "count": n, "retried": retried})).await
                 }
                 Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
             }
@@ -710,6 +714,28 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                     );
                     json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await
                 }
+            }
+        }
+        // 浏览器扩展把当前页面链接放进“电脑发给手机”的盒子：只接受本机、已配对设备的请求
+        ("POST", "/api/to_phone") => {
+            if !peer.ip().is_loopback() {
+                json(sock, "403 Forbidden", serde_json::json!({"error": "只能从本机发送"})).await;
+                return;
+            }
+            let device = clean_device(req.headers.get("x-device").map(String::as_str).unwrap_or(""));
+            if !state.settings().phone.devices.iter().any(|d| d.id == device) {
+                json(sock, "403 Forbidden", serde_json::json!({"error": "请先从扩展发送一次链接，在电脑上确认配对后再使用"})).await;
+                return;
+            }
+            #[derive(serde::Deserialize)]
+            struct ToPhone {
+                #[serde(default)]
+                text: String,
+            }
+            let text = serde_json::from_slice::<ToPhone>(&req.body).map(|b| b.text).unwrap_or_default();
+            match transfer::send_text(&app, &text) {
+                Ok(id) => json(sock, "200 OK", serde_json::json!({"id": id})).await,
+                Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
             }
         }
         _ => respond(sock, "404 Not Found", "text/plain", b"not found").await,

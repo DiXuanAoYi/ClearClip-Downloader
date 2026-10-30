@@ -97,6 +97,28 @@ function initScript(mport) {
         case 'edit_probe': return await window.__probe(args.path)
         case 'edit_thumb': return null
         case 'edit_subtitle_cues': return window.__cues || []
+        case 'edit_stt_status': return window.__stt || { ready: true, engine: 'local', reason: '' }
+        case 'edit_transcribe': (window.__trReqs ||= []).push(args.req); return window.__transcript
+        case 'edit_highlights': (window.__hlReqs ||= []).push(args.req); return window.__highlights || []
+        case 'edit_highlights_llm': (window.__hlLlmReqs ||= []).push(args.req); return window.__highlightsLlm || []
+        case 'ml_models': return window.__models ||= [
+          { id: 'modnet', label: 'MODNet', kind: 'matte', url: 'https://example.invalid/modnet.onnx', sizeHint: '26 MB', note: '人像抠图', installed: false, sizeBytes: 0 },
+          { id: 'u2net_human', label: 'U²-Net 人像', kind: 'matte', url: 'https://example.invalid/u2.onnx', sizeHint: '168 MB', note: '人像抠图（更稳）', installed: false, sizeBytes: 0 },
+          { id: 'vocal_mdx', label: 'Kim Vocal 2', kind: 'vocals', url: 'https://example.invalid/v.onnx', sizeHint: '66 MB', note: '人声分离', installed: false, sizeBytes: 0 },
+        ]
+        case 'ml_model_download': case 'ml_model_import': { (window.__mlReqs ||= []).push({ cmd, ...args }); const m = window.__models.find((x) => x.id === args.id); m.installed = true; m.sizeBytes = 26214400; return m }
+        case 'edit_vocals': {
+          const req = args.req
+          ;(window.__vocReqs ||= []).push(req)
+          window.__emit('edit://track', { id: req.id, percent: 40 })
+          for (let i = 0; i < 400 && window.__hold && !window.__canceled[req.id]; i++) await new Promise((r) => setTimeout(r, 25))
+          if (window.__canceled[req.id]) throw { kind: 'invalid', message: 'canceled' }
+          window.__emit('edit://track', { id: req.id, percent: 100 })
+          return window.__vocResult
+        }
+        case 'ml_model_remove': { const m = window.__models.find((x) => x.id === args.id); m.installed = false; m.sizeBytes = 0; return null }
+        case 'edit_detect_key': (window.__keyReqs ||= []).push(args); return window.__keyGuess ?? null
+        case 'edit_beats': (window.__beatReqs ||= []).push(args); return window.__beats
         case 'edit_proxy': window.__proxied = (window.__proxied || 0) + 1; return window.__proxyUrl
         case 'edit_missing': return args.paths.filter((p) => !window.__exists(p))
         case 'edit_save': window.__files[args.path] = JSON.parse(JSON.stringify(args.project)); return null

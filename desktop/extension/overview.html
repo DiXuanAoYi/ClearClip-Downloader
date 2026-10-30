@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>页面媒体总览</title>
+<link rel="stylesheet" href="popup.css" />
+<link rel="stylesheet" href="overview.css" />
+</head>
+<body class="ov">
+  <header>
+    <span class="logo" aria-hidden="true"></span>
+    <b>页面媒体总览</b>
+    <span id="pageInfo" class="mute"></span>
+  </header>
+
+  <div id="streams" class="hidden">
+    <label>检测到的视频流 / 文件（播放页里请求到的，可直接发送）</label>
+    <div id="streamList"></div>
+  </div>
+
+  <div id="bar">
+    <div id="kinds" role="tablist"></div>
+    <label class="inline">最小边长
+      <select id="minSize">
+        <option value="0">不限</option>
+        <option value="100">≥ 100 px</option>
+        <option value="300" selected>≥ 300 px</option>
+        <option value="600">≥ 600 px</option>
+      </select>
+    </label>
+    <button id="selAll" class="sec small">全选当前</button>
+    <button id="selNone" class="sec small">清除</button>
+    <span class="grow"></span>
+    <button id="copyUrls" class="sec small">复制地址</button>
+    <button id="searchOne" class="sec small" title="选中一张图片，用所有搜索引擎各查一次">以图搜图（全部引擎）</button>
+    <button id="sendSel" class="small">发送所选</button>
+    <button id="rescan" class="sec small">重新扫描</button>
+  </div>
+  <div id="msg"></div>
+  <div id="grid"></div>
+  <div id="empty" class="mute hidden">这个页面里没有找到符合条件的内容。试试把“最小边长”调小。</div>
+
+  <script src="shared.js"></script>
+  <script src="takeover.js"></script>
+  <script src="sniff.js"></script>
+  <script src="engines.js"></script>
+  <script src="overview.js"></script>
+</body>
+</html>

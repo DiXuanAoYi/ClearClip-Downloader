@@ -13,6 +13,7 @@ use super::build::{build, EditPlan, Mode, Source};
 use super::fonts;
 use super::region::render_mask;
 use super::spec::{ClipKind, Project, MIN_MS};
+use crate::ml::matte::render_matte;
 
 fn tmp_dir(ctx: &JobCtx) -> PathBuf {
     ctx.st.data_dir.join("tmp").join(format!("edit-{}", ctx.id))
@@ -43,7 +44,7 @@ pub fn fit_to_sources(p: &mut Project, src: &HashMap<String, Source>) -> AppResu
         if c.in_ms + MIN_MS > d {
             return Err(AppError::invalid(format!("第 {} 个片段的开始时间（{}）已经超出素材的长度（{}）。", n + 1, show_ms(c.in_ms), show_ms(d))));
         }
-        if c.out_ms > d {
+        if c.out_ms > d && !c.freeze {
             c.out_ms = d;
             notes.push(format!("第 {} 个片段超出素材的长度，已缩短到素材结尾", n + 1));
         }
@@ -137,6 +138,15 @@ fn note_text(notes: &[String], plan: &EditPlan) -> String {
 }
 
 async fn run(ctx: &JobCtx, pre: &Prepared, out: &Path) -> AppResult<()> {
+    // 人像抠图：逐个片段跑模型，生成抠图视频，ffmpeg 把它们当输入读
+    let mt = pre.plan.mattes.len();
+    for (k, m) in pre.plan.mattes.iter().enumerate() {
+        let mut job = m.clone();
+        job.model = crate::ml::store::require(&ctx.st, &job.model_id)?;
+        ctx.note(format!("正在用 AI 抠出人像（{}/{}）…第一次会比较慢", k + 1, mt));
+        let base = k as f64 / mt as f64;
+        render_matte(&pre.ffmpeg, &job, &ctx.cancel, |p| ctx.percent((base + p / mt as f64) * 40.0)).await?;
+    }
     // 区域效果的遮罩：先逐个生成好，ffmpeg 把它们当输入读
     let total = pre.plan.masks.len();
     for (k, m) in pre.plan.masks.iter().enumerate() {
@@ -145,7 +155,8 @@ async fn run(ctx: &JobCtx, pre: &Prepared, out: &Path) -> AppResult<()> {
     }
     let mut args = pre.plan.args.clone();
     args.extend(muxer_args(pre.plan.ext, out));
-    let on_percent = |p: f64| ctx.percent(p);
+    let off = if mt > 0 { 40.0 } else { 0.0 };
+    let on_percent = |p: f64| ctx.percent(off + p * (100.0 - off) / 100.0);
     let end = run_ffmpeg_progress(&pre.ffmpeg, &args, Some(pre.plan.out_ms), &ctx.cancel, &ctx.wake, &on_percent).await;
     match end {
         RunEnd::Ok if nonempty(out) => Ok(()),

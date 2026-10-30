@@ -101,6 +101,55 @@ pub fn default_font() -> Option<PathBuf> {
     .clone()
 }
 
+fn be16(b: &[u8], at: usize) -> Option<usize> {
+    Some(u16::from_be_bytes(b.get(at..at + 2)?.try_into().ok()?) as usize)
+}
+
+fn be32(b: &[u8], at: usize) -> Option<usize> {
+    Some(u32::from_be_bytes(b.get(at..at + 4)?.try_into().ok()?) as usize)
+}
+
+/// 字体文件里的家族名（`name` 表的 16 号，没有就 1 号）。ASS 字幕靠名字而不是路径找字体。读不出来返回 `None`。
+pub fn family_name(path: &Path) -> Option<String> {
+    let b = std::fs::read(path).ok()?;
+    // .ttc：取第一个字体
+    let base = if b.get(0..4)? == b"ttcf" { be32(&b, 12)? } else { 0 };
+    let tables = be16(&b, base + 4)?;
+    let mut name_at = None;
+    for i in 0..tables {
+        let rec = base + 12 + i * 16;
+        if b.get(rec..rec + 4)? == b"name" {
+            name_at = Some(be32(&b, rec + 8)?);
+        }
+    }
+    let t = name_at?;
+    let count = be16(&b, t + 2)?;
+    let strings = t + be16(&b, t + 4)?;
+    let mut best: Option<(u8, String)> = None;
+    for i in 0..count {
+        let r = t + 6 + i * 12;
+        let (platform, lang, id, len, off) = (be16(&b, r)?, be16(&b, r + 4)?, be16(&b, r + 6)?, be16(&b, r + 8)?, be16(&b, r + 10)?);
+        if id != 1 && id != 16 {
+            continue;
+        }
+        let raw = b.get(strings + off..strings + off + len)?;
+        let text = match platform {
+            3 | 0 => String::from_utf16_lossy(&raw.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect::<Vec<_>>()),
+            1 => raw.iter().map(|&c| c as char).collect(),
+            _ => continue,
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        // 16 号优先，其次英文
+        let rank = (if id == 16 { 2 } else { 0 }) + u8::from(lang == 0x409 || platform == 1);
+        if best.as_ref().map_or(true, |(r, _)| rank > *r) {
+            best = Some((rank, text));
+        }
+    }
+    best.map(|(_, n)| n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +167,19 @@ mod tests {
         assert_eq!(pick(&[p("/f/Roboto.ttf")]), None);
         assert_eq!(pick(&[p("/f/Roboto.ttf"), p("/f/SomeCJKFont.otf")]), Some(p("/f/SomeCJKFont.otf")));
         assert_eq!(pick(&[]), None);
+    }
+
+    #[test]
+    fn family_name_is_read_from_the_font_file() {
+        let f = p("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+        if f.is_file() {
+            assert_eq!(family_name(&f).as_deref(), Some("DejaVu Sans"));
+        }
+        assert_eq!(family_name(&p("/definitely/not/here.ttf")), None);
+        let junk = std::env::temp_dir().join(format!("clearclip-junk-{}.ttf", std::process::id()));
+        std::fs::write(&junk, b"not a font").unwrap();
+        assert_eq!(family_name(&junk), None);
+        let _ = std::fs::remove_file(junk);
     }
 
     #[test]

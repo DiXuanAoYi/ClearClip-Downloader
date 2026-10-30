@@ -90,6 +90,11 @@ fn with_t(mut c: Clip, kind: &str, ms: u64) -> Clip {
 
 /// 按任务的流程（读素材、核对、生成参数、运行）渲染一个工程。
 pub(super) async fn render(ff: &Path, caps: &Caps, d: &Path, p: Project, mode: Mode) -> (PathBuf, EditPlan) {
+    render_with_model(ff, caps, d, p, mode, None).await
+}
+
+/// 同上；`matte_model` 是用来代替“已下载的抠图模型”的 ONNX 文件。
+pub(super) async fn render_with_model(ff: &Path, caps: &Caps, d: &Path, p: Project, mode: Mode, matte_model: Option<&Path>) -> (PathBuf, EditPlan) {
     static N: AtomicUsize = AtomicUsize::new(0);
     let mut p = p.checked().expect("工程校验");
     let mut src: HashMap<String, Source> = HashMap::new();
@@ -105,6 +110,12 @@ pub(super) async fn render(ff: &Path, caps: &Caps, d: &Path, p: Project, mode: M
     let out = d.join(format!("out-{}.{}", N.fetch_add(1, Ordering::SeqCst), plan.ext));
     for m in &plan.masks {
         render_mask(ff, m, || Ok(())).await.expect("遮罩");
+    }
+    for m in &plan.mattes {
+        let mut job = m.clone();
+        job.model = matte_model.expect("要有抠图模型").to_path_buf();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        crate::ml::matte::render_matte(ff, &job, &cancel, |_| {}).await.expect("抠图");
     }
     let mut a = base_args();
     a.extend(plan.args.clone());

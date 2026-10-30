@@ -493,6 +493,62 @@ pub fn retry_after_login(app: &AppHandle, site: &str, automatic: bool) -> usize 
     n
 }
 
+/// 最近因“需要登录”而失败、浏览器里可能已经登录的网站。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginNeeded {
+    /// 网站标识：平台 ID 或域名
+    pub site: String,
+    /// 失败的那个链接（扩展据此得到要同步 Cookie 的网站）
+    pub url: String,
+    pub title: String,
+    /// 等待登录的项目数
+    pub count: usize,
+    /// 最近一次失败的时间（Unix 秒）
+    pub at: i64,
+}
+
+/// 把失败的收件箱记录和下载任务按网站合并（最近 3 天），最近失败的排在前面，最多 10 个。
+pub fn collect_login_needed(rows: &[InboxItem], tasks: &[crate::download::TaskSnapshot], now: i64) -> Vec<LoginNeeded> {
+    let since = now - 3 * 86400;
+    let mut out: Vec<LoginNeeded> = Vec::new();
+    let mut add = |site: &str, url: &str, title: &str, at: i64| {
+        let key = site.trim_start_matches("www.").to_lowercase();
+        if key.is_empty() || url.is_empty() {
+            return;
+        }
+        match out.iter_mut().find(|x| x.site == key) {
+            Some(x) => {
+                x.count += 1;
+                if at > x.at {
+                    x.at = at;
+                    x.url = url.to_string();
+                    x.title = title.to_string();
+                }
+            }
+            None => out.push(LoginNeeded { site: key, url: url.to_string(), title: title.to_string(), count: 1, at }),
+        }
+    };
+    for r in rows.iter().filter(|r| r.status == "failed" && r.created_at > since && r.error_kind.as_deref() == Some("need_login")) {
+        add(&r.site, &r.url, r.title.as_deref().unwrap_or(""), r.updated_at);
+    }
+    // 不经过收件箱的下载任务：只有网站标识是域名时才能得到链接
+    for t in tasks.iter().filter(|t| t.status == TaskStatus::Failed && matches!(t.error_kind, Some(ErrorKind::NeedLogin)) && t.created_at > since) {
+        if t.site.contains('.') {
+            add(&t.site, &format!("https://{}/", t.site.trim_start_matches("www.")), &t.title, t.finished_at.unwrap_or(t.created_at));
+        }
+    }
+    out.sort_by_key(|b| std::cmp::Reverse(b.at));
+    out.truncate(10);
+    out
+}
+
+pub fn login_needed(app: &AppHandle) -> Vec<LoginNeeded> {
+    let state = st(app);
+    let rows = state.db.inbox_with_status("('failed')").unwrap_or_default();
+    collect_login_needed(&rows, &state.downloads.snapshots(), now())
+}
+
 /// 网站标识比较：平台 ID 或域名，`www.` 与子域名视为同一网站。
 fn same_site(a: &str, b: &str) -> bool {
     let a = a.trim_start_matches("www.");
@@ -564,6 +620,24 @@ mod tests {
         let q = db.inbox_list(&InboxFilter { query: "我的手机".into(), ..Default::default() }).unwrap();
         assert_eq!(q.len(), 1);
         assert_eq!(db.inbox_for_device("dev1", 20).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn login_needed_groups_failed_by_site() {
+        let db = Db::open_in_memory().unwrap();
+        let a = db.inbox_add("extension", "d", "扩展", "https://www.pornhub.com/view_video.php?viewkey=1", "failed").unwrap();
+        let b = db.inbox_add("extension", "d", "扩展", "https://www.pornhub.com/view_video.php?viewkey=2", "failed").unwrap();
+        let c = db.inbox_add("extension", "d", "扩展", "https://example.org/x", "failed").unwrap();
+        for (id, kind) in [(a, "need_login"), (b, "need_login"), (c, "network")] {
+            db.inbox_patch(id, Patch { status: Some("failed"), error_kind: Some(Some(kind.to_string())), ..Default::default() }).unwrap();
+        }
+        let rows = db.inbox_with_status("('failed')").unwrap();
+        let got = collect_login_needed(&rows, &[], now());
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].count, 2);
+        assert!(got[0].url.contains("pornhub.com"));
+        // 太久以前的不算
+        assert!(collect_login_needed(&rows, &[], now() + 4 * 86400).is_empty());
     }
 
     #[test]
