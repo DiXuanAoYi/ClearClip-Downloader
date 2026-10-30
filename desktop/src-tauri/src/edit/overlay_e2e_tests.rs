@@ -584,3 +584,49 @@ async fn main_clip_zoom_and_pan_keyframes_move_the_picture() {
     assert!(l.1 < 40, "左边变成黑边：{l:?}");
     let _ = std::fs::remove_dir_all(d);
 }
+
+/// 把测试用的 ONNX（通道求平均）写成文件。
+fn write_test_model(d: &Path) -> PathBuf {
+    use prost::Message;
+    let p = d.join("mean.onnx");
+    std::fs::write(&p, crate::ml::onnx::testing::channel_mean_model(None).encode_to_vec()).unwrap();
+    p
+}
+
+#[tokio::test]
+async fn ai_matte_pipeline_keeps_the_bright_subject_and_replaces_the_rest() {
+    use super::e2e_tests::render_with_model;
+    let (ff, d, caps, _m) = need!(setup("aimatte").await);
+    if !caps.has_filter("alphamerge") || !caps.has_filter("drawbox") || !caps.has_filter("gblur") || !caps.has_filter("tpad") || !caps.has_filter("loop") {
+        return;
+    }
+    let vcodec = if caps.encoders.h264 == Some("libx264") { "libx264" } else { "mpeg4" };
+    // 黑底 + 正中白方块：测试模型是“通道求平均”，白 → 1（前景），黑 → -1（背景）
+    let clip = super::e2e_tests::gen(
+        &ff,
+        &d,
+        "subject.mp4",
+        &["-f", "lavfi", "-i", "color=c=black:s=320x240:r=25:d=3,drawbox=x=100:y=60:w=120:h=120:color=white:t=fill"],
+        &["-c:v", vcodec, "-pix_fmt", "yuv420p"],
+    )
+    .await;
+    let clip = need!(clip);
+    let model = write_test_model(&d);
+    let mut c = main_clip(&clip, 3000);
+    c.bg.on = true;
+    c.bg.matte = "ai".into();
+    c.bg.color = "#0000FF".into();
+    c.bg.feather = 0.0;
+    let (out, plan) = render_with_model(&ff, &caps, &d, project(c.clone(), vec![]), Mode::Export, Some(&model)).await;
+    assert_eq!(plan.mattes.len(), 1);
+    assert!(is_blue(px_at(&ff, &out, 1.0, 10, 10).await), "背景换成蓝色");
+    let mid = px_at(&ff, &out, 1.0, 160, 120).await;
+    assert!(mid.0 > 200 && mid.1 > 200 && mid.2 > 200, "前景（白方块）留下：{mid:?}");
+    // 变速 + 旋转之后抠图仍然对得上
+    c.speed = 2.0;
+    c.out_ms = 3000;
+    c.rotate = 90;
+    let (out, _) = render_with_model(&ff, &caps, &d, project(c, vec![]), Mode::Export, Some(&model)).await;
+    assert!(is_blue(px_at(&ff, &out, 0.5, 10, 10).await), "变速 + 旋转后背景仍是蓝色");
+    let _ = std::fs::remove_dir_all(d);
+}

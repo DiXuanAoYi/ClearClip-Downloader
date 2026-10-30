@@ -4,6 +4,8 @@ import type {
   AccountStatus,
   HighlightCandidate,
   KeyGuess,
+  ModelProgress,
+  ModelStatus,
   HighlightReq,
   TrackerStatus,
   AiStatus,
@@ -264,6 +266,10 @@ export const api = {
   editSilences: (path: string, fromMs: number, toMs: number, noiseDb: number, minMs: number) => invoke<TimeSpan[]>('edit_silences', { path, fromMs, toMs, noiseDb, minMs }),
   editHighlights: (req: HighlightReq) => invoke<HighlightCandidate[]>('edit_highlights', { req }),
   editHighlightsLlm: (req: HighlightReq) => invoke<HighlightCandidate[]>('edit_highlights_llm', { req }),
+  mlModels: () => invoke<ModelStatus[]>('ml_models'),
+  mlModelDownload: (id: string, url?: string, sha256?: string) => invoke<ModelStatus>('ml_model_download', { id, url: url || null, sha256: sha256 || null }),
+  mlModelImport: (id: string, path: string) => invoke<ModelStatus>('ml_model_import', { id, path }),
+  mlModelRemove: (id: string) => invoke<void>('ml_model_remove', { id }),
   editDetectKey: (path: string, atMs: number) => invoke<KeyGuess | null>('edit_detect_key', { path, atMs }),
   editBeats: (path: string, fromMs: number, toMs: number) => invoke<{ bpm: number; confidence: number; beatsMs: number[] }>('edit_beats', { path, fromMs, toMs }),
   editWaveform: (path: string, fromMs: number, toMs: number, width: number, height: number) => invoke<string>('edit_waveform', { path, fromMs, toMs, width, height }),
@@ -319,6 +325,7 @@ export const api = {
 }
 
 export const events = {
+  onModelProgress: (cb: (p: ModelProgress) => void): Promise<UnlistenFn> => listen<ModelProgress>('ml://download', (e) => cb(e.payload)),
   onTasks: (cb: (tasks: TaskSnapshot[]) => void): Promise<UnlistenFn> => listen<TaskSnapshot[]>('tasks://updated', (e) => cb(e.payload)),
   onProgress: (cb: (task: TaskSnapshot) => void): Promise<UnlistenFn> => listen<TaskSnapshot>('tasks://progress', (e) => cb(e.payload)),
   onClipboardLink: (cb: (p: ClipboardLink) => void): Promise<UnlistenFn> => listen<ClipboardLink>('clipboard://link', (e) => cb(e.payload)),

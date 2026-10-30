@@ -2616,4 +2616,12 @@ export const en: Record<string, string> = {
   "缩放 / 平移关键帧{0}": "Zoom / pan keyframes{0}",
   "羽化": "Feather",
   "高度": "Height",
+  "下载中 {0}%": "Downloading {0}%",
+  "从文件导入…": "Import from file…",
+  "删除模型": "Remove model",
+  "已安装 · {0}": "Installed · {0}",
+  "未安装 · 约 {0}": "Not installed · about {0}",
+  "抠图模型": "Matting model",
+  "模型下载地址（.onnx）": "Model download URL (.onnx)",
+  "第一次用要先下载（或从本地文件导入）一个模型，之后离线可用。在 CPU 上逐帧推理，较慢：1 分钟的视频大约要几分钟": "Download a model (or import a local file) the first time; it works offline after that. Inference runs on the CPU frame by frame, so it is slow: a 1-minute video takes a few minutes",
 }

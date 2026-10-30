@@ -412,6 +412,8 @@ pub struct Background {
     pub matte: String,
     /// `matte == "chroma"` 时用的抠像设置（`on` 字段不用）
     pub chroma: Chroma,
+    /// `matte == "ai"` 时用哪个抠图模型（见 `ml::store::MODELS`）
+    pub model: String,
     /// 背景：`color` 纯色、`blur` 模糊的原画面、`image` 一张图片
     pub mode: String,
     pub color: String,
@@ -428,6 +430,7 @@ impl Default for Background {
             on: false,
             matte: "chroma".into(),
             chroma: Chroma::default(),
+            model: "modnet".into(),
             mode: "color".into(),
             color: "#000000".into(),
             image: String::new(),
@@ -782,6 +785,9 @@ impl Project {
             c.bg.chroma.blend = clamp(c.bg.chroma.blend, 0.0, 0.5, 0.08);
             c.bg.blur = clamp(c.bg.blur, 1.0, 60.0, 20.0);
             c.bg.feather = clamp(c.bg.feather, 0.0, 8.0, 1.5);
+            if !crate::ml::store::MODELS.iter().any(|m| m.kind == "matte" && m.id == c.bg.model) {
+                c.bg.model = "modnet".into();
+            }
             if !matches!(c.bg.matte.as_str(), "chroma" | "ai") {
                 c.bg.matte = "chroma".into();
             }
@@ -1279,6 +1285,16 @@ mod tests {
         p.audio = vec![AudioTrack { path: "/m/x.mp3".into(), ..Default::default() }];
         assert_eq!(p.media_paths(), vec!["/m/1.mp4", "/o/2.mp4", "/m/x.mp3"]);
     }
+    #[test]
+    fn unknown_matte_model_falls_back_to_the_default() {
+        let p: Project = serde_json::from_str(r#"{"clips":[{"path":"a.mp4","outMs":2000,"bg":{"on":true,"matte":"ai","model":"vocal_mdx"}}]}"#).unwrap();
+        let mut p = p.checked().unwrap();
+        assert_eq!(p.clips[0].bg.model, "modnet");
+        p.clips[0].bg.model = "u2net_human".into();
+        let p = p.checked().unwrap();
+        assert_eq!(p.clips[0].bg.model, "u2net_human");
+    }
+
     #[test]
     fn mask_and_clip_keyframes_are_clamped_and_old_projects_load() {
         let old = r#"{"clips":[{"path":"a.mp4","outMs":2000}],"overlays":[{"path":"b.png","kind":"image","outMs":1000}]}"#;

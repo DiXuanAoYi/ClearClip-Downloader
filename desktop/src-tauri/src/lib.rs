@@ -30,6 +30,7 @@ pub mod lut;
 pub mod media_cmds;
 pub mod media_server;
 pub mod media_tools;
+pub mod ml;
 pub mod model;
 pub mod naming;
 pub mod net;
@@ -558,6 +559,10 @@ pub fn run() {
             edit::analyze::edit_silences,
             edit::analyze::edit_beats,
             edit::analyze::edit_detect_key,
+            ml::store::ml_models,
+            ml::store::ml_model_download,
+            ml::store::ml_model_import,
+            ml::store::ml_model_remove,
             edit::highlights::edit_highlights,
             edit::highlights::edit_highlights_llm,
             edit::analyze::edit_waveform,

@@ -152,7 +152,7 @@ export function blankShapeMask(): EditShapeMask {
 }
 
 export function blankBackground(): EditBackground {
-  return { on: false, matte: 'chroma', chroma: blankChroma(), mode: 'color', color: '#000000', image: '', blur: 20, feather: 1.5 }
+  return { on: false, matte: 'chroma', model: 'modnet', chroma: blankChroma(), mode: 'color', color: '#000000', image: '', blur: 20, feather: 1.5 }
 }
 
 export function blankChroma(): EditChroma {

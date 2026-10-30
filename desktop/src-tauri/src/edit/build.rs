@@ -18,6 +18,8 @@ use crate::vidnorm::facts::{Facts, Hdr};
 use super::keyframes;
 use super::region::{focus_knots, focus_window, knot_expr, MaskJob};
 use super::spec::{layout, overlay_order, tone_changed, total_ms, AudioTrack, Clip, ClipKind, Overlay, Placed, Project, Region, ShapeMask, TextItem};
+use crate::ml::matte::MatteJob;
+use crate::ml::store as models;
 
 /// 命令行总长度的上限。Windows 的上限是 32767 个字符，留一点给 ffmpeg 路径和输出文件。
 const MAX_ARGS_LEN: usize = 30_000;
@@ -74,6 +76,8 @@ pub struct EditPlan {
     pub warnings: Vec<String>,
     /// 区域效果用的遮罩视频：跑 ffmpeg 之前要先生成好（见 `region::render_mask`）
     pub masks: Vec<MaskJob>,
+    /// 人像抠图要先生成的抠图视频（见 `ml::matte::render_matte`）
+    pub mattes: Vec<MatteJob>,
 }
 
 fn sec(ms: u64) -> String {
@@ -168,6 +172,8 @@ struct Regions<'a> {
     /// 成片的宽高比（聚焦“按成片比例取景”用）
     out_aspect: f64,
     masks: Vec<MaskJob>,
+    mattes: Vec<MatteJob>,
+    warnings: Vec<String>,
     /// 额外输入（遮罩视频、背景图片）的参数，按输入编号顺序
     extra: Vec<Vec<String>>,
 }
@@ -300,12 +306,58 @@ fn bg_stage(i: usize, c: &Clip, sr: &Source, f: &Frame, input: &str, head: &str,
     } else {
         stmts.push(format!("{input}{head}[{fg_in}]"));
     }
-    let key = &bg.chroma;
-    let mut k = vec!["format=yuva420p".to_string(), format!("chromakey=color=0x{}:similarity={:.3}:blend={:.3}", hex(&key.color), key.similarity, key.blend)];
-    if key.despill {
-        k.extend(["format=gbrap".into(), format!("despill=type={}:mix=0.5:expand=0.1", key.spill_type()), "format=yuva420p".into()]);
+    if bg.matte == "ai" {
+        // 前景 = 原画面 + 抠图模型给的透明度（抠图视频在素材自己的时间里，这里套同样的变速、方向、帧率）
+        let m = rg.first_input + rg.extra.len();
+        let path = rg.tmp.join(format!("matte-{i}.nut"));
+        let def = models::def(&bg.model).expect("checked");
+        rg.mattes.push(MatteJob {
+            path: path.clone(),
+            src: c.path.clone(),
+            image: c.kind == ClipKind::Image,
+            in_ms: c.in_ms,
+            span_ms: c.out_ms.saturating_sub(c.in_ms),
+            model_id: bg.model.clone(),
+            model: Default::default(),
+            norm: def.norm,
+            fixed_side: def.fixed_side,
+            src_size: (sr.width, sr.height),
+            src_fps: sr.fps,
+        });
+        rg.extra.push(vec!["-i".into(), path.to_string_lossy().into_owned()]);
+        let pace = if c.kind == ClipKind::Video && (c.speed - 1.0).abs() > 1e-9 {
+            format!("setpts=(PTS-STARTPTS)/{:.6}", c.speed)
+        } else {
+            "setpts=PTS-STARTPTS".to_string()
+        };
+        let mut mh: Vec<String> = vec![];
+        if c.kind == ClipKind::Image {
+            mh.push(format!("loop=loop=-1:size=1,setpts=N/{}/TB", f.fps));
+        } else {
+            mh.push(pace);
+        }
+        mh.extend(orient(c).into_iter().map(String::from));
+        mh.push(format!("fps={}", f.fps));
+        // 抠图比画面短时（素材尾部、帧数上限）停在最后一帧，不让前景被截短
+        mh.push("tpad=stop_mode=clone:stop_duration=2".into());
+        mh.push(format!("trim=duration={}", sec(c.duration_ms() + 500)));
+        mh.push(format!("scale={}:{}:flags=bicubic", sw.max(2), sh.max(2)));
+        mh.push("format=gray".into());
+        if bg.feather > 0.01 {
+            mh.push(format!("gblur=sigma={:.2}", bg.feather));
+        }
+        stmts.push(format!("[{m}:v:0]{}[mt{i}]", mh.join(",")));
+        stmts.push(format!("[{fg_in}]format=yuv420p[fy{i}]"));
+        stmts.push(format!("[fy{i}][mt{i}]alphamerge,format=yuva420p[bf{i}]"));
+    } else {
+        let key = &bg.chroma;
+        let mut k =
+            vec!["format=yuva420p".to_string(), format!("chromakey=color=0x{}:similarity={:.3}:blend={:.3}", hex(&key.color), key.similarity, key.blend)];
+        if key.despill {
+            k.extend(["format=gbrap".into(), format!("despill=type={}:mix=0.5:expand=0.1", key.spill_type()), "format=yuva420p".into()]);
+        }
+        stmts.push(format!("[{fg_in}]{}[bf{i}]", k.join(",")));
     }
-    stmts.push(format!("[{fg_in}]{}[bf{i}]", k.join(",")));
     match bg.mode.as_str() {
         "blur" => stmts.push(format!("[{bg_in}]{}[bb{i}]", f.blur)),
         "image" => {
@@ -327,6 +379,19 @@ fn bg_stage(i: usize, c: &Clip, sr: &Source, f: &Frame, input: &str, head: &str,
     }
     stmts.push(format!("[bb{i}][bf{i}]overlay=format=auto:shortest=1,format=yuv420p[bgv{i}]"));
     format!("bgv{i}")
+}
+
+/// 人像抠图能不能用在这个片段上；不能用时记一条提示（只在第一次判断时）。
+fn ai_matte_allowed(c: &Clip, i: usize, rg: &mut Regions) -> bool {
+    let why = if rg.preview {
+        "预览里不做人像抠图（要逐帧跑模型，太慢），导出时才生效"
+    } else if c.reverse || c.freeze {
+        "倒放 / 定格的片段不能用人像抠图，已跳过"
+    } else {
+        return true;
+    };
+    rg.warnings.push(format!("第 {} 个片段：{why}", i + 1));
+    false
 }
 
 /// 一个片段的画面处理，输出 `[v{i}]`。
@@ -371,7 +436,8 @@ fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmt
     tail.extend(["format=yuv420p".into(), "setsar=1".into(), "settb=AVTB".into()]);
     let mut head = head.join(",");
     let mut input = input;
-    if c.bg.on && c.bg.matte == "chroma" {
+    let ai_ok = c.bg.matte != "ai" || ai_matte_allowed(c, i, rg);
+    if c.bg.on && ai_ok {
         input = format!("[{}]", bg_stage(i, c, sr, f, &input, &head, rg, stmts));
         head = "null".into();
     }
@@ -861,6 +927,9 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
             need("despill", "无法去溢色")?;
         }
     }
+    if p.clips.iter().any(|c| c.bg.on && c.bg.matte == "ai") {
+        need("alphamerge", "无法用人像抠图换背景")?;
+    }
     if p.overlays.iter().any(|o| o.chroma.on) {
         need("chromakey", "无法抠像")?;
         if p.overlays.iter().any(|o| o.chroma.on && o.chroma.despill) {
@@ -944,7 +1013,16 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         || ovs.iter().any(|(_, o)| ov_audio(o))
         || p.clips.iter().any(|c| c.kind == ClipKind::Video && !c.mute && src.get(&c.path).is_some_and(|s| s.has_audio));
     let frame = Frame { w, h, fps: &fps_txt, fit: &p.out.fit, blur: caps.background_blur() };
-    let mut rg = Regions { preview, tmp, first_input: ov_first + ovs.len(), out_aspect: f64::from(w) / f64::from(h), masks: vec![], extra: vec![] };
+    let mut rg = Regions {
+        preview,
+        tmp,
+        first_input: ov_first + ovs.len(),
+        out_aspect: f64::from(w) / f64::from(h),
+        masks: vec![],
+        mattes: vec![],
+        warnings: vec![],
+        extra: vec![],
+    };
     let mut stmts: Vec<String> = vec![];
     let fx = FxCaps::from_caps(caps, None);
     for (i, c) in p.clips.iter().enumerate() {
@@ -1113,6 +1191,8 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         plan.notes.push(format!("有 {} 个区域效果，导出前会先生成遮罩", rg.masks.len()));
     }
     plan.masks = rg.masks;
+    plan.mattes = rg.mattes;
+    plan.warnings.extend(rg.warnings);
 
     let graph = stmts.join(";");
     args.extend(graph_args(&graph, caps, tmp)?);

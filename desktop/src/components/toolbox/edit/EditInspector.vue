@@ -12,6 +12,7 @@ import type { EditBackground, EditChroma, EditClip, EditOutput, EditOverlay, Edi
 import { EDIT_IMAGE_EXTS, type SpeedPoint } from '../../../utils/edit'
 import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, CLIP_KEY_PROPS, OVERLAY_KEY_PROPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
 import EditField from './EditField.vue'
+import EditModels from './EditModels.vue'
 import EditKeyframes from './EditKeyframes.vue'
 import EditRegions from './EditRegions.vue'
 import EditSmart from './EditSmart.vue'
@@ -443,6 +444,9 @@ async function pickDir() {
             <EditSlider label="边缘柔化" :model-value="clip.bg.chroma.blend" :min="0" :max="0.5" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => pbgc({ blend: v }, 'bgkb')" />
           </template>
           <template v-else>
+            <EditField label="抠图模型" hint="第一次用要先下载（或从本地文件导入）一个模型，之后离线可用。在 CPU 上逐帧推理，较慢：1 分钟的视频大约要几分钟">
+              <EditModels kind="matte" :selected="clip.bg.model" @select="(id) => pbg({ model: id }, 'bgmodel')" />
+            </EditField>
             <EditSlider label="边缘柔化" :model-value="clip.bg.feather" :min="0" :max="8" :step="0.5" :digits="1" unit=" 像素" @update:model-value="(v) => pbg({ feather: v }, 'bgf')" />
           </template>
           <EditField label="新背景">

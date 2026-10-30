@@ -1648,6 +1648,8 @@ export interface KeyGuess {
 export interface EditBackground {
   on: boolean
   matte: 'chroma' | 'ai'
+  /** 人像抠图用的模型 id（`matte` 为 `ai` 时） */
+  model: string
   chroma: EditChroma
   mode: 'color' | 'blur' | 'image'
   color: string
@@ -1702,4 +1704,21 @@ export interface TrackerStatus {
   source: string
   listCount: number
   effectiveCount: number
+}
+
+/** 本机的 AI 模型（人像抠图 / 人声分离）：装没装、从哪下 */
+export interface ModelStatus {
+  id: string
+  label: string
+  kind: 'matte' | 'vocals'
+  url: string
+  sizeHint: string
+  note: string
+  installed: boolean
+  sizeBytes: number
+}
+export interface ModelProgress {
+  id: string
+  got: number
+  total: number
 }
