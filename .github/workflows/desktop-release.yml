@@ -63,11 +63,16 @@ jobs:
         shell: bash
         env:
           KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
         run: |
           if [ -n "$KEY" ]; then
             echo 'args=--config {"bundle":{"createUpdaterArtifacts":true}}' >> "$GITHUB_OUTPUT"
           else
             echo 'args=' >> "$GITHUB_OUTPUT"
+            echo "::warning title=没有生成更新包和 latest.json::仓库 Secrets 里没有 TAURI_SIGNING_PRIVATE_KEY，这次发布的版本不支持程序内一键更新（只能到发布页下载）。配置方法见 docs/release-guide/1-updater-key.md"
+          fi
+          if [ -z "$PUBKEY" ]; then
+            echo "::warning title=没有编译进更新公钥::仓库 Secrets 里没有 TAURI_UPDATER_PUBKEY，程序无法验证更新包。配置方法见 docs/release-guide/1-updater-key.md"
           fi
 
       # 可选的签名配置：只导出已配置的 Secrets。变量以空值存在时，打包工具会尝试导入空证书并失败。
