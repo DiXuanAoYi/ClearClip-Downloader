@@ -1474,7 +1474,7 @@ export const en: Record<string, string> = {
   "飞书群机器人": "Feishu group bot",
   "首次订阅": "First subscription",
   "首次订阅可选择只下载以后的新内容、下载最近几条或全部": "For a first subscription you can download only new content from now on, the latest few, or everything",
-  "高清或会员内容。": "HD or members-only content.",
+  "高清或会员内容；有的地区 / 网络下，没有登录状态会返回“HTTP Error 410: Gone”，同步登录 Cookie 即可。": "HD or members-only content. In some regions or networks, anonymous requests get “HTTP Error 410: Gone”; syncing the login cookies fixes it.",
   "高级功能，只运行你自己填写的命令": "Advanced feature; only runs the command you enter",
   "黑边": "Black bars",
   "默认": "Default",

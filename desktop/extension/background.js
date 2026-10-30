@@ -66,6 +66,22 @@ async function menuResult(tab, ok, shown, message, name) {
   if (shown) await rememberGrab({ url: shown, name, ok, error: ok ? undefined : message })
 }
 
+/** 打开扩展设置页（独立标签页，比弹窗宽松）；已经开着就切过去。 */
+async function openSetup() {
+  const url = api.runtime.getURL('popup.html#settings')
+  try {
+    const [open] = await api.tabs.query({ url: api.runtime.getURL('popup.html') + '*' })
+    if (open) {
+      await api.tabs.update(open.id, { active: true, url })
+      if (open.windowId != null) await api.windows?.update(open.windowId, { focused: true })
+    } else {
+      await api.tabs.create({ url })
+    }
+  } catch {
+    await api.runtime.openOptionsPage?.()
+  }
+}
+
 api.contextMenus.onClicked.addListener(async (info, tab) => {
   const page = info.pageUrl || tab?.url || ''
   let shown = ''
@@ -99,6 +115,8 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
     const pairing = r.state === 'pending_pair'
     await menuResult(tab, !pairing, shown, pairing ? '第一次使用：请在电脑上点“允许”完成配对' : shortUrl(shown), r.fileNames?.[0])
   } catch (e) {
+    // 还没填端口和令牌：直接打开设置页，不让用户对着没反应的菜单猜原因
+    if (e.code === 'unconfigured') await openSetup()
     await menuResult(tab, false, shown, e.message)
   }
 })

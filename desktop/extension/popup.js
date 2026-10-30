@@ -186,6 +186,7 @@ async function init() {
   const tab = await currentTab()
   $('page').textContent = tab?.title || tab?.url || ''
   show(location.hash === '#settings' || !c.port || !c.token ? 'settings' : 'main')
+  $('setupHint').classList.toggle('hidden', !!(c.port && c.token))
   renderSync()
   renderSniffed()
   renderTakeover()
@@ -292,3 +293,7 @@ $('tkSave').onclick = async () => {
 }
 
 init()
+// 设置页已经开着时，右键菜单再次要求配置：切到设置界面
+window.addEventListener('hashchange', () => {
+  if (location.hash === '#settings') init()
+})

@@ -148,6 +148,10 @@ pub fn classify_stderr(stderr: &str) -> AppError {
         || lower.contains("cookies")
         || lower.contains("members-only")
         || lower.contains("private video")
+        // 401 / 403 / 410：站点把没登录（或没通过年龄确认）的请求挡在外面，同步该网站的登录 Cookie 后常能解决
+        || lower.contains("http error 401")
+        || lower.contains("http error 403")
+        || lower.contains("http error 410")
     {
         ErrorKind::NeedLogin
     } else if lower.contains("drm") {
@@ -779,6 +783,12 @@ mod tests {
     #[test]
     fn stderr_classification() {
         assert_eq!(classify_stderr("ERROR: [youtube] abc: Sign in to confirm your age").kind, ErrorKind::NeedLogin);
+        assert_eq!(
+            classify_stderr("ERROR: [PornHub] 6ad60a0195233: Unable to download webpage: HTTP Error 410: Gone (caused by <HTTPError 410: Gone>)").kind,
+            ErrorKind::NeedLogin,
+            "410 / 403 from the site are fixed by syncing the site's cookies, so the login guide must show"
+        );
+        assert_eq!(classify_stderr("ERROR: Unable to download webpage: <urlopen error timed out>").kind, ErrorKind::Network);
         assert_eq!(classify_stderr("ERROR: Unsupported URL: https://x").kind, ErrorKind::Unsupported);
         assert_eq!(classify_stderr("ERROR: [x] The uploader has not made this video available in your country").kind, ErrorKind::GeoBlocked);
         assert_eq!(classify_stderr("ERROR: HTTP Error 429: Too Many Requests").kind, ErrorKind::RateLimited);
