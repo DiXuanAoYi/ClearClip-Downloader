@@ -7,11 +7,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::settings::Settings;
 
-/// 默认的列表来源（ngosang/trackerslist 的 best 列表）：先走 jsDelivr，再走 GitHub 原始地址。
-pub const DEFAULT_SOURCES: [&str; 2] = [
+/// 默认的列表来源：ngosang/trackerslist 的 best 列表（先走 jsDelivr，再走 GitHub 原始地址），
+/// 之后是 trackerslist.com 及其 Cloudflare 镜像、XIU2/TrackersListCollection 的 best 列表。按顺序尝试，第一个成功的为准。
+pub const DEFAULT_SOURCES: [&str; 5] = [
     "https://cdn.jsdelivr.net/gh/ngosang/trackerslist@master/trackers_best.txt",
     "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt",
+    "https://trackerslist.com/best.txt",
+    "https://cf.trackerslist.com/best.txt",
+    "https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/best.txt",
 ];
+
+/// 0.8.2 及以前的默认来源：设置里还是这两条时，升级后补上新增的默认来源。
+const OLD_DEFAULT_SOURCES: [&str; 2] = [DEFAULT_SOURCES[0], DEFAULT_SOURCES[1]];
+
+/// 设置里保存的来源恰好是旧默认值（用户没改过）时，换成当前的默认列表；改过的原样保留。
+pub fn upgrade_default_sources(sources: &mut Vec<String>) {
+    if sources.iter().map(|s| s.as_str()).eq(OLD_DEFAULT_SOURCES) {
+        *sources = DEFAULT_SOURCES.iter().map(|s| s.to_string()).collect();
+    }
+}
 
 /// 单个列表最多采用多少个 tracker（太多只会拖慢连接）
 const MAX_TRACKERS: usize = 120;
@@ -172,6 +186,22 @@ mod tests {
             }
         });
         format!("http://127.0.0.1:{port}")
+    }
+
+    #[test]
+    fn upgrades_only_untouched_default_sources() {
+        let mut old: Vec<String> = OLD_DEFAULT_SOURCES.iter().map(|s| s.to_string()).collect();
+        upgrade_default_sources(&mut old);
+        assert_eq!(old, DEFAULT_SOURCES.to_vec());
+        assert!(old.iter().any(|s| s == "https://trackerslist.com/best.txt"));
+        assert!(old.iter().any(|s| s == "https://cf.trackerslist.com/best.txt"));
+        assert!(old.iter().any(|s| s == "https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/best.txt"));
+        let mut mine = vec!["https://example.com/t.txt".to_string()];
+        upgrade_default_sources(&mut mine);
+        assert_eq!(mine, vec!["https://example.com/t.txt"]);
+        let mut empty: Vec<String> = vec![];
+        upgrade_default_sources(&mut empty);
+        assert!(empty.is_empty());
     }
 
     #[test]

@@ -2336,7 +2336,7 @@ export const en: Record<string, string> = {
   "服务器": "Servers",
   "服务器列表（server.met）地址": "Server list (server.met) URL",
   "每次下载时取其中前几台服务器；下载失败时使用上次缓存的列表": "The first few servers are used for each download; the last cached list is used if fetching fails",
-  "每行一个 http / https 地址；按顺序尝试，留空使用内置的 ngosang/trackerslist": "One http / https URL per line, tried in order; leave empty to use the built-in ngosang/trackerslist",
+  "每行一个 http / https 地址；按顺序尝试，第一个成功的为准，留空使用内置的默认来源": "One http / https URL per line, tried in order, the first one that works is used; leave empty to use the built-in defaults",
   "每行一个，例如 45.82.80.155:5687（可选）": "One per line, e.g. 45.82.80.155:5687 (optional)",
   "每行一个，支持 udp:// http:// https://；始终使用，排在列表前面": "One per line, udp:// http:// https:// supported; always used, placed before the list",
   "留空则只用上面手动添加的服务器": "Leave empty to use only the servers added above",

@@ -6,6 +6,9 @@
 
 这一版的主题是**浏览器扩展 1.4 – 1.9**：把扩展从“发送 + 接管下载”扩成一组页面小工具。规划与取舍见 [docs/extension-plan.md](../docs/extension-plan.md)，用法见 [extension/README.md](extension/README.md)。需要常驻在网页里运行的功能默认关闭。
 
+**改进**
+- **BT tracker 的默认列表来源增加三个**：`https://trackerslist.com/best.txt`、`https://cf.trackerslist.com/best.txt`、`https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/best.txt`（“BT 与 ed2k → 列表来源”，按顺序尝试，第一个成功的为准）。没改过默认来源的，升级后自动补上；改过的保持原样。
+
 **应用端（小改动）**
 - 本机接口新增 `GET /api/v1/login_needed`：列出因需要登录而失败的任务（按网站分组），扩展据此询问“是否同步该网站的 Cookie”，同步后清影自动重试
 - 本机接口新增 `/api/v1/show`：在文件夹中显示某个下载（扩展弹窗的“在文件夹中显示”）

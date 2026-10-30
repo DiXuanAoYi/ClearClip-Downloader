@@ -62,7 +62,7 @@
 | thunder:// 等 | 解码成普通链接后交给 HTTP 引擎 |
 | RTMP / RTSP 等流 | 交给 ffmpeg 抓取，与直播录制共用 |
 | ed2k | **自行用 Rust 实现协议**（不依赖现成库）：解析 `ed2k://` 文件链接（名称、大小、MD4 哈希） 链接；连接 eD2k 服务器查找来源，再与来源直连按块下载（9.28 MB 分块，逐块 MD4 校验，AICH 可选）；Kad 网络作为后续项。参考 eMule / aMule 的协议文档与源码、Gopeed 的下载器架构（任务/分块/来源管理）；协议实现按文件拆成独立模块并配测试（用本地模拟服务器验证握手、来源查询、分块传输和校验）。风险：公开的 eD2k 服务器已大幅减少，可用性取决于用户配置的服务器列表和 Kad，不内置任何资源索引或搜索；先做“有链接就能下”，不做搜索 |
-| BT / 磁力 | 内置 librqbit（Rust，Apache-2.0）：DHT、PEX、UPnP，Tracker 列表**定期从网上的开源列表自动更新**（默认源为 ngosang/trackerslist 的 best 列表，通过 jsDelivr / GitHub 镜像地址获取，更新间隔默认 7 天，可改；可手动立即更新、增删自定义源和自己的 Tracker，更新失败保留旧列表并提示，列表去重并只接受 http/https/udp 地址）；不内置任何资源索引或搜索 |
+| BT / 磁力 | 内置 librqbit（Rust，Apache-2.0）：DHT、PEX、UPnP，Tracker 列表**定期从网上的开源列表自动更新**（默认源为 ngosang/trackerslist、trackerslist.com（含 Cloudflare 镜像）、XIU2/TrackersListCollection 的 best 列表，按顺序尝试，更新间隔默认 7 天，可改；可手动立即更新、增删自定义源和自己的 Tracker，更新失败保留旧列表并提示，列表去重并只接受 http/https/udp 地址）；不内置任何资源索引或搜索 |
 
 ## 五、阶段 4：下载引擎打磨（0.8.0）
 
