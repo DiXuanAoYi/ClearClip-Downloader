@@ -2,8 +2,9 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
+import { convertFileSrc } from '@tauri-apps/api/core'
 import { api, errorText } from '../../api'
-import type { MediaInfoLite, ToolJob, ToolOp } from '../../types'
+import type { AudioFxPreview, AudioFxSpec, MediaInfoLite, ToolJob, ToolOp } from '../../types'
 import { formatDuration } from '../../utils/format'
 import { parseClock } from '../../utils/time'
 import FileInput from './FileInput.vue'
@@ -21,6 +22,7 @@ const TOOLS: Tool[] = [
   { id: 'frame', name: '截图', desc: '截取某一帧，或每隔几秒截一张。' },
   { id: 'speed', name: '倍速', desc: '加快或放慢，声音音调保持不变。', audioOk: true },
   { id: 'loudness', name: '响度标准化', desc: '把音量调到统一水平，画面不重新编码。', audioOk: true },
+  { id: 'audiofx', name: '音效 / 混响', desc: '给声音加混响（房间、教堂等）、降噪、人声增强，可同时标准化响度；画面不重新编码。', audioOk: true },
   { id: 'landscape', name: '竖屏转横屏', desc: '竖屏视频放进 16:9 画面，两侧用模糊背景或黑边补齐。' },
   { id: 'rotate', name: '旋转 / 翻转', desc: '顺时针、逆时针、180°、水平或垂直翻转。' },
   { id: 'mute', name: '去除音轨', desc: '得到没有声音的视频，不重新编码。' },
@@ -63,6 +65,16 @@ const p = reactive({
   landMode: 'blur' as 'blur' | 'black',
   speed: 1.5,
   lufs: -16,
+  fxReverb: true,
+  fxPreset: 'room',
+  fxMix: -9,
+  fxTime: 800,
+  fxHf: 0.7,
+  fxPre: 15,
+  fxDenoise: 'off' as 'off' | 'light' | 'medium' | 'strong',
+  fxEnhance: false,
+  fxNorm: false,
+  fxAudStart: '0:00',
   rotate: 'cw' as 'cw' | 'ccw' | 'flip180' | 'hflip' | 'vflip',
   format: 'mp4',
   reencode: false,
@@ -75,6 +87,57 @@ const p = reactive({
   precise: false,
   concatRe: false,
 })
+
+/** 混响预设：混合 dB / 混响时间 ms / 高频保留 / 预延迟 ms */
+const REVERBS = [
+  { id: 'room', name: '房间', mix: -9, time: 500, hf: 0.7, pre: 8 },
+  { id: 'bath', name: '浴室', mix: -5, time: 1400, hf: 0.9, pre: 5 },
+  { id: 'living', name: '客厅', mix: -10, time: 700, hf: 0.55, pre: 12 },
+  { id: 'class', name: '教室', mix: -8, time: 1100, hf: 0.65, pre: 18 },
+  { id: 'studio', name: '录音棚', mix: -14, time: 350, hf: 0.5, pre: 4 },
+  { id: 'plate', name: '板式', mix: -7, time: 1800, hf: 0.85, pre: 20 },
+  { id: 'hall', name: '音乐厅', mix: -8, time: 2600, hf: 0.6, pre: 30 },
+  { id: 'church', name: '教堂', mix: -6, time: 4500, hf: 0.5, pre: 45 },
+]
+function pickReverb(id: string) {
+  const r = REVERBS.find((x) => x.id === id)
+  if (!r) return
+  p.fxPreset = id
+  p.fxMix = r.mix
+  p.fxTime = r.time
+  p.fxHf = r.hf
+  p.fxPre = r.pre
+}
+
+function fxSpec(): AudioFxSpec {
+  return {
+    denoise: p.fxDenoise,
+    enhance: p.fxEnhance,
+    reverb: p.fxReverb ? { mixDb: p.fxMix, timeMs: p.fxTime, hfRatio: p.fxHf, preDelayMs: p.fxPre, inGainDb: 0 } : null,
+    normalize: p.fxNorm ? p.lufs : null,
+    preset: p.fxReverb ? p.fxPreset : null,
+  }
+}
+const fxIdle = computed(() => !p.fxReverb && p.fxDenoise === 'off' && !p.fxEnhance && !p.fxNorm)
+
+const aud = ref<AudioFxPreview | null>(null)
+const auding = ref(false)
+watch([files, () => tool.value], () => (aud.value = null))
+async function audition() {
+  if (!files.value.length) return ElMessage.warning('请先选择文件。')
+  if (fxIdle.value) return ElMessage.warning('请至少打开一项效果。')
+  const at = time('试听起点', p.fxAudStart)
+  if (at == null) return
+  auding.value = true
+  try {
+    aud.value = await api.audioFxPreview(files.value[0], fxSpec(), at)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    auding.value = false
+  }
+}
+const src = (path: string) => convertFileSrc(path) + `?t=${Date.now()}`
 
 const FORMATS = [
   { v: 'mp4', t: 'MP4（视频）' },
@@ -118,6 +181,9 @@ function build(): ToolOp | null {
       return { op: 'speed', factor: p.speed }
     case 'loudness':
       return { op: 'loudness', target: p.lufs }
+    case 'audiofx':
+      if (fxIdle.value) return ElMessage.warning('请至少打开一项效果。'), null
+      return { op: 'audio_fx', spec: fxSpec() }
     case 'rotate':
       return { op: 'rotate', mode: p.rotate }
     case 'convert':
@@ -262,6 +328,54 @@ async function start() {
           </label>
         </template>
 
+        <template v-else-if="tool === 'audiofx'">
+          <label>
+            <span>混响</span>
+            <el-switch v-model="p.fxReverb" />
+          </label>
+          <template v-if="p.fxReverb">
+            <label>
+              <span>空间</span>
+              <el-radio-group :model-value="p.fxPreset" size="small" @update:model-value="pickReverb(String($event))">
+                <el-radio-button v-for="r in REVERBS" :key="r.id" :value="r.id">{{ r.name }}</el-radio-button>
+              </el-radio-group>
+            </label>
+            <label><span>混响量（dB）</span><el-slider v-model="p.fxMix" :min="-30" :max="0" :step="1" show-input size="small" class="sl" /><small class="mute">越大混响越明显；0 表示混响和原声一样响。</small></label>
+            <label><span>混响时间（毫秒）</span><el-slider v-model="p.fxTime" :min="150" :max="8000" :step="50" show-input size="small" class="sl" /></label>
+            <label><span>高频保留</span><el-slider v-model="p.fxHf" :min="0.2" :max="1" :step="0.05" show-input size="small" class="sl" /><small class="mute">越小越“闷”（高频消散得更快），像有吸音材料的房间。</small></label>
+            <label><span>预延迟（毫秒）</span><el-slider v-model="p.fxPre" :min="0" :max="150" :step="1" show-input size="small" class="sl" /></label>
+          </template>
+          <label>
+            <span>降噪</span>
+            <el-radio-group v-model="p.fxDenoise" size="small">
+              <el-radio-button value="off">关</el-radio-button>
+              <el-radio-button value="light">轻</el-radio-button>
+              <el-radio-button value="medium">中</el-radio-button>
+              <el-radio-button value="strong">强</el-radio-button>
+            </el-radio-group>
+          </label>
+          <label>
+            <span>人声增强</span>
+            <el-switch v-model="p.fxEnhance" />
+            <small class="mute">切掉低频隆隆声、提一点清晰度、轻度压缩让音量更均匀。适合说话、访谈、网课。</small>
+          </label>
+          <label>
+            <span>响度标准化</span>
+            <el-switch v-model="p.fxNorm" />
+            <el-input-number v-if="p.fxNorm" v-model="p.lufs" size="small" :min="-30" :max="-5" />
+          </label>
+          <label>
+            <span>试听</span>
+            <span class="dirbox"><el-input v-model="p.fxAudStart" size="small" class="w mono" placeholder="起点，如 0:30" /><el-button size="small" :loading="auding" :disabled="!files.length" @click="audition">试听 15 秒</el-button></span>
+          </label>
+          <template v-if="aud">
+            <label><span>原声</span><audio :src="src(aud.before)" controls preload="none" class="aud" /></label>
+            <label><span>处理后</span><audio :src="src(aud.after)" controls preload="none" class="aud" /></label>
+            <small v-for="n in aud.notes" :key="n" class="mute note">{{ n }}</small>
+          </template>
+          <small class="mute note">混响是离线渲染的，处理时间和文件时长成正比；音频文件的结尾会多出混响的余音，视频保持原时长。</small>
+        </template>
+
         <template v-else-if="tool === 'landscape'">
           <label><span>画布</span><el-select v-model="p.landH" size="small" class="w" @change="p.landW = p.landH * 16 / 9"><el-option :value="1080" label="1920×1080" /><el-option :value="720" label="1280×720" /><el-option :value="2160" label="3840×2160" /></el-select></label>
           <label><span>背景</span><el-radio-group v-model="p.landMode" size="small"><el-radio-button value="blur">模糊背景</el-radio-button><el-radio-button value="black">黑边</el-radio-button></el-radio-group></label>
@@ -364,6 +478,13 @@ h3 {
 }
 .sl {
   width: 340px;
+}
+.aud {
+  height: 34px;
+  width: 340px;
+}
+.note {
+  max-width: 560px;
 }
 .dirbox {
   display: flex;

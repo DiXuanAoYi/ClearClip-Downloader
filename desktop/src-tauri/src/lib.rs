@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod ai_cmds;
 pub mod api;
+pub mod audiofx;
 pub mod backup;
 pub mod bt;
 pub mod checksum;
@@ -547,6 +548,7 @@ pub fn run() {
             media_cmds::video_analyze,
             media_cmds::video_color,
             media_cmds::video_preview,
+            media_cmds::audio_fx_preview,
             edit::cmds::edit_probe,
             edit::cmds::edit_thumb,
             edit::cmds::edit_preview_url,

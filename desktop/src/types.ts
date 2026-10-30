@@ -276,6 +276,7 @@ export type ToolOp =
   | { op: 'landscape'; width: number; height: number; mode: 'blur' | 'black' }
   | { op: 'speed'; factor: number }
   | { op: 'loudness'; target: number }
+  | { op: 'audio_fx'; spec: AudioFxSpec }
   | { op: 'rotate'; mode: 'cw' | 'ccw' | 'flip180' | 'hflip' | 'vflip' }
   | { op: 'convert'; format: string; reencode: boolean }
   | { op: 'frame'; atMs: number; format: 'jpg' | 'png' }
@@ -288,6 +289,33 @@ export type ToolOp =
   | { op: 'stabilize'; strength: 'light' | 'normal' | 'strong' }
   | { op: 'edit'; project: EditProject }
   | { op: 'tags'; title?: string | null; artist?: string | null; album?: string | null; year?: string | null; genre?: string | null; comment?: string | null; cover?: string | null }
+
+// ---------- 音效 / 混响 ----------
+
+export interface ReverbSpec {
+  /** 混响相对干声的电平（dB），0 约等于混响和原声一样响 */
+  mixDb: number
+  timeMs: number
+  /** 高频衰减得比低频快多少：1 = 一样，越小越“闷” */
+  hfRatio: number
+  preDelayMs: number
+  inGainDb: number
+}
+
+export interface AudioFxSpec {
+  denoise: 'off' | 'light' | 'medium' | 'strong'
+  enhance: boolean
+  reverb: ReverbSpec | null
+  /** 目标响度（LUFS）；null 表示不做响度标准化 */
+  normalize: number | null
+  preset?: string | null
+}
+
+export interface AudioFxPreview {
+  before: string
+  after: string
+  notes: string[]
+}
 
 export type ToolJob = ToolOp & { inputs: string[]; outputDir?: string | null }
 
