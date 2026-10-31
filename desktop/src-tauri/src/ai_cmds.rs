@@ -52,7 +52,7 @@ pub fn ai_status(state: St<'_>) -> AiStatus {
     AiStatus {
         chat_ready: !s.ai.base_url.is_empty() && !s.ai.model.is_empty() && chat_key,
         chat_key,
-        stt_ready: if s.ai.stt_engine == "local" {
+        stt_ready: if ai::use_local_stt(&state, &s) {
             !s.ai.whisper_model.is_empty()
         } else {
             !s.ai.stt_url().is_empty() && !s.ai.stt_model.is_empty() && stt_key

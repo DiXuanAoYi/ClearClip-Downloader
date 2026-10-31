@@ -777,8 +777,31 @@ pub async fn run_summarize(ctx: &JobCtx, input: &Path) -> AppResult<PathBuf> {
 }
 
 /// 语音转文字还缺什么设置：返回给用户看的原因；齐全时返回 `Ok`。
-pub fn stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
+/// 用本机 whisper.cpp 吗？选了“本机”就用；还停在默认的“接口”、又没有单独给语音转文字配过接口和密钥，
+/// 而本机已经有 whisper-cli 和模型（比如在“设置 → 组件”里下载了模型），就自动用本机，
+/// 免得把转写请求发给不支持 /audio/transcriptions 的对话接口（404）。
+pub fn use_local_stt(st: &AppState, settings: &Settings) -> bool {
     if settings.ai.stt_engine == "local" {
+        return true;
+    }
+    let own_api = !settings.ai.stt_base_url.trim().is_empty() || st.vault.has(KEY_STT);
+    let model = settings.ai.whisper_model.trim();
+    !own_api && !model.is_empty() && Path::new(model).is_file() && find_whisper_bin(settings).is_some()
+}
+
+fn stt_api_hint(e: AppError) -> AppError {
+    if e.message.contains("404") {
+        AppError::invalid(format!(
+            "{}\n你的 AI 接口可能不支持语音转文字（/audio/transcriptions）。可以改用本机 Whisper：在“设置 → 组件”下载模型，再在“设置 → AI → 语音转文字”里选“本机 whisper.cpp”，并指定 whisper-cli 程序的位置。",
+            e.message
+        ))
+    } else {
+        e
+    }
+}
+
+pub fn stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
+    if use_local_stt(st, settings) {
         if find_whisper_bin(settings).is_none() {
             return Err(AppError::invalid("找不到 whisper.cpp（whisper-cli）。请在“设置 → AI”里指定它的位置，或把它放进系统 PATH。"));
         }
@@ -797,7 +820,7 @@ pub fn stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
 
 /// 把一个音视频文件转成带时间戳的文字（按设置用本机 whisper.cpp 或云端接口）。`work` 是调用方管理的临时目录。
 pub async fn transcribe_cues(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, input: &Path, lang: &str, work: &Path) -> AppResult<Vec<Cue>> {
-    let cues = if settings.ai.stt_engine == "local" {
+    let cues = if use_local_stt(&ctx.st, settings) {
         let srt = run_whisper_local(ctx, settings, ffmpeg, input, lang, work).await?;
         subtitle::parse_srt(&srt)
     } else {
@@ -812,7 +835,7 @@ pub async fn transcribe_cues(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, i
             ctx.check()?;
             ctx.note(format!("正在转写第 {} / {} 段…", i + 1, parts.len()));
             ctx.percent(i as f64 / parts.len() as f64 * 100.0);
-            texts.push((transcribe_chunk(&ep, &settings.ai.stt_model, lang, file).await?, *offset));
+            texts.push((transcribe_chunk(&ep, &settings.ai.stt_model, lang, file).await.map_err(stt_api_hint)?, *offset));
         }
         merge_srt_parts(texts)
     };
