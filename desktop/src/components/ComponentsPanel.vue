@@ -193,7 +193,7 @@ onUnmounted(() => unlisten?.())
       <h4>语音识别（Whisper，本地转写）</h4>
       <p class="mute small">视频摘要的“用清影转写”、剪辑的文稿剪辑 / 智能字幕会用到。要先有下面的 <code>whisper-cli</code> 程序和至少一个模型；也可以改用接口转写（接口要支持 /audio/transcriptions），不用装这些。装好后会自动填进“设置 → AI”，并自动用本机转写。</p>
       <WhisperCliRow />
-      <EditModels kind="whisper" />
+      <EditModels kind="whisper" single />
       <h4>人像抠图</h4>
       <EditModels kind="matte" />
       <h4>人声分离</h4>
