@@ -219,4 +219,31 @@ assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: 
   assert.equal(V.videoKey('https://site.test/play/1?a=b#frag'), 'url:https://site.test/play/1?a=b')
 }
 
+// ---- 笔记
+{
+  const n1 = V.makeNote({ key: 'youtube:a', url: 'https://www.youtube.com/watch?v=a', title: 'T', t: 65_900, text: ' 第一句 ' })
+  assert.equal(n1.text, '第一句')
+  assert.equal(n1.t, 65_900)
+  assert.equal(V.makeNote({ text: '  ' }), null)
+  let list = V.addNote([], n1)
+  list = V.addNote(list, V.makeNote({ key: 'youtube:a', url: n1.url, title: 'T', t: 65_900, text: '第一句' }))
+  assert.equal(list.length, 1, '同一时刻同样文字不重复')
+  list = V.addNote(list, V.makeNote({ key: 'youtube:a', url: n1.url, title: 'T', t: 5000, text: '更早的一句', kind: 'note' }))
+  assert.deepEqual([...V.sortNotes(list).map((n) => n.text)], ['更早的一句', '第一句'])
+  assert.equal(V.searchNotes(list, '早').length, 1)
+  const md = V.notesToMarkdown(list, { title: '汇总' })
+  assert.ok(md.includes('# 汇总') && md.includes('## T') && md.includes('- [0:05](https://www.youtube.com/watch?v=a&t=5s) 更早的一句') && md.includes('> 第一句'), md)
+  const doc = V.studyDoc({ title: 'T', url: n1.url, result: { summary: '概要' }, lines: [] }, list)
+  assert.ok(doc.startsWith('---\ntitle: "T"') && doc.includes('## 我的笔记') && doc.includes('概要'), doc)
+  const lines = [{ t: 0, text: 'a' }, { t: 5000, text: 'b' }, { t: 9000, text: 'c' }]
+  const c = V.contextAround(lines, 5200, 1)
+  assert.equal(c.target, 'b')
+  assert.ok(c.before.includes('a') && c.after.includes('c'))
+  const vl = (...a) => [...V.viewLine(...a)]
+  assert.deepEqual(vl('x', 'y', 'both'), ['x', 'y'])
+  assert.deepEqual(vl('x', 'y', 'tr'), ['y', ''])
+  assert.deepEqual(vl('x', 'y', 'orig'), ['x', ''])
+  assert.deepEqual(vl('x', null, 'both'), ['x', ''])
+}
+
 console.log('extension-vsum: ok')

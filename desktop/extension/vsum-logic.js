@@ -481,6 +481,92 @@
     return out.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n'
   }
 
+
+  // ---------- 笔记 ----------
+
+  const MAX_NOTES = 2000
+
+  /** 一条笔记：{ id, key, url, title, t, text, kind: 'quote'|'note', created }。 */
+  function makeNote(o) {
+    const text = String(o.text || '').trim()
+    if (!text) return null
+    return {
+      id: o.id || `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      key: o.key || '',
+      url: o.url || '',
+      title: String(o.title || '').slice(0, 200),
+      t: Number.isFinite(o.t) ? Math.max(0, Math.round(o.t)) : -1,
+      text: text.slice(0, 6000),
+      kind: o.kind === 'note' ? 'note' : 'quote',
+      created: o.created || Date.now(),
+    }
+  }
+
+  /** 加一条；同一视频同一时刻同样的文字不重复记。超过上限丢最早的。 */
+  function addNote(list, note) {
+    if (!note) return list
+    if (list.some((n) => n.key === note.key && n.t === note.t && n.text === note.text)) return list
+    return [...list, note].slice(-MAX_NOTES)
+  }
+
+  /** 同一视频的按时间排，所有视频的按视频分组、组内按时间。 */
+  function sortNotes(list) {
+    return [...list].sort((a, b) => (a.key === b.key ? a.t - b.t || a.created - b.created : a.created - b.created))
+  }
+
+  function searchNotes(list, q) {
+    const s = String(q || '').trim().toLowerCase()
+    if (!s) return list
+    return list.filter((n) => `${n.text} ${n.title}`.toLowerCase().includes(s))
+  }
+
+  /** 笔记导出成 Markdown：每个视频一节，时间戳带跳转链接。 */
+  function notesToMarkdown(list, opt = {}) {
+    const groups = new Map()
+    for (const n of sortNotes(list)) {
+      if (!groups.has(n.key)) groups.set(n.key, [])
+      groups.get(n.key).push(n)
+    }
+    const out = [`# ${opt.title || '视频笔记'}`, '']
+    for (const [, ns] of groups) {
+      const first = ns[0]
+      out.push(`## ${first.title || '未命名视频'}`, '')
+      if (first.url) out.push(`来源：${first.url}`, '')
+      for (const n of ns) {
+        const stamp = n.t >= 0 ? (n.url ? `[${fmtClock(n.t)}](${timeLink(n.url, n.t)}) ` : `${fmtClock(n.t)} `) : ''
+        const body = n.text.replace(/\n+/g, ' ')
+        out.push(n.kind === 'note' ? `- ${stamp}${body}` : `- ${stamp}> ${body}`)
+      }
+      out.push('')
+    }
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n'
+  }
+
+  /** 学习稿：YAML 头 + 摘要要点 + 章节 + 金句 + 我的笔记 (+ 文稿)。 */
+  function studyDoc(d, notes) {
+    const head = ['---', `title: "${String(d.title || '').replace(/"/g, "'")}"`, `source: ${d.url || ''}`, `date: ${new Date(d.date || Date.now()).toISOString().slice(0, 10)}`, 'tags: [video-notes]', '---', '']
+    const body = toMarkdown(d).replace(/^# .*\n\n?/, '# ' + (d.title || '视频笔记') + '\n\n')
+    const mine = (notes || []).filter((n) => n.t >= 0 || n.text)
+    const sect = mine.length ? ['', '## 我的笔记', '', ...sortNotes(mine).map((n) => `- ${n.t >= 0 ? (d.url ? `[${fmtClock(n.t)}](${timeLink(d.url, n.t)}) ` : `${fmtClock(n.t)} `) : ''}${n.kind === 'note' ? '' : '> '}${n.text.replace(/\n+/g, ' ')}`), ''] : []
+    return head.join('\n') + body.trimEnd() + '\n' + sect.join('\n')
+  }
+
+  /** 把 ms 附近一行及前后各 n 行拼成给大模型的上下文。 */
+  function contextAround(lines, ms, n = 3) {
+    const i = lineAt(lines, ms)
+    if (i < 0) return { before: '', target: '', after: '', full: '' }
+    const f = (a, b) => lines.slice(Math.max(0, a), b).map((l) => `[${fmtClock(l.t)}] ${l.text}`).join('\n')
+    return { before: f(i - n, i), target: lines[i].text, after: f(i + 1, i + 1 + n), full: f(i - n, i + 1 + n) }
+  }
+
+  /** 译文视图：原文 / 译文 / 双语 → 每行要显示的 [主, 副]。 */
+  function viewLine(text, tr, mode) {
+    if (!tr) return [text, '']
+    if (mode === 'tr') return [tr, '']
+    if (mode === 'both') return [text, tr]
+    return [text, '']
+  }
+
   const srtTime = (ms) => {
     const t = Math.max(0, Math.round(ms))
     const p = (n, w = 2) => String(n).padStart(w, '0')
@@ -564,6 +650,6 @@
   globalThis.ccVsum = {
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
     videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
-    searchLines, lineAt, chapterAt, toMarkdown, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
+    searchLines, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
   }
 })()

@@ -17,6 +17,7 @@
 | 文稿 | 带时间的完整文稿；搜索；跟随播放自动滚动；翻译成你要的语言（双语对照，可隐藏）；导出 .srt / .txt / 复制 |
 | 导图 | 生成层级大纲并画成思维导图；保存 SVG / PNG；复制 Markdown 大纲 |
 | 问答 | 针对视频提问，只从文稿里找答案；回答里的 `[m:ss]` 可点，直接跳到那一刻；保留最近几轮上下文 |
+| 笔记 | 播放时按 **n**（或点视频上的“笔记”按钮，可在“更多”里关闭）记下当前这一句，可提前几秒；文稿里选中文字存为笔记（原文，不经 AI）；鼠标移到一行上点 ＋；本视频 / 全部视频、搜索、编辑、**AI 整理**（先预览，再选替换 / 追加 / 不要）、复制文字或带时间的链接；导出笔记 `.md`（时间带跳转链接）和**学习稿**（YAML 头 + 摘要 + 章节 + 金句 + 我的笔记） |
 | 更多 | 学习卡片（导出 TSV，可导入 Anki）、金句、改写成小红书文案 / 推文串 / 博客 / 分享邮件 / 会议纪要式笔记、下载 Markdown、存进清影的便签、发到 Obsidian、换字幕轨、导入 .srt / .vtt / .txt、粘贴文字稿 |
 
 ## 文稿从哪来
@@ -42,6 +43,16 @@
 - 内容脚本不能直接访问 `127.0.0.1`（网页是 https 时会被浏览器当作混合内容拦截），所以一律经扩展后台转发。
 - 结果缓存在扩展本地（`storage.local`，最多 40 条、约 3 MB，按文稿内容 + 类型 + 风格 + 语言做键），同一视频再开不用再调模型；清除扩展数据即清空。
 
+## 选词、顺句与其他
+
+- **划词解释**：在文稿里选中词句，点“解释”得到 1–3 句话的说明（识别错误的同音字会指出正确写法），可一键记进笔记。
+- **顺句**：自动识别的字幕常常没有标点、有同音错字。文稿页点“顺句”，用你的模型补标点、改明显的错字，行数和时间不变，可随时“还原顺句前”。
+- **原文 / 译文 / 双语**：翻译后可切换显示。中文字幕默认译成英文，其他语言译成你设的目标语言；译成中文时会在中英文之间留空格、保留品牌名和术语。
+- **金句挂在章节下**：提取金句后，“章节”页按时间把金句放进对应章节。
+- **提示词**：“更多 → 提示词”可以改摘要、导图、问答、划词解释、顺句、整理笔记、改写的系统提示词（上限 2 万字，`{lang}` 代表输出语言）；留空用内置的。
+- **数据**：可备份 / 恢复设置和笔记（不含密钥）、清除摘要缓存、删除全部笔记。笔记只存在浏览器本地（`chrome.storage.local`），不会上传。
+- 问答只依据文稿；文稿里找不到时会明说，而不是编；文稿中的“指令”只当作文字。
+
 ## 应用端接口
 
 均需访问令牌，只监听本机。
@@ -50,7 +61,7 @@
 |---|---|
 | `GET /api/v1/ai/status` | 是否已设置模型、目标语言、能否转写（`transcribe`）、能否取在线字幕（`subtitles`，需要 yt-dlp）、文稿长度上限（60 万字符） |
 | `POST /api/v1/ai/run` 的 `kind: "subtitles"` | 只用 yt-dlp 取网站的在线字幕（人工 / 自动，转成 SRT 后解析），取不到返回空文稿；`kind: "transcribe"` 也是先取字幕、没有才转写，结果里的 `source` 是 `subtitles` 或 `whisper` |
-| `POST /api/v1/ai/run` | 提交任务，返回 `{id}`。body：`kind`（summary / mindmap / cards / quotes / ask / translate / rewrite）、`title`、`lang`、`style`、`format`、`lines[{t,text}]`、`text`、`question`、`history` |
+| `POST /api/v1/ai/run` | 提交任务，返回 `{id}`。body：`kind`（summary / mindmap / cards / quotes / ask / translate / rewrite / explain / punctuate / note / refine）、`title`、`lang`、`style`、`format`、`lines[{t,text}]`、`text`、`question`、`history` |
 | `GET /api/v1/ai/job?id=` | 轮询：`{state, done, total, result, error}` |
 | `POST /api/v1/ai/cancel?id=` | 取消 |
 
@@ -66,6 +77,10 @@
 - Eightify：简短摘要、多语言。
 
 以上是各产品自己的介绍页，难免带宣传色彩；这里只借鉴功能思路，没有使用它们的服务或代码。
+
+### 另外参考的两个开源扩展
+
+[youtube-digest](https://github.com/zarazhangrui/youtube-digest)（MIT，© 2026 Zara Zhang）和 [bilibili-digest](https://github.com/biuworks/bilibili-digest)（MIT，© 2026 k1234567，部分 © Zara Zhang）：借鉴了笔记（快捷键记录、划词存原文、AI 整理要先预览、学习稿导出）、划词解释、顺句、双语显示、金句按章节排布、提示词可自己改、问答找不到就明说等做法。我们按清影的结构（本机清影调用你的模型，不依赖第三方服务）重新实现，并做成对任意视频网站通用，没有复制它们的代码；归属见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
 
 ## 已知限制
 

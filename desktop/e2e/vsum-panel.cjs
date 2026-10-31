@@ -65,6 +65,10 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
               quotes: { quotes: [{ text: 'Rust is fast and safe.', t: 41000 }] },
               translate: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: '译:' + l.text })), failed: 0 },
               rewrite: { text: '改写后的文案' },
+              explain: { text: 'Rust 是一门系统语言。' },
+              note: { quote: '整理后的完整句子。' },
+              refine: { quote: '优化后的笔记。' },
+              punctuate: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: l.text + '。' })), failed: 0 },
               subtitles: { lines: o.subs === false ? [] : [{ t: 1000, text: '在线字幕第一句' }, { t: 6000, text: '在线字幕第二句' }], durationMs: 12000, track: '在线字幕（en）', source: 'subtitles' },
               transcribe: { lines: [{ t: 0, text: '大家好，今天讲讲 Rust。' }, { t: 5000, text: '它又快又安全。' }], durationMs: 12000, track: '清影转写' },
             }[k]
@@ -89,6 +93,66 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       b.click()
     }, [label, sel])
   const settle = (page, ms = 1200) => page.waitForTimeout(ms)
+
+
+  // ---- 笔记 / 划词解释 / 顺句
+  {
+    const { page, errors } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '文稿')
+    // 点 ＋ 记一条
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('.ln .rec')).find(Boolean).click())
+    await settle(page, 300)
+    ok('点 ＋ 存进了笔记', await page.evaluate(() => window.__store.vsumNotes?.length === 1))
+    // 划词
+    await page.evaluate(() => {
+      const r = window.__roots.find((x) => x.querySelector('.ln'))
+      const span = r.querySelector('.ln span:nth-child(2)')
+      const rng = document.createRange()
+      rng.setStart(span.firstChild, 0)
+      rng.setEnd(span.firstChild, 3)
+      const s = r.getSelection ? r.getSelection() : getSelection()
+      s.removeAllRanges()
+      s.addRange(rng)
+      r.querySelector('#lines').dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+      span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    })
+    ok('划词出现工具条', (await text(page, '#selbar')).includes('解释'))
+    await clickText(page, '解释')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('Rust 是一门系统语言')), null, { timeout: 8000 })
+    const ex = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1).req)
+    ok('解释请求带选中文字和上下文', ex.kind === 'explain' && ex.text.length > 0 && typeof ex.context === 'string', JSON.stringify(ex).slice(0, 160))
+    await clickText(page, '存为笔记')
+    await settle(page, 300)
+    ok('划词存为笔记（原文）', await page.evaluate(() => window.__store.vsumNotes.length === 2))
+    // 顺句
+    await clickText(page, '顺句')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('还原顺句前')), null, { timeout: 8000 })
+    ok('顺句后文稿有标点', (await text(page, '#lines')).includes('。'))
+    await clickText(page, '还原顺句前')
+    ok('可以还原', !(await text(page)).includes('还原顺句前'))
+    // 笔记页
+    await clickText(page, '笔记')
+    ok('笔记页列出 2 条', (await text(page)).includes('2 条'))
+    await clickText(page, 'AI 整理')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('整理后的完整句子')), null, { timeout: 8000 })
+    await clickText(page, '替换')
+    await settle(page, 300)
+    ok('AI 整理后替换原文', await page.evaluate(() => window.__store.vsumNotes.some((n) => n.text === '整理后的完整句子。')))
+    // 导出
+    const dl = page.waitForEvent('download', { timeout: 5000 }).catch(() => null)
+    await clickText(page, '导出笔记 (.md)')
+    await dl
+    // 搜索
+    await page.evaluate(() => {
+      const i = window.__roots.map((r) => r.querySelector('.body input[type=text]')).find(Boolean)
+      i.value = '不存在的词'
+      i.dispatchEvent(new Event('input'))
+    })
+    ok('搜索无结果', (await text(page)).includes('0 条'))
+    ok('笔记流程无页面错误', errors.length === 0, errors.join('|'))
+    await page.close()
+  }
 
   // ---- YouTube：读字幕 → 摘要
   {

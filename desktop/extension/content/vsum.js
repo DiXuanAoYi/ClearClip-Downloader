@@ -47,6 +47,14 @@
     .mapview .stage.drag { cursor: grabbing; }
     .mapview .stage > svg { position: absolute; left: 0; top: 0; transform-origin: 0 0; max-width: none; }
     .mapview .hint { font-size: 12px; color: #5d6862; padding: 4px 10px; }
+    .ln .rec { visibility: hidden; background: transparent; color: #b4561a; padding: 0 3px; flex: none; }
+    .ln:hover .rec { visibility: visible; }
+    .selbar { position: sticky; top: 0; z-index: 2; background: #fff; border: 1px solid #d9762b; border-radius: 8px; padding: 6px 8px; margin-bottom: 8px; box-shadow: 0 2px 8px #0002; }
+    .note { background: #fff; border: 1px solid #e3e6e3; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; word-break: break-word; }
+    .note .q { border-left: 3px solid #d9762b; padding-left: 8px; white-space: pre-wrap; }
+    .note .x { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
+    .note .x button { padding: 1px 7px; font-size: 12px; }
+    .pill { position: fixed; z-index: 2147483000; padding: 4px 10px; border-radius: 14px; background: #b4561acc; color: #fff; font-size: 12px; box-shadow: 0 2px 8px #0004; }
     h4 { margin: 10px 0 4px; font-size: 13px; }
     ul { margin: 4px 0; padding-left: 18px; }
     @media (prefers-color-scheme: dark) {
@@ -54,6 +62,7 @@
       .mapview .stage { background: #1d2420; }
       .mapview .bar2 { border-color: #3a443e; }
       .hd, .meta, .tabs, .ask { border-color: #3a443e; }
+      .selbar, .note { background: #262f2a; border-color: #3a443e; }
       .card, .msg .b, select, input[type=text], textarea { background: #262f2a; border-color: #3a443e; color: #eef1ee; }
       button.sec { background: #262f2a; color: #eef1ee; border-color: #3a443e; }
       .ln .tr, .meta, .mute { color: #a9b3ad; }
@@ -66,13 +75,17 @@
     data: null, // 当前文稿：{ title, url, lines, chapters, tracks, ... }
     tab: 'summary',
     status: null, // 清影的状态：{ ready, model, lang, transcribe, maxChars }
-    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: false },
+    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: false, view: 'both', lead: 3, pill: true, prompts: {} },
     res: {}, // 本次的结果：summary / outline / cards / quotes / translated / rewrite
     chat: [],
     job: null, // { id, kind, done, total }
     busy: false,
     query: '',
     showTr: true,
+    notes: [], // 所有视频的笔记
+    scope: 'video',
+    noteQuery: '',
+    sel: null,
     timer: 0,
   }
 
@@ -190,12 +203,13 @@
     await ensureReady()
     const lang = outLang()
     const style = kind === 'summary' ? S.prefs.style : ''
-    const key = cache ? V.cacheKey(S.data.lines, kind, style + (extra.format || ''), lang) : ''
+    const key = cache && !S.prefs.prompts?.[kind] ? V.cacheKey(S.data.lines, kind, style + (extra.format || ''), lang) : ''
     if (key) {
       const hit = await cached(key)
       if (hit) return hit
     }
-    const req = { kind, title: S.data.title, lang, style, lines: linesForReq(), ...extra }
+    const own = String(S.prefs.prompts?.[kind] || '').trim()
+    const req = { kind, title: S.data.title, lang, style, lines: linesForReq(), ...(own ? { system: own } : {}), ...extra }
     const result = await submit(req, kind)
     if (key) putCache(key, result)
     return result
@@ -275,6 +289,7 @@
       'div',
       { class: 'warn' },
       d?.note || '还没有文稿',
+      d?.site === 'bilibili' && h('div', { class: 'mute', text: 'B 站的字幕（含 AI 字幕）需要登录后才能读到；登录后点上面的“重新读取”。' }),
       h('div', { class: 'tools', style: 'margin-top:6px' },
         (d?.noSubtitle || d?.fetchFailed) && h('button', { text: '用清影转写（语音识别）', title: S.status?.transcribe === false ? '清影里还没有配置语音转文字' : '取视频的音频，在清影里转成文字后再总结', onclick: transcribeNow }),
         h('button', { class: 'sec', text: '导入字幕文件', onclick: importFile }),
@@ -395,20 +410,32 @@
     const now = video() && isVideo() ? V.chapterAt(list, video().currentTime * 1000) : -1
     return h('div', {},
       h('div', { class: 'mute', text: `来源：${from}` }),
-      ...list.map((c, i) => h('div', { class: `ln${i === now ? ' cur' : ''}`, 'data-ch': i, onclick: () => seek(c.startMs) }, h('span', { class: 'tm', text: V.fmtClock(c.startMs) }), h('span', { text: c.title }))),
+      ...list.map((c, i) => {
+        const end = list[i + 1]?.startMs ?? Infinity
+        const qs = (S.res.quotes || []).filter((q) => q.t >= (c.startMs ?? 0) && q.t < end)
+        return h('div', {},
+          h('div', { class: `ln${i === now ? ' cur' : ''}`, 'data-ch': i, onclick: () => seek(c.startMs) }, h('span', { class: 'tm', text: V.fmtClock(c.startMs) }), h('span', { text: c.title })),
+          ...qs.map((q) => h('div', { class: 'mute', style: 'margin:0 0 4px 52px' }, `“${q.text}” `, tsBtn(q.t))))
+      }),
+      !S.res.quotes && h('div', { class: 'mute', style: 'margin-top:6px', text: '在“更多”里提取金句后，会按章节显示在这里。' }),
     )
   }
+
+  const getSel = () => String((ui.root.getSelection && ui.root.getSelection()) || getSelection() || '').trim()
 
   function tabTranscript() {
     const d = S.data
     const hits = S.query.trim() ? new Set(V.searchLines(d.lines, S.query)) : null
     const tr = S.res.translated
-    const body = h('div', { id: 'lines' })
+    const mode = S.prefs.view
+    const body = h('div', { id: 'lines', onmouseup: onSelect })
     d.lines.forEach((l, i) => {
       if (hits && !hits.has(i)) return
-      body.append(h('div', { class: 'ln', 'data-i': i, onclick: () => seek(l.t) },
+      const [main, sub] = V.viewLine(l.text, tr?.[i], mode)
+      body.append(h('div', { class: 'ln', 'data-i': i, onclick: () => !getSel() && seek(l.t) },
         isVideo() && h('span', { class: 'tm', text: V.fmtClock(l.t) }),
-        h('span', {}, l.text, tr && S.showTr && tr[i] ? h('span', { class: 'tr', text: tr[i] }) : null)))
+        h('span', { style: 'flex:1' }, main, sub ? h('span', { class: 'tr', text: sub }) : null),
+        h('button', { class: 'rec', title: '把这句记成笔记', text: '＋', onclick: (e) => (e.stopPropagation(), addNote({ t: l.t, text: l.text })) })))
     })
     return h('div', {},
       h('div', { class: 'tools' },
@@ -417,16 +444,160 @@
       ),
       h('div', { class: 'tools' },
         isVideo() && h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.follow, onchange: (e) => ((S.prefs.follow = e.target.checked), savePrefs()) }), ' 跟随播放'),
-        h('button', { class: 'sec', text: tr ? (S.showTr ? '隐藏译文' : '显示译文') : `翻译成${outLang()}`, disabled: S.busy, onclick: () => (tr ? ((S.showTr = !S.showTr), render()) : task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || '')))) }),
+        h('button', { class: 'sec', text: tr ? '重新翻译' : `翻译成${outLang()}`, disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
+        tr && sel([['both', '双语'], ['orig', '只看原文'], ['tr', '只看译文']], mode, (v) => ((S.prefs.view = v), savePrefs(), render()), '显示'),
+        h('button', { class: 'sec', text: d.raw ? '还原顺句前' : '顺句', title: d.raw ? '恢复识别出来的原样' : '给没有标点的字幕（自动识别）补标点、改同音错字，行数不变', disabled: S.busy, onclick: d.raw ? unpunctuate : punctuate }),
         h('button', { class: 'sec', text: '复制', onclick: () => copy(V.toTxt(d.lines), '文稿') }),
         isVideo() && h('button', { class: 'sec', text: '.srt', onclick: () => saveFile(V.fileName(d.title, 'srt'), V.toSrt(d.lines)) }),
         h('button', { class: 'sec', text: '.txt', onclick: () => saveFile(V.fileName(d.title, 'txt'), V.toTxt(d.lines)) }),
       ),
+      h('div', { class: 'mute', text: '选中一段文字可以解释、存为笔记；鼠标移到一行上点 ＋ 记笔记。' }),
       body,
     )
   }
 
-  async function savePng(svg, name) {
+  async function punctuate() {
+    const before = S.data.lines
+    await task('punctuate', {}, (x) => {
+      const out = (x.lines || []).map((l) => ({ t: l.t, text: l.text })).filter((l) => l.text)
+      if (!out.length) throw new Error('没有得到结果')
+      S.data.raw = before
+      S.data.lines = out
+      S.res.translated = null
+    }, false)
+  }
+
+  function unpunctuate() {
+    S.data.lines = S.data.raw
+    S.data.raw = null
+    S.res.translated = null
+    render()
+  }
+
+  // ---------- 划词：解释 / 存为笔记 ----------
+
+  function onSelect(e) {
+    const text = getSel()
+    ui.root.getElementById('selbar')?.remove()
+    if (!text || text.length > 800) return
+    const row = e.target.closest?.('.ln')
+    const i = row ? Number(row.dataset.i) : -1
+    const t = i >= 0 ? S.data.lines[i].t : -1
+    const bar = h('div', { class: 'selbar', id: 'selbar' },
+      h('div', { class: 'mute', text: `“${text.length > 80 ? text.slice(0, 80) + '…' : text}”` }),
+      h('div', { class: 'tools', style: 'margin:4px 0 0' },
+        h('button', { text: '解释', onclick: () => explain(text, t, bar) }),
+        h('button', { class: 'sec', text: '存为笔记', onclick: () => (addNote({ t, text }), bar.remove()) }),
+        h('button', { class: 'sec', text: '✕', 'aria-label': '关闭', onclick: () => bar.remove() })),
+      h('div', { id: 'selans' }))
+    ui.root.querySelector('.body')?.prepend(bar)
+  }
+
+  async function explain(text, t, bar) {
+    const out = bar.querySelector('#selans')
+    out.replaceChildren(h('div', { class: 'mute', text: '解释中…' }))
+    try {
+      const c = V.contextAround(S.data.lines, t >= 0 ? t : 0, 3)
+      const r = await run('explain', { text, context: c.full }, false)
+      out.replaceChildren(h('div', { class: 'card', text: r.text }),
+        h('button', { class: 'sec', text: '把解释记进笔记', onclick: () => addNote({ t, text: `${text}\n→ ${r.text}`, kind: 'note' }) }))
+    } catch (e) {
+      out.replaceChildren(h('div', { class: 'warn', text: e.message }))
+    }
+  }
+
+  // ---------- 笔记 ----------
+
+  async function addNote({ t = -1, text, kind = 'quote' }) {
+    const n = V.makeNote({ key: localKey(), url: S.data.url, title: S.data.title, t, text, kind })
+    if (!n) return false
+    const before = S.notes.length
+    S.notes = V.addNote(S.notes, n)
+    await store.set('vsumNotes', S.notes)
+    toast(ui, S.notes.length > before ? '已记下' : '这条已经记过了')
+    if (S.tab === 'notes') render()
+    return true
+  }
+
+  /** n 键 / 悬浮“笔记”：记下当前播放位置（往前提一点）那一句。 */
+  function quickNote() {
+    const v = video()
+    if (!v || !S.data) return false
+    const ms = Math.max(0, v.currentTime * 1000 - (Number(S.prefs.lead) || 0) * 1000)
+    const i = V.lineAt(S.data.lines, ms)
+    addNote({ t: ms, text: i >= 0 ? S.data.lines[i].text : '（此处没有字幕）' })
+    return true
+  }
+
+  function onKey(e) {
+    if (e.key !== 'n' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing) return
+    const el = e.composedPath?.()[0] || e.target
+    if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return
+    if (isVideo() && quickNote()) e.preventDefault()
+  }
+
+  const shownNotes = () => V.searchNotes(S.scope === 'video' ? S.notes.filter((n) => n.key === localKey()) : S.notes, S.noteQuery)
+
+  async function updateNote(id, patch) {
+    S.notes = S.notes.map((n) => (n.id === id ? { ...n, ...patch } : n))
+    await store.set('vsumNotes', S.notes)
+  }
+
+  async function polish(n) {
+    const c = V.contextAround(S.data.lines, Math.max(n.t, 0), 3)
+    const refine = n.kind === 'note'
+    try {
+      const r = await run(refine ? 'refine' : 'note', { text: refine ? n.text : c.target || n.text, context: c.full }, false)
+      S.preview = { id: n.id, quote: r.quote }
+    } catch (e) {
+      toast(ui, e.message, true, 5200)
+    }
+    render()
+  }
+
+  function noteCard(n) {
+    const same = n.key === localKey()
+    const stamp = n.t >= 0 ? (same && isVideo() ? h('button', { class: 'ts', text: V.fmtClock(n.t), onclick: () => seek(n.t) }) : h('a', { class: 'ts', href: V.timeLink(n.url, n.t), target: '_blank', rel: 'noopener', text: V.fmtClock(n.t) })) : null
+    const pv = S.preview?.id === n.id ? S.preview : null
+    const editing = S.editing === n.id
+    const ta = editing ? h('textarea', { rows: 3, id: `ed-${n.id}`, text: n.text }) : null
+    if (ta) ta.value = n.text
+    return h('div', { class: 'note' },
+      S.scope === 'all' && h('div', { class: 'mute', text: n.title }),
+      h('div', {}, stamp, ' ', n.kind === 'note' ? h('span', { text: ta ? '' : n.text, style: 'white-space:pre-wrap' }) : h('span', { class: 'q', text: ta ? '' : n.text })),
+      ta,
+      pv && h('div', { class: 'card', style: 'margin-top:6px' }, h('div', { class: 'mute', text: 'AI 整理后：' }), pv.quote,
+        h('div', { class: 'x' },
+          h('button', { text: '替换', onclick: async () => (await updateNote(n.id, { text: pv.quote }), (S.preview = null), render()) }),
+          h('button', { class: 'sec', text: '追加在后面', onclick: async () => (await updateNote(n.id, { text: `${n.text}\n${pv.quote}`, kind: 'note' }), (S.preview = null), render()) }),
+          h('button', { class: 'sec', text: '不要', onclick: () => ((S.preview = null), render()) }))),
+      h('div', { class: 'x' },
+        ...(editing
+          ? [h('button', { text: '保存', onclick: async () => (await updateNote(n.id, { text: ui.root.getElementById(`ed-${n.id}`).value.trim() || n.text, kind: 'note' }), (S.editing = null), render()) }), h('button', { class: 'sec', text: '取消', onclick: () => ((S.editing = null), render()) })]
+          : [h('button', { class: 'sec', text: '编辑', onclick: () => ((S.editing = n.id), render()) }),
+            same && S.data.lines.length && h('button', { class: 'sec', text: 'AI 整理', disabled: S.busy, title: '整理成完整通顺的句子，不加原话没有的内容；先预览再决定', onclick: () => polish(n) })]),
+        h('button', { class: 'sec', text: '复制', onclick: () => copy(n.text, '笔记') }),
+        n.t >= 0 && n.url && h('button', { class: 'sec', text: '复制带时间的链接', onclick: () => copy(V.timeLink(n.url, n.t), '链接') }),
+        h('button', { class: 'sec', text: '删除', onclick: async () => ((S.notes = S.notes.filter((x) => x.id !== n.id)), await store.set('vsumNotes', S.notes), render()) })))
+  }
+
+  function tabNotes() {
+    const list = V.sortNotes(shownNotes())
+    const mine = S.notes.filter((n) => n.key === localKey())
+    return h('div', {},
+      h('div', { class: 'tools' },
+        sel([['video', '本视频'], ['all', '全部视频']], S.scope, (v) => ((S.scope = v), render()), '范围'),
+        h('input', { type: 'text', placeholder: '搜索笔记', value: S.noteQuery, style: 'flex:1', oninput: (e) => ((S.noteQuery = e.target.value), (S.keepFocus = true), render()) }),
+        h('span', { class: 'mute', text: `${list.length} 条` })),
+      h('div', { class: 'tools' },
+        isVideo() && h('button', { text: '记下当前这句', title: '快捷键 n', onclick: () => quickNote() || toast(ui, '页面上没有找到视频', true) }),
+        h('button', { class: 'sec', text: '导出笔记 (.md)', disabled: !list.length, onclick: () => saveFile(V.fileName(S.scope === 'video' ? S.data.title + ' 笔记' : '视频笔记', 'md'), V.notesToMarkdown(list, { title: S.scope === 'video' ? S.data.title : '视频笔记' }), 'text/markdown') }),
+        h('button', { class: 'sec', text: '导出学习稿', disabled: !S.data.lines.length && !mine.length, title: '摘要 + 章节 + 金句 + 我的笔记，带 YAML 头，适合放进 Obsidian', onclick: () => saveFile(V.fileName(S.data.title + ' 学习稿', 'md'), V.studyDoc(exportData(false), mine), 'text/markdown') })),
+      !list.length && h('div', { class: 'mute', text: `还没有笔记。播放时按 n 键记下当前这句；在文稿里选中文字也能存。` }),
+      ...list.map(noteCard))
+  }
+
+    async function savePng(svg, name) {
     const w = Number(svg.match(/width="([\d.]+)"/)?.[1]) || 800
     const hh = Number(svg.match(/height="([\d.]+)"/)?.[1]) || 600
     const img = new Image()
@@ -620,6 +791,17 @@
         h('button', { class: 'sec', text: '存进清影的便签', onclick: saveNote }),
         h('button', { class: 'sec', text: '发到 Obsidian', onclick: toObsidian }),
       ),
+      h('h4', { text: '笔记与偏好' }),
+      h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.pill, onchange: (e) => ((S.prefs.pill = e.target.checked), savePrefs(), tick()) }), ' 在视频上显示“笔记”按钮（也可以按 n 键）'),
+      h('label', { class: 'mute' }, '记笔记时往前提 ', h('input', { type: 'number', min: 0, max: 15, value: S.prefs.lead, style: 'width:56px', onchange: (e) => ((S.prefs.lead = Math.min(15, Math.max(0, Number(e.target.value) || 0))), savePrefs()) }), ' 秒'),
+      h('h4', { text: '提示词' }),
+      promptEditor(),
+      h('h4', { text: '数据' }),
+      h('div', { class: 'tools' },
+        h('button', { class: 'sec', text: '备份设置和笔记', title: '不包含任何密钥', onclick: backup }),
+        h('button', { class: 'sec', text: '恢复备份', onclick: restore }),
+        h('button', { class: 'sec', text: '清除摘要缓存', onclick: async () => (await store.set('vsumCache', {}), toast(ui, '已清除')) }),
+        h('button', { class: 'sec', text: '删除全部笔记', disabled: !S.notes.length, onclick: async () => confirm(`确定删除全部 ${S.notes.length} 条笔记？`) && ((S.notes = []), await store.set('vsumNotes', []), render()) })),
       h('h4', { text: '没有字幕 / 想换文稿' }),
       h('div', { class: 'tools' },
         isVideo() && h('button', { class: 'sec', text: '用清影转写（语音识别）', onclick: transcribeNow }),
@@ -641,6 +823,53 @@
       } })),
     )
     return box
+  }
+
+  const PROMPT_KINDS = [['summary', '摘要'], ['mindmap', '导图'], ['ask', '问答'], ['explain', '划词解释'], ['punctuate', '顺句'], ['note', '整理笔记'], ['refine', '优化笔记'], ['rewrite', '改写']]
+
+  /** 自己写提示词：留空用内置的；可以用 {lang} 代表输出语言。 */
+  function promptEditor() {
+    const kind = S.promptKind || 'explain'
+    const ta = h('textarea', { rows: 5, id: 'pt', maxlength: 20000, placeholder: '留空 = 用内置提示词。可用 {lang} 代表输出语言。' })
+    ta.value = S.prefs.prompts?.[kind] || ''
+    return h('div', {},
+      h('div', { class: 'tools' },
+        sel(PROMPT_KINDS, kind, (v) => ((S.promptKind = v), render()), '要改哪一类'),
+        h('button', { class: 'sec', text: '保存', onclick: () => {
+          const v = ui.root.getElementById('pt').value.trim()
+          S.prefs.prompts = { ...S.prefs.prompts }
+          if (v) S.prefs.prompts[kind] = v
+          else delete S.prefs.prompts[kind]
+          savePrefs()
+          toast(ui, v ? '已保存，下次生成时使用' : '已改回内置提示词')
+        } })),
+      ta)
+  }
+
+  async function backup() {
+    const { prompts, ...rest } = S.prefs
+    saveFile('清影视频摘要备份.json', JSON.stringify({ app: 'clearclip-vsum', v: 1, prefs: { ...rest, prompts }, notes: S.notes }, null, 1), 'application/json')
+  }
+
+  function restore() {
+    const i = h('input', { type: 'file', accept: '.json,application/json' })
+    i.onchange = async () => {
+      try {
+        const j = JSON.parse(await i.files[0].text())
+        if (j.app !== 'clearclip-vsum') throw new Error('不是清影的备份文件')
+        if (j.prefs && typeof j.prefs === 'object') S.prefs = { ...S.prefs, ...j.prefs }
+        if (Array.isArray(j.notes)) {
+          for (const n of j.notes) S.notes = V.addNote(S.notes, V.makeNote(n))
+          await store.set('vsumNotes', S.notes)
+        }
+        savePrefs()
+        toast(ui, '已恢复')
+        render()
+      } catch (e) {
+        toast(ui, `恢复失败：${e.message}`, true)
+      }
+    }
+    i.click()
   }
 
   function exportData(withLines = false) {
@@ -686,7 +915,7 @@
 
   // ---------- 框架 ----------
 
-  const TABS = [['summary', '摘要'], ['chapters', '章节'], ['transcript', '文稿'], ['mindmap', '导图'], ['ask', '问答'], ['more', '更多']]
+  const TABS = [['summary', '摘要'], ['chapters', '章节'], ['transcript', '文稿'], ['mindmap', '导图'], ['ask', '问答'], ['notes', '笔记'], ['more', '更多']]
 
   function renderProgress() {
     const el = ui.root.getElementById('prog')
@@ -721,9 +950,9 @@
     const body = h('div', { class: 'body' }, h('div', { id: 'prog' }))
     if (!d) body.append(h('div', { class: 'mute', text: '正在读取字幕…' }))
     else {
-      if (!d.lines.length && S.tab !== 'more') body.append(noData())
+      if (!d.lines.length && S.tab !== 'more' && S.tab !== 'notes') body.append(noData())
       else {
-        const fn = { summary: tabSummary, chapters: tabChapters, transcript: tabTranscript, mindmap: tabMindmap, ask: tabAsk, more: tabMore }[S.tab]
+        const fn = { summary: tabSummary, chapters: tabChapters, transcript: tabTranscript, mindmap: tabMindmap, ask: tabAsk, notes: tabNotes, more: tabMore }[S.tab]
         body.append(fn())
       }
     }
@@ -753,6 +982,7 @@
   /** 跟随播放：高亮当前行 / 章节。 */
   function tick() {
     const v = video()
+    placePill(v)
     if (!v || !S.data || !isVideo()) return
     const ms = v.currentTime * 1000
     if (S.tab === 'transcript') {
@@ -774,11 +1004,24 @@
     }
   }
 
+  const pill = h('button', { class: 'pill', text: '笔记 (n)', title: '记下当前这句话', style: 'display:none', onclick: () => quickNote() })
+  ui.add(pill)
+  function placePill(v) {
+    const r = v?.getBoundingClientRect()
+    const ok = r && S.prefs.pill && S.data && isVideo() && r.width > 200 && r.height > 120 && r.bottom > 0 && r.top < innerHeight
+    pill.style.display = ok ? '' : 'none'
+    if (ok) {
+      pill.style.left = `${Math.max(4, r.left + 8)}px`
+      pill.style.top = `${Math.max(4, r.top + 8)}px`
+    }
+  }
+
   function setData(d) {
     S.data = d
     S.res = {}
     S.chat = []
     S.query = ''
+    S.preview = null
     render()
     // 同一份文稿以前算过的摘要直接带出来（不需要大模型）
     const key = V.cacheKey(d.lines, 'summary', S.prefs.style, outLang())
@@ -800,6 +1043,7 @@
 
   function stop() {
     clearInterval(S.timer)
+    document.removeEventListener('keydown', onKey, true)
     if (S.job) send({ type: 'cc-ai-cancel', id: S.job.id })
     ui.remove()
     delete globalThis.__ccVsum
@@ -807,6 +1051,8 @@
 
   globalThis.__ccVsum = { stop }
   S.timer = setInterval(tick, 500)
+  document.addEventListener('keydown', onKey, true)
+  store.get('vsumNotes', []).then((n) => (S.notes = Array.isArray(n) ? n : []))
   store.get('vsumPrefs', null).then((p) => {
     if (p) {
       S.prefs = { ...S.prefs, ...p }
