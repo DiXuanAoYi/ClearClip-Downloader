@@ -62,6 +62,8 @@ pub struct Req {
     pub url: String,
     /// explain / note：前后文（每行 `[m:ss] 文字`）
     pub context: String,
+    /// subtitles：只取这一个字幕轨（语言代码，来自 kind=tracks）；transcribe：填 `audio` 表示不取在线字幕、直接取音频转写
+    pub track: String,
     /// 自己改过的系统提示词（单次调用的类型才生效：explain / punctuate / note / refine / ask / mindmap / rewrite）
     pub system: String,
 }
@@ -122,6 +124,9 @@ fn new_job() -> (u64, Arc<AtomicBool>) {
 pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     use tauri::Manager;
     check(&req)?;
+    if req.kind == "tracks" {
+        return start_tracks(app, req);
+    }
     if req.kind == "transcribe" || req.kind == "subtitles" {
         return start_transcribe(app, req);
     }
@@ -160,6 +165,18 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
     let subs_only = req.kind == "subtitles";
+    let track = req.track.trim().to_string();
+    let force_audio = !subs_only && track == "audio";
+    // 以前取到 / 转写过的文稿直接用（磁盘缓存），不再去请求网站，也不占用转写额度
+    if let Some(hit) = cache_lookup(&st.data_dir, &req.url, subs_only, &track) {
+        let (id, _) = new_job();
+        with_job(id, |j| {
+            j.done = 1;
+            j.total = 1;
+            j.result = Some(hit);
+        });
+        return Ok(id);
+    }
     // 先取在线字幕，取不到才转写，所以转写的条件（语音转文字、ffmpeg）等到真要转写时再检查
     if !settings.use_ytdlp || crate::tools::resolve(&st, crate::tools::Tool::YtDlp).is_none() {
         return Err(AppError::new(crate::error::ErrorKind::NeedUpdate, "取网页视频的字幕 / 音频需要 yt-dlp 组件。请在“设置 → 组件”中安装 yt-dlp 后重试。"));
@@ -189,7 +206,10 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
                 }
             })
         };
-        let out = transcribe_page(&ctx, &url, &lang, subs_only).await;
+        let out = transcribe_page(&ctx, &url, &lang, subs_only, &track, force_audio).await;
+        if let Ok(v) = &out {
+            cache_store(&ctx.st.data_dir, &url, subs_only, &track, v);
+        }
         watcher.abort();
         with_job(id, |j| match &out {
             Ok(v) => j.result = Some(v.clone()),
@@ -201,17 +221,24 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
 }
 
 /// 先用 yt-dlp 取网页视频自带的在线字幕（人工 / 自动），有就直接用；没有且不是“只取字幕”才取音频转写。
-async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str, subs_only: bool) -> AppResult<Value> {
+async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str, subs_only: bool, track: &str, force_audio: bool) -> AppResult<Value> {
     let settings = ctx.st.settings();
     let work = std::env::temp_dir().join(format!("clearclip-vsum-{}-{}", std::process::id(), ctx.id));
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work)?;
     let result = async {
         let pctx = ctx.st.parse_ctx(&settings);
-        ctx.note("正在取视频的在线字幕…");
-        match crate::providers::ytdlp::fetch_subtitles(&pctx, url, &work, || ctx.canceled()).await {
+        let want_track = if subs_only && !track.is_empty() { Some(track) } else { None };
+        let online = if force_audio {
+            Ok(vec![])
+        } else {
+            ctx.note("正在取视频的在线字幕…");
+            crate::providers::ytdlp::fetch_subtitles_for(&pctx, url, &work, want_track, || ctx.canceled()).await
+        };
+        match online {
             Ok(found) => {
-                if let Some((code, path)) = crate::providers::ytdlp::pick_subtitle(&found, lang) {
+                let picked = if want_track.is_some() { found.first() } else { crate::providers::ytdlp::pick_subtitle(&found, lang) };
+                if let Some((code, path)) = picked {
                     let cues = crate::subtitle::parse_srt(&std::fs::read_to_string(path)?);
                     let lines = cues_to_lines(&cues);
                     if !lines.is_empty() {
@@ -232,7 +259,7 @@ async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str
         ai::stt_ready(&ctx.st, &settings)?;
         let ffmpeg = crate::postprocess::find_ffmpeg(&ctx.st).ok_or_else(crate::postprocess::ffmpeg_missing)?;
         let lang = if lang.is_empty() { settings.ai.stt_language.clone() } else { lang.to_string() };
-        ctx.note("这个视频没有在线字幕，正在取音频…");
+        ctx.note(if force_audio { "正在取音频…" } else { "这个视频没有在线字幕，正在取音频…" });
         let audio = crate::providers::ytdlp::fetch_audio(&pctx, url, &work, || ctx.canceled(), |p| ctx.percent(p * 0.3)).await?;
         ctx.check()?;
         let cues = ai::transcribe_cues(ctx, &settings, &ffmpeg, &audio, &lang, &work).await?;
@@ -245,12 +272,158 @@ async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str
     result
 }
 
+// ---------- 在线字幕 / 转写结果的磁盘缓存（同一个视频不再请求网站） ----------
+
+const SUB_CACHE_DAYS: u64 = 60;
+
+/// 缓存文件：数据目录 / vsum-cache / `<kind>-<hash>.json`。网址去掉 #片段和 t / si / feature 等不影响内容的参数。
+fn cache_file(data_dir: &std::path::Path, url: &str, kind: &str, track: &str) -> std::path::PathBuf {
+    use sha2::{Digest, Sha256};
+    let norm = match url::Url::parse(url.trim()) {
+        Ok(mut u) => {
+            u.set_fragment(None);
+            let keep: Vec<(String, String)> = u
+                .query_pairs()
+                .filter(|(k, _)| {
+                    !matches!(
+                        k.as_ref(),
+                        "t" | "si" | "feature" | "pp" | "start" | "utm_source" | "utm_medium" | "utm_campaign" | "spm_id_from" | "vd_source" | "share_source"
+                    )
+                })
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+            u.set_query(None);
+            if !keep.is_empty() {
+                u.query_pairs_mut().extend_pairs(keep);
+            }
+            u.to_string()
+        }
+        Err(_) => url.trim().to_string(),
+    };
+    let digest = Sha256::digest(format!("{norm}\n{track}").as_bytes());
+    data_dir.join("vsum-cache").join(format!("{kind}-{}.json", hex::encode(&digest[..12])))
+}
+
+fn read_cache(path: &std::path::Path) -> Option<Value> {
+    let age = std::fs::metadata(path).ok()?.modified().ok()?.elapsed().ok()?;
+    if age > Duration::from_secs(SUB_CACHE_DAYS * 86_400) {
+        let _ = std::fs::remove_file(path);
+        return None;
+    }
+    let v: Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    v.get("lines").and_then(|l| l.as_array()).is_some_and(|l| !l.is_empty()).then_some(v)
+}
+
+/// 先找转写缓存（取过音频转写的最准确，也最贵），再找字幕缓存。
+fn cache_lookup(data_dir: &std::path::Path, url: &str, subs_only: bool, track: &str) -> Option<Value> {
+    if subs_only {
+        return read_cache(&cache_file(data_dir, url, "sub", track));
+    }
+    if track == "audio" {
+        return read_cache(&cache_file(data_dir, url, "stt", ""));
+    }
+    read_cache(&cache_file(data_dir, url, "stt", "")).or_else(|| read_cache(&cache_file(data_dir, url, "sub", "")))
+}
+
+fn cache_store(data_dir: &std::path::Path, url: &str, subs_only: bool, track: &str, v: &Value) {
+    if !v.get("lines").and_then(|l| l.as_array()).is_some_and(|l| !l.is_empty()) {
+        return;
+    }
+    let whisper = v.get("source").and_then(|s| s.as_str()) == Some("whisper");
+    let path = if whisper { cache_file(data_dir, url, "stt", "") } else { cache_file(data_dir, url, "sub", if subs_only { track } else { "" }) };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+        prune_cache_dir(dir, 300);
+    }
+    if let Ok(bytes) = serde_json::to_vec(v) {
+        let _ = std::fs::write(path, bytes);
+    }
+}
+
+/// 缓存文件太多时删掉最旧的。
+fn prune_cache_dir(dir: &std::path::Path, keep: usize) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> =
+        rd.flatten().filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path()))).collect();
+    if files.len() <= keep {
+        return;
+    }
+    files.sort_by_key(|f| std::cmp::Reverse(f.0));
+    for (_, p) in files.into_iter().skip(keep) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+/// 清空磁盘缓存（扩展里的“清除摘要缓存”不动它；设置里需要时可调用）。
+#[allow(dead_code)]
+pub fn clear_disk_cache(data_dir: &std::path::Path) {
+    let _ = std::fs::remove_dir_all(data_dir.join("vsum-cache"));
+}
+
+// ---------- 列出这个视频有哪些字幕轨 ----------
+
+static TRACKS: std::sync::Mutex<Vec<(std::time::Instant, String, Value)>> = std::sync::Mutex::new(Vec::new());
+
+/// 用清影“解析”的同一套逻辑（yt-dlp）列出人工字幕和自动字幕；10 分钟内同一个地址不重复解析。
+fn start_tracks(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
+    use tauri::Manager;
+    let st = app.state::<Arc<crate::AppState>>().inner().clone();
+    let settings = st.settings();
+    let (id, cancel) = new_job();
+    let url = req.url.trim().to_string();
+    tauri::async_runtime::spawn(async move {
+        let cached =
+            TRACKS.lock().ok().and_then(|t| t.iter().find(|(at, u, _)| u == &url && at.elapsed() < Duration::from_secs(600)).map(|(_, _, v)| v.clone()));
+        let out: AppResult<Value> = match cached {
+            Some(v) => Ok(v),
+            None if !settings.use_ytdlp || crate::tools::resolve(&st, crate::tools::Tool::YtDlp).is_none() => {
+                Ok(json!({"tracks": [], "audio": true, "note": "没有安装 yt-dlp 组件，取不到字幕列表"}))
+            }
+            None => {
+                let pctx = st.parse_ctx(&settings);
+                match crate::providers::ytdlp::resolve(&pctx, &url).await {
+                    Ok(info) => {
+                        let tracks: Vec<Value> = info
+                            .assets
+                            .iter()
+                            .filter(|a| a.kind == crate::model::AssetKind::Subtitle)
+                            .filter_map(|a| {
+                                let code = a.format_id.clone()?;
+                                let auto = a.id.starts_with("auto-");
+                                let name = a.label.trim_start_matches("字幕 · ").to_string();
+                                Some(json!({"code": code, "name": name, "auto": auto}))
+                            })
+                            .collect();
+                        let v = json!({"tracks": tracks, "audio": true, "durationMs": info.duration_ms});
+                        if let Ok(mut t) = TRACKS.lock() {
+                            t.retain(|(at, _, _)| at.elapsed() < Duration::from_secs(600));
+                            t.push((std::time::Instant::now(), url.clone(), v.clone()));
+                        }
+                        Ok(v)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+        };
+        let _ = cancel;
+        with_job(id, |j| match out {
+            Ok(v) => {
+                j.done = 1;
+                j.total = 1;
+                j.result = Some(v);
+            }
+            Err(e) => j.error = Some(e.message),
+        });
+    });
+    Ok(id)
+}
+
 fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
     cues.iter().map(|c| (c.start, c.lines.join(" ").trim().to_string())).filter(|(_, t)| !t.is_empty()).map(|(t, text)| json!({"t": t, "text": text})).collect()
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 14] = [
+    const KINDS: [&str; 15] = [
         "summary",
         "mindmap",
         "cards",
@@ -261,6 +434,7 @@ pub fn check(req: &Req) -> AppResult<()> {
         "article",
         "transcribe",
         "subtitles",
+        "tracks",
         "explain",
         "punctuate",
         "note",
@@ -280,7 +454,7 @@ pub fn check(req: &Req) -> AppResult<()> {
     if matches!(req.kind.as_str(), "article" | "rewrite") && req.text.trim().is_empty() {
         return Err(AppError::invalid("没有可处理的文字。"));
     }
-    if matches!(req.kind.as_str(), "transcribe" | "subtitles") && !(req.url.starts_with("http://") || req.url.starts_with("https://")) {
+    if matches!(req.kind.as_str(), "transcribe" | "subtitles" | "tracks") && !(req.url.starts_with("http://") || req.url.starts_with("https://")) {
         return Err(AppError::invalid("没有可转写的视频地址。"));
     }
     if req.system.chars().count() > MAX_SYSTEM {

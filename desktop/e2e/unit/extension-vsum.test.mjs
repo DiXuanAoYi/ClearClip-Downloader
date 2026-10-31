@@ -133,6 +133,15 @@ assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: 
     for (let i = 1; i < col.length; i++) assert.ok(col[i].y >= col[i - 1].y + col[i - 1].h, `depth ${d} overlap`)
   }
   assert.ok(lay.nodes.every((n) => n.x >= 0 && n.y >= 0 && n.x + n.w <= lay.width + 0.5 && n.y + n.h <= lay.height + 0.5))
+  // 配色：每个节点和它的连线都跟随所在的一级分支，子孙不会串到别的分支的颜色
+  const colored = plain(V.layoutMindmap(V.outlineToTree('# 根\n- 甲\n  - 甲1\n    - 甲1a\n- 乙\n  - 乙1\n  - 乙2\n- 丙\n  - 丙1')))
+  const bOf = (t) => colored.nodes.find((n) => n.text === t).branch
+  assert.equal(bOf('根'), -1)
+  assert.deepEqual(['甲', '乙', '丙'].map(bOf), [0, 1, 2])
+  assert.deepEqual(['甲1', '甲1a'].map(bOf), [0, 0])
+  assert.deepEqual(['乙1', '乙2'].map(bOf), [1, 1])
+  assert.equal(bOf('丙1'), 2)
+  assert.ok(colored.links.every((l) => l.branch >= 0))
   const svg = V.mindmapSvg(V.layoutMindmap(V.outlineToTree('# <a&b>\n- "q"\n- r')))
   assert.ok(svg.startsWith('<svg') && svg.endsWith('</svg>'))
   assert.ok(svg.includes('&lt;a&amp;b&gt;') && svg.includes('&quot;q&quot;') && !svg.includes('<a&b>'))

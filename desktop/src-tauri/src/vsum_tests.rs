@@ -359,3 +359,26 @@ async fn all_parts_failing_returns_an_error() {
     let base = mock(Arc::new(|_| "不是 JSON".to_string())).await;
     assert!(run(&base, &req("summary", 3)).await.is_err());
 }
+
+#[test]
+fn disk_cache_ignores_tracking_params_and_keeps_tracks_apart() {
+    let dir = std::env::temp_dir().join(format!("cc-vsum-cache-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let a = cache_file(&dir, "https://www.youtube.com/watch?v=abc&t=30s&si=xyz#frag", "sub", "en");
+    let b = cache_file(&dir, "https://www.youtube.com/watch?v=abc", "sub", "en");
+    assert_eq!(a, b, "分享参数、时间点不影响缓存");
+    assert_ne!(b, cache_file(&dir, "https://www.youtube.com/watch?v=abc", "sub", "zh-Hans"));
+    assert_ne!(b, cache_file(&dir, "https://www.youtube.com/watch?v=other", "sub", "en"));
+
+    let url = "https://www.youtube.com/watch?v=abc";
+    let lines = serde_json::json!({ "lines": [{ "t": 0, "text": "你好" }], "source": "subtitles" });
+    cache_store(&dir, url, true, "en", &lines);
+    assert!(cache_lookup(&dir, url, true, "en").is_some());
+    assert!(cache_lookup(&dir, url, true, "zh-Hans").is_none(), "别的字幕轨不会命中");
+    // 空结果不写缓存；Whisper 结果放在转写缓存里，音频转写优先命中
+    cache_store(&dir, "https://x.test/v", true, "", &serde_json::json!({ "lines": [] }));
+    assert!(cache_lookup(&dir, "https://x.test/v", true, "").is_none());
+    cache_store(&dir, url, false, "audio", &serde_json::json!({ "lines": [{ "t": 0, "text": "转写" }], "source": "whisper" }));
+    assert_eq!(cache_lookup(&dir, url, false, "audio").unwrap()["lines"][0]["text"], "转写");
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -358,11 +358,14 @@
     widths(root)
     const colX = []
     colW.forEach((w, i) => (colX[i] = i === 0 ? pad : colX[i - 1] + colW[i - 1] + gapX))
+    let branches = 0
     const place = (m, top, parent) => {
       const cy = top + m.span / 2
-      const node = { x: colX[m.depth], y: cy - m.h / 2, w: m.w, h: m.h, lines: m.lines, depth: m.depth, text: m.n.text }
+      // 颜色跟着一级分支走：子孙节点和连线与它所在的一级分支同色
+      const branch = m.depth === 0 ? -1 : m.depth === 1 ? branches++ : parent.branch
+      const node = { x: colX[m.depth], y: cy - m.h / 2, w: m.w, h: m.h, lines: m.lines, depth: m.depth, text: m.n.text, branch }
       nodes.push(node)
-      if (parent) links.push({ x1: parent.x + parent.w, y1: parent.y + parent.h / 2, x2: node.x, y2: cy })
+      if (parent) links.push({ x1: parent.x + parent.w, y1: parent.y + parent.h / 2, x2: node.x, y2: cy, branch })
       let y = top + (m.span - (m.kids.reduce((a, k) => a + k.span, 0) + gapY * Math.max(0, m.kids.length - 1))) / 2
       for (const k of m.kids) {
         place(k, y, node)
@@ -380,24 +383,11 @@
   function mindmapSvg(layout, dark = false) {
     const bg = dark ? '#1d2420' : '#ffffff'
     const fg = dark ? '#eef1ee' : '#1d2420'
-    const branchOf = new Map()
-    layout.nodes.forEach((n) => {
-      if (n.depth === 1) branchOf.set(n, branchOf.size)
-    })
-    // 每个节点属于哪条一级分支：按 y 范围归属
-    const tops = layout.nodes.filter((n) => n.depth === 1)
-    const colorOf = (n) => {
-      if (n.depth === 0) return '#1d2420'
-      let best = 0
-      tops.forEach((t, i) => {
-        if (t.y <= n.y + n.h / 2 + 0.5) best = i
-      })
-      return BRANCH[best % BRANCH.length]
-    }
+    const colorOf = (n) => (n.branch >= 0 ? BRANCH[n.branch % BRANCH.length] : '#1d2420')
     const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(layout.width)}" height="${Math.ceil(layout.height)}" viewBox="0 0 ${Math.ceil(layout.width)} ${Math.ceil(layout.height)}" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif" font-size="13">`, `<rect width="100%" height="100%" fill="${bg}"/>`]
     for (const l of layout.links) {
       const mx = (l.x1 + l.x2) / 2
-      parts.push(`<path d="M${l.x1.toFixed(1)} ${l.y1.toFixed(1)} C${mx.toFixed(1)} ${l.y1.toFixed(1)} ${mx.toFixed(1)} ${l.y2.toFixed(1)} ${l.x2.toFixed(1)} ${l.y2.toFixed(1)}" fill="none" stroke="#9aa5a0" stroke-width="1.5"/>`)
+      parts.push(`<path d="M${l.x1.toFixed(1)} ${l.y1.toFixed(1)} C${mx.toFixed(1)} ${l.y1.toFixed(1)} ${mx.toFixed(1)} ${l.y2.toFixed(1)} ${l.x2.toFixed(1)} ${l.y2.toFixed(1)}" fill="none" stroke="${colorOf(l)}" stroke-width="1.5"/>`)
     }
     for (const n of layout.nodes) {
       const c = colorOf(n)

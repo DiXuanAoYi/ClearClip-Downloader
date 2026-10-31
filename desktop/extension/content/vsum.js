@@ -90,7 +90,7 @@
     data: null, // 当前文稿：{ title, url, lines, chapters, tracks, ... }
     tab: 'summary',
     status: null, // 清影的状态：{ ready, model, lang, transcribe, maxChars }
-    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: false, view: 'both', lead: 3, pill: true, prompts: {}, theme: 'auto', fs: 13 },
+    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: true, srcV: 1, view: 'both', lead: 3, pill: true, prompts: {}, theme: 'auto', fs: 13 },
     res: {}, // 本次的结果：summary / outline / cards / quotes / translated / rewrite
     chat: [],
     hit: 0, // 当前搜索命中的第几处
@@ -312,18 +312,19 @@
       id = sub.id
     }
     if (tag) await setJobRec(tag, { id, kind, page, ts: Date.now() })
-    S.job = { id, kind, tag, done: 0, total: 0, note: '' }
+    const job = { id, kind, tag, done: 0, total: 0, note: '' }
+    if (!S.job) S.job = job // 同时有多个后台任务时，进度条只显示最先开始的那个
     renderProgress()
     let finished = false
     try {
       for (;;) {
         await new Promise((r) => setTimeout(r, 700))
         if (S.closed) throw new Error('已取消')
-        const j = await send({ type: 'cc-ai-job', id: S.job.id })
+        const j = await send({ type: 'cc-ai-job', id })
         if (!j.ok) throw new Error(j.error)
-        S.job.done = j.done
-        S.job.total = j.total
-        S.job.note = j.note || ''
+        job.done = j.done
+        job.total = j.total
+        job.note = j.note || ''
         renderProgress()
         if (j.state === 'done') {
           finished = true
@@ -343,9 +344,73 @@
       throw e
     } finally {
       if (tag && finished) setJobRec(tag, null)
-      S.job = null
+      if (S.job === job) S.job = null
       if (!S.closed) renderProgress()
     }
+  }
+
+  // ---------- 文稿来源：用清影解析出的字幕轨 / 音频转写，单选，后台执行 ----------
+
+  async function loadSources() {
+    const url = S.data?.url
+    if (S.srcLoading || S.src?.url === url) return
+    S.srcLoading = true
+    try {
+      const st = await send({ type: 'cc-ai-status' })
+      if (!st.ok) throw new Error(st.error)
+      S.status = st
+      const r = await submit({ kind: 'tracks', url, title: S.data.title }, 'tracks')
+      const seen = new Set()
+      const tracks = (r?.tracks || []).filter((t) => t.code && !seen.has(t.code) && seen.add(t.code))
+      S.src = { url, tracks, note: r?.note || '' }
+    } catch (e) {
+      S.src = { url, tracks: [], note: e.message === '已取消' ? '' : e.message }
+    } finally {
+      S.srcLoading = false
+      if (!S.closed) render()
+    }
+  }
+
+  /** 单选一个来源：字幕轨（语言代码）或 audio（取音频转写）。同一个视频同一个来源只做一次。 */
+  async function pickSource(v) {
+    if (!v) return
+    if (S.busy) return toast(ui, '上一个任务还在进行', true)
+    const audio = v === 'audio'
+    if (audio && S.status?.transcribe === false) return toast(ui, '清影里还没有配置语音转文字：到“设置 → AI”选择本机 whisper.cpp 或填写接口', true, 6000)
+    const url = S.data.url
+    const key = audio ? `stt:${url}` : `sub:${url}:${v}`
+    S.busy = true
+    render()
+    try {
+      let r = await cached(key)
+      if (!r) {
+        r = await submit(audio ? { kind: 'transcribe', url, title: S.data.title, track: 'audio' } : { kind: 'subtitles', url, title: S.data.title, track: v }, audio ? 'transcribe' : 'subtitles', key)
+        if (r?.lines?.length) putCache(key, r)
+      }
+      if (!r?.lines?.length) throw new Error(audio ? '没有识别出任何语音' : '这条字幕是空的')
+      setData({ ...S.data, lines: r.lines, durationMs: r.durationMs || S.data.durationMs || 0, track: r.track, noSubtitle: false, fetchFailed: false, note: '', trackUrl: '' })
+      toast(ui, `${audio ? '转写' : '字幕'}完成，共 ${r.lines.length} 句`)
+    } catch (e) {
+      if (!S.closed) toast(ui, e.message, true, 7000)
+    } finally {
+      S.busy = false
+      if (!S.closed) render()
+    }
+  }
+
+  /** auto：没有文稿时自动去查；已有文稿时只在点按钮后才查（不为了好看多打一次网站的请求）。 */
+  function sourcePicker(auto = true) {
+    if (!isVideo() || !/^https?:/.test(S.data?.url || '')) return null
+    if (S.src?.url !== S.data.url) {
+      if (!auto && !S.srcLoading) return h('div', { class: 'tools' }, h('button', { class: 'sec', text: '换一个文稿来源（字幕轨 / 音频转写）', onclick: () => ((S.wantSrc = true), loadSources()) }))
+      if (!S.recovering) loadSources()
+      return h('div', { class: 'mute', text: '正在查看这个视频有哪些字幕…' })
+    }
+    const opts = [['', '选择文稿来源…'], ...S.src.tracks.map((t) => [t.code, `字幕 · ${t.name}`]), ['audio', '音频转写（取音频，用 Whisper 转成文字）']]
+    return h('div', {},
+      h('div', { class: 'tools' }, h('span', { class: 'mute', text: '文稿来源' }), sel(opts, '', pickSource, '单选：有字幕就直接取字幕，没有就取音频转写；在后台进行，结果会缓存')),
+      !S.src.tracks.length && h('div', { class: 'mute', text: S.src.note ? `没有取到字幕列表：${S.src.note}` : '这个视频没有可用的在线字幕，可以选“音频转写”。' }),
+    )
   }
 
   /** 没有字幕：让清影取音频、用语音识别转成带时间的文稿，之后和有字幕的视频一样处理。 */
@@ -400,6 +465,7 @@
       { class: 'warn' },
       d?.note || '还没有文稿',
       d?.site === 'bilibili' && h('div', { class: 'mute', text: 'B 站的字幕（含 AI 字幕）需要登录后才能读到；登录后点上面的“重新读取”。' }),
+      sourcePicker(),
       h('div', { class: 'tools', style: 'margin-top:6px' },
         (d?.noSubtitle || d?.fetchFailed) && h('button', { text: '用清影转写（语音识别）', title: S.status?.transcribe === false ? '清影里还没有配置语音转文字' : '取视频的音频，在清影里转成文字后再总结', onclick: transcribeNow }),
         h('button', { class: 'sec', text: '导入字幕文件', onclick: importFile }),
@@ -992,6 +1058,7 @@
         h('button', { class: 'sec', text: '清除摘要缓存（含各视频已生成的内容）', onclick: async () => (await store.set('vsumCache', {}), await store.set('vsumSessions', {}), await store.set('vsumJobs', {}), (S.restored = 0), toast(ui, '已清除')) }),
         h('button', { class: 'sec', text: '删除全部笔记', disabled: !S.notes.length, onclick: async () => confirm(`确定删除全部 ${S.notes.length} 条笔记？`) && ((S.notes = []), await store.set('vsumNotes', []), render()) })),
       h('h4', { text: '没有字幕 / 想换文稿' }),
+      sourcePicker(!S.data.lines.length || !!S.wantSrc),
       h('div', { class: 'tools' },
         isVideo() && h('button', { class: 'sec', text: '用清影转写（语音识别）', onclick: transcribeNow }),
         isVideo() && h('button', { class: 'sec', text: '只把视频发给清影下载', onclick: sendForTranscribe }),
@@ -1001,7 +1068,7 @@
         h('button', { class: 'sec', text: '总结选中的文字', onclick: () => loadArticleFromSelection() }),
       ),
       h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.autoOnline, onchange: (e) => ((S.prefs.autoOnline = e.target.checked), savePrefs()) }), ' 读不到字幕时，让清影从网站取在线字幕'),
-      h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.autoTranscribe, onchange: (e) => ((S.prefs.autoTranscribe = e.target.checked), savePrefs()) }), ' 还是没有时，自动取音频转写（耗时，可能用到接口额度）'),
+      h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.autoTranscribe, onchange: (e) => ((S.prefs.autoTranscribe = e.target.checked), savePrefs()) }), ' 没有字幕时，自动取音频转写（后台进行；耗时，用本机 Whisper 不花钱，用接口会占额度）'),
       h('textarea', { rows: 4, placeholder: '或者把文字稿 / 字幕粘贴到这里，再点“使用”', id: 'paste' }),
       h('div', { class: 'tools' }, h('button', { class: 'sec', text: '使用粘贴的文字', onclick: () => {
         const t = ui.root.getElementById('paste')?.value
@@ -1258,8 +1325,16 @@
     render()
     try {
       const d = await Src.load()
+      S.recovering = !d.lines.length // 先走“本地字幕 / 缓存 / 在线字幕 / 自动转写”，都没有结果再列字幕轨
       setData(d)
-      if (!d.lines.length) await recover(d)
+      try {
+        if (!d.lines.length) await recover(d)
+      } finally {
+        if (S.recovering) {
+          S.recovering = false
+          render()
+        }
+      }
     } catch (e) {
       setData({ title: document.title, url: location.href, site: 'html5', lines: [], chapters: [], tracks: [], note: `读取失败：${e.message}` })
     }
@@ -1293,6 +1368,11 @@
   store.get('vsumPrefs', null).then((p) => {
     if (p) {
       S.prefs = { ...S.prefs, ...p }
+      // 0.10.3：没有字幕时默认自动取音频转写（以前默认关）。只改一次，之后用户怎么选就怎么算
+      if (!p.srcV) {
+        S.prefs.autoTranscribe = true
+        S.prefs.srcV = 1
+      }
       applyAppearance()
       S.tab = TABS.some(([id]) => id === p.tab) ? p.tab : 'summary'
     }
