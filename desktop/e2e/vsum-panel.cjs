@@ -56,7 +56,9 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
             return { ok: true, id: 7 }
           }
           if (m.type === 'cc-ai-job') {
-            const k = window.__job.kind
+            if (o.hold) return { ok: true, state: 'running', done: 0, total: 1, note: '' }
+            const k = window.__job?.kind || o.resumeKind
+            window.__job = window.__job || { kind: k }
             const result = {
               summary: { summary: '这个视频介绍了 Rust。', points: ['Rust 又快又安全 [0:41]', '结尾致谢'], keywords: ['Rust', '性能'], chapters: [{ title: 'AI 开场', startMs: 0, endMs: 40000 }, { title: 'AI 正文', startMs: 40000, endMs: 125000 }] },
               mindmap: { outline: '# 主题\n- 分支一\n  - 细节\n- 分支二' },
@@ -254,6 +256,52 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('关闭后面板移除', (await page.evaluate(() => !window.__ccVsum)) === true)
     ok('没有页面报错', errors.length === 0, errors.join('|'))
     await page.close()
+  }
+
+  // ---- 关掉再打开：不重新生成
+  {
+    const { page } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '生成摘要')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('这个视频介绍了 Rust')), null, { timeout: 8000 })
+    await clickText(page, '更多')
+    await clickText(page, '生成问答卡片')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('Rust 的特点')), null, { timeout: 8000 })
+    await clickText(page, '✕')
+    await settle(page, 500)
+    const saved = await page.evaluate(() => JSON.parse(JSON.stringify(window.__store)))
+    ok('关闭时保存了这个视频的会话', Object.keys(saved.vsumSessions || {}).length === 1)
+    await page.close()
+
+    const again = await open(YT, { local: saved })
+    // 上次停在“更多”标签页，重开仍停在那里，卡片直接可见
+    await again.page.waitForFunction(() => window.__roots?.some((r) => r.textContent.includes('Rust 的特点')), null, { timeout: 8000 })
+    ok('重新打开：回到上次的标签页，问答卡片直接带出', true)
+    await clickText(again.page, '摘要')
+    await settle(again.page, 300)
+    const t = await text(again.page)
+    ok('重新打开：摘要也在，没有请求清影', /这个视频介绍了 Rust/.test(t) && (await again.page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)) === 0)
+    ok('重新打开：提示是已保存的结果', /已保存的结果/.test(t))
+    await again.page.close()
+  }
+
+  // ---- 生成到一半关掉：不取消，重开后接上
+  {
+    const { page } = await open(YT, { hold: true })
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '生成摘要')
+    await settle(page, 1800)
+    ok('生成中记下了任务', await page.evaluate(() => Object.keys(window.__store.vsumJobs || {}).length === 1))
+    await clickText(page, '✕')
+    await settle(page, 1200)
+    ok('关闭面板不会取消任务', await page.evaluate(() => !window.__calls.some((c) => c.type === 'cc-ai-cancel')))
+    const saved = await page.evaluate(() => JSON.parse(JSON.stringify(window.__store)))
+    await page.close()
+
+    const again = await open(YT, { local: saved, resumeKind: 'summary' })
+    await again.page.waitForFunction(() => window.__roots?.some((r) => r.textContent.includes('这个视频介绍了 Rust')), null, { timeout: 10000 })
+    ok('重新打开：接上了原来的任务，没有重新提交', (await again.page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)) === 0)
+    await again.page.close()
   }
 
   // ---- YouTube 没有字幕

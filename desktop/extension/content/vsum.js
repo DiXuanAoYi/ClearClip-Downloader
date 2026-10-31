@@ -104,6 +104,8 @@
     noteQuery: '',
     sel: null,
     timer: 0,
+    closed: false,
+    restored: 0, // 内容是上次带出来的：保存时间
   }
 
   const panel = h('div', { class: 'layer panel', role: 'complementary', 'aria-label': '视频摘要' })
@@ -215,6 +217,66 @@
     await store.set('vsumCache', V.pruneCache(all, 40, 3_000_000))
   }
 
+  // ---------- 会话缓存：同一份文稿的所有结果、对话，关掉再开直接带出来 ----------
+  const SESS_KEEP = 40
+  const sessKey = () => V.cacheKey(S.data.lines, 'session')
+  let saveTimer = 0
+  function persist() {
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(saveSession, 300)
+  }
+  async function saveSession() {
+    if (!S.data?.lines?.length) return
+    const res = { ...S.res }
+    delete res.rewrite
+    const empty = !Object.values(res).some(Boolean) && !S.chat.length
+    const all = await store.get('vsumSessions', {})
+    const key = sessKey()
+    if (empty) delete all[key]
+    else all[key] = { ts: Date.now(), data: { res, chat: S.chat.slice(-40), style: S.prefs.style, lang: outLang(), title: S.data.title } }
+    await store.set('vsumSessions', V.pruneCache(all, SESS_KEEP, 2_500_000))
+  }
+  /** 取回上次的会话；摘要风格或输出语言变了，对应的结果不带。 */
+  async function restoreSession(d) {
+    const all = await store.get('vsumSessions', {})
+    const hit = all[V.cacheKey(d.lines, 'session')]
+    if (!hit?.data || S.data !== d) return false
+    const { res = {}, chat = [], style, lang } = hit.data
+    const out = { ...res }
+    if (style !== S.prefs.style) delete out.summary
+    if (lang !== outLang()) {
+      delete out.summary
+      delete out.translated
+    }
+    if (out.translated && out.translated.length !== d.lines.length) delete out.translated
+    if (!Object.values(out).some(Boolean) && !chat.length) return false
+    S.res = { ...S.res, ...out }
+    if (chat.length) S.chat = chat
+    S.restored = hit.ts
+    return true
+  }
+  const ago = (ts) => {
+    const m = Math.max(0, Math.round((Date.now() - ts) / 60000))
+    if (m < 1) return '刚刚'
+    if (m < 60) return `${m} 分钟前`
+    if (m < 1440) return `${Math.round(m / 60)} 小时前`
+    return `${Math.round(m / 1440)} 天前`
+  }
+
+  // 正在进行的任务：关掉面板不取消，重开后接着等（清影那边会继续跑）
+  const JOB_FRESH = 25 * 60 * 1000
+  async function jobRecs() {
+    const all = await store.get('vsumJobs', {})
+    const now = Date.now()
+    return Object.fromEntries(Object.entries(all).filter(([, v]) => now - v.ts < JOB_FRESH))
+  }
+  async function setJobRec(tag, rec) {
+    const all = await jobRecs()
+    if (rec) all[tag] = rec
+    else delete all[tag]
+    await store.set('vsumJobs', all)
+  }
+
   /** 提交 → 轮询。cache 为 false 时不读不写缓存（问答、改写）。 */
   async function run(kind, extra = {}, cache = true) {
     await ensureReady()
@@ -227,33 +289,62 @@
     }
     const own = String(S.prefs.prompts?.[kind] || '').trim()
     const req = { kind, title: S.data.title, lang, style, lines: linesForReq(), ...(own ? { system: own } : {}), ...extra }
-    const result = await submit(req, kind)
+    const result = await submit(req, kind, key)
     if (key) putCache(key, result)
     return result
   }
 
   /** 提交一个任务并轮询到结束，返回结果；进度显示在面板顶部，可取消。 */
-  async function submit(req, kind) {
-    const sub = await send({ type: 'cc-ai-run', req })
-    if (!sub.ok) throw new Error(sub.error)
-    S.job = { id: sub.id, kind, done: 0, total: 0, note: '' }
+  async function submit(req, kind, tag = '') {
+    const page = S.data?.url || location.href
+    let id = 0
+    if (tag) {
+      // 上次关掉面板时这个任务还在跑：接上它，不再重新提交
+      const old = (await jobRecs())[tag]
+      if (old) {
+        const j = await send({ type: 'cc-ai-job', id: old.id })
+        if (j.ok && (j.state === 'running' || j.state === 'done')) id = old.id
+      }
+    }
+    if (!id) {
+      const sub = await send({ type: 'cc-ai-run', req })
+      if (!sub.ok) throw new Error(sub.error)
+      id = sub.id
+    }
+    if (tag) await setJobRec(tag, { id, kind, page, ts: Date.now() })
+    S.job = { id, kind, tag, done: 0, total: 0, note: '' }
     renderProgress()
+    let finished = false
     try {
       for (;;) {
         await new Promise((r) => setTimeout(r, 700))
+        if (S.closed) throw new Error('已取消')
         const j = await send({ type: 'cc-ai-job', id: S.job.id })
         if (!j.ok) throw new Error(j.error)
         S.job.done = j.done
         S.job.total = j.total
         S.job.note = j.note || ''
         renderProgress()
-        if (j.state === 'done') return j.result
-        if (j.state === 'error') throw new Error(j.error || '失败了')
-        if (j.state === 'cancelled') throw new Error('已取消')
+        if (j.state === 'done') {
+          finished = true
+          return j.result
+        }
+        if (j.state === 'error') {
+          finished = true
+          throw new Error(j.error || '失败了')
+        }
+        if (j.state === 'cancelled') {
+          finished = true
+          throw new Error('已取消')
+        }
       }
+    } catch (e) {
+      finished = finished || !S.closed
+      throw e
     } finally {
+      if (tag && finished) setJobRec(tag, null)
       S.job = null
-      renderProgress()
+      if (!S.closed) renderProgress()
     }
   }
 
@@ -269,7 +360,7 @@
       const key = `tr:${url}`
       let r = await cached(key)
       if (!r) {
-        r = await submit({ kind: 'transcribe', url, title }, 'transcribe')
+        r = await submit({ kind: 'transcribe', url, title }, 'transcribe', key)
         if (r?.lines?.length) putCache(key, r)
       }
       if (!r?.lines?.length) throw new Error('没有识别出任何语音')
@@ -290,11 +381,13 @@
     render()
     try {
       apply(await run(kind, extra, cache))
+      S.restored = 0
+      persist()
     } catch (e) {
-      toast(ui, e.message, true, 5200)
+      if (!S.closed) toast(ui, e.message, true, 5200)
     } finally {
       S.busy = false
-      render()
+      if (!S.closed) render()
     }
   }
 
@@ -331,7 +424,7 @@
     if (!/^https?:/.test(S.data?.url || location.href) || !d.lines.length) return
     const all = await store.get('vsumLocal', {})
     all[localKey()] = { ts: Date.now(), data: { name, lines: d.lines.map((l) => ({ t: l.t, text: l.text })) } }
-    await store.set('vsumLocal', V.pruneCache(all, 40, 4_000_000))
+    await store.set('vsumLocal', V.pruneCache(all, 40, 3_000_000))
     S.hasLocal = true
     toast(ui, '已记住这份字幕：下次这个视频读不到在线字幕时会自动使用', false, 4200)
     render()
@@ -357,6 +450,15 @@
       return
     }
     if (!d.url || !/^https?:/.test(d.url) || d.site === 'article' || !(d.noSubtitle || d.fetchFailed)) return
+    // 以前转写 / 取到过的文稿直接用，不再请求清影
+    for (const [key, name] of [[`tr:${d.url}`, '清影转写'], [`sub:${d.url}`, null]]) {
+      const old = await cached(key)
+      if (S.data !== d) return
+      if (old?.lines?.length) {
+        setData({ ...d, lines: old.lines, durationMs: old.durationMs || d.durationMs, track: name ? old.track || name : old.track, noSubtitle: false, note: '', trackUrl: '' })
+        return
+      }
+    }
     const st = await send({ type: 'cc-ai-status' })
     if (S.data !== d) return
     if (st.ok) S.status = st
@@ -364,7 +466,12 @@
       S.busy = true
       render()
       try {
-        const r = await submit({ kind: 'subtitles', url: d.url, title: d.title }, 'subtitles')
+        const skey = `sub:${d.url}`
+        let r = await cached(skey)
+        if (!r) {
+          r = await submit({ kind: 'subtitles', url: d.url, title: d.title }, 'subtitles', skey)
+          if (r?.lines?.length) putCache(skey, r)
+        }
         if (S.data !== d) return
         if (r?.lines?.length) {
           S.busy = false
@@ -435,6 +542,7 @@
       box.append(h('div', { class: 'warn' }, `有 ${r.failed.length} 段没生成成功（从 ${r.failed.filter(Boolean).join('、') || '部分位置'} 起），摘要不完整。 `,
         r.failedRanges?.length ? h('button', { class: 'sec', text: '只补这几段', disabled: S.busy, onclick: () => retryFailed() }) : null))
     }
+    if (S.restored) box.append(h('div', { class: 'mute', text: `已保存的结果 · ${ago(S.restored)}生成，没有重新请求大模型` }))
     box.append(h('h4', { text: '总结' }), h('div', { class: 'card', text: r.summary }))
     if (r.keywords?.length) box.append(h('div', { class: 'chips' }, ...r.keywords.map((k) => h('span', { class: 'chip', text: k }))))
     if (r.points?.length) box.append(h('h4', { text: '要点' }), h('ul', {}, ...r.points.map((p) => h('li', {}, ...linkify(p)))))
@@ -831,7 +939,7 @@
         cite?.unsupported && h('div', { class: 'warn', text: '这条回答没有给出可核对的时间点，请当作参考，别全信。' }),
         cite?.bad && h('div', { class: 'warn', text: `有 ${cite.bad} 处时间点超出了文稿范围，已忽略。` }))))
     }
-    if (S.chat.length) box.append(h('div', { class: 'tools' }, h('button', { class: 'sec', text: '清空对话', onclick: () => ((S.chat = []), render()) }), h('button', { class: 'sec', text: '复制对话', onclick: () => copy(S.chat.map((m) => `${m.role === 'user' ? '问' : '答'}：${m.text}`).join('\n\n'), '对话') })))
+    if (S.chat.length) box.append(h('div', { class: 'tools' }, h('button', { class: 'sec', text: '清空对话', onclick: () => ((S.chat = []), persist(), render()) }), h('button', { class: 'sec', text: '复制对话', onclick: () => copy(S.chat.map((m) => `${m.role === 'user' ? '问' : '答'}：${m.text}`).join('\n\n'), '对话') })))
     return box
   }
 
@@ -881,7 +989,7 @@
       h('div', { class: 'tools' },
         h('button', { class: 'sec', text: '备份设置和笔记', title: '不包含任何密钥', onclick: backup }),
         h('button', { class: 'sec', text: '恢复备份', onclick: restore }),
-        h('button', { class: 'sec', text: '清除摘要缓存', onclick: async () => (await store.set('vsumCache', {}), toast(ui, '已清除')) }),
+        h('button', { class: 'sec', text: '清除摘要缓存（含各视频已生成的内容）', onclick: async () => (await store.set('vsumCache', {}), await store.set('vsumSessions', {}), await store.set('vsumJobs', {}), (S.restored = 0), toast(ui, '已清除')) }),
         h('button', { class: 'sec', text: '删除全部笔记', disabled: !S.notes.length, onclick: async () => confirm(`确定删除全部 ${S.notes.length} 条笔记？`) && ((S.notes = []), await store.set('vsumNotes', []), render()) })),
       h('h4', { text: '没有字幕 / 想换文稿' }),
       h('div', { class: 'tools' },
@@ -1107,10 +1215,42 @@
     S.chat = []
     S.query = ''
     S.preview = null
+    S.restored = 0
     render()
-    // 同一份文稿以前算过的摘要直接带出来（不需要大模型）
-    const key = V.cacheKey(d.lines, 'summary', S.prefs.style, outLang())
-    if (d.lines.length) cached(key).then((hit) => hit && S.data === d && !S.res.summary && ((S.res.summary = hit), render()))
+    if (!d.lines.length) return
+    // 同一份文稿以前生成的所有结果和对话直接带出来（不需要大模型）；会话里没有的摘要再去缓存里找
+    restoreSession(d)
+      .then(async () => {
+        if (S.data !== d) return
+        if (!S.res.summary) {
+          const hit = await cached(V.cacheKey(d.lines, 'summary', S.prefs.style, outLang()))
+          if (hit && S.data === d && !S.res.summary) {
+            S.res.summary = hit
+            S.restored ||= Date.now()
+          }
+        }
+        render()
+        resumeJobs(d)
+      })
+      .catch(() => {})
+  }
+
+  const RESUME = {
+    summary: (x) => (S.res.summary = x),
+    mindmap: (x) => (S.res.outline = x.outline),
+    cards: (x) => (S.res.cards = x.cards),
+    quotes: (x) => (S.res.quotes = x.quotes),
+    translate: (x) => (S.res.translated = S.data.lines.map((_, i) => x.lines?.[i]?.text || '')),
+  }
+  /** 上次关面板时还在生成的东西：清影还在跑或已经跑完，接上取回来。 */
+  async function resumeJobs(d) {
+    const page = d.url || location.href
+    const recs = Object.values(await jobRecs()).filter((r) => r.page === page && RESUME[r.kind] && !S.res[{ summary: 'summary', mindmap: 'outline', cards: 'cards', quotes: 'quotes', translate: 'translated' }[r.kind]])
+    for (const r of recs) {
+      if (S.data !== d || S.busy) return
+      toast(ui, `接上上次没做完的${r.kind === 'summary' ? '摘要' : '任务'}…`)
+      await task(r.kind, {}, RESUME[r.kind])
+    }
   }
 
   async function start() {
@@ -1129,7 +1269,9 @@
   function stop() {
     clearInterval(S.timer)
     document.removeEventListener('keydown', onKey, true)
-    if (S.job) send({ type: 'cc-ai-cancel', id: S.job.id })
+    // 正在生成的任务不取消：清影继续跑，重新打开后自动接上（要取消请点进度条上的“取消”）
+    S.closed = true
+    saveSession().catch(() => {})
     ui.remove()
     delete globalThis.__ccVsum
   }
