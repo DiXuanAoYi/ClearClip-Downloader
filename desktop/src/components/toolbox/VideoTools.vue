@@ -74,7 +74,8 @@ const p = reactive({
   fxDenoise: 'off' as 'off' | 'light' | 'medium' | 'strong',
   fxEnhance: false,
   fxNorm: false,
-  fxAudStart: '0:00',
+  fxAudStart: '0:05',
+  fxAudEnd: '0:20',
   rotate: 'cw' as 'cw' | 'ccw' | 'flip180' | 'hflip' | 'vflip',
   format: 'mp4',
   reencode: false,
@@ -128,9 +129,13 @@ async function audition() {
   if (fxIdle.value) return ElMessage.warning('请至少打开一项效果。')
   const at = time('试听起点', p.fxAudStart)
   if (at == null) return
+  const end = time('试听终点', p.fxAudEnd)
+  if (end == null) return
+  if (end <= at) return ElMessage.warning('试听终点要晚于起点。')
+  if (end - at > 120_000) return ElMessage.warning('试听最长 2 分钟。')
   auding.value = true
   try {
-    aud.value = await api.audioFxPreview(files.value[0], fxSpec(), at)
+    aud.value = await api.audioFxPreview(files.value[0], fxSpec(), at, end - at)
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -366,7 +371,7 @@ async function start() {
           </label>
           <label>
             <span>试听</span>
-            <span class="dirbox"><el-input v-model="p.fxAudStart" size="small" class="w mono" placeholder="起点，如 0:30" /><el-button size="small" :loading="auding" :disabled="!files.length" @click="audition">试听 15 秒</el-button></span>
+            <span class="dirbox"><el-input v-model="p.fxAudStart" size="small" class="w mono" placeholder="起点，如 0:05" /><span>–</span><el-input v-model="p.fxAudEnd" size="small" class="w mono" placeholder="终点，如 0:20" /><el-button size="small" :loading="auding" :disabled="!files.length" @click="audition">试听</el-button></span>
           </label>
           <template v-if="aud">
             <label><span>原声</span><audio :src="src(aud.before)" controls preload="none" class="aud" /></label>

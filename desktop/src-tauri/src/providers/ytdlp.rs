@@ -714,6 +714,38 @@ const FETCH_AUDIO_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 /// 只取一个网页视频的字幕（人工字幕和自动字幕都要），转成 SRT 放进 `dir`，返回 `(语言代码, 文件)`。
 /// 没有字幕时返回空列表，不算错误。
 pub async fn fetch_subtitles(ctx: &Ctx<'_>, page_url: &str, dir: &Path, canceled: impl Fn() -> bool) -> AppResult<Vec<(String, PathBuf)>> {
+    // 只要常用语言：原语言（YouTube 自动字幕的 xx-orig）、中文、英文。`all` 会让 YouTube 把
+    // 上百种机器翻译都请求一遍，很容易被限流（HTTP 429）。
+    match fetch_subtitles_langs(ctx, page_url, dir, SUB_LANGS, &canceled).await {
+        Err(e) if is_rate_limited(&e.to_string()) => {
+            // 被限流：歇几秒，只取最需要的原语言字幕再试一次
+            for _ in 0..16 {
+                if canceled() {
+                    return Err(AppError::msg("canceled"));
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            fetch_subtitles_langs(ctx, page_url, dir, SUB_LANGS_MIN, &canceled).await.map_err(|e2| {
+                if is_rate_limited(&e2.to_string()) {
+                    AppError::new(ErrorKind::Network, "YouTube 暂时限制了字幕请求（HTTP 429 Too Many Requests）。请过几分钟再试，或在浏览器里登录 YouTube 后让扩展同步 Cookie，也可以用“用清影转写”。")
+                } else {
+                    e2
+                }
+            })
+        }
+        other => other,
+    }
+}
+
+const SUB_LANGS: &str = ".*-orig,zh-Hans,zh-Hant,zh-CN,zh-TW,zh,en,en-US,en-GB,ja,ko,-live_chat,-danmaku";
+const SUB_LANGS_MIN: &str = ".*-orig,zh-Hans,zh,en,-live_chat,-danmaku";
+
+fn is_rate_limited(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    t.contains("429") || t.contains("too many requests")
+}
+
+async fn fetch_subtitles_langs(ctx: &Ctx<'_>, page_url: &str, dir: &Path, langs: &str, canceled: &impl Fn() -> bool) -> AppResult<Vec<(String, PathBuf)>> {
     let (mut cmd, cookie_file) = command(ctx, page_url)?;
     cmd.args([
         "--no-playlist",
@@ -721,7 +753,9 @@ pub async fn fetch_subtitles(ctx: &Ctx<'_>, page_url: &str, dir: &Path, canceled
         "--write-subs",
         "--write-auto-subs",
         "--sub-langs",
-        "all,-live_chat,-danmaku",
+        langs,
+        "--sleep-subtitles",
+        "1",
         "--sub-format",
         "vtt/srt/best",
         "--convert-subs",
@@ -1072,5 +1106,19 @@ printf '1\n00:00:01,000 --> 00:00:02,000\n你好\n' > "${base}zh-Hans.srt""#,
         ctx.ytdlp = Some(fake_ytdlp(dir.as_path(), "echo 'ERROR: Video unavailable' >&2; exit 1"));
         let e = fetch_audio(&ctx, "https://example.com/v", &work, || false, |_| {}).await.unwrap_err();
         assert!(e.message.contains("unavailable") || !e.message.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod rate_limit_tests {
+    use super::*;
+
+    #[test]
+    fn detects_rate_limiting_and_keeps_language_list_small() {
+        assert!(is_rate_limited("yt-dlp：Unable to download video subtitles for 'ab': HTTP Error 429: Too Many Requests"));
+        assert!(is_rate_limited("too many requests"));
+        assert!(!is_rate_limited("HTTP Error 404"));
+        assert!(!SUB_LANGS.contains("all"));
+        assert!(SUB_LANGS.contains(".*-orig") && SUB_LANGS_MIN.contains(".*-orig"));
     }
 }

@@ -7,12 +7,19 @@ import { ElMessage } from 'element-plus'
 import { api, errorText, events } from '../../../api'
 import type { ModelStatus } from '../../../types'
 
-const props = defineProps<{ kind: ModelStatus['kind']; selected?: string }>()
+const props = defineProps<{ kind: ModelStatus['kind']; selected?: string; single?: boolean }>()
 const emit = defineEmits<{ select: [id: string]; changed: [models: ModelStatus[]] }>()
 
 const EXT: Record<ModelStatus['kind'], string[]> = { matte: ['onnx'], vocals: ['onnx'], denoise: ['rnnn'], whisper: ['bin'] }
 const all = ref<ModelStatus[]>([])
 const models = computed(() => all.value.filter((m) => m.kind === props.kind))
+// single：只用一个下拉选择模型，只展示选中那一个的详情（Whisper 三档不再一次摊开）
+const pick = ref('')
+const shown = computed(() => {
+  if (!props.single) return models.value
+  const cur = models.value.find((m) => m.id === pick.value) ?? models.value.find((m) => m.installed) ?? models.value.find((m) => m.id.endsWith('base')) ?? models.value[0]
+  return cur ? [cur] : []
+})
 const urls = ref<Record<string, string>>({})
 const busy = ref<string | null>(null)
 const pct = ref(0)
@@ -64,7 +71,10 @@ onBeforeUnmount(() => un?.())
 
 <template>
   <div class="models">
-    <div v-for="m in models" :key="m.id" class="model" :data-model="m.id">
+    <el-select v-if="single && models.length > 1" :model-value="shown[0]?.id" size="small" class="pick" data-testid="model-pick" @update:model-value="(v: string) => (pick = v)">
+      <el-option v-for="m in models" :key="m.id" :value="m.id" :label="m.installed ? `${m.label} ✓` : m.label" />
+    </el-select>
+    <div v-for="m in shown" :key="m.id" class="model" :data-model="m.id">
       <div class="row">
         <el-radio v-if="selected !== undefined" :model-value="selected" :value="m.id" :disabled="!m.installed" size="small" @update:model-value="emit('select', m.id)">{{ m.label }}</el-radio>
         <b v-else>{{ m.label }}</b>
@@ -84,6 +94,7 @@ onBeforeUnmount(() => un?.())
 </template>
 
 <style scoped>
+.pick { max-width: 360px; }
 .models { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .model { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

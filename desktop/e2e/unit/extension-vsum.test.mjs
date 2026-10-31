@@ -247,3 +247,30 @@ assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: 
 }
 
 console.log('extension-vsum: ok')
+
+// ---- 搜索高亮 / 回答引用校验
+{
+  assert.deepEqual(plain(V.splitMarks('Hello hello World', 'hello')), [{ s: 'Hello', hit: true }, { s: ' ', hit: false }, { s: 'hello', hit: true }, { s: ' World', hit: false }])
+  assert.deepEqual(plain(V.splitMarks('abc', '  ')), [{ s: 'abc', hit: false }])
+
+  const lines = [{ t: 0, text: 'intro' }, { t: 60000, text: 'the key point' }, { t: 120000, text: 'wrap up' }]
+  const c = V.citations('结论在 [1:00]，另见 [1:00-1:10] 和 [99:00]。', lines)
+  assert.equal(c.refs.length, 1)
+  assert.equal(c.refs[0].text, 'the key point')
+  assert.equal(c.bad, 1)
+  assert.equal(c.unsupported, false)
+  assert.equal(V.citations('随便说说', lines).unsupported, true)
+  assert.equal(V.citations('字幕中未找到相关内容', lines).unsupported, false)
+}
+
+// ---- 笔记：分 P、作者
+{
+  assert.equal(V.baseKey('bilibili:BV1xx:p3'), 'bilibili:BV1xx')
+  assert.equal(V.baseKey('youtube:abc'), 'youtube:abc')
+  assert.equal(V.partOf('bilibili:BV1xx:p3'), 3)
+  assert.equal(V.partOf('youtube:abc'), 1)
+  const n = V.makeNote({ key: 'bilibili:BV1xx:p2', title: '标题', owner: '某UP主', t: 1000, text: '内容' })
+  assert.equal(n.owner, '某UP主')
+  assert.equal(V.searchNotes([n], 'up主').length, 1)
+  assert.equal(V.searchNotes([n], '不存在').length, 0)
+}

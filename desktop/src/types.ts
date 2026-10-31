@@ -1717,6 +1717,12 @@ export interface ModelStatus {
   installed: boolean
   sizeBytes: number
 }
+export interface WhisperCliStatus {
+  installed: boolean
+  path: string | null
+  autoInstall: boolean
+  note: string
+}
 export interface ModelProgress {
   id: string
   got: number

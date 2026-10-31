@@ -5,3 +5,4 @@ pub mod matte;
 pub mod onnx;
 pub mod store;
 pub mod vocals;
+pub mod whisper_cli;

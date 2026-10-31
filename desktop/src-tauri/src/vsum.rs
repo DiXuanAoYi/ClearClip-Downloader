@@ -17,6 +17,8 @@ use crate::subtitle::Cue;
 /// 一次请求最多处理多少字（再长的视频建议先在清影里转写后处理）。
 pub const MAX_CHARS: usize = 600_000;
 const CHUNK_CHARS: usize = 12_000;
+/// 分段摘要时，每段前面带上上一段的最后几行做上下文。
+const OVERLAP_LINES: usize = 4;
 const ASK_CHARS: usize = 12_000;
 /// 同时保留多少个任务结果（扩展取走后很快就用不到了）。
 const KEEP_JOBS: usize = 48;
@@ -612,6 +614,37 @@ fn model_err() -> AppError {
     AppError::parser("模型没有按要求返回内容，请换一个模型或稍后重试。")
 }
 
+/// 一段文稿第一行的时间（毫秒），读不到是 0。
+fn chunk_start_ms(chunk: &str) -> u64 {
+    parse_label(&chunk_start_label(chunk)).unwrap_or(0)
+}
+
+/// 分段之间带一点重叠：把上一段最后几行作为“只供参考的上文”放在这一段前面，
+/// 章节和要点不会在段落交界处断开；模型被告知不要总结这部分。
+fn with_overlap(prev: Option<&String>, chunk: &str) -> String {
+    let Some(prev) = prev else { return chunk.to_string() };
+    let tail: Vec<&str> = prev.lines().rev().take(OVERLAP_LINES).collect::<Vec<_>>().into_iter().rev().collect();
+    if tail.is_empty() {
+        return chunk.to_string();
+    }
+    format!(
+        "(Context from the previous part, for continuity only - do NOT summarize it or use its timestamps for chapters:)\n{}\n\n(This part:)\n{}",
+        tail.join("\n"),
+        chunk
+    )
+}
+
+/// 一段 `[m:ss] …` 文稿的起点标签，用来告诉用户哪一段没生成成功。
+fn chunk_start_label(chunk: &str) -> String {
+    chunk
+        .lines()
+        .find_map(|l| {
+            let l = l.trim();
+            l.strip_prefix('[').and_then(|r| r.split_once(']')).map(|(t, _)| t.to_string())
+        })
+        .unwrap_or_default()
+}
+
 /// 按类型处理，返回给扩展的 JSON。
 pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usize, req: &Req, progress: Progress<'_>) -> AppResult<Value> {
     let lang = if req.lang.trim().is_empty() { default_lang } else { req.lang.trim() };
@@ -628,10 +661,35 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             let system = summary_system(lang, &req.style, !article, false);
             let n = chunks.len() + usize::from(chunks.len() > 1);
             let mut parts: Vec<(ai::Summary, Vec<String>)> = vec![];
+            // 某一段偶尔失败（超时 / 限流 / 模型没按格式回）：重试一次，还不行就跳过，别让整份摘要作废；
+            // 全部失败才报第一个真实错误。跳过的段落起点随结果返回，界面会提示。
+            let mut failed: Vec<(u64, u64)> = vec![];
+            let starts: Vec<u64> = chunks.iter().map(|c| chunk_start_ms(c)).collect();
+            let end_all = req.lines.iter().map(|l| l.t).max().unwrap_or(0) + 1000;
+            let mut first_err: Option<AppError> = None;
             for (i, c) in chunks.iter().enumerate() {
                 progress(i, n)?;
-                let resp = chat(ep, model, &system, c).await?;
-                parts.push((parse_summary(&resp).ok_or_else(model_err)?, parse_keywords(&resp)));
+                let mut got = None;
+                let body = with_overlap(chunks.get(i.wrapping_sub(1)).filter(|_| i > 0), c);
+                for _ in 0..2 {
+                    match chat(ep, model, &system, &body).await {
+                        Ok(resp) => match parse_summary(&resp) {
+                            Some(sm) => {
+                                got = Some((sm, parse_keywords(&resp)));
+                                break;
+                            }
+                            None => first_err = first_err.or_else(|| Some(model_err())),
+                        },
+                        Err(e) => first_err = first_err.or(Some(e)),
+                    }
+                }
+                match got {
+                    Some(p) => parts.push(p),
+                    None => failed.push((starts[i], starts.get(i + 1).copied().unwrap_or(end_all))),
+                }
+            }
+            if parts.is_empty() {
+                return Err(first_err.unwrap_or_else(model_err));
             }
             let (mut sum, keywords) = if parts.len() == 1 {
                 let (s, k) = parts.remove(0);
@@ -658,7 +716,9 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             let total = req.lines.iter().map(|l| l.t).max().unwrap_or(0) + 1000;
             sum.chapters = ai::close_chapters(sum.chapters, total);
             progress(n, n)?;
-            Ok(json!({"summary": sum.summary, "points": sum.points, "chapters": sum.chapters, "keywords": keywords}))
+            Ok(
+                json!({"summary": sum.summary, "points": sum.points, "chapters": sum.chapters, "keywords": keywords, "failed": failed.iter().map(|(a, _)| clock_label(*a)).collect::<Vec<_>>(), "failedRanges": failed}),
+            )
         }
         "mindmap" => {
             let chunks = chunk_lines(&lines, CHUNK_CHARS);

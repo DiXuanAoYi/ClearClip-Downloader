@@ -486,7 +486,11 @@
 
   const MAX_NOTES = 2000
 
-  /** 一条笔记：{ id, key, url, title, t, text, kind: 'quote'|'note', created }。 */
+  /** 视频键去掉分 P 后缀：同一个视频的所有分 P 共用；分 P 序号（没有就是 1）。 */
+  const baseKey = (key) => String(key || '').replace(/:p\d+$/, '')
+  const partOf = (key) => Number((String(key || '').match(/:p(\d+)$/) || [])[1]) || 1
+
+  /** 一条笔记：{ id, key, url, title, owner, t, text, kind: 'quote'|'note', created }。 */
   function makeNote(o) {
     const text = String(o.text || '').trim()
     if (!text) return null
@@ -495,6 +499,7 @@
       key: o.key || '',
       url: o.url || '',
       title: String(o.title || '').slice(0, 200),
+      owner: String(o.owner || '').slice(0, 80),
       t: Number.isFinite(o.t) ? Math.max(0, Math.round(o.t)) : -1,
       text: text.slice(0, 6000),
       kind: o.kind === 'note' ? 'note' : 'quote',
@@ -517,7 +522,7 @@
   function searchNotes(list, q) {
     const s = String(q || '').trim().toLowerCase()
     if (!s) return list
-    return list.filter((n) => `${n.text} ${n.title}`.toLowerCase().includes(s))
+    return list.filter((n) => `${n.text} ${n.title} ${n.owner || ''}`.toLowerCase().includes(s))
   }
 
   /** 笔记导出成 Markdown：每个视频一节，时间戳带跳转链接。 */
@@ -631,6 +636,55 @@
     return kept
   }
 
+
+  // ---------- 搜索高亮 / 回答引用校验（参考 youtube-digest、bilibili-digest，MIT） ----------
+
+  /** 把文字按搜索词切成 [{s, hit}]，界面里命中的部分用 <mark> 高亮。 */
+  function splitMarks(text, query) {
+    const terms = [...new Set(String(query || '').toLowerCase().split(/\s+/).filter(Boolean))]
+    const src = String(text || '')
+    if (!terms.length) return [{ s: src, hit: false }]
+    const low = src.toLowerCase()
+    const mask = new Array(src.length).fill(false)
+    for (const t of terms) {
+      for (let i = low.indexOf(t); i >= 0; i = low.indexOf(t, i + t.length)) for (let k = i; k < i + t.length; k++) mask[k] = true
+    }
+    const out = []
+    for (let i = 0; i < src.length; ) {
+      let j = i
+      while (j < src.length && mask[j] === mask[i]) j++
+      out.push({ s: src.slice(i, j), hit: mask[i] })
+      i = j
+    }
+    return out
+  }
+
+  /**
+   * 回答里的 [m:ss] / [m:ss-m:ss] 引用：只认落在文稿时间范围内的，并从文稿里取出那一句当“依据”
+   * （由本地取，模型编不出来）。一个有效引用都没有、又没说“未找到”的回答，标成 unsupported 提醒用户别全信。
+   */
+  function citations(answer, lines) {
+    const ls = lines || []
+    const first = ls.length ? ls[0].t : 0
+    const last = ls.length ? ls[ls.length - 1].t : 0
+    const refs = []
+    const seen = new Set()
+    let bad = 0
+    for (const m of String(answer || '').matchAll(/\[(\d{1,2}(?::\d{2}){1,2})(?:\s*[-–~]\s*(\d{1,2}(?::\d{2}){1,2}))?\]/g)) {
+      const ms = parseClock(m[1])
+      if (!(ms >= first - 1000 && ms <= last + 30000)) {
+        bad++
+        continue
+      }
+      const i = lineAt(ls, ms)
+      if (i < 0 || seen.has(i)) continue
+      seen.add(i)
+      refs.push({ ms: ls[i].t, label: fmtClock(ls[i].t), text: ls[i].text })
+    }
+    const notFound = /未找到|没有找到|找不到|not found|no (?:relevant|supporting)/i.test(String(answer || ''))
+    return { refs, bad, notFound, unsupported: !refs.length && !notFound }
+  }
+
   const STYLES = [
     ['standard', '标准'],
     ['brief', '简短'],
@@ -650,6 +704,6 @@
   globalThis.ccVsum = {
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
     videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
-    searchLines, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
+    searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
   }
 })()

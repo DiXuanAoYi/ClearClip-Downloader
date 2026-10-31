@@ -148,7 +148,8 @@ async fn long_videos_are_summarized_in_parts_and_merged() {
         if p.contains("=====\nPart 1") {
             r#"{"summary":"总摘要","points":["总要点"],"keywords":["总"]}"#.into()
         } else {
-            let first = p.split("=====\n[").nth(1).and_then(|s| s.split(']').next()).unwrap_or("0:00").to_string();
+            let marker = if p.contains("(This part:)\n[") { "(This part:)\n[" } else { "=====\n[" };
+            let first = p.split(marker).nth(1).and_then(|s| s.split(']').next()).unwrap_or("0:00").to_string();
             format!(r#"{{"summary":"分段","points":["p"],"keywords":["k"],"chapters":[{{"time":"{first}","title":"章 {first}"}}]}}"#)
         }
     }))
@@ -309,4 +310,52 @@ fn custom_prompts_replace_the_built_in_one_and_language_is_detected() {
     assert!(is_chinese(&[Line { t: 0, text: "这是一段中文字幕 with a word".into() }]));
     assert!(!is_chinese(&[Line { t: 0, text: "This is English only".into() }]));
     assert!(!is_chinese(&[]));
+}
+
+#[test]
+fn chunk_start_label_reads_the_first_timestamp() {
+    assert_eq!(chunk_start_label("[12:30] hello\n[12:35] world"), "12:30");
+    assert_eq!(chunk_start_label("\n  [1:02:03] x"), "1:02:03");
+    assert_eq!(chunk_start_label("no stamps here"), "");
+}
+
+#[test]
+fn overlap_adds_the_previous_tail_as_context_only() {
+    let prev = "[0:01] a\n[0:02] b\n[0:03] c\n[0:04] d\n[0:05] e".to_string();
+    assert_eq!(with_overlap(None, "[1:00] x"), "[1:00] x");
+    let out = with_overlap(Some(&prev), "[1:00] x");
+    assert!(out.contains("[0:05] e") && out.contains("[0:02] b") && !out.contains("[0:01] a"));
+    assert!(out.ends_with("[1:00] x") && out.contains("do NOT summarize"));
+    assert_eq!(chunk_start_ms("[1:30] hi"), 90_000);
+}
+
+#[tokio::test]
+async fn a_failed_part_is_retried_then_skipped_and_reported() {
+    // 含“第 40 句”的那一段模型总是胡说；其余正常。
+    let calls = Arc::new(Mutex::new(0usize));
+    let c2 = calls.clone();
+    let base = mock(Arc::new(move |p| {
+        if p.contains("=====\nPart 1") {
+            return r#"{"summary":"总","points":["要点"],"keywords":["k"]}"#.into();
+        }
+        let part = p.rsplit("(This part:)\n").next().unwrap_or(p);
+        if part.contains("第 40 句") {
+            *c2.lock().unwrap() += 1;
+            return "我不会 JSON".into();
+        }
+        r#"{"summary":"分段","points":["p"],"keywords":["k"],"chapters":[]}"#.into()
+    }))
+    .await;
+    let v = run(&base, &req("summary", 80)).await.unwrap();
+    assert_eq!(*calls.lock().unwrap(), 2, "retried once");
+    assert_eq!(v["failed"].as_array().unwrap().len(), 1);
+    let r = &v["failedRanges"][0];
+    assert!(r[0].as_u64().unwrap() <= 40 * 30_000 && r[1].as_u64().unwrap() > 40 * 30_000);
+    assert_eq!(v["summary"], "总");
+}
+
+#[tokio::test]
+async fn all_parts_failing_returns_an_error() {
+    let base = mock(Arc::new(|_| "不是 JSON".to_string())).await;
+    assert!(run(&base, &req("summary", 3)).await.is_err());
 }
