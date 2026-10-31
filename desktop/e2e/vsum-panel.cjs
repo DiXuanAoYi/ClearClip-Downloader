@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'vsum-logic.js', 'content/vsum-source.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
+const FILES = ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -56,7 +56,9 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
             return { ok: true, id: 7 }
           }
           if (m.type === 'cc-ai-job') {
-            const k = window.__job.kind
+            if (o.hold) return { ok: true, state: 'running', done: 0, total: 1, note: '' }
+            const k = window.__job?.kind || o.resumeKind
+            window.__job = window.__job || { kind: k }
             const result = {
               summary: { summary: '这个视频介绍了 Rust。', points: ['Rust 又快又安全 [0:41]', '结尾致谢'], keywords: ['Rust', '性能'], chapters: [{ title: 'AI 开场', startMs: 0, endMs: 40000 }, { title: 'AI 正文', startMs: 40000, endMs: 125000 }] },
               mindmap: { outline: '# 主题\n- 分支一\n  - 细节\n- 分支二' },
@@ -64,12 +66,13 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
               cards: { cards: [{ q: 'Rust 的特点？', a: '又快又安全', t: 41000 }] },
               quotes: { quotes: [{ text: 'Rust is fast and safe.', t: 41000 }] },
               translate: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: '译:' + l.text })), failed: 0 },
+              tracks: { tracks: [{ code: 'en', name: 'English（人工）', auto: false }, { code: 'zh-Hans', name: '中文（自动生成）', auto: true }], audio: true },
               rewrite: { text: '改写后的文案' },
               explain: { text: 'Rust 是一门系统语言。' },
               note: { quote: '整理后的完整句子。' },
               refine: { quote: '优化后的笔记。' },
               punctuate: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: l.text + '。' })), failed: 0 },
-              subtitles: { lines: o.subs === false ? [] : [{ t: 1000, text: '在线字幕第一句' }, { t: 6000, text: '在线字幕第二句' }], durationMs: 12000, track: '在线字幕（en）', source: 'subtitles' },
+              subtitles: { lines: o.subs === false && !window.__job?.track ? [] : [{ t: 1000, text: '在线字幕第一句' }, { t: 6000, text: '在线字幕第二句' }], durationMs: 12000, track: '在线字幕（en）', source: 'subtitles' },
               transcribe: { lines: [{ t: 0, text: '大家好，今天讲讲 Rust。' }, { t: 5000, text: '它又快又安全。' }], durationMs: 12000, track: '清影转写' },
             }[k]
             return { ok: true, state: 'done', done: 1, total: 1, note: k === 'transcribe' ? '正在转写…' : '', result }
@@ -200,9 +203,27 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       i.dispatchEvent(new Event('input'))
     })
     await settle(page, 300)
-    await clickText(page, '翻译成中文')
+    await clickText(page, '翻译（自动方向）')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('译:Welcome')), null, { timeout: 8000 })
     ok('翻译后每行下方有译文', true)
+
+    // 任意语言互译：下拉里选日语，请求里带的是 Japanese
+    const langs = await page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).filter((x) => [...x.options].some((o) => o.value === 'ja')).map((x) => x.options.length))
+    ok('翻译语言下拉里有三十多种语言', langs.length > 0 && langs[0] >= 30, JSON.stringify(langs))
+    await page.evaluate(() => {
+      const sel = window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).find((x) => [...x.options].some((o) => o.value === 'ja'))
+      sel.value = 'ja'
+      sel.dispatchEvent(new Event('change'))
+    })
+    await clickText(page, '翻译成日本語')
+    await page.waitForFunction(() => window.__calls.some((c) => c.type === 'cc-ai-run' && c.req.kind === 'translate' && c.req.lang === 'Japanese'), null, { timeout: 8000 })
+    ok('选日语后请求带 lang=Japanese', true)
+    await page.waitForFunction(() => window.__roots.every((r) => !r.querySelector('.panel button[disabled]')), null, { timeout: 8000 })
+    await page.evaluate(() => {
+      const sel = window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).find((x) => [...x.options].some((o) => o.value === 'ja'))
+      sel.value = ''
+      sel.dispatchEvent(new Event('change'))
+    })
 
     // 导图
     await clickText(page, '导图')
@@ -256,10 +277,82 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.close()
   }
 
-  // ---- YouTube 没有字幕
+  // ---- 关掉再打开：不重新生成
+  {
+    const { page } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '生成摘要')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('这个视频介绍了 Rust')), null, { timeout: 8000 })
+    await clickText(page, '更多')
+    await clickText(page, '生成问答卡片')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('Rust 的特点')), null, { timeout: 8000 })
+    await clickText(page, '✕')
+    await settle(page, 500)
+    const saved = await page.evaluate(() => JSON.parse(JSON.stringify(window.__store)))
+    ok('关闭时保存了这个视频的会话', Object.keys(saved.vsumSessions || {}).length === 1)
+    await page.close()
+
+    const again = await open(YT, { local: saved })
+    // 上次停在“更多”标签页，重开仍停在那里，卡片直接可见
+    await again.page.waitForFunction(() => window.__roots?.some((r) => r.textContent.includes('Rust 的特点')), null, { timeout: 8000 })
+    ok('重新打开：回到上次的标签页，问答卡片直接带出', true)
+    await clickText(again.page, '摘要')
+    await settle(again.page, 300)
+    const t = await text(again.page)
+    ok('重新打开：摘要也在，没有请求清影', /这个视频介绍了 Rust/.test(t) && (await again.page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)) === 0)
+    ok('重新打开：提示是已保存的结果', /已保存的结果/.test(t))
+    await again.page.close()
+  }
+
+  // ---- 生成到一半关掉：不取消，重开后接上
+  {
+    const { page } = await open(YT, { hold: true })
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '生成摘要')
+    await settle(page, 1800)
+    ok('生成中记下了任务', await page.evaluate(() => Object.keys(window.__store.vsumJobs || {}).length === 1))
+    await clickText(page, '✕')
+    await settle(page, 1200)
+    ok('关闭面板不会取消任务', await page.evaluate(() => !window.__calls.some((c) => c.type === 'cc-ai-cancel')))
+    const saved = await page.evaluate(() => JSON.parse(JSON.stringify(window.__store)))
+    await page.close()
+
+    const again = await open(YT, { local: saved, resumeKind: 'summary' })
+    await again.page.waitForFunction(() => window.__roots?.some((r) => r.textContent.includes('这个视频介绍了 Rust')), null, { timeout: 10000 })
+    ok('重新打开：接上了原来的任务，没有重新提交', (await again.page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)) === 0)
+    await again.page.close()
+  }
+
+  // ---- 没有字幕：默认自动取音频转写（后台进行，不用点）
   {
     const { page } = await open(YT + '&notracks=1', { subs: false })
-    await page.waitForFunction(() => window.__roots?.some((r) => /清影也没有/.test(r.textContent)), null, { timeout: 8000 })
+    await page.waitForFunction(() => window.__roots?.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '') && /清影转写/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    ok('没有字幕时自动转写（没点任何按钮）', await page.evaluate(() => window.__calls.some((c) => c.type === 'cc-ai-run' && c.req.kind === 'transcribe')))
+    await page.close()
+  }
+
+  // ---- 文稿来源单选：字幕轨 / 音频转写
+  {
+    const prefs = { local: { vsumPrefs: { autoTranscribe: false, autoOnline: false, srcV: 1 } }, subs: false }
+    const { page } = await open(YT + '&notracks=1', prefs)
+    await page.waitForFunction(() => window.__roots?.some((r) => /文稿来源/.test(r.textContent)), null, { timeout: 8000 })
+    const opts = await page.evaluate(() => [...window.__roots.flatMap((r) => [...r.querySelectorAll('select option')])].map((o) => o.textContent))
+    ok('文稿来源列出字幕轨和音频转写', opts.some((t) => /字幕 · English（人工）/.test(t)) && opts.some((t) => /字幕 · 中文（自动生成）/.test(t)) && opts.some((t) => /音频转写/.test(t)), opts.join('|'))
+    await page.evaluate(() => {
+      const sel = window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).find((x) => [...x.options].some((o) => o.value === 'audio'))
+      sel.value = 'zh-Hans'
+      sel.dispatchEvent(new Event('change'))
+    })
+    await page.waitForFunction(() => window.__roots?.some((r) => /在线字幕/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    const sub = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').map((c) => c.req).find((r) => r.kind === 'subtitles'))
+    ok('选字幕轨：只请求这一条（带语言代码）', sub && sub.track === 'zh-Hans', JSON.stringify(sub))
+    await page.close()
+  }
+
+  // ---- YouTube 没有字幕
+  {
+    const { page } = await open(YT + '&notracks=1', { subs: false, local: { vsumPrefs: { autoTranscribe: false, srcV: 1 } } })
+    await page.waitForFunction(() => window.__roots?.some((r) => /清影也没有/.test(r.textContent)), null, { timeout: 8000 }).catch(async (e) => { console.log('DBG', (await text(page)).slice(0, 600)); throw e })
     ok('没有字幕：提示并给出“用清影转写”', /用清影转写/.test(await text(page)) && /导入字幕文件/.test(await text(page)))
     await clickText(page, '用清影转写（语音识别）')
     await page.waitForFunction(() => window.__roots?.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })

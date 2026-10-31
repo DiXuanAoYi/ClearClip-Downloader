@@ -14,11 +14,12 @@ async function syncResidentNow(reset) {
   if (!sc?.registerContentScripts) return
   const features = await getFeatures()
   const rules = await getSiteRules()
+  const trans = await getTransCfg()
   // 编号 → 要匹配的网址；匹配范围为空的（比如解除限制的名单是空的）不注册
   const want = new Map()
   for (const s of RESIDENT_SCRIPTS) {
     if (!s.need(normalizeFeatures(features))) continue
-    const matches = s.matches ? s.matches(rules) : CONTENT_MATCHES
+    const matches = s.matches ? s.matches(rules, trans) : CONTENT_MATCHES
     if (matches.length) want.set(s.id, matches)
   }
   const have = (await sc.getRegisteredContentScripts()).filter((s) => s.id.startsWith('cc-'))
@@ -112,7 +113,7 @@ async function startPicker(tab) {
 /** 打开视频摘要面板（再次注入 = 关闭）。 */
 async function startVsum(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用视频摘要')
-  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'content/vsum-source.js', 'content/vsum.js'])
+  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsum.js'])
 }
 
 // ---------- 以图搜图 ----------
@@ -144,6 +145,7 @@ const HANDLERS = {
     if (m.action === 'overview') await openOverview(tab)
     else if (m.action === 'picker') await startPicker(tab)
     else if (m.action === 'vsum') await startVsum(tab)
+    else if (m.action === 'webtrans') await webTransDo(tab, String(m.mode || 'toggle'))
     else throw new Error('未知操作')
     return {}
   },
@@ -176,6 +178,15 @@ const HANDLERS = {
   'cc-ai-run': async (m) => ({ ...(await call('/api/v1/ai/run', m.req && typeof m.req === 'object' ? m.req : {})) }),
   'cc-ai-job': async (m) => ({ ...(await call(`/api/v1/ai/job?id=${encodeURIComponent(String(m.id))}`)) }),
   'cc-ai-cancel': async (m) => ({ ...(await call(`/api/v1/ai/cancel?id=${encodeURIComponent(String(m.id))}`, {})) }),
+  // 网页翻译：内容脚本把一批文字发来，返回译文
+  'cc-tr': async (m) => {
+    const cfg = await getTransCfg()
+    const texts = (Array.isArray(m.texts) ? m.texts : []).map((t) => String(t)).slice(0, 60)
+    if (!texts.length) return { texts: [], cached: 0 }
+    const engine = ccTrans.ENGINES.includes(m.engine) ? m.engine : cfg.engine
+    return translateTexts(texts, { target: String(m.target || cfg.target), engine })
+  },
+  'cc-tr-clear': async () => (await clearTransCache(), {}),
   // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）
   'cc-note': async (m) => {
     const { noteLimit } = await api.storage.local.get('noteLimit')
@@ -191,7 +202,7 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handler = msg && HANDLERS[msg.type]
   if (!handler) return false
   // 内容脚本只能从有标签页的发送者来；扩展页面的消息 sender.tab 可能为空
-  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save|capture|area|ai-status|ai-run|ai-job|ai-cancel|note)$/.test(msg.type) && !sender.tab) return false
+  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save|capture|area|ai-status|ai-run|ai-job|ai-cancel|note|tr)$/.test(msg.type) && !sender.tab) return false
   handler(msg, sender)
     .then((r) => sendResponse({ ok: true, ...r }))
     .catch(async (e) => {
@@ -211,6 +222,10 @@ async function buildMenus() {
   if (f.vsum) {
     add({ id: 'cc-vsum', title: '视频摘要 / 总结…', contexts: ['page', 'video'] })
     add({ id: 'cc-vsum-sel', title: '总结选中的文字…', contexts: ['selection'] })
+  }
+  if (f.webtrans) {
+    add({ id: 'cc-wt', title: '翻译此页面 / 还原（Alt+A）', contexts: ['page'] })
+    add({ id: 'cc-wt-sel', title: '翻译选中的文字', contexts: ['selection'] })
   }
   if (f.onDemand) add({ id: 'cc-overview', title: '打开页面媒体总览', contexts: ['page'] })
   add({ id: 'cc-link', title: '发送此链接到清影', contexts: ['link'] })
@@ -252,6 +267,8 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     if (id === 'cc-overview') await openOverview(tab)
     else if (id === 'cc-vsum' || id === 'cc-vsum-sel') await startVsum(tab)
+    else if (id === 'cc-wt') await webTransDo(tab, 'toggle')
+    else if (id === 'cc-wt-sel') await webTransDo(tab, 'selection', { text: info.selectionText || '' })
     else if (id === 'cc-later' || id === 'cc-later-link') {
       const url = id === 'cc-later' ? tab.url : info.linkUrl
       const r = await addLater({ url, title: id === 'cc-later' ? tab.title : info.selectionText || '', icon: id === 'cc-later' ? tab.favIconUrl : '' })
@@ -278,6 +295,16 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 })
 
 api.commands?.onCommand.addListener(async (cmd) => {
+  if (cmd === 'toggle-webtrans') {
+    try {
+      if (!(await getFeatures()).webtrans) return
+      const [tab] = await api.tabs.query({ active: true, currentWindow: true })
+      await webTransDo(tab, 'toggle')
+    } catch (e) {
+      notify('网页翻译没有打开', e.message)
+    }
+    return
+  }
   if (cmd !== 'toggle-vsum') return
   try {
     if (!(await getFeatures()).vsum) return
@@ -300,6 +327,6 @@ api.storage.onChanged.addListener((ch, area) => {
     rebuildMenusSoon()
   }
   if (ch.engines) rebuildMenusSoon()
-  if (ch.siteRules) syncResident()
+  if (ch.siteRules || ch.transCfg) syncResident()
 })
 syncResident()

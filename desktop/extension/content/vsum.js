@@ -90,7 +90,7 @@
     data: null, // 当前文稿：{ title, url, lines, chapters, tracks, ... }
     tab: 'summary',
     status: null, // 清影的状态：{ ready, model, lang, transcribe, maxChars }
-    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: false, view: 'both', lead: 3, pill: true, prompts: {}, theme: 'auto', fs: 13 },
+    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: true, srcV: 1, view: 'both', lead: 3, pill: true, prompts: {}, theme: 'auto', fs: 13 },
     res: {}, // 本次的结果：summary / outline / cards / quotes / translated / rewrite
     chat: [],
     hit: 0, // 当前搜索命中的第几处
@@ -104,6 +104,8 @@
     noteQuery: '',
     sel: null,
     timer: 0,
+    closed: false,
+    restored: 0, // 内容是上次带出来的：保存时间
   }
 
   const panel = h('div', { class: 'layer panel', role: 'complementary', 'aria-label': '视频摘要' })
@@ -128,7 +130,10 @@
     },
   }
   const savePrefs = () => store.set('vsumPrefs', { ...S.prefs, tab: S.tab })
-  const outLang = () => S.prefs.lang.trim() || S.status?.lang || '中文'
+  const TL = globalThis.ccTrans
+  /** 写进请求的输出语言（提示词里的名字）；留空 = 清影设置里的目标语言（中文视频的翻译默认译成英文）。 */
+  const outLang = () => (S.prefs.lang.trim() ? TL.promptName(S.prefs.lang) : S.status?.lang || '中文')
+  const outLabel = () => (S.prefs.lang.trim() ? TL.nameOf(TL.LANGS.find((l) => l.en === TL.promptName(S.prefs.lang))?.code || S.prefs.lang.trim()) : '')
   const video = () => [...document.querySelectorAll('video')].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0] || null
   const isVideo = () => S.data && S.data.site !== 'article' && S.data.site !== 'manual'
 
@@ -179,6 +184,14 @@
     return s
   }
 
+  /** 输出 / 翻译语言下拉：自动 + 常用的几十种语言；以前手填的别的写法也保留成一项。 */
+  function langSelect(title, after) {
+    const known = TL.LANGS.some((l) => l.code === S.prefs.lang)
+    const opts = [['', `自动（${S.status?.lang || '中文'}；中文视频译成英文）`], ...TL.LANGS.map((l) => [l.code, l.name])]
+    if (S.prefs.lang && !known) opts.push([S.prefs.lang, S.prefs.lang])
+    return sel(opts, S.prefs.lang, (v) => ((S.prefs.lang = v), savePrefs(), after?.()), title)
+  }
+
   // ---------- 与清影通信 ----------
 
   async function ensureReady() {
@@ -215,6 +228,66 @@
     await store.set('vsumCache', V.pruneCache(all, 40, 3_000_000))
   }
 
+  // ---------- 会话缓存：同一份文稿的所有结果、对话，关掉再开直接带出来 ----------
+  const SESS_KEEP = 40
+  const sessKey = () => V.cacheKey(S.data.lines, 'session')
+  let saveTimer = 0
+  function persist() {
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(saveSession, 300)
+  }
+  async function saveSession() {
+    if (!S.data?.lines?.length) return
+    const res = { ...S.res }
+    delete res.rewrite
+    const empty = !Object.values(res).some(Boolean) && !S.chat.length
+    const all = await store.get('vsumSessions', {})
+    const key = sessKey()
+    if (empty) delete all[key]
+    else all[key] = { ts: Date.now(), data: { res, chat: S.chat.slice(-40), style: S.prefs.style, lang: outLang(), title: S.data.title } }
+    await store.set('vsumSessions', V.pruneCache(all, SESS_KEEP, 2_500_000))
+  }
+  /** 取回上次的会话；摘要风格或输出语言变了，对应的结果不带。 */
+  async function restoreSession(d) {
+    const all = await store.get('vsumSessions', {})
+    const hit = all[V.cacheKey(d.lines, 'session')]
+    if (!hit?.data || S.data !== d) return false
+    const { res = {}, chat = [], style, lang } = hit.data
+    const out = { ...res }
+    if (style !== S.prefs.style) delete out.summary
+    if (lang !== outLang()) {
+      delete out.summary
+      delete out.translated
+    }
+    if (out.translated && out.translated.length !== d.lines.length) delete out.translated
+    if (!Object.values(out).some(Boolean) && !chat.length) return false
+    S.res = { ...S.res, ...out }
+    if (chat.length) S.chat = chat
+    S.restored = hit.ts
+    return true
+  }
+  const ago = (ts) => {
+    const m = Math.max(0, Math.round((Date.now() - ts) / 60000))
+    if (m < 1) return '刚刚'
+    if (m < 60) return `${m} 分钟前`
+    if (m < 1440) return `${Math.round(m / 60)} 小时前`
+    return `${Math.round(m / 1440)} 天前`
+  }
+
+  // 正在进行的任务：关掉面板不取消，重开后接着等（清影那边会继续跑）
+  const JOB_FRESH = 25 * 60 * 1000
+  async function jobRecs() {
+    const all = await store.get('vsumJobs', {})
+    const now = Date.now()
+    return Object.fromEntries(Object.entries(all).filter(([, v]) => now - v.ts < JOB_FRESH))
+  }
+  async function setJobRec(tag, rec) {
+    const all = await jobRecs()
+    if (rec) all[tag] = rec
+    else delete all[tag]
+    await store.set('vsumJobs', all)
+  }
+
   /** 提交 → 轮询。cache 为 false 时不读不写缓存（问答、改写）。 */
   async function run(kind, extra = {}, cache = true) {
     await ensureReady()
@@ -227,34 +300,128 @@
     }
     const own = String(S.prefs.prompts?.[kind] || '').trim()
     const req = { kind, title: S.data.title, lang, style, lines: linesForReq(), ...(own ? { system: own } : {}), ...extra }
-    const result = await submit(req, kind)
+    const result = await submit(req, kind, key)
     if (key) putCache(key, result)
     return result
   }
 
   /** 提交一个任务并轮询到结束，返回结果；进度显示在面板顶部，可取消。 */
-  async function submit(req, kind) {
-    const sub = await send({ type: 'cc-ai-run', req })
-    if (!sub.ok) throw new Error(sub.error)
-    S.job = { id: sub.id, kind, done: 0, total: 0, note: '' }
+  async function submit(req, kind, tag = '') {
+    const page = S.data?.url || location.href
+    let id = 0
+    if (tag) {
+      // 上次关掉面板时这个任务还在跑：接上它，不再重新提交
+      const old = (await jobRecs())[tag]
+      if (old) {
+        const j = await send({ type: 'cc-ai-job', id: old.id })
+        if (j.ok && (j.state === 'running' || j.state === 'done')) id = old.id
+      }
+    }
+    if (!id) {
+      const sub = await send({ type: 'cc-ai-run', req })
+      if (!sub.ok) throw new Error(sub.error)
+      id = sub.id
+    }
+    if (tag) await setJobRec(tag, { id, kind, page, ts: Date.now() })
+    const job = { id, kind, tag, done: 0, total: 0, note: '' }
+    if (!S.job) S.job = job // 同时有多个后台任务时，进度条只显示最先开始的那个
     renderProgress()
+    let finished = false
     try {
       for (;;) {
         await new Promise((r) => setTimeout(r, 700))
-        const j = await send({ type: 'cc-ai-job', id: S.job.id })
+        if (S.closed) throw new Error('已取消')
+        const j = await send({ type: 'cc-ai-job', id })
         if (!j.ok) throw new Error(j.error)
-        S.job.done = j.done
-        S.job.total = j.total
-        S.job.note = j.note || ''
+        job.done = j.done
+        job.total = j.total
+        job.note = j.note || ''
         renderProgress()
-        if (j.state === 'done') return j.result
-        if (j.state === 'error') throw new Error(j.error || '失败了')
-        if (j.state === 'cancelled') throw new Error('已取消')
+        if (j.state === 'done') {
+          finished = true
+          return j.result
+        }
+        if (j.state === 'error') {
+          finished = true
+          throw new Error(j.error || '失败了')
+        }
+        if (j.state === 'cancelled') {
+          finished = true
+          throw new Error('已取消')
+        }
       }
+    } catch (e) {
+      finished = finished || !S.closed
+      throw e
     } finally {
-      S.job = null
-      renderProgress()
+      if (tag && finished) setJobRec(tag, null)
+      if (S.job === job) S.job = null
+      if (!S.closed) renderProgress()
     }
+  }
+
+  // ---------- 文稿来源：用清影解析出的字幕轨 / 音频转写，单选，后台执行 ----------
+
+  async function loadSources() {
+    const url = S.data?.url
+    if (S.srcLoading || S.src?.url === url) return
+    S.srcLoading = true
+    try {
+      const st = await send({ type: 'cc-ai-status' })
+      if (!st.ok) throw new Error(st.error)
+      S.status = st
+      const r = await submit({ kind: 'tracks', url, title: S.data.title }, 'tracks')
+      const seen = new Set()
+      const tracks = (r?.tracks || []).filter((t) => t.code && !seen.has(t.code) && seen.add(t.code))
+      S.src = { url, tracks, note: r?.note || '' }
+    } catch (e) {
+      S.src = { url, tracks: [], note: e.message === '已取消' ? '' : e.message }
+    } finally {
+      S.srcLoading = false
+      if (!S.closed) render()
+    }
+  }
+
+  /** 单选一个来源：字幕轨（语言代码）或 audio（取音频转写）。同一个视频同一个来源只做一次。 */
+  async function pickSource(v) {
+    if (!v) return
+    if (S.busy) return toast(ui, '上一个任务还在进行', true)
+    const audio = v === 'audio'
+    if (audio && S.status?.transcribe === false) return toast(ui, '清影里还没有配置语音转文字：到“设置 → AI”选择本机 whisper.cpp 或填写接口', true, 6000)
+    const url = S.data.url
+    const key = audio ? `stt:${url}` : `sub:${url}:${v}`
+    S.busy = true
+    render()
+    try {
+      let r = await cached(key)
+      if (!r) {
+        r = await submit(audio ? { kind: 'transcribe', url, title: S.data.title, track: 'audio' } : { kind: 'subtitles', url, title: S.data.title, track: v }, audio ? 'transcribe' : 'subtitles', key)
+        if (r?.lines?.length) putCache(key, r)
+      }
+      if (!r?.lines?.length) throw new Error(audio ? '没有识别出任何语音' : '这条字幕是空的')
+      setData({ ...S.data, lines: r.lines, durationMs: r.durationMs || S.data.durationMs || 0, track: r.track, noSubtitle: false, fetchFailed: false, note: '', trackUrl: '' })
+      toast(ui, `${audio ? '转写' : '字幕'}完成，共 ${r.lines.length} 句`)
+    } catch (e) {
+      if (!S.closed) toast(ui, e.message, true, 7000)
+    } finally {
+      S.busy = false
+      if (!S.closed) render()
+    }
+  }
+
+  /** auto：没有文稿时自动去查；已有文稿时只在点按钮后才查（不为了好看多打一次网站的请求）。 */
+  function sourcePicker(auto = true) {
+    if (!isVideo() || !/^https?:/.test(S.data?.url || '')) return null
+    if (S.src?.url !== S.data.url) {
+      if (!auto && !S.srcLoading) return h('div', { class: 'tools' }, h('button', { class: 'sec', text: '换一个文稿来源（字幕轨 / 音频转写）', onclick: () => ((S.wantSrc = true), loadSources()) }))
+      if (!S.recovering) loadSources()
+      return h('div', { class: 'mute', text: '正在查看这个视频有哪些字幕…' })
+    }
+    const opts = [['', '选择文稿来源…'], ...S.src.tracks.map((t) => [t.code, `字幕 · ${t.name}`]), ['audio', '音频转写（取音频，用 Whisper 转成文字）']]
+    return h('div', {},
+      h('div', { class: 'tools' }, h('span', { class: 'mute', text: '文稿来源' }), sel(opts, '', pickSource, '单选：有字幕就直接取字幕，没有就取音频转写；在后台进行，结果会缓存')),
+      !S.src.tracks.length && h('div', { class: 'mute', text: S.src.note ? `没有取到字幕列表：${S.src.note}` : '这个视频没有可用的在线字幕，可以选“音频转写”。' }),
+    )
   }
 
   /** 没有字幕：让清影取音频、用语音识别转成带时间的文稿，之后和有字幕的视频一样处理。 */
@@ -269,7 +436,7 @@
       const key = `tr:${url}`
       let r = await cached(key)
       if (!r) {
-        r = await submit({ kind: 'transcribe', url, title }, 'transcribe')
+        r = await submit({ kind: 'transcribe', url, title }, 'transcribe', key)
         if (r?.lines?.length) putCache(key, r)
       }
       if (!r?.lines?.length) throw new Error('没有识别出任何语音')
@@ -290,11 +457,13 @@
     render()
     try {
       apply(await run(kind, extra, cache))
+      S.restored = 0
+      persist()
     } catch (e) {
-      toast(ui, e.message, true, 5200)
+      if (!S.closed) toast(ui, e.message, true, 5200)
     } finally {
       S.busy = false
-      render()
+      if (!S.closed) render()
     }
   }
 
@@ -307,6 +476,7 @@
       { class: 'warn' },
       d?.note || '还没有文稿',
       d?.site === 'bilibili' && h('div', { class: 'mute', text: 'B 站的字幕（含 AI 字幕）需要登录后才能读到；登录后点上面的“重新读取”。' }),
+      sourcePicker(),
       h('div', { class: 'tools', style: 'margin-top:6px' },
         (d?.noSubtitle || d?.fetchFailed) && h('button', { text: '用清影转写（语音识别）', title: S.status?.transcribe === false ? '清影里还没有配置语音转文字' : '取视频的音频，在清影里转成文字后再总结', onclick: transcribeNow }),
         h('button', { class: 'sec', text: '导入字幕文件', onclick: importFile }),
@@ -331,7 +501,7 @@
     if (!/^https?:/.test(S.data?.url || location.href) || !d.lines.length) return
     const all = await store.get('vsumLocal', {})
     all[localKey()] = { ts: Date.now(), data: { name, lines: d.lines.map((l) => ({ t: l.t, text: l.text })) } }
-    await store.set('vsumLocal', V.pruneCache(all, 40, 4_000_000))
+    await store.set('vsumLocal', V.pruneCache(all, 40, 3_000_000))
     S.hasLocal = true
     toast(ui, '已记住这份字幕：下次这个视频读不到在线字幕时会自动使用', false, 4200)
     render()
@@ -357,6 +527,15 @@
       return
     }
     if (!d.url || !/^https?:/.test(d.url) || d.site === 'article' || !(d.noSubtitle || d.fetchFailed)) return
+    // 以前转写 / 取到过的文稿直接用，不再请求清影
+    for (const [key, name] of [[`tr:${d.url}`, '清影转写'], [`sub:${d.url}`, null]]) {
+      const old = await cached(key)
+      if (S.data !== d) return
+      if (old?.lines?.length) {
+        setData({ ...d, lines: old.lines, durationMs: old.durationMs || d.durationMs, track: name ? old.track || name : old.track, noSubtitle: false, note: '', trackUrl: '' })
+        return
+      }
+    }
     const st = await send({ type: 'cc-ai-status' })
     if (S.data !== d) return
     if (st.ok) S.status = st
@@ -364,7 +543,12 @@
       S.busy = true
       render()
       try {
-        const r = await submit({ kind: 'subtitles', url: d.url, title: d.title }, 'subtitles')
+        const skey = `sub:${d.url}`
+        let r = await cached(skey)
+        if (!r) {
+          r = await submit({ kind: 'subtitles', url: d.url, title: d.title }, 'subtitles', skey)
+          if (r?.lines?.length) putCache(skey, r)
+        }
         if (S.data !== d) return
         if (r?.lines?.length) {
           S.busy = false
@@ -423,7 +607,7 @@
     box.append(
       h('div', { class: 'tools' },
         sel(V.STYLES, S.prefs.style, (v) => ((S.prefs.style = v), savePrefs()), '摘要风格'),
-        h('input', { type: 'text', size: 8, placeholder: S.status?.lang || '输出语言', value: S.prefs.lang, title: '输出语言，留空用清影设置里的目标语言', onchange: (e) => ((S.prefs.lang = e.target.value), savePrefs()) }),
+        langSelect('输出语言：摘要、导图、卡片、问答都用这个语言写', () => {}),
         h('button', { text: r ? '重新生成' : '生成摘要', disabled: S.busy, onclick: () => task('summary', {}, (x) => (S.res.summary = x)) }),
       ),
     )
@@ -435,6 +619,7 @@
       box.append(h('div', { class: 'warn' }, `有 ${r.failed.length} 段没生成成功（从 ${r.failed.filter(Boolean).join('、') || '部分位置'} 起），摘要不完整。 `,
         r.failedRanges?.length ? h('button', { class: 'sec', text: '只补这几段', disabled: S.busy, onclick: () => retryFailed() }) : null))
     }
+    if (S.restored) box.append(h('div', { class: 'mute', text: `已保存的结果 · ${ago(S.restored)}生成，没有重新请求大模型` }))
     box.append(h('h4', { text: '总结' }), h('div', { class: 'card', text: r.summary }))
     if (r.keywords?.length) box.append(h('div', { class: 'chips' }, ...r.keywords.map((k) => h('span', { class: 'chip', text: k }))))
     if (r.points?.length) box.append(h('h4', { text: '要点' }), h('ul', {}, ...r.points.map((p) => h('li', {}, ...linkify(p)))))
@@ -493,7 +678,8 @@
       h('div', { class: 'tools' },
         S.detached && S.prefs.follow && isVideo() && h('button', { text: '回到当前句', onclick: () => ((S.detached = false), tick(true)) }),
         isVideo() && h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.follow, onchange: (e) => ((S.prefs.follow = e.target.checked), savePrefs()) }), ' 跟随播放'),
-        h('button', { class: 'sec', text: tr ? '重新翻译' : `翻译成${outLang()}`, disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
+        langSelect('翻译成哪种语言（任意语言互译，自动识别原文）', () => ((S.res.translated = null), render())),
+        h('button', { class: 'sec', text: tr ? '重新翻译' : outLabel() ? `翻译成${outLabel()}` : '翻译（自动方向）', disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
         tr && sel([['both', '双语'], ['orig', '只看原文'], ['tr', '只看译文']], mode, (v) => ((S.prefs.view = v), savePrefs(), render()), '显示'),
         h('button', { class: 'sec', text: d.raw ? '还原顺句前' : '顺句', title: d.raw ? '恢复识别出来的原样' : '给没有标点的字幕（自动识别）补标点、改同音错字，行数不变', disabled: S.busy, onclick: d.raw ? unpunctuate : punctuate }),
         h('button', { class: 'sec', text: '复制', onclick: () => copy(V.toTxt(d.lines), '文稿') }),
@@ -831,7 +1017,7 @@
         cite?.unsupported && h('div', { class: 'warn', text: '这条回答没有给出可核对的时间点，请当作参考，别全信。' }),
         cite?.bad && h('div', { class: 'warn', text: `有 ${cite.bad} 处时间点超出了文稿范围，已忽略。` }))))
     }
-    if (S.chat.length) box.append(h('div', { class: 'tools' }, h('button', { class: 'sec', text: '清空对话', onclick: () => ((S.chat = []), render()) }), h('button', { class: 'sec', text: '复制对话', onclick: () => copy(S.chat.map((m) => `${m.role === 'user' ? '问' : '答'}：${m.text}`).join('\n\n'), '对话') })))
+    if (S.chat.length) box.append(h('div', { class: 'tools' }, h('button', { class: 'sec', text: '清空对话', onclick: () => ((S.chat = []), persist(), render()) }), h('button', { class: 'sec', text: '复制对话', onclick: () => copy(S.chat.map((m) => `${m.role === 'user' ? '问' : '答'}：${m.text}`).join('\n\n'), '对话') })))
     return box
   }
 
@@ -881,9 +1067,10 @@
       h('div', { class: 'tools' },
         h('button', { class: 'sec', text: '备份设置和笔记', title: '不包含任何密钥', onclick: backup }),
         h('button', { class: 'sec', text: '恢复备份', onclick: restore }),
-        h('button', { class: 'sec', text: '清除摘要缓存', onclick: async () => (await store.set('vsumCache', {}), toast(ui, '已清除')) }),
+        h('button', { class: 'sec', text: '清除摘要缓存（含各视频已生成的内容）', onclick: async () => (await store.set('vsumCache', {}), await store.set('vsumSessions', {}), await store.set('vsumJobs', {}), (S.restored = 0), toast(ui, '已清除')) }),
         h('button', { class: 'sec', text: '删除全部笔记', disabled: !S.notes.length, onclick: async () => confirm(`确定删除全部 ${S.notes.length} 条笔记？`) && ((S.notes = []), await store.set('vsumNotes', []), render()) })),
       h('h4', { text: '没有字幕 / 想换文稿' }),
+      sourcePicker(!S.data.lines.length || !!S.wantSrc),
       h('div', { class: 'tools' },
         isVideo() && h('button', { class: 'sec', text: '用清影转写（语音识别）', onclick: transcribeNow }),
         isVideo() && h('button', { class: 'sec', text: '只把视频发给清影下载', onclick: sendForTranscribe }),
@@ -893,7 +1080,7 @@
         h('button', { class: 'sec', text: '总结选中的文字', onclick: () => loadArticleFromSelection() }),
       ),
       h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.autoOnline, onchange: (e) => ((S.prefs.autoOnline = e.target.checked), savePrefs()) }), ' 读不到字幕时，让清影从网站取在线字幕'),
-      h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.autoTranscribe, onchange: (e) => ((S.prefs.autoTranscribe = e.target.checked), savePrefs()) }), ' 还是没有时，自动取音频转写（耗时，可能用到接口额度）'),
+      h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.autoTranscribe, onchange: (e) => ((S.prefs.autoTranscribe = e.target.checked), savePrefs()) }), ' 没有字幕时，自动取音频转写（后台进行；耗时，用本机 Whisper 不花钱，用接口会占额度）'),
       h('textarea', { rows: 4, placeholder: '或者把文字稿 / 字幕粘贴到这里，再点“使用”', id: 'paste' }),
       h('div', { class: 'tools' }, h('button', { class: 'sec', text: '使用粘贴的文字', onclick: () => {
         const t = ui.root.getElementById('paste')?.value
@@ -1107,10 +1294,42 @@
     S.chat = []
     S.query = ''
     S.preview = null
+    S.restored = 0
     render()
-    // 同一份文稿以前算过的摘要直接带出来（不需要大模型）
-    const key = V.cacheKey(d.lines, 'summary', S.prefs.style, outLang())
-    if (d.lines.length) cached(key).then((hit) => hit && S.data === d && !S.res.summary && ((S.res.summary = hit), render()))
+    if (!d.lines.length) return
+    // 同一份文稿以前生成的所有结果和对话直接带出来（不需要大模型）；会话里没有的摘要再去缓存里找
+    restoreSession(d)
+      .then(async () => {
+        if (S.data !== d) return
+        if (!S.res.summary) {
+          const hit = await cached(V.cacheKey(d.lines, 'summary', S.prefs.style, outLang()))
+          if (hit && S.data === d && !S.res.summary) {
+            S.res.summary = hit
+            S.restored ||= Date.now()
+          }
+        }
+        render()
+        resumeJobs(d)
+      })
+      .catch(() => {})
+  }
+
+  const RESUME = {
+    summary: (x) => (S.res.summary = x),
+    mindmap: (x) => (S.res.outline = x.outline),
+    cards: (x) => (S.res.cards = x.cards),
+    quotes: (x) => (S.res.quotes = x.quotes),
+    translate: (x) => (S.res.translated = S.data.lines.map((_, i) => x.lines?.[i]?.text || '')),
+  }
+  /** 上次关面板时还在生成的东西：清影还在跑或已经跑完，接上取回来。 */
+  async function resumeJobs(d) {
+    const page = d.url || location.href
+    const recs = Object.values(await jobRecs()).filter((r) => r.page === page && RESUME[r.kind] && !S.res[{ summary: 'summary', mindmap: 'outline', cards: 'cards', quotes: 'quotes', translate: 'translated' }[r.kind]])
+    for (const r of recs) {
+      if (S.data !== d || S.busy) return
+      toast(ui, `接上上次没做完的${r.kind === 'summary' ? '摘要' : '任务'}…`)
+      await task(r.kind, {}, RESUME[r.kind])
+    }
   }
 
   async function start() {
@@ -1118,8 +1337,16 @@
     render()
     try {
       const d = await Src.load()
+      S.recovering = !d.lines.length // 先走“本地字幕 / 缓存 / 在线字幕 / 自动转写”，都没有结果再列字幕轨
       setData(d)
-      if (!d.lines.length) await recover(d)
+      try {
+        if (!d.lines.length) await recover(d)
+      } finally {
+        if (S.recovering) {
+          S.recovering = false
+          render()
+        }
+      }
     } catch (e) {
       setData({ title: document.title, url: location.href, site: 'html5', lines: [], chapters: [], tracks: [], note: `读取失败：${e.message}` })
     }
@@ -1129,7 +1356,9 @@
   function stop() {
     clearInterval(S.timer)
     document.removeEventListener('keydown', onKey, true)
-    if (S.job) send({ type: 'cc-ai-cancel', id: S.job.id })
+    // 正在生成的任务不取消：清影继续跑，重新打开后自动接上（要取消请点进度条上的“取消”）
+    S.closed = true
+    saveSession().catch(() => {})
     ui.remove()
     delete globalThis.__ccVsum
   }
@@ -1151,6 +1380,11 @@
   store.get('vsumPrefs', null).then((p) => {
     if (p) {
       S.prefs = { ...S.prefs, ...p }
+      // 0.10.3：没有字幕时默认自动取音频转写（以前默认关）。只改一次，之后用户怎么选就怎么算
+      if (!p.srcV) {
+        S.prefs.autoTranscribe = true
+        S.prefs.srcV = 1
+      }
       applyAppearance()
       S.tab = TABS.some(([id]) => id === p.tab) ? p.tab : 'summary'
     }

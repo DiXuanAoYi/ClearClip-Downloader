@@ -714,27 +714,107 @@ const FETCH_AUDIO_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 /// 只取一个网页视频的字幕（人工字幕和自动字幕都要），转成 SRT 放进 `dir`，返回 `(语言代码, 文件)`。
 /// 没有字幕时返回空列表，不算错误。
 pub async fn fetch_subtitles(ctx: &Ctx<'_>, page_url: &str, dir: &Path, canceled: impl Fn() -> bool) -> AppResult<Vec<(String, PathBuf)>> {
-    // 只要常用语言：原语言（YouTube 自动字幕的 xx-orig）、中文、英文。`all` 会让 YouTube 把
-    // 上百种机器翻译都请求一遍，很容易被限流（HTTP 429）。
-    match fetch_subtitles_langs(ctx, page_url, dir, SUB_LANGS, &canceled).await {
-        Err(e) if is_rate_limited(&e.to_string()) => {
-            // 被限流：歇几秒，只取最需要的原语言字幕再试一次
+    fetch_subtitles_for(ctx, page_url, dir, None, canceled).await
+}
+
+/// `track`：只取这一个语言代码（来自解析出的字幕轨，只请求一次）；`None` 时取常用语言。
+///
+/// 限流（HTTP 429）的应对：
+/// - 同一时刻只让一个字幕请求出去，两次之间至少隔几秒；
+/// - 先只请求原语言 / 中文 / 英文，没有再放宽；
+/// - 真的被限流后进入冷却，冷却期内不再发请求（继续发只会让封禁更久），直接告诉用户还要等多久。
+pub async fn fetch_subtitles_for(
+    ctx: &Ctx<'_>,
+    page_url: &str,
+    dir: &Path,
+    track: Option<&str>,
+    canceled: impl Fn() -> bool,
+) -> AppResult<Vec<(String, PathBuf)>> {
+    if let Some(left) = rate_limit_left() {
+        return Err(rate_limited_error(Some(left)));
+    }
+    let _gate = SUB_GATE.lock().await;
+    // 排队等待期间别人可能已经撞上限流
+    if let Some(left) = rate_limit_left() {
+        return Err(rate_limited_error(Some(left)));
+    }
+    wait_gap(&canceled).await?;
+    let first = match track {
+        Some(t) => t.to_string(),
+        None => SUB_LANGS_MIN.to_string(),
+    };
+    let mut result = fetch_subtitles_langs(ctx, page_url, dir, &first, &canceled).await;
+    mark_request();
+    if track.is_none() && matches!(&result, Ok(found) if found.is_empty()) {
+        // 原语言 / 中 / 英都没有：放宽到日韩等常用语言再试一次
+        wait_gap(&canceled).await?;
+        result = fetch_subtitles_langs(ctx, page_url, dir, SUB_LANGS, &canceled).await;
+        mark_request();
+    }
+    if let Err(e) = &result {
+        if is_rate_limited(&e.to_string()) {
+            // 歇几秒再试一次最需要的语言；还不行就冷却
             for _ in 0..16 {
                 if canceled() {
                     return Err(AppError::msg("canceled"));
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
-            fetch_subtitles_langs(ctx, page_url, dir, SUB_LANGS_MIN, &canceled).await.map_err(|e2| {
-                if is_rate_limited(&e2.to_string()) {
-                    AppError::new(ErrorKind::Network, "YouTube 暂时限制了字幕请求（HTTP 429 Too Many Requests）。请过几分钟再试，或在浏览器里登录 YouTube 后让扩展同步 Cookie，也可以用“用清影转写”。")
-                } else {
-                    e2
+            let retry = fetch_subtitles_langs(ctx, page_url, dir, track.unwrap_or(SUB_LANGS_MIN), &canceled).await;
+            mark_request();
+            return match retry {
+                Err(e2) if is_rate_limited(&e2.to_string()) => {
+                    start_cooldown();
+                    Err(rate_limited_error(rate_limit_left()))
                 }
-            })
+                other => other,
+            };
         }
-        other => other,
     }
+    result
+}
+
+static SUB_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static SUB_STATE: std::sync::Mutex<(Option<std::time::Instant>, Option<std::time::Instant>)> = std::sync::Mutex::new((None, None));
+/// 两次字幕请求之间至少隔多久。
+#[cfg(not(test))]
+const SUB_MIN_GAP: Duration = Duration::from_secs(4);
+#[cfg(test)]
+const SUB_MIN_GAP: Duration = Duration::from_millis(10);
+/// 被限流后多久内不再发字幕请求。
+const SUB_COOLDOWN: Duration = Duration::from_secs(10 * 60);
+
+fn mark_request() {
+    if let Ok(mut st) = SUB_STATE.lock() {
+        st.0 = Some(std::time::Instant::now());
+    }
+}
+fn start_cooldown() {
+    if let Ok(mut st) = SUB_STATE.lock() {
+        st.1 = Some(std::time::Instant::now() + SUB_COOLDOWN);
+    }
+}
+/// 还要冷却多久（没有在冷却时为 `None`）。
+pub fn rate_limit_left() -> Option<Duration> {
+    let until = SUB_STATE.lock().ok()?.1?;
+    until.checked_duration_since(std::time::Instant::now()).filter(|d| !d.is_zero())
+}
+async fn wait_gap(canceled: &impl Fn() -> bool) -> AppResult<()> {
+    loop {
+        let wait = SUB_STATE.lock().ok().and_then(|st| st.0).and_then(|last| SUB_MIN_GAP.checked_sub(last.elapsed()));
+        let Some(w) = wait.filter(|w| !w.is_zero()) else { return Ok(()) };
+        if canceled() {
+            return Err(AppError::msg("canceled"));
+        }
+        tokio::time::sleep(w.min(Duration::from_millis(500))).await;
+    }
+}
+fn rate_limited_error(left: Option<Duration>) -> AppError {
+    let tail = match left {
+        Some(d) => format!("清影已暂停请求字幕，约 {} 分钟后再试", d.as_secs().div_ceil(60)),
+        None => "请过几分钟再试".to_string(),
+    };
+    AppError::new(ErrorKind::RateLimited, format!("YouTube 暂时限制了字幕请求（HTTP 429 Too Many Requests）。{tail}；也可以在浏览器里登录 YouTube 后让扩展同步 Cookie，或改用“音频转写”。已取到过的字幕不受影响。"))
 }
 
 const SUB_LANGS: &str = ".*-orig,zh-Hans,zh-Hant,zh-CN,zh-TW,zh,en,en-US,en-GB,ja,ko,-live_chat,-danmaku";
@@ -1120,5 +1200,17 @@ mod rate_limit_tests {
         assert!(!is_rate_limited("HTTP Error 404"));
         assert!(!SUB_LANGS.contains("all"));
         assert!(SUB_LANGS.contains(".*-orig") && SUB_LANGS_MIN.contains(".*-orig"));
+    }
+}
+
+#[cfg(test)]
+mod throttle_tests {
+    use super::*;
+
+    #[test]
+    fn rate_limit_message_says_how_long_and_offers_alternatives() {
+        let msg = rate_limited_error(Some(Duration::from_secs(61))).to_string();
+        assert!(msg.contains("2 分钟") && msg.contains("429") && msg.contains("音频转写"), "{msg}");
+        assert!(rate_limited_error(None).to_string().contains("几分钟"));
     }
 }
