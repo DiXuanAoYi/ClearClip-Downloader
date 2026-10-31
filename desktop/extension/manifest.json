@@ -23,6 +23,8 @@
       "engines.js",
       "later.js",
       "capture-plan.js",
+      "trans-logic.js",
+      "bg-trans.js",
       "bg-link.js",
       "bg-capture.js",
       "bg-actions.js",
@@ -54,6 +56,12 @@
         "default": "Alt+Shift+S"
       },
       "description": "打开 / 关闭视频摘要面板"
+    },
+    "toggle-webtrans": {
+      "suggested_key": {
+        "default": "Alt+A"
+      },
+      "description": "翻译 / 还原当前网页"
     }
   },
   "browser_specific_settings": {

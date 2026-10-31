@@ -31,11 +31,11 @@ const plain = (v) => JSON.parse(JSON.stringify(v))
   assert.equal(plain(X('normalizeFeatures')({ floatButton: true, speed: 'yes', nope: true })).floatButton, true)
   assert.equal(plain(X('normalizeFeatures')({ speed: 'yes' })).speed, true) // 不是布尔值就用默认
   assert.equal('nope' in plain(X('normalizeFeatures')({ nope: true })), false)
-  // 默认只注册播放控制脚本
-  assert.deepEqual(plain(X('neededScripts')(undefined)), ['cc-video'])
-  assert.deepEqual(plain(X('neededScripts')({ floatButton: true, hoverZoom: true, unlock: true })), ['cc-float', 'cc-zoom', 'cc-video', 'cc-unlock'])
-  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false })), [])
-  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, videoTools: true })), ['cc-video'])
+  // 默认注册播放控制脚本和网页翻译脚本（悬停 / 划词 / 输入框三连空格）
+  assert.deepEqual(plain(X('neededScripts')(undefined)), ['cc-video', 'cc-trans'])
+  assert.deepEqual(plain(X('neededScripts')({ floatButton: true, hoverZoom: true, unlock: true })), ['cc-float', 'cc-zoom', 'cc-video', 'cc-trans', 'cc-unlock'])
+  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false })), [])
+  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, videoTools: true })), ['cc-video'])
 }
 
 // ---- 站点规则

@@ -491,6 +491,68 @@ async function loadSettings() {
   $('ruleEngines').value = engines || enginesToText(DEFAULT_ENGINES)
   renderSync()
   renderVideoCfg()
+  loadTransCfg()
+}
+
+// ---------- 网页翻译 ----------
+
+function fillLangs(sel, value) {
+  sel.innerHTML = ''
+  for (const l of ccTrans.LANGS) {
+    const o = document.createElement('option')
+    o.value = l.code
+    o.textContent = `${l.name}${l.name === l.en ? '' : ` · ${l.en}`}`
+    sel.append(o)
+  }
+  sel.value = value
+}
+
+async function saveTransCfg(patch) {
+  const { transCfg } = await api.storage.local.get('transCfg')
+  await api.storage.local.set({ transCfg: ccTrans.normalizeCfg({ ...ccTrans.normalizeCfg(transCfg), ...patch }) })
+}
+
+async function loadTransCfg() {
+  const { transCfg } = await api.storage.local.get('transCfg')
+  const c = ccTrans.normalizeCfg(transCfg)
+  for (const id of ['trTarget', 'trTarget2']) fillLangs($(id), c.target)
+  fillLangs($('trInputLang'), c.inputLang)
+  $('trMode').value = c.mode
+  $('trEngine').value = c.engine
+  $('trStyle').value = c.style
+  $('trHover').value = c.hover
+  $('trSelect').checked = c.select
+  $('trInput').checked = c.input
+  $('trLazy').checked = c.lazy
+  $('trSkip').checked = c.skipTarget
+  $('trAuto').value = c.auto.join('\n')
+  $('trNever').value = c.never.join('\n')
+}
+
+$('trTarget').onchange = async () => (await saveTransCfg({ target: $('trTarget').value }), ($('trTarget2').value = $('trTarget').value))
+$('trMode').onchange = () => saveTransCfg({ mode: $('trMode').value })
+$('startTrans').onclick = () => runOnPage('webtrans')
+$('saveTrans').onclick = async () => {
+  await saveTransCfg({
+    target: $('trTarget2').value,
+    engine: $('trEngine').value,
+    style: $('trStyle').value,
+    hover: $('trHover').value,
+    inputLang: $('trInputLang').value,
+    select: $('trSelect').checked,
+    input: $('trInput').checked,
+    lazy: $('trLazy').checked,
+    skipTarget: $('trSkip').checked,
+    auto: ccTrans.hostList($('trAuto').value),
+    never: ccTrans.hostList($('trNever').value),
+  })
+  await loadTransCfg()
+  msg('网页翻译设置已保存', 'ok')
+}
+$('clearTrCache').onclick = async (e) => {
+  e.preventDefault()
+  await api.runtime.sendMessage({ type: 'cc-tr-clear' }).catch(() => {})
+  msg('已清除翻译缓存', 'ok')
 }
 
 let videoCfgDraft = ccVideo.normalizeCfg()
@@ -683,6 +745,7 @@ async function init() {
   const f = await getFeatures()
   $('pageTools').classList.toggle('hidden', !f.onDemand)
   $('vsumTools').classList.toggle('hidden', !f.vsum)
+  $('transTools').classList.toggle('hidden', !f.webtrans)
   $('tabLater').classList.toggle('hidden', !(f.readLater && typeof renderLater === 'function'))
   await loadSettings()
   refreshLaterBadge()

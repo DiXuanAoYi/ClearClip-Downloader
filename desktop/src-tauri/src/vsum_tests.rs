@@ -382,3 +382,25 @@ fn disk_cache_ignores_tracking_params_and_keeps_tracks_apart() {
     assert_eq!(cache_lookup(&dir, url, false, "audio").unwrap()["lines"][0]["text"], "转写");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn web_translation_targets_any_language_and_keeps_indexes() {
+    let base = mock(Arc::new(|p| {
+        // 系统提示词里要写明目标语言，且告诉模型“已经是目标语言就原样返回”
+        assert!(p.contains("Japanese") && p.contains("already in"), "{p}");
+        let user = p.split("=====\n").nth(1).unwrap_or("[]");
+        let src: Vec<String> = serde_json::from_str(user).unwrap_or_default();
+        serde_json::to_string(&src.iter().map(|s| format!("訳:{s}")).collect::<Vec<_>>()).unwrap()
+    }))
+    .await;
+    let r = Req {
+        kind: "webtrans".into(),
+        lang: "Japanese".into(),
+        lines: vec![Line { t: 0, text: "Hello".into() }, Line { t: 7, text: "你好".into() }],
+        ..Default::default()
+    };
+    assert!(check(&r).is_ok());
+    let v = run(&base, &r).await.unwrap();
+    assert_eq!(v["lines"], json!([{"t": 0, "text": "訳:Hello"}, {"t": 7, "text": "訳:你好"}]));
+    assert!(check(&Req { kind: "webtrans".into(), ..Default::default() }).is_err(), "没有文字");
+}

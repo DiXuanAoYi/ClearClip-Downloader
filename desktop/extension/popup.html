@@ -40,6 +40,13 @@
       <div id="vsumTools" class="rowBtns">
         <button id="startVsum" class="sec">视频摘要 / 总结（Alt+Shift+S）</button>
       </div>
+      <div id="transTools">
+        <div class="rowBtns"><button id="startTrans" class="sec">翻译此页面 / 还原（Alt+A）</button></div>
+        <div class="rowBtns">
+          <div class="col"><label>翻译成</label><select id="trTarget"></select></div>
+          <div class="col"><label>显示</label><select id="trMode"><option value="bilingual">双语对照</option><option value="replace">只显示译文</option></select></div>
+        </div>
+      </div>
       <label class="row"><input id="tkOn" type="checkbox" /> 接管浏览器下载（默认关闭）</label>
       <div id="tkInfo" class="mute"></div>
       <div id="recentBox" class="hidden">
@@ -134,6 +141,29 @@
     <div id="featureList"></div>
     <label class="row"><input id="notifyDone" type="checkbox" /> 下载完成时弹出通知</label>
 
+    <h2>网页翻译</h2>
+    <p class="mute">整页双语对照、单击 Ctrl 翻译鼠标指着的段落、选中文字点“译”、输入框里连按三次空格翻译。只翻译看得见的段落，翻过的内容会缓存在本机。</p>
+    <label>翻译引擎</label>
+    <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option></select>
+    <div class="rowBtns">
+      <div class="col"><label>目标语言</label><select id="trTarget2"></select></div>
+      <div class="col"><label>译文样式</label><select id="trStyle"><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>
+    </div>
+    <div class="rowBtns">
+      <div class="col"><label>悬停翻译（单击此键）</label><select id="trHover"><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="off">关闭</option></select></div>
+      <div class="col"><label>输入框翻译成</label><select id="trInputLang"></select></div>
+    </div>
+    <label class="row"><input id="trSelect" type="checkbox" /> 选中文字后显示“译”按钮</label>
+    <label class="row"><input id="trInput" type="checkbox" /> 输入框里连按三次空格，翻译成上面的语言</label>
+    <label class="row"><input id="trLazy" type="checkbox" /> 只翻译看得见（和快要看见）的段落</label>
+    <label class="row"><input id="trSkip" type="checkbox" /> 本来就是目标语言的段落 / 页面不翻译</label>
+    <label>打开就自动翻译的网站（每行一个，含子域名）</label>
+    <textarea id="trAuto" placeholder="example.com"></textarea>
+    <label>永远不翻译的网站</label>
+    <textarea id="trNever"></textarea>
+    <button id="saveTrans">保存网页翻译设置</button>
+    <a id="clearTrCache" class="lnk" href="#">清除翻译缓存</a>
+
     <h2>播放增强快捷键</h2>
     <p class="mute">鼠标指着的视频优先，其次是正在播放的。在输入框里打字时不会触发。点输入框后按一个键即可修改。</p>
     <div id="videoKeys"></div>
@@ -178,6 +208,7 @@
   <div id="msg"></div>
   <script src="shared.js"></script>
   <script src="features.js"></script>
+  <script src="trans-logic.js"></script>
   <script src="clean-link.js"></script>
   <script src="progress.js"></script>
   <script src="takeover.js"></script>

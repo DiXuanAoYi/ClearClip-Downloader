@@ -130,7 +130,10 @@
     },
   }
   const savePrefs = () => store.set('vsumPrefs', { ...S.prefs, tab: S.tab })
-  const outLang = () => S.prefs.lang.trim() || S.status?.lang || '中文'
+  const TL = globalThis.ccTrans
+  /** 写进请求的输出语言（提示词里的名字）；留空 = 清影设置里的目标语言（中文视频的翻译默认译成英文）。 */
+  const outLang = () => (S.prefs.lang.trim() ? TL.promptName(S.prefs.lang) : S.status?.lang || '中文')
+  const outLabel = () => (S.prefs.lang.trim() ? TL.nameOf(TL.LANGS.find((l) => l.en === TL.promptName(S.prefs.lang))?.code || S.prefs.lang.trim()) : '')
   const video = () => [...document.querySelectorAll('video')].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0] || null
   const isVideo = () => S.data && S.data.site !== 'article' && S.data.site !== 'manual'
 
@@ -179,6 +182,14 @@
     s.value = value
     s.onchange = () => onchange(s.value)
     return s
+  }
+
+  /** 输出 / 翻译语言下拉：自动 + 常用的几十种语言；以前手填的别的写法也保留成一项。 */
+  function langSelect(title, after) {
+    const known = TL.LANGS.some((l) => l.code === S.prefs.lang)
+    const opts = [['', `自动（${S.status?.lang || '中文'}；中文视频译成英文）`], ...TL.LANGS.map((l) => [l.code, l.name])]
+    if (S.prefs.lang && !known) opts.push([S.prefs.lang, S.prefs.lang])
+    return sel(opts, S.prefs.lang, (v) => ((S.prefs.lang = v), savePrefs(), after?.()), title)
   }
 
   // ---------- 与清影通信 ----------
@@ -596,7 +607,7 @@
     box.append(
       h('div', { class: 'tools' },
         sel(V.STYLES, S.prefs.style, (v) => ((S.prefs.style = v), savePrefs()), '摘要风格'),
-        h('input', { type: 'text', size: 8, placeholder: S.status?.lang || '输出语言', value: S.prefs.lang, title: '输出语言，留空用清影设置里的目标语言', onchange: (e) => ((S.prefs.lang = e.target.value), savePrefs()) }),
+        langSelect('输出语言：摘要、导图、卡片、问答都用这个语言写', () => {}),
         h('button', { text: r ? '重新生成' : '生成摘要', disabled: S.busy, onclick: () => task('summary', {}, (x) => (S.res.summary = x)) }),
       ),
     )
@@ -667,7 +678,8 @@
       h('div', { class: 'tools' },
         S.detached && S.prefs.follow && isVideo() && h('button', { text: '回到当前句', onclick: () => ((S.detached = false), tick(true)) }),
         isVideo() && h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.follow, onchange: (e) => ((S.prefs.follow = e.target.checked), savePrefs()) }), ' 跟随播放'),
-        h('button', { class: 'sec', text: tr ? '重新翻译' : `翻译成${outLang()}`, disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
+        langSelect('翻译成哪种语言（任意语言互译，自动识别原文）', () => ((S.res.translated = null), render())),
+        h('button', { class: 'sec', text: tr ? '重新翻译' : outLabel() ? `翻译成${outLabel()}` : '翻译（自动方向）', disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
         tr && sel([['both', '双语'], ['orig', '只看原文'], ['tr', '只看译文']], mode, (v) => ((S.prefs.view = v), savePrefs(), render()), '显示'),
         h('button', { class: 'sec', text: d.raw ? '还原顺句前' : '顺句', title: d.raw ? '恢复识别出来的原样' : '给没有标点的字幕（自动识别）补标点、改同音错字，行数不变', disabled: S.busy, onclick: d.raw ? unpunctuate : punctuate }),
         h('button', { class: 'sec', text: '复制', onclick: () => copy(V.toTxt(d.lines), '文稿') }),

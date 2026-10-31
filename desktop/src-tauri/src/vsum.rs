@@ -423,7 +423,7 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 15] = [
+    const KINDS: [&str; 16] = [
         "summary",
         "mindmap",
         "cards",
@@ -439,6 +439,7 @@ pub fn check(req: &Req) -> AppResult<()> {
         "punctuate",
         "note",
         "refine",
+        "webtrans",
     ];
     if !KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::invalid("不支持的类型"));
@@ -447,7 +448,7 @@ pub fn check(req: &Req) -> AppResult<()> {
     if size > MAX_CHARS {
         return Err(AppError::invalid("内容太长，超过了一次能处理的上限。"));
     }
-    let needs_lines = matches!(req.kind.as_str(), "summary" | "mindmap" | "cards" | "quotes" | "ask" | "translate" | "punctuate");
+    let needs_lines = matches!(req.kind.as_str(), "summary" | "mindmap" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
     if needs_lines && req.lines.iter().all(|l| l.text.trim().is_empty()) {
         return Err(AppError::invalid("没有可处理的字幕。"));
     }
@@ -561,6 +562,16 @@ fn punctuate_system() -> String {
 }
 
 /// 自定义提示词优先，留空用内置的。
+/// 网页翻译的提示词：源语言自动识别，任意语言互译；保护网址、代码、数字、`{{n}}` 这类占位符。
+pub fn webtrans_system(lang: &str) -> String {
+    format!(
+        "You are a professional web page translator. Translate every text in the user's JSON array into {lang}; detect the source language of each text yourself, it may differ between texts. \
+         Rules: (1) Reply with ONE JSON array only, no commentary and no code fences. (2) The array must have exactly the same number of strings, in the same order; never merge or split. \
+         (3) If a text is already in {lang}, or is only a name, number, URL, code or symbol, return it unchanged. (4) Keep URLs, e-mail addresses, code, numbers, units, emoji and placeholders such as {{{{1}}}} exactly as they are, \
+         and keep placeholders in a natural position. (5) Translate fluently like a native writer of {lang}, keep terminology consistent; no explanations. (6) A line break inside a text is written as \\n and must stay as \\n."
+    )
+}
+
 fn pick_system(req: &Req, built_in: String) -> String {
     let own = req.system.trim();
     if own.is_empty() {
@@ -965,6 +976,20 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
                 target.to_string()
             };
             let t = ai::translate_cues(ep, model, &target, &cues, batch, progress).await?;
+            let out: Vec<Value> =
+                cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
+            Ok(json!({"lines": out, "failed": t.failed}))
+        }
+        "webtrans" => {
+            // 网页段落 / 划词 / 输入框翻译：行号当时间，译文按行号对回去；本来就是目标语言的段落原样返回
+            let cues: Vec<Cue> = req
+                .lines
+                .iter()
+                .filter(|l| !l.text.trim().is_empty())
+                .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
+                .collect();
+            let system = pick_system(req, webtrans_system(lang));
+            let t = ai::map_cues(ep, model, &system, &cues, batch.max(8), progress).await?;
             let out: Vec<Value> =
                 cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
             Ok(json!({"lines": out, "failed": t.failed}))

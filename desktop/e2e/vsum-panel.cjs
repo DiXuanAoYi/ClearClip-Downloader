@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'vsum-logic.js', 'content/vsum-source.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
+const FILES = ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -203,9 +203,27 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       i.dispatchEvent(new Event('input'))
     })
     await settle(page, 300)
-    await clickText(page, '翻译成中文')
+    await clickText(page, '翻译（自动方向）')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('译:Welcome')), null, { timeout: 8000 })
     ok('翻译后每行下方有译文', true)
+
+    // 任意语言互译：下拉里选日语，请求里带的是 Japanese
+    const langs = await page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).filter((x) => [...x.options].some((o) => o.value === 'ja')).map((x) => x.options.length))
+    ok('翻译语言下拉里有三十多种语言', langs.length > 0 && langs[0] >= 30, JSON.stringify(langs))
+    await page.evaluate(() => {
+      const sel = window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).find((x) => [...x.options].some((o) => o.value === 'ja'))
+      sel.value = 'ja'
+      sel.dispatchEvent(new Event('change'))
+    })
+    await clickText(page, '翻译成日本語')
+    await page.waitForFunction(() => window.__calls.some((c) => c.type === 'cc-ai-run' && c.req.kind === 'translate' && c.req.lang === 'Japanese'), null, { timeout: 8000 })
+    ok('选日语后请求带 lang=Japanese', true)
+    await page.waitForFunction(() => window.__roots.every((r) => !r.querySelector('.panel button[disabled]')), null, { timeout: 8000 })
+    await page.evaluate(() => {
+      const sel = window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).find((x) => [...x.options].some((o) => o.value === 'ja'))
+      sel.value = ''
+      sel.dispatchEvent(new Event('change'))
+    })
 
     // 导图
     await clickText(page, '导图')
