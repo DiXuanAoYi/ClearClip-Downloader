@@ -162,16 +162,27 @@ pub async fn translate_cues(
     batch: usize,
     ctx: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
 ) -> AppResult<Translated> {
+    map_cues(ep, model, &translate_system(lang), cues, batch, ctx).await
+}
+
+/// 同一套“一批进、一批出、对不上就拆”的流程，系统提示词由调用方给（翻译、顺句都用它）。
+pub async fn map_cues(
+    ep: &Endpoint,
+    model: &str,
+    system: &str,
+    cues: &[Cue],
+    batch: usize,
+    ctx: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
+) -> AppResult<Translated> {
     let texts: Vec<String> = cues.iter().map(|c| c.lines.join("\n")).collect();
     let mut out: Vec<Option<String>> = vec![None; texts.len()];
     let mut queue: VecDeque<(usize, usize)> = (0..texts.len()).step_by(batch.max(1)).map(|s| (s, (s + batch.max(1)).min(texts.len()))).collect();
-    let system = translate_system(lang);
     let mut done = 0usize;
     let mut failed = 0usize;
     while let Some((a, b)) = queue.pop_front() {
         ctx(done, texts.len())?;
         let user = serde_json::to_string(&texts[a..b])?;
-        let resp = chat(ep, model, &system, &user).await;
+        let resp = chat(ep, model, system, &user).await;
         let parsed = match resp {
             Ok(r) => parse_array(&r, b - a),
             Err(e) if matches!(e.kind, ErrorKind::NeedLogin | ErrorKind::Invalid | ErrorKind::RateLimited | ErrorKind::Network) => return Err(e),
