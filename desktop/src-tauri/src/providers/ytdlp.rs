@@ -817,8 +817,8 @@ fn rate_limited_error(left: Option<Duration>) -> AppError {
     AppError::new(ErrorKind::RateLimited, format!("YouTube 暂时限制了字幕请求（HTTP 429 Too Many Requests）。{tail}；也可以在浏览器里登录 YouTube 后让扩展同步 Cookie，或改用“音频转写”。已取到过的字幕不受影响。"))
 }
 
-const SUB_LANGS: &str = ".*-orig,zh-Hans,zh-Hant,zh-CN,zh-TW,zh,en,en-US,en-GB,ja,ko,-live_chat,-danmaku";
-const SUB_LANGS_MIN: &str = ".*-orig,zh-Hans,zh,en,-live_chat,-danmaku";
+const SUB_LANGS: &str = ".*-orig,ai-.*,zh-Hans,zh-Hant,zh-CN,zh-TW,zh,en,en-US,en-GB,ja,ko,-live_chat,-danmaku";
+const SUB_LANGS_MIN: &str = ".*-orig,ai-.*,zh-Hans,zh,en,-live_chat,-danmaku";
 
 fn is_rate_limited(text: &str) -> bool {
     let t = text.to_ascii_lowercase();
@@ -1200,6 +1200,8 @@ mod rate_limit_tests {
         assert!(!is_rate_limited("HTTP Error 404"));
         assert!(!SUB_LANGS.contains("all"));
         assert!(SUB_LANGS.contains(".*-orig") && SUB_LANGS_MIN.contains(".*-orig"));
+        // B 站的 AI 字幕语言码是 ai-zh、ai-en 这类
+        assert!(SUB_LANGS.contains("ai-.*") && SUB_LANGS_MIN.contains("ai-.*"));
     }
 }
 

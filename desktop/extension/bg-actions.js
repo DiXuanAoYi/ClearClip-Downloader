@@ -132,7 +132,10 @@ const HANDLERS = {
     const list = arrangeSniffed(await getSniffed(sender.tab.id)).filter((x) => x.kind !== 'image')
     return { items: list.map((x) => ({ url: x.url, kind: x.kind, label: sniffLabel(x) })) }
   },
-  'cc-send-page': async (_m, sender) => ({ pairing: await sendText(await tidyUrl(sender.tab.url)) }),
+  'cc-send-page': async (_m, sender) => {
+    await firstTimeSync(sender.tab.url)
+    return { pairing: await sendText(await tidyUrl(sender.tab.url)) }
+  },
   'cc-send-media': async (m, sender) => ({ pairing: await sendText(sniffedPayload({ url: String(m.url) }, sender.tab.url, sender.tab.title)) }),
   'cc-send-batch': async (m, sender) => {
     const r = await sendBatch(Array.isArray(m.items) ? m.items : [], sender.tab)
@@ -175,6 +178,14 @@ const HANDLERS = {
   },
   // 视频摘要：面板把请求交给清影（本机），由清影调用设置里的大模型；长任务提交后轮询
   'cc-ai-status': async () => ({ ...(await call('/api/v1/ai/status')) }),
+  // 页面里直接取字幕文件被跨域规则拦住时，由后台代取（只允许 B 站的字幕域名，只读，不带 Cookie）
+  'cc-fetch-sub': async (m) => {
+    const u = new URL(String(m.url || '').replace(/^\/\//, 'https://').replace(/^http:/, 'https:'))
+    if (!/(^|\.)(hdslb\.com|bilibili\.com|biliapi\.net)$/.test(u.hostname)) throw new Error('不支持的地址')
+    const r = await fetch(u.href, { credentials: 'omit' })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return { text: await r.text() }
+  },
   'cc-ai-run': async (m) => ({ ...(await call('/api/v1/ai/run', m.req && typeof m.req === 'object' ? m.req : {})) }),
   'cc-ai-job': async (m) => ({ ...(await call(`/api/v1/ai/job?id=${encodeURIComponent(String(m.id))}`)) }),
   'cc-ai-cancel': async (m) => ({ ...(await call(`/api/v1/ai/cancel?id=${encodeURIComponent(String(m.id))}`, {})) }),

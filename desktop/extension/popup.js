@@ -843,8 +843,9 @@ $('send').onclick = async () => {
   if (!tab?.url?.startsWith('http')) return msg('当前页面不能发送', 'err')
   msg('发送中…')
   try {
+    const synced = await firstTimeSync(tab.url)
     const r = await sendUrl(await tidyUrl(tab.url))
-    msg(r.state === 'pending_pair' ? '第一次使用：请在电脑上点“允许”完成配对' : '已发送，清影会开始解析下载', 'ok')
+    msg(r.state === 'pending_pair' ? '第一次使用：请在电脑上点“允许”完成配对' : (synced ? `已发送，并首次同步了 ${synced.count} 个 Cookie（${synced.site}）` : '已发送，清影会开始解析下载'), 'ok')
   } catch (e) {
     msg(e.message, 'err')
   }
