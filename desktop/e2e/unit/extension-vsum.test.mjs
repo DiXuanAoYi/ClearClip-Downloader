@@ -205,4 +205,18 @@ assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: 
   assert.deepEqual(plain(V.pruneCache(undefined)), {})
 }
 
+// ---- timedtext XML、视频键
+{
+  const a = V.parseTimedTextXml('<?xml version="1.0"?><transcript><text start="1.5" dur="2">Hi &amp; bye</text><text start="4" dur="1">&#39;ok&#39;</text></transcript>')
+  assert.deepEqual(plain(a), [{ t: 1500, end: 3500, text: 'Hi & bye' }, { t: 4000, end: 5000, text: "'ok'" }])
+  const b = V.parseTimedTextXml('<timedtext><body><p t="1200" d="3000">你好<s>世界</s></p></body></timedtext>')
+  assert.deepEqual(plain(b), [{ t: 1200, end: 4200, text: '你好世界' }])
+  assert.deepEqual(plain(V.parseTimedTextXml('')), [])
+  assert.equal(V.videoKey('https://www.youtube.com/watch?v=abc123&t=5s#x'), 'youtube:abc123')
+  assert.equal(V.videoKey('https://youtu.be/abc123?si=1'), 'youtube:abc123')
+  assert.equal(V.videoKey('https://www.bilibili.com/video/BV1xx?p=3'), 'bilibili:BV1xx:p3')
+  assert.equal(V.videoKey('https://www.bilibili.com/video/BV1xx'), 'bilibili:BV1xx')
+  assert.equal(V.videoKey('https://site.test/play/1?a=b#frag'), 'url:https://site.test/play/1?a=b')
+}
+
 console.log('extension-vsum: ok')

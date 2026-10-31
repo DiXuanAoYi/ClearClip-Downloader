@@ -28,7 +28,8 @@
 | 其他网站的播放器 | 读取 `<video>` 的字幕轨（`<track>`） |
 | 手动 | 导入 .srt / .vtt / .txt，或粘贴文字稿 |
 | 没有视频的网页 | 选中的文字，或正文 |
-| 没有字幕的视频 | 面板提供“用清影转写（语音识别）”：清影用 yt-dlp 只取这个视频的音频，再用“设置 → AI”里配好的语音转文字（本机 whisper.cpp 或兼容 OpenAI 的接口）转成带时间的文稿，随后和有字幕的视频一样总结。进度显示在面板里，可取消；清影的任务列表里也看得到。转写结果会缓存，同一个视频不用再转 |
+| 页面里读不到字幕 | 读取顺序固定：① 页面上的在线字幕（YouTube 依次试 json3 / vtt / 原始 XML，字幕地址返回空内容时不再报 JSON 错误）→ ② 你以前为这个视频导入 / 粘贴并“记住”的本地字幕（只在在线字幕读不到时才用，在线的永远优先）→ ③ 让清影用 yt-dlp 从网站取在线字幕（`kind: "subtitles"`，快、不花钱，默认开）→ ④ 取音频转写（默认需要点按钮，可在“更多”里勾选自动）。本地字幕按视频编号（YouTube / B 站 BV 号 + 分 P）保存在扩展本地，最多 40 条、约 4 MB，可随时“忘记” |
+| 没有字幕的视频 | 面板提供“用清影转写（语音识别）”：清影用 yt-dlp 只取这个视频的音频，再用“设置 → AI”里配好的语音转文字（本机 whisper.cpp 或兼容 OpenAI 的接口）转成带时间的文稿，清影会先尝试取网站自带的在线字幕，没有才取音频转写，随后和有字幕的视频一样总结。进度显示在面板里，可取消；清影的任务列表里也看得到。转写结果会缓存，同一个视频不用再转 |
 
 ## 数据流与隐私
 
@@ -47,7 +48,8 @@
 
 | 接口 | 作用 |
 |---|---|
-| `GET /api/v1/ai/status` | 是否已设置模型、目标语言、能否转写、文稿长度上限（60 万字符） |
+| `GET /api/v1/ai/status` | 是否已设置模型、目标语言、能否转写（`transcribe`）、能否取在线字幕（`subtitles`，需要 yt-dlp）、文稿长度上限（60 万字符） |
+| `POST /api/v1/ai/run` 的 `kind: "subtitles"` | 只用 yt-dlp 取网站的在线字幕（人工 / 自动，转成 SRT 后解析），取不到返回空文稿；`kind: "transcribe"` 也是先取字幕、没有才转写，结果里的 `source` 是 `subtitles` 或 `whisper` |
 | `POST /api/v1/ai/run` | 提交任务，返回 `{id}`。body：`kind`（summary / mindmap / cards / quotes / ask / translate / rewrite）、`title`、`lang`、`style`、`format`、`lines[{t,text}]`、`text`、`question`、`history` |
 | `GET /api/v1/ai/job?id=` | 轮询：`{state, done, total, result, error}` |
 | `POST /api/v1/ai/cancel?id=` | 取消 |

@@ -36,6 +36,26 @@
     return out
   }
 
+  /** YouTube 的 timedtext XML：<text start="1.2" dur="3">…</text>，或 srv3 的 <p t="1200" d="3000">…</p>。 */
+  function parseTimedTextXml(xml) {
+    const out = []
+    const clean = (s) => decodeEntities(String(s).replace(/<[^>]*>/g, '')).replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/\s+/g, ' ').trim()
+    for (const m of String(xml).matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/g)) {
+      const start = m[1].match(/start="([\d.]+)"/)
+      const dur = m[1].match(/dur="([\d.]+)"/)
+      const text = clean(m[2])
+      if (start && text) out.push({ t: Math.round(Number(start[1]) * 1000), end: Math.round((Number(start[1]) + Number(dur?.[1] || 0)) * 1000), text })
+    }
+    if (out.length) return out
+    for (const m of String(xml).matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/g)) {
+      const t = m[1].match(/\bt="(\d+)"/)
+      const d = m[1].match(/\bd="(\d+)"/)
+      const text = clean(m[2])
+      if (t && text) out.push({ t: Number(t[1]), end: Number(t[1]) + Number(d?.[1] || 0), text })
+    }
+    return out
+  }
+
   /** 哔哩哔哩的字幕 JSON：{body:[{from,to,content}]}（秒） */
   function parseBilibili(data) {
     const out = []
@@ -159,6 +179,19 @@
       if (m) return { site: 'bilibili', id: m[1], part: Number(u.searchParams.get('p')) || 1 }
     }
     return null
+  }
+
+  /** 用来记住“这个视频”的键：YouTube / B 站按视频编号（B 站带分 P），其他按去掉锚点的网址。 */
+  function videoKey(href) {
+    const v = videoIdOf(href)
+    if (v) return `${v.site}:${v.id}${v.part > 1 ? `:p${v.part}` : ''}`
+    try {
+      const u = new URL(href)
+      u.hash = ''
+      return `url:${u.href}`
+    } catch {
+      return `url:${href}`
+    }
   }
 
   /** 带时间的链接：点一下能从那一刻开始看。 */
@@ -530,7 +563,7 @@
 
   globalThis.ccVsum = {
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
-    videoIdOf, timeLink, sliceJson, parseYouTubePage, pickTrack, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
+    videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
     searchLines, lineAt, chapterAt, toMarkdown, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
   }
 })()

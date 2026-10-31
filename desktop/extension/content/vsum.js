@@ -39,10 +39,20 @@
     .ask { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid #e3e6e3; }
     .ask input { flex: 1; }
     .svgbox { overflow: auto; border: 1px solid #e3e6e3; border-radius: 8px; background: #fff; max-height: 55vh; }
+    .svgbox svg { display: block; width: 100%; height: auto; cursor: zoom-in; }
+    .mapview { inset: 0; display: flex; flex-direction: column; background: #fbfaf8; color: #1d2420; }
+    .mapview .bar2 { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid #e3e6e3; flex-wrap: wrap; }
+    .mapview .bar2 b { flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mapview .stage { flex: 1; overflow: hidden; position: relative; cursor: grab; touch-action: none; background: #fff; }
+    .mapview .stage.drag { cursor: grabbing; }
+    .mapview .stage > svg { position: absolute; left: 0; top: 0; transform-origin: 0 0; max-width: none; }
+    .mapview .hint { font-size: 12px; color: #5d6862; padding: 4px 10px; }
     h4 { margin: 10px 0 4px; font-size: 13px; }
     ul { margin: 4px 0; padding-left: 18px; }
     @media (prefers-color-scheme: dark) {
-      .panel { background: #1d2420; color: #eef1ee; border-left-color: #3a443e; }
+      .panel, .mapview { background: #1d2420; color: #eef1ee; border-left-color: #3a443e; }
+      .mapview .stage { background: #1d2420; }
+      .mapview .bar2 { border-color: #3a443e; }
       .hd, .meta, .tabs, .ask { border-color: #3a443e; }
       .card, .msg .b, select, input[type=text], textarea { background: #262f2a; border-color: #3a443e; color: #eef1ee; }
       button.sec { background: #262f2a; color: #eef1ee; border-color: #3a443e; }
@@ -56,7 +66,7 @@
     data: null, // 当前文稿：{ title, url, lines, chapters, tracks, ... }
     tab: 'summary',
     status: null, // 清影的状态：{ ready, model, lang, transcribe, maxChars }
-    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary' },
+    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: false },
     res: {}, // 本次的结果：summary / outline / cards / quotes / translated / rewrite
     chat: [],
     job: null, // { id, kind, done, total }
@@ -266,7 +276,7 @@
       { class: 'warn' },
       d?.note || '还没有文稿',
       h('div', { class: 'tools', style: 'margin-top:6px' },
-        d?.noSubtitle && h('button', { text: '用清影转写（语音识别）', title: S.status?.transcribe === false ? '清影里还没有配置语音转文字' : '取视频的音频，在清影里转成文字后再总结', onclick: transcribeNow }),
+        (d?.noSubtitle || d?.fetchFailed) && h('button', { text: '用清影转写（语音识别）', title: S.status?.transcribe === false ? '清影里还没有配置语音转文字' : '取视频的音频，在清影里转成文字后再总结', onclick: transcribeNow }),
         h('button', { class: 'sec', text: '导入字幕文件', onclick: importFile }),
         h('button', { class: 'sec', text: '粘贴文字', onclick: () => (S.tab = 'more') && render() }),
       ),
@@ -278,12 +288,76 @@
     toast(ui, r.ok ? (r.pairing ? '请在电脑上允许配对' : '已发送。下载完成后在清影的媒体库里点“转写”，再回来用文字稿') : r.error, !r.ok, 5200)
   }
 
+  // ---------- 记住本地导入的字幕：在线字幕读不到时再用，在线的永远优先 ----------
+
+  const localKey = () => V.videoKey(S.data?.url || location.href)
+  async function savedLocal() {
+    return (await store.get('vsumLocal', {}))[localKey()]?.data || null
+  }
+  async function rememberLocal(name, d) {
+    if (!isVideo() && d.site !== 'manual') return
+    if (!/^https?:/.test(S.data?.url || location.href) || !d.lines.length) return
+    const all = await store.get('vsumLocal', {})
+    all[localKey()] = { ts: Date.now(), data: { name, lines: d.lines.map((l) => ({ t: l.t, text: l.text })) } }
+    await store.set('vsumLocal', V.pruneCache(all, 40, 4_000_000))
+    S.hasLocal = true
+    toast(ui, '已记住这份字幕：下次这个视频读不到在线字幕时会自动使用', false, 4200)
+    render()
+  }
+  async function forgetLocal() {
+    const all = await store.get('vsumLocal', {})
+    delete all[localKey()]
+    await store.set('vsumLocal', all)
+    S.hasLocal = false
+    toast(ui, '已忘记这个视频的本地字幕')
+    render()
+  }
+
+  /** 在线字幕读不到时的补救：已记住的本地字幕 → 让清影用 yt-dlp 取在线字幕 → （可选）自动转写。 */
+  async function recover(d) {
+    S.hasLocal = !!(await savedLocal())
+    const saved = await savedLocal()
+    if (S.data !== d) return
+    if (saved?.lines?.length) {
+      setData({ ...d, lines: saved.lines, track: `${saved.name}（本地字幕）`, noSubtitle: false, note: '', fromLocal: true })
+      S.hasLocal = true
+      render()
+      return
+    }
+    if (!d.url || !/^https?:/.test(d.url) || d.site === 'article' || !(d.noSubtitle || d.fetchFailed)) return
+    const st = await send({ type: 'cc-ai-status' })
+    if (S.data !== d) return
+    if (st.ok) S.status = st
+    if (S.prefs.autoOnline && st.ok && st.subtitles !== false && !S.busy) {
+      S.busy = true
+      render()
+      try {
+        const r = await submit({ kind: 'subtitles', url: d.url, title: d.title }, 'subtitles')
+        if (S.data !== d) return
+        if (r?.lines?.length) {
+          S.busy = false
+          setData({ ...d, lines: r.lines, durationMs: r.durationMs || d.durationMs, track: r.track, noSubtitle: false, note: '', trackUrl: '' })
+          return
+        }
+        d.note = `${d.note || '没有找到字幕'}；清影也没有从网站取到在线字幕`
+      } catch (e) {
+        if (e.message !== '已取消') d.note = `${d.note || '没有找到字幕'}；清影取在线字幕失败：${e.message}`
+      } finally {
+        S.busy = false
+        render()
+      }
+    }
+    if (S.data === d && S.prefs.autoTranscribe && st.ok && st.transcribe) await transcribeNow()
+  }
+
   function importFile() {
     const inp = h('input', { type: 'file', accept: '.srt,.vtt,.txt,.md,.json', style: 'display:none' })
     inp.onchange = async () => {
       const f = inp.files?.[0]
       if (!f) return
-      setData({ ...Src.fromText(await f.text(), f.name), url: S.data?.url || location.href, title: S.data?.title || f.name })
+      const d = { ...Src.fromText(await f.text(), f.name), url: S.data?.url || location.href, title: S.data?.title || f.name }
+      setData(d)
+      rememberLocal(f.name, d)
     }
     ui.add(inp)
     inp.click()
@@ -375,17 +449,126 @@
     }, 'image/png')
   }
 
+  /** 全屏查看导图：滚轮缩放（以鼠标为中心）、拖动平移、双击适应窗口、+ / − / 0 键。 */
+  function openMapViewer(svgText) {
+    const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml').documentElement
+    const W = Number(doc.getAttribute('width')) || 800
+    const H = Number(doc.getAttribute('height')) || 600
+    doc.removeAttribute('style')
+    const stage = h('div', { class: 'stage' })
+    stage.append(doc)
+    doc.setAttribute('width', W)
+    doc.setAttribute('height', H)
+    doc.style.width = `${W}px`
+    doc.style.height = `${H}px`
+    let k = 1
+    let x = 0
+    let y = 0
+    const apply = () => (doc.style.transform = `translate(${x}px, ${y}px) scale(${k})`)
+    const fit = () => {
+      const r = stage.getBoundingClientRect()
+      k = Math.min(r.width / W, r.height / H, 1.5) * 0.96
+      x = (r.width - W * k) / 2
+      y = (r.height - H * k) / 2
+      apply()
+    }
+    const zoomAt = (f, cx, cy) => {
+      const nk = Math.min(6, Math.max(0.1, k * f))
+      x = cx - ((cx - x) / k) * nk
+      y = cy - ((cy - y) / k) * nk
+      k = nk
+      apply()
+    }
+    const center = (f) => {
+      const r = stage.getBoundingClientRect()
+      zoomAt(f, r.width / 2, r.height / 2)
+    }
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault()
+      const r = stage.getBoundingClientRect()
+      zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top)
+    }, { passive: false })
+    const pts = new Map()
+    let pinch = 0
+    stage.addEventListener('pointerdown', (e) => {
+      stage.setPointerCapture(e.pointerId)
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      stage.classList.add('drag')
+      pinch = 0
+    })
+    stage.addEventListener('pointermove', (e) => {
+      const p = pts.get(e.pointerId)
+      if (!p) return
+      const dx = e.clientX - p.x
+      const dy = e.clientY - p.y
+      p.x = e.clientX
+      p.y = e.clientY
+      if (pts.size === 2) {
+        const [a, b] = [...pts.values()]
+        const d = Math.hypot(a.x - b.x, a.y - b.y)
+        if (pinch) {
+          const r = stage.getBoundingClientRect()
+          zoomAt(d / pinch, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top)
+        }
+        pinch = d
+      } else {
+        x += dx
+        y += dy
+        apply()
+      }
+    })
+    const up = (e) => {
+      pts.delete(e.pointerId)
+      pinch = 0
+      if (!pts.size) stage.classList.remove('drag')
+    }
+    stage.addEventListener('pointerup', up)
+    stage.addEventListener('pointercancel', up)
+    stage.addEventListener('dblclick', fit)
+    const view = h('div', { class: 'layer mapview', role: 'dialog', 'aria-label': '思维导图' },
+      h('div', { class: 'bar2' },
+        h('b', { text: S.data?.title || '思维导图' }),
+        h('button', { class: 'sec', text: '−', title: '缩小', onclick: () => center(1 / 1.25) }),
+        h('button', { class: 'sec', text: '+', title: '放大', onclick: () => center(1.25) }),
+        h('button', { class: 'sec', text: '适应窗口', onclick: fit }),
+        h('button', { class: 'sec', text: '100%', onclick: () => { k = 1; x = 8; y = 8; apply() } }),
+        h('button', { class: 'sec', text: '保存 SVG', onclick: () => saveFile(V.fileName(S.data.title, 'svg'), svgText, 'image/svg+xml') }),
+        h('button', { class: 'sec', text: '保存 PNG', onclick: () => savePng(svgText, V.fileName(S.data.title, 'png')) }),
+        h('button', { class: 'sec', text: '✕', title: '关闭（Esc）', 'aria-label': '关闭', onclick: close }),
+      ),
+      stage,
+      h('div', { class: 'hint', text: '滚轮缩放 · 拖动平移 · 双击适应窗口 · 键盘 + − 0 · Esc 关闭' }),
+    )
+    function onKey(e) {
+      if (e.key === 'Escape') close()
+      else if (e.key === '+' || e.key === '=') center(1.25)
+      else if (e.key === '-') center(1 / 1.25)
+      else if (e.key === '0') fit()
+      else return
+      e.stopPropagation()
+    }
+    function close() {
+      document.removeEventListener('keydown', onKey, true)
+      view.remove()
+    }
+    document.addEventListener('keydown', onKey, true)
+    ui.add(view)
+    requestAnimationFrame(fit)
+  }
+
   function tabMindmap() {
     const o = S.res.outline
     const box = h('div', {}, h('div', { class: 'tools' }, h('button', { text: o ? '重新生成' : '生成思维导图', disabled: S.busy, onclick: () => task('mindmap', {}, (x) => (S.res.outline = x.outline)) })))
-    if (!o) return (box.append(h('div', { class: 'mute', text: '生成层级大纲，并画成可导出的导图。' })), box)
-    const svg = V.mindmapSvg(V.layoutMindmap(V.outlineToTree(o, S.data.title)), matchMedia('(prefers-color-scheme: dark)').matches)
-    const view = h('div', { class: 'svgbox' })
-    view.append(new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement)
+    if (!o) return (box.append(h('div', { class: 'mute', text: '生成层级大纲（最多 4 层，带具体细节），并画成可缩放、可导出的导图。' })), box)
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches
+    const mk = (d) => V.mindmapSvg(V.layoutMindmap(V.outlineToTree(o, S.data.title)), d)
+    const view = h('div', { class: 'svgbox', title: '点击全屏查看，可缩放、拖动', onclick: () => openMapViewer(mk(dark)) })
+    view.append(new DOMParser().parseFromString(mk(dark), 'image/svg+xml').documentElement)
     box.append(view,
       h('div', { class: 'tools', style: 'margin-top:8px' },
-        h('button', { class: 'sec', text: '保存 SVG', onclick: () => saveFile(V.fileName(S.data.title, 'svg'), V.mindmapSvg(V.layoutMindmap(V.outlineToTree(o, S.data.title))), 'image/svg+xml') }),
-        h('button', { class: 'sec', text: '保存 PNG', onclick: () => savePng(V.mindmapSvg(V.layoutMindmap(V.outlineToTree(o, S.data.title))), V.fileName(S.data.title, 'png')) }),
+        h('button', { text: '全屏查看 / 缩放', onclick: () => openMapViewer(mk(dark)) }),
+        h('button', { class: 'sec', text: '保存 SVG', onclick: () => saveFile(V.fileName(S.data.title, 'svg'), mk(false), 'image/svg+xml') }),
+        h('button', { class: 'sec', text: '保存 PNG', onclick: () => savePng(mk(false), V.fileName(S.data.title, 'png')) }),
         h('button', { class: 'sec', text: '复制大纲', onclick: () => copy(o, '大纲') }),
       ),
       h('pre', { class: 'card', text: o }))
@@ -441,15 +624,20 @@
       h('div', { class: 'tools' },
         isVideo() && h('button', { class: 'sec', text: '用清影转写（语音识别）', onclick: transcribeNow }),
         isVideo() && h('button', { class: 'sec', text: '只把视频发给清影下载', onclick: sendForTranscribe }),
-        h('button', { class: 'sec', text: '导入 .srt / .vtt / .txt', onclick: importFile }),
+        h('button', { class: 'sec', text: '导入 .srt / .vtt / .txt', title: '导入后会按视频记住；在线字幕读得到时仍以在线字幕为准', onclick: importFile }),
+        S.hasLocal && h('button', { class: 'sec', text: '忘记已存的本地字幕', onclick: forgetLocal }),
         S.data.tracks?.length > 1 && sel(S.data.tracks.map((t) => [t.url, `${t.name}${t.auto ? '（自动）' : ''}`]), S.data.trackUrl || S.data.tracks[0].url, reloadTrack, '字幕轨'),
         h('button', { class: 'sec', text: '总结选中的文字', onclick: () => loadArticleFromSelection() }),
       ),
+      h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.autoOnline, onchange: (e) => ((S.prefs.autoOnline = e.target.checked), savePrefs()) }), ' 读不到字幕时，让清影从网站取在线字幕'),
+      h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.autoTranscribe, onchange: (e) => ((S.prefs.autoTranscribe = e.target.checked), savePrefs()) }), ' 还是没有时，自动取音频转写（耗时，可能用到接口额度）'),
       h('textarea', { rows: 4, placeholder: '或者把文字稿 / 字幕粘贴到这里，再点“使用”', id: 'paste' }),
       h('div', { class: 'tools' }, h('button', { class: 'sec', text: '使用粘贴的文字', onclick: () => {
         const t = ui.root.getElementById('paste')?.value
         if (!t?.trim()) return toast(ui, '先粘贴文字', true)
-        setData({ ...Src.fromText(t), url: S.data.url, title: S.data.title })
+        const d = { ...Src.fromText(t), url: S.data.url, title: S.data.title }
+        setData(d)
+        rememberLocal('粘贴的文字', d)
       } })),
     )
     return box
@@ -601,7 +789,9 @@
     S.data = null
     render()
     try {
-      setData(await Src.load())
+      const d = await Src.load()
+      setData(d)
+      if (!d.lines.length) await recover(d)
     } catch (e) {
       setData({ title: document.title, url: location.href, site: 'html5', lines: [], chapters: [], tracks: [], note: `读取失败：${e.message}` })
     }

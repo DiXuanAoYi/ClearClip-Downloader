@@ -113,7 +113,7 @@ fn new_job() -> (u64, Arc<AtomicBool>) {
 pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     use tauri::Manager;
     check(&req)?;
-    if req.kind == "transcribe" {
+    if req.kind == "transcribe" || req.kind == "subtitles" {
         return start_transcribe(app, req);
     }
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
@@ -150,18 +150,16 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     use tauri::Manager;
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
-    ai::stt_ready(&st, &settings)?;
-    if crate::postprocess::find_ffmpeg(&st).is_none() {
-        return Err(crate::postprocess::ffmpeg_missing());
-    }
+    let subs_only = req.kind == "subtitles";
+    // 先取在线字幕，取不到才转写，所以转写的条件（语音转文字、ffmpeg）等到真要转写时再检查
     if !settings.use_ytdlp || crate::tools::resolve(&st, crate::tools::Tool::YtDlp).is_none() {
-        return Err(AppError::new(crate::error::ErrorKind::NeedUpdate, "转写网页视频需要 yt-dlp 组件。请在“设置 → 组件”中安装 yt-dlp 后重试。"));
+        return Err(AppError::new(crate::error::ErrorKind::NeedUpdate, "取网页视频的字幕 / 音频需要 yt-dlp 组件。请在“设置 → 组件”中安装 yt-dlp 后重试。"));
     }
     let (id, cancel) = new_job();
     let title = if req.title.trim().is_empty() { "网页视频".to_string() } else { req.title.trim().chars().take(80).collect() };
     let url = req.url.clone();
     let lang = if req.lang.trim().is_empty() { String::new() } else { req.lang.trim().to_string() };
-    crate::media_tools::spawn_job(app, title, "视频转写", move |ctx| async move {
+    crate::media_tools::spawn_job(app, title, if subs_only { "取在线字幕" } else { "视频转写" }, move |ctx| async move {
         // 扩展点了取消 → 取消清影里对应的后台任务；后台任务的进度 → 扩展轮询到的进度
         let watcher = {
             let (st, media_id) = (ctx.st.clone(), ctx.id);
@@ -182,7 +180,7 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
                 }
             })
         };
-        let out = transcribe_page(&ctx, &url, &lang).await;
+        let out = transcribe_page(&ctx, &url, &lang, subs_only).await;
         watcher.abort();
         with_job(id, |j| match &out {
             Ok(v) => j.result = Some(v.clone()),
@@ -193,35 +191,57 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     Ok(id)
 }
 
-async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str) -> AppResult<Value> {
+/// 先用 yt-dlp 取网页视频自带的在线字幕（人工 / 自动），有就直接用；没有且不是“只取字幕”才取音频转写。
+async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str, subs_only: bool) -> AppResult<Value> {
     let settings = ctx.st.settings();
-    let ffmpeg = crate::postprocess::find_ffmpeg(&ctx.st).ok_or_else(crate::postprocess::ffmpeg_missing)?;
-    let lang = if lang.is_empty() { settings.ai.stt_language.clone() } else { lang.to_string() };
     let work = std::env::temp_dir().join(format!("clearclip-vsum-{}-{}", std::process::id(), ctx.id));
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work)?;
     let result = async {
-        ctx.note("正在取视频的音频…");
         let pctx = ctx.st.parse_ctx(&settings);
+        ctx.note("正在取视频的在线字幕…");
+        match crate::providers::ytdlp::fetch_subtitles(&pctx, url, &work, || ctx.canceled()).await {
+            Ok(found) => {
+                if let Some((code, path)) = crate::providers::ytdlp::pick_subtitle(&found, lang) {
+                    let cues = crate::subtitle::parse_srt(&std::fs::read_to_string(path)?);
+                    let lines = cues_to_lines(&cues);
+                    if !lines.is_empty() {
+                        let duration = cues.iter().map(|c| c.end).max().unwrap_or(0);
+                        return Ok(json!({"lines": lines, "durationMs": duration, "track": format!("在线字幕（{code}）"), "source": "subtitles"}));
+                    }
+                }
+            }
+            Err(e) if e.message == "canceled" => return Err(e),
+            // 取字幕失败不挡着转写；只取字幕时才把原因告诉用户
+            Err(e) if subs_only => return Err(e),
+            Err(_) => {}
+        }
+        ctx.check()?;
+        if subs_only {
+            return Ok(json!({"lines": [], "durationMs": 0, "track": "", "source": "subtitles"}));
+        }
+        ai::stt_ready(&ctx.st, &settings)?;
+        let ffmpeg = crate::postprocess::find_ffmpeg(&ctx.st).ok_or_else(crate::postprocess::ffmpeg_missing)?;
+        let lang = if lang.is_empty() { settings.ai.stt_language.clone() } else { lang.to_string() };
+        ctx.note("这个视频没有在线字幕，正在取音频…");
         let audio = crate::providers::ytdlp::fetch_audio(&pctx, url, &work, || ctx.canceled(), |p| ctx.percent(p * 0.3)).await?;
         ctx.check()?;
         let cues = ai::transcribe_cues(ctx, &settings, &ffmpeg, &audio, &lang, &work).await?;
-        let lines: Vec<Value> = cues
-            .iter()
-            .map(|c| (c.start, c.lines.join(" ").trim().to_string()))
-            .filter(|(_, t)| !t.is_empty())
-            .map(|(t, text)| json!({"t": t, "text": text}))
-            .collect();
+        let lines = cues_to_lines(&cues);
         let duration = cues.iter().map(|c| c.end).max().unwrap_or(0);
-        Ok(json!({"lines": lines, "durationMs": duration, "track": "清影转写"}))
+        Ok(json!({"lines": lines, "durationMs": duration, "track": "清影转写", "source": "whisper"}))
     }
     .await;
     let _ = std::fs::remove_dir_all(&work);
     result
 }
 
+fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
+    cues.iter().map(|c| (c.start, c.lines.join(" ").trim().to_string())).filter(|(_, t)| !t.is_empty()).map(|(t, text)| json!({"t": t, "text": text})).collect()
+}
+
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 9] = ["summary", "mindmap", "cards", "quotes", "ask", "translate", "rewrite", "article", "transcribe"];
+    const KINDS: [&str; 10] = ["summary", "mindmap", "cards", "quotes", "ask", "translate", "rewrite", "article", "transcribe", "subtitles"];
     if !KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::invalid("不支持的类型"));
     }
@@ -236,7 +256,7 @@ pub fn check(req: &Req) -> AppResult<()> {
     if matches!(req.kind.as_str(), "article" | "rewrite") && req.text.trim().is_empty() {
         return Err(AppError::invalid("没有可处理的文字。"));
     }
-    if req.kind == "transcribe" && !(req.url.starts_with("http://") || req.url.starts_with("https://")) {
+    if matches!(req.kind.as_str(), "transcribe" | "subtitles") && !(req.url.starts_with("http://") || req.url.starts_with("https://")) {
         return Err(AppError::invalid("没有可转写的视频地址。"));
     }
     if req.kind == "ask" && req.question.trim().is_empty() {
@@ -276,8 +296,10 @@ fn summary_system(lang: &str, style: &str, chapters: bool, final_pass: bool) -> 
 
 fn mindmap_system(lang: &str) -> String {
     format!(
-        "You turn video transcripts into a mind map. Write in {lang}. Output ONLY a Markdown outline: the first line is \"# \" plus a short title, \
-         then nested bullets starting with \"- \" and indented by 2 spaces per level, at most 3 levels, 4-8 top-level branches, every node under 14 words. No other text."
+        "You turn video transcripts into a detailed, well-organised mind map. Write in {lang}. Output ONLY a Markdown outline: the first line is \"# \" plus a short title, \
+         then nested bullets starting with \"- \" and indented by 2 spaces per level. Use 4 levels: 5-10 top-level branches that follow the video's structure, \
+         each with 2-5 sub-branches, and sub-branches get concrete detail (names, numbers, steps, examples, reasons) as child nodes. \
+         Every node is a short phrase or one sentence under 24 words; keep specifics instead of vague wording. No other text."
     )
 }
 
@@ -404,7 +426,7 @@ pub fn clean_outline(resp: &str) -> Option<String> {
         if t.starts_with("# ") && out.is_empty() {
             out.push(t.to_string());
         } else if let Some(text) = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) {
-            let depth = ((line.len() - t.len()) / 2).min(4);
+            let depth = ((line.len() - t.len()) / 2).min(5);
             if text.trim().is_empty() {
                 continue;
             }
@@ -644,6 +666,7 @@ pub fn status(st: &crate::AppState) -> Value {
         "model": s.ai.model,
         "lang": s.ai.target_lang,
         "transcribe": ai::stt_ready(st, &s).is_ok(),
+        "subtitles": s.use_ytdlp && crate::tools::resolve(st, crate::tools::Tool::YtDlp).is_some(),
         "maxChars": MAX_CHARS,
     })
 }

@@ -271,3 +271,18 @@ fn transcribe_requests_need_a_web_address_and_no_transcript() {
     let local = Req { kind: "transcribe".into(), url: "file:///etc/passwd".into(), ..Default::default() };
     assert!(check(&local).is_err());
 }
+
+#[test]
+fn subtitle_requests_follow_the_same_address_rules() {
+    let ok = Req { kind: "subtitles".into(), url: "https://www.bilibili.com/video/BV1".into(), ..Default::default() };
+    assert!(check(&ok).is_ok());
+    assert!(check(&Req { kind: "subtitles".into(), ..Default::default() }).is_err());
+    assert!(check(&Req { kind: "subtitles".into(), url: "ftp://x/y".into(), ..Default::default() }).is_err());
+}
+
+#[test]
+fn mindmap_outlines_keep_five_levels() {
+    let out = clean_outline("# T\n- a\n  - b\n    - c\n      - d\n        - e\nnoise").unwrap();
+    assert_eq!(out.lines().count(), 6);
+    assert!(out.contains("        - e"));
+}
