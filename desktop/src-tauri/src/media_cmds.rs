@@ -200,10 +200,11 @@ pub struct AudioFxPreview {
     pub notes: Vec<String>,
 }
 
-/// 试听：取 `start_ms` 起的 15 秒，输出“处理前 / 处理后”两个 WAV（在预览目录里，两小时后清理）。
+/// 试听：取 `start_ms` 起的 `dur_ms`（默认 15 秒，1–120 秒），输出“处理前 / 处理后”两个 WAV（在预览目录里，两小时后清理）。
 #[tauri::command]
-pub async fn audio_fx_preview(state: St<'_>, path: String, spec: crate::audiofx::AudioFxSpec, start_ms: u64) -> AppResult<AudioFxPreview> {
+pub async fn audio_fx_preview(state: St<'_>, path: String, spec: crate::audiofx::AudioFxSpec, start_ms: u64, dur_ms: Option<u64>) -> AppResult<AudioFxPreview> {
     use crate::audiofx;
+    let secs = (dur_ms.unwrap_or(15_000).clamp(1_000, 120_000) as f64 / 1000.0).ceil() as u32;
     let (ff, caps) =
         crate::vidcaps::current(&state).await.ok_or_else(|| AppError::new(ErrorKind::NeedUpdate, "需要 ffmpeg。请在“设置 → 组件”里安装 ffmpeg 后重试。"))?;
     let file = Path::new(&path);
@@ -223,10 +224,10 @@ pub async fn audio_fx_preview(state: St<'_>, path: String, spec: crate::audiofx:
     }
     let mut fx = audiofx::FxCaps::from_caps(&caps, Some(audiofx::rnn_model_path(&state.data_dir)));
     if spec.denoise != "off" && fx.rnn_model.is_none() {
-        fx.noise_floor_db = audiofx::estimate_noise_floor(&ff, file, start_ms as f64 / 1000.0, 15).await;
+        fx.noise_floor_db = audiofx::estimate_noise_floor(&ff, file, start_ms as f64 / 1000.0, secs).await;
     }
-    let key = short_hash(&format!("{path}|{start_ms}|{}", serde_json::to_string(&spec).unwrap_or_default()));
-    let before = dir.join(format!("fx-{}-a.wav", short_hash(&format!("{path}|{start_ms}"))));
+    let key = short_hash(&format!("{path}|{start_ms}|{secs}|{}", serde_json::to_string(&spec).unwrap_or_default()));
+    let before = dir.join(format!("fx-{}-a.wav", short_hash(&format!("{path}|{start_ms}|{secs}"))));
     let after = dir.join(format!("fx-{key}-b.wav"));
     let timeout = std::time::Duration::from_secs(120);
     let mut notes = vec![];
@@ -234,7 +235,7 @@ pub async fn audio_fx_preview(state: St<'_>, path: String, spec: crate::audiofx:
         if out.is_file() && with.is_none() {
             continue;
         }
-        let (mut args, n) = audiofx::preview_args(file, start_ms, 15, with, out)?;
+        let (mut args, n) = audiofx::preview_args(file, start_ms, secs, with, out)?;
         notes.extend(n);
         let mut full = postprocess::base_args();
         full.append(&mut args);

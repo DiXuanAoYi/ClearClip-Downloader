@@ -242,7 +242,7 @@ export const api = {
   videoPresets: () => invoke<NormPreset[]>('video_presets'),
   videoAnalyze: (path: string, hint?: string | null) => invoke<VideoReport>('video_analyze', { path, hint: hint ?? null }),
   videoColor: (path: string, skip: SkipSpan[] = []) => invoke<ColorReport>('video_color', { path, skip }),
-  audioFxPreview: (path: string, spec: AudioFxSpec, startMs: number) => invoke<AudioFxPreview>('audio_fx_preview', { path, spec, startMs }),
+  audioFxPreview: (path: string, spec: AudioFxSpec, startMs: number, durMs?: number) => invoke<AudioFxPreview>('audio_fx_preview', { path, spec, startMs, durMs }),
   videoPreview: (path: string, spec: NormSpec, atMs: number) => invoke<VideoPreview>('video_preview', { path, spec, atMs }),
   lutLooks: () => invoke<LutLook[]>('lut_looks'),
   lutInspect: (path: string) => invoke<LutInfo>('lut_inspect', { path }),

@@ -456,7 +456,7 @@ async function clearHistory() {
 
       <template v-else>
         <div v-if="!history.length" class="empty mute">{{ query ? '没有匹配的记录。' : '还没有解析记录。' }}</div>
-        <div v-for="h in history" :key="h.id" class="item card">
+        <div v-for="h in history" :key="h.id" class="item card hist">
           <img v-if="h.cover" :src="h.cover" class="thumb" referrerpolicy="no-referrer" alt="" />
           <div v-else class="thumb" />
           <div class="info">
@@ -613,6 +613,11 @@ async function clearHistory() {
   grid-template-columns: 32px 1fr auto;
   gap: 12px;
   align-items: center;
+  padding: 8px 12px;
+}
+.item.hist {
+  height: auto;
+  flex: none;
   padding: 8px 12px;
 }
 .item.selecting {
