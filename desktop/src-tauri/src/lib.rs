@@ -565,6 +565,8 @@ pub fn run() {
             ml::store::ml_model_download,
             ml::store::ml_model_import,
             ml::store::ml_model_remove,
+            ml::whisper_cli::whisper_cli_status,
+            ml::whisper_cli::whisper_cli_install,
             edit::highlights::edit_highlights,
             edit::highlights::edit_highlights_llm,
             edit::analyze::edit_waveform,
