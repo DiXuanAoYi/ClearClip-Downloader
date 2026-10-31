@@ -82,6 +82,10 @@
 
 [youtube-digest](https://github.com/zarazhangrui/youtube-digest)（MIT，© 2026 Zara Zhang）和 [bilibili-digest](https://github.com/biuworks/bilibili-digest)（MIT，© 2026 k1234567，部分 © Zara Zhang）：借鉴了笔记（快捷键记录、划词存原文、AI 整理要先预览、学习稿导出）、划词解释、顺句、双语显示、金句按章节排布、提示词可自己改、问答找不到就明说等做法。我们按清影的结构（本机清影调用你的模型，不依赖第三方服务）重新实现，并做成对任意视频网站通用，没有复制它们的代码；归属见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
 
+## 用本机 Ollama
+
+在“设置 → AI”选“本机 Ollama”（地址 `http://localhost:11434/v1`，密钥可以随便填）即可，字幕文字完全不出本机。因为请求是**清影应用**发给 Ollama 的，不是浏览器扩展发的，所以**不需要**设置 `OLLAMA_ORIGINS`（那个只在浏览器页面或扩展直接请求 Ollama 时才需要）。如果“测试接口”返回 403，才需要在启动 Ollama 前设置 `OLLAMA_ORIGINS=*`（macOS：`launchctl setenv OLLAMA_ORIGINS "*"`；Windows：系统环境变量；Linux：systemd 里加 `Environment=OLLAMA_ORIGINS=*`），然后**完全退出并重新启动** Ollama。
+
 ## 已知限制
 
 - 摘要质量取决于你配置的模型；字幕本身错得多（自动字幕）时，摘要也会跟着错。

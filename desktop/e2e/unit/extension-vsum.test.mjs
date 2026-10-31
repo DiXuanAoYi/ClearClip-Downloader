@@ -262,3 +262,15 @@ console.log('extension-vsum: ok')
   assert.equal(V.citations('随便说说', lines).unsupported, true)
   assert.equal(V.citations('字幕中未找到相关内容', lines).unsupported, false)
 }
+
+// ---- 笔记：分 P、作者
+{
+  assert.equal(V.baseKey('bilibili:BV1xx:p3'), 'bilibili:BV1xx')
+  assert.equal(V.baseKey('youtube:abc'), 'youtube:abc')
+  assert.equal(V.partOf('bilibili:BV1xx:p3'), 3)
+  assert.equal(V.partOf('youtube:abc'), 1)
+  const n = V.makeNote({ key: 'bilibili:BV1xx:p2', title: '标题', owner: '某UP主', t: 1000, text: '内容' })
+  assert.equal(n.owner, '某UP主')
+  assert.equal(V.searchNotes([n], 'up主').length, 1)
+  assert.equal(V.searchNotes([n], '不存在').length, 0)
+}

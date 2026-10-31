@@ -16,7 +16,19 @@
   }
 
   /** 结果统一成：{ site, title, url, lines, chapters, durationMs, track, tracks, note } */
-  const base = (site) => ({ site, title: document.title.replace(/\s*[-_|–]\s*(YouTube|哔哩哔哩.*|bilibili)\s*$/i, '').trim(), url: location.href, lines: [], chapters: [], durationMs: 0, track: '', tracks: [], note: '' })
+  /** 作者 / UP 主 / 频道名：先认页面里标准的写法，再认各站常见的位置。 */
+  function pageOwner() {
+    const pick = (sel, attr) => {
+      const el = document.querySelector(sel)
+      return String((attr ? el?.getAttribute(attr) : el?.textContent) || '').replace(/\s+/g, ' ').trim()
+    }
+    return (
+      pick('.up-name') || pick('.up-info--right .up-name') || pick('a.up-name') || pick('#owner #channel-name a') || pick('ytd-channel-name a') ||
+      pick('[itemprop="author"] [itemprop="name"]', 'content') || pick('[itemprop="author"] [itemprop="name"]') || pick('link[itemprop="name"]', 'content') ||
+      pick('meta[name="author"]', 'content') || ''
+    ).slice(0, 80)
+  }
+  const base = (site) => ({ site, owner: pageOwner(), title: document.title.replace(/\s*[-_|–]\s*(YouTube|哔哩哔哩.*|bilibili)\s*$/i, '').trim(), url: location.href, lines: [], chapters: [], durationMs: 0, track: '', tracks: [], note: '' })
 
   // ---------- YouTube ----------
 

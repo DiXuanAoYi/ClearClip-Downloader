@@ -486,7 +486,11 @@
 
   const MAX_NOTES = 2000
 
-  /** 一条笔记：{ id, key, url, title, t, text, kind: 'quote'|'note', created }。 */
+  /** 视频键去掉分 P 后缀：同一个视频的所有分 P 共用；分 P 序号（没有就是 1）。 */
+  const baseKey = (key) => String(key || '').replace(/:p\d+$/, '')
+  const partOf = (key) => Number((String(key || '').match(/:p(\d+)$/) || [])[1]) || 1
+
+  /** 一条笔记：{ id, key, url, title, owner, t, text, kind: 'quote'|'note', created }。 */
   function makeNote(o) {
     const text = String(o.text || '').trim()
     if (!text) return null
@@ -495,6 +499,7 @@
       key: o.key || '',
       url: o.url || '',
       title: String(o.title || '').slice(0, 200),
+      owner: String(o.owner || '').slice(0, 80),
       t: Number.isFinite(o.t) ? Math.max(0, Math.round(o.t)) : -1,
       text: text.slice(0, 6000),
       kind: o.kind === 'note' ? 'note' : 'quote',
@@ -517,7 +522,7 @@
   function searchNotes(list, q) {
     const s = String(q || '').trim().toLowerCase()
     if (!s) return list
-    return list.filter((n) => `${n.text} ${n.title}`.toLowerCase().includes(s))
+    return list.filter((n) => `${n.text} ${n.title} ${n.owner || ''}`.toLowerCase().includes(s))
   }
 
   /** 笔记导出成 Markdown：每个视频一节，时间戳带跳转链接。 */
@@ -699,6 +704,6 @@
   globalThis.ccVsum = {
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
     videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
-    searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
+    searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
   }
 })()
