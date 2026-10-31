@@ -28,6 +28,13 @@
 
 间接依赖的许可证以各自仓库为准，可用 `cargo license` / `npm ls` 查看。
 
+## 功能参考（未复制代码）
+
+视频摘要面板的笔记、划词解释、顺句、双语显示、提示词编辑等功能的设计参考了下面两个 MIT 许可的开源浏览器扩展。清影按自己的架构重新实现，并扩展到任意视频网站，未包含它们的源代码；这里按开源礼仪注明来源并附其许可声明：
+
+- [youtube-digest](https://github.com/zarazhangrui/youtube-digest)：MIT License，Copyright (c) 2026 Zara Zhang
+- [bilibili-digest](https://github.com/biuworks/bilibili-digest)：MIT License，Copyright (c) 2026 k1234567（部分内容 Copyright (c) 2026 Zara Zhang）
+
 ## 运行时下载的外部工具
 
 下面的程序**不随本仓库分发**，由用户在应用内按需下载，遵循各自的许可证：

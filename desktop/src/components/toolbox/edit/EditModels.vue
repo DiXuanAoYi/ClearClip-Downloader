@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// AI 模型管理：下载（地址可改）/ 从本地文件导入 / 删除。人像抠图和人声分离都用它。
+// 模型管理：下载（地址可改）/ 从本地文件导入 / 删除。人像抠图、人声分离、RNNoise 降噪、Whisper 都用它。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -10,6 +10,7 @@ import type { ModelStatus } from '../../../types'
 const props = defineProps<{ kind: ModelStatus['kind']; selected?: string }>()
 const emit = defineEmits<{ select: [id: string]; changed: [models: ModelStatus[]] }>()
 
+const EXT: Record<ModelStatus['kind'], string[]> = { matte: ['onnx'], vocals: ['onnx'], denoise: ['rnnn'], whisper: ['bin'] }
 const all = ref<ModelStatus[]>([])
 const models = computed(() => all.value.filter((m) => m.kind === props.kind))
 const urls = ref<Record<string, string>>({})
@@ -43,7 +44,7 @@ async function run(id: string, job: () => Promise<ModelStatus | void>) {
 }
 const download = (m: ModelStatus) => run(m.id, () => api.mlModelDownload(m.id, urls.value[m.id]))
 async function importFile(m: ModelStatus) {
-  const r = await open({ multiple: false, filters: [{ name: 'ONNX', extensions: ['onnx'] }] })
+  const r = await open({ multiple: false, filters: [{ name: '模型文件', extensions: EXT[props.kind] }] })
   if (typeof r === 'string') await run(m.id, () => api.mlModelImport(m.id, r))
 }
 const remove = (m: ModelStatus) => run(m.id, () => api.mlModelRemove(m.id))
@@ -71,7 +72,7 @@ onBeforeUnmount(() => un?.())
       </div>
       <div class="muted note">{{ m.note }}</div>
       <template v-if="!m.installed">
-        <el-input v-model="urls[m.id]" size="small" placeholder="模型下载地址（.onnx）" :disabled="busy === m.id" />
+        <el-input v-model="urls[m.id]" size="small" placeholder="模型下载地址（可改成镜像）" :disabled="busy === m.id" />
         <div class="row">
           <el-button size="small" type="primary" :loading="busy === m.id" @click="download(m)">{{ busy === m.id && pct ? `下载中 ${pct}%` : '下载' }}</el-button>
           <el-button size="small" :disabled="busy === m.id" @click="importFile(m)">从文件导入…</el-button>

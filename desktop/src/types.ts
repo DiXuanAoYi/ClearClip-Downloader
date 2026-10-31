@@ -1710,7 +1710,7 @@ export interface TrackerStatus {
 export interface ModelStatus {
   id: string
   label: string
-  kind: 'matte' | 'vocals'
+  kind: 'matte' | 'vocals' | 'denoise' | 'whisper'
   url: string
   sizeHint: string
   note: string

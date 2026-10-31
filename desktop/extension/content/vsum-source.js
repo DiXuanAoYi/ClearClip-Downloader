@@ -9,7 +9,11 @@
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return r.text()
   }
-  const getJson = async (url) => JSON.parse(await getText(url))
+  const getJson = async (url) => {
+    const t = (await getText(url)).trim()
+    if (!t) throw new Error('服务器返回了空内容')
+    return JSON.parse(t)
+  }
 
   /** 结果统一成：{ site, title, url, lines, chapters, durationMs, track, tracks, note } */
   const base = (site) => ({ site, title: document.title.replace(/\s*[-_|–]\s*(YouTube|哔哩哔哩.*|bilibili)\s*$/i, '').trim(), url: location.href, lines: [], chapters: [], durationMs: 0, track: '', tracks: [], note: '' })
@@ -29,12 +33,35 @@
       out.note = '这个视频没有字幕'
       return out
     }
-    const url = new URL(pick.url)
-    url.searchParams.set('fmt', 'json3')
     out.track = pick.name || pick.lang
-    out.lines = V.normalizeLines(V.parseJson3(JSON.parse(await getText(url.href))))
     out.trackUrl = pick.url
+    out.lines = V.normalizeLines(await fetchYouTubeTrack(pick.url))
+    if (!out.lines.length) {
+      out.note = 'YouTube 没有返回这条字幕的内容（常见于需要验证令牌的视频）'
+      out.fetchFailed = true
+    }
     return out
+  }
+
+  /** 字幕地址有时返回 200 却是空内容；依次试 json3 → vtt → 原始格式，都读不到就返回空数组。 */
+  async function fetchYouTubeTrack(trackUrl) {
+    for (const fmt of ['json3', 'vtt', '']) {
+      try {
+        const url = new URL(trackUrl)
+        if (fmt) url.searchParams.set('fmt', fmt)
+        else url.searchParams.delete('fmt')
+        const text = (await getText(url.href)).trim()
+        if (!text) continue
+        let cues = []
+        if (text.startsWith('{')) cues = V.parseJson3(JSON.parse(text))
+        else if (text.startsWith('<')) cues = V.parseTimedTextXml(text)
+        else cues = V.parseSubtitleText(text)
+        if (cues.length) return cues
+      } catch {
+        // 换下一种格式
+      }
+    }
+    return []
   }
 
   // ---------- 哔哩哔哩 ----------
@@ -65,7 +92,12 @@
     }
     out.track = pick.name
     out.trackUrl = pick.url
-    out.lines = V.normalizeLines(V.parseBilibili(await getJson(pick.url)))
+    try {
+      out.lines = V.normalizeLines(V.parseBilibili(await getJson(pick.url)))
+    } catch (e) {
+      out.note = `这条字幕读不出来（${e.message}）`
+      out.fetchFailed = true
+    }
     return out
   }
 
@@ -129,7 +161,7 @@
       if (vid?.site === 'youtube') first = await loadYouTube(vid.id, wanted)
       else if (vid?.site === 'bilibili') first = await loadBilibili(vid, wanted)
     } catch (e) {
-      first = { ...base(vid?.site || 'html5'), note: `读取字幕失败：${e.message}` }
+      first = { ...base(vid?.site || 'html5'), note: `读取字幕失败：${e.message}`, fetchFailed: true }
     }
     if (first?.lines.length) return first
     let html = null
@@ -143,6 +175,7 @@
     if (hasVideo) {
       const r = first || html || base('html5')
       r.noSubtitle = true
+      r.fetchFailed ||= !!first?.fetchFailed
       r.note ||= '没有找到字幕'
       return r
     }

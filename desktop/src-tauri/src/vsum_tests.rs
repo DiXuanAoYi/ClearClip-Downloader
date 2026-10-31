@@ -261,3 +261,52 @@ fn job_table_reports_state_and_forgets_old_jobs() {
 fn cancel_job_flag(id: u64, flag: &AtomicBool) -> bool {
     cancel(id) && flag.load(Ordering::Relaxed)
 }
+
+#[test]
+fn transcribe_requests_need_a_web_address_and_no_transcript() {
+    let ok = Req { kind: "transcribe".into(), url: "https://www.youtube.com/watch?v=abc".into(), ..Default::default() };
+    assert!(check(&ok).is_ok());
+    let no_url = Req { kind: "transcribe".into(), ..Default::default() };
+    assert!(check(&no_url).is_err());
+    let local = Req { kind: "transcribe".into(), url: "file:///etc/passwd".into(), ..Default::default() };
+    assert!(check(&local).is_err());
+}
+
+#[test]
+fn subtitle_requests_follow_the_same_address_rules() {
+    let ok = Req { kind: "subtitles".into(), url: "https://www.bilibili.com/video/BV1".into(), ..Default::default() };
+    assert!(check(&ok).is_ok());
+    assert!(check(&Req { kind: "subtitles".into(), ..Default::default() }).is_err());
+    assert!(check(&Req { kind: "subtitles".into(), url: "ftp://x/y".into(), ..Default::default() }).is_err());
+}
+
+#[test]
+fn mindmap_outlines_keep_five_levels() {
+    let out = clean_outline("# T\n- a\n  - b\n    - c\n      - d\n        - e\nnoise").unwrap();
+    assert_eq!(out.lines().count(), 6);
+    assert!(out.contains("        - e"));
+}
+
+#[test]
+fn new_kinds_validate_their_inputs() {
+    for kind in ["explain", "note", "refine"] {
+        assert!(check(&Req { kind: kind.into(), ..Default::default() }).is_err(), "{kind} 需要文字");
+        assert!(check(&Req { kind: kind.into(), text: "hello".into(), ..Default::default() }).is_ok());
+    }
+    assert!(check(&Req { kind: "punctuate".into(), ..Default::default() }).is_err());
+    let one = Req { kind: "punctuate".into(), lines: vec![Line { t: 0, text: "你好 世界".into() }], ..Default::default() };
+    assert!(check(&one).is_ok());
+    let long = Req { system: "x".repeat(20_001), ..one.clone() };
+    assert!(check(&long).is_err());
+}
+
+#[test]
+fn custom_prompts_replace_the_built_in_one_and_language_is_detected() {
+    let mut r = Req { system: "  Answer in {lang}.  ".into(), lang: "日本語".into(), ..Default::default() };
+    assert_eq!(pick_system(&r, "built-in".into()), "Answer in 日本語.");
+    r.system.clear();
+    assert_eq!(pick_system(&r, "built-in".into()), "built-in");
+    assert!(is_chinese(&[Line { t: 0, text: "这是一段中文字幕 with a word".into() }]));
+    assert!(!is_chinese(&[Line { t: 0, text: "This is English only".into() }]));
+    assert!(!is_chinese(&[]));
+}

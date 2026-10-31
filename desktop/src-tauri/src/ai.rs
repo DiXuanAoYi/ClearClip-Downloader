@@ -162,16 +162,27 @@ pub async fn translate_cues(
     batch: usize,
     ctx: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
 ) -> AppResult<Translated> {
+    map_cues(ep, model, &translate_system(lang), cues, batch, ctx).await
+}
+
+/// 同一套“一批进、一批出、对不上就拆”的流程，系统提示词由调用方给（翻译、顺句都用它）。
+pub async fn map_cues(
+    ep: &Endpoint,
+    model: &str,
+    system: &str,
+    cues: &[Cue],
+    batch: usize,
+    ctx: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
+) -> AppResult<Translated> {
     let texts: Vec<String> = cues.iter().map(|c| c.lines.join("\n")).collect();
     let mut out: Vec<Option<String>> = vec![None; texts.len()];
     let mut queue: VecDeque<(usize, usize)> = (0..texts.len()).step_by(batch.max(1)).map(|s| (s, (s + batch.max(1)).min(texts.len()))).collect();
-    let system = translate_system(lang);
     let mut done = 0usize;
     let mut failed = 0usize;
     while let Some((a, b)) = queue.pop_front() {
         ctx(done, texts.len())?;
         let user = serde_json::to_string(&texts[a..b])?;
-        let resp = chat(ep, model, &system, &user).await;
+        let resp = chat(ep, model, system, &user).await;
         let parsed = match resp {
             Ok(r) => parse_array(&r, b - a),
             Err(e) if matches!(e.kind, ErrorKind::NeedLogin | ErrorKind::Invalid | ErrorKind::RateLimited | ErrorKind::Network) => return Err(e),
@@ -765,6 +776,52 @@ pub async fn run_summarize(ctx: &JobCtx, input: &Path) -> AppResult<PathBuf> {
     Ok(md)
 }
 
+/// 语音转文字还缺什么设置：返回给用户看的原因；齐全时返回 `Ok`。
+pub fn stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
+    if settings.ai.stt_engine == "local" {
+        if find_whisper_bin(settings).is_none() {
+            return Err(AppError::invalid("找不到 whisper.cpp（whisper-cli）。请在“设置 → AI”里指定它的位置，或把它放进系统 PATH。"));
+        }
+        let model = settings.ai.whisper_model.trim();
+        if model.is_empty() || !Path::new(model).is_file() {
+            return Err(AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin）。"));
+        }
+        return Ok(());
+    }
+    stt_endpoint(st, settings)?;
+    if settings.ai.stt_model.is_empty() {
+        return Err(AppError::invalid("请先在“设置 → AI”里填写语音转文字的模型名称（OpenAI 是 whisper-1）。"));
+    }
+    Ok(())
+}
+
+/// 把一个音视频文件转成带时间戳的文字（按设置用本机 whisper.cpp 或云端接口）。`work` 是调用方管理的临时目录。
+pub async fn transcribe_cues(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, input: &Path, lang: &str, work: &Path) -> AppResult<Vec<Cue>> {
+    let cues = if settings.ai.stt_engine == "local" {
+        let srt = run_whisper_local(ctx, settings, ffmpeg, input, lang, work).await?;
+        subtitle::parse_srt(&srt)
+    } else {
+        let ep = stt_endpoint(&ctx.st, settings)?;
+        if settings.ai.stt_model.is_empty() {
+            return Err(AppError::invalid("请先在“设置 → AI”里填写语音转文字的模型名称（OpenAI 是 whisper-1）。"));
+        }
+        ctx.note("正在提取并切分音频…");
+        let parts = split_audio(ffmpeg, input, work, 600).await?;
+        let mut texts = vec![];
+        for (i, (file, offset)) in parts.iter().enumerate() {
+            ctx.check()?;
+            ctx.note(format!("正在转写第 {} / {} 段…", i + 1, parts.len()));
+            ctx.percent(i as f64 / parts.len() as f64 * 100.0);
+            texts.push((transcribe_chunk(&ep, &settings.ai.stt_model, lang, file).await?, *offset));
+        }
+        merge_srt_parts(texts)
+    };
+    if cues.is_empty() {
+        return Err(AppError::msg("没有识别出任何语音。"));
+    }
+    Ok(cues)
+}
+
 pub async fn run_transcribe(ctx: &JobCtx, input: &Path, language: Option<String>) -> AppResult<PathBuf> {
     let settings = ctx.st.settings();
     let ffmpeg = find_ffmpeg(&ctx.st).ok_or_else(crate::postprocess::ffmpeg_missing)?;
@@ -773,28 +830,7 @@ pub async fn run_transcribe(ctx: &JobCtx, input: &Path, language: Option<String>
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work)?;
     let result = async {
-        let cues = if settings.ai.stt_engine == "local" {
-            let srt = run_whisper_local(ctx, &settings, &ffmpeg, input, &lang, &work).await?;
-            subtitle::parse_srt(&srt)
-        } else {
-            let ep = stt_endpoint(&ctx.st, &settings)?;
-            if settings.ai.stt_model.is_empty() {
-                return Err(AppError::invalid("请先在“设置 → AI”里填写语音转文字的模型名称（OpenAI 是 whisper-1）。"));
-            }
-            ctx.note("正在提取并切分音频…");
-            let parts = split_audio(&ffmpeg, input, &work, 600).await?;
-            let mut texts = vec![];
-            for (i, (file, offset)) in parts.iter().enumerate() {
-                ctx.check()?;
-                ctx.note(format!("正在转写第 {} / {} 段…", i + 1, parts.len()));
-                ctx.percent(i as f64 / parts.len() as f64 * 100.0);
-                texts.push((transcribe_chunk(&ep, &settings.ai.stt_model, &lang, file).await?, *offset));
-            }
-            merge_srt_parts(texts)
-        };
-        if cues.is_empty() {
-            return Err(AppError::msg("没有识别出任何语音。"));
-        }
+        let cues = transcribe_cues(ctx, &settings, &ffmpeg, input, &lang, &work).await?;
         let tag = if lang.is_empty() { "ai".to_string() } else { lang.clone() };
         let out = out_beside(input, &stem_of(input), &tag, "srt");
         std::fs::write(&out, subtitle::format_srt(&cues))?;

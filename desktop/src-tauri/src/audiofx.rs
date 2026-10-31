@@ -187,7 +187,7 @@ pub fn simple_chain(spec: &AudioFxSpec, caps: &FxCaps) -> (Vec<String>, Vec<Stri
                 notes.push(if spec.denoise == "light" {
                     "降噪：频域降噪（轻）".into()
                 } else {
-                    "降噪：频域降噪（没有安装 RNNoise 模型，用的是 afftdn；效果更好的 RNNoise 见“设置 → 组件”）".into()
+                    "降噪：频域降噪（没有安装 RNNoise 模型，用的是 afftdn；效果更好的 RNNoise 见“设置 → 组件 → 模型”）".into()
                 });
             }
             _ => notes.push("当前的 ffmpeg 没有降噪滤镜（afftdn / arnndn），已跳过降噪。".into()),

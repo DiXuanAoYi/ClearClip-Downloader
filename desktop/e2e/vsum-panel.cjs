@@ -14,9 +14,9 @@ const ok = (name, cond, extra = '') => {
 }
 
 const YT = 'https://www.youtube.com/watch?v=abc123XYZ_-'
-const tracks = [{ baseUrl: 'https://www.youtube.com/api/timedtext?v=abc123XYZ_-&lang=en', languageCode: 'en', name: { simpleText: 'English' } }]
-const ytHtml = (withTracks) => `<!doctype html><title>Demo video - YouTube</title><body><video width="640" height="360"></video><p>comments</p>
-<script>var ytInitialPlayerResponse={"captions":{"playerCaptionsTracklistRenderer":{${withTracks ? `"captionTracks":${JSON.stringify(tracks)},"audioTracks":[]` : '"x":1'}}},"videoDetails":{"title":"Demo \\"video\\"","lengthSeconds":"125","shortDescription":"0:00 Intro\\n0:40 Main part\\n1:30 Outro"}};</script>`
+const tracks = (emptyTt) => [{ baseUrl: `https://www.youtube.com/api/timedtext?v=abc123XYZ_-&lang=en${emptyTt ? '&empty=1' : ''}`, languageCode: 'en', name: { simpleText: 'English' } }]
+const ytHtml = (withTracks, emptyTt = false) => `<!doctype html><title>Demo video - YouTube</title><body><video width="640" height="360"></video><p>comments</p>
+<script>var ytInitialPlayerResponse={"captions":{"playerCaptionsTracklistRenderer":{${withTracks ? `"captionTracks":${JSON.stringify(tracks(emptyTt))},"audioTracks":[]` : '"x":1'}}},"videoDetails":{"title":"Demo \\"video\\"","lengthSeconds":"125","shortDescription":"0:00 Intro\\n0:40 Main part\\n1:30 Outro"}};</script>`
 const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welcome to the demo.' }] }, { tStartMs: 41000, dDurationMs: 4000, segs: [{ utf8: 'Rust is fast and safe.' }] }, { tStartMs: 95000, dDurationMs: 3000, segs: [{ utf8: 'Thanks for watching.' }] }] }
 
 ;(async () => {
@@ -25,8 +25,9 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
   const calls = []
   await ctx.route('https://www.youtube.com/**', (route) => {
     const u = route.request().url()
+    if (u.includes('/api/timedtext') && u.includes('empty=1')) return route.fulfill({ status: 200, contentType: 'text/plain', body: '' })
     if (u.includes('/api/timedtext')) return route.fulfill({ contentType: 'application/json', body: JSON.stringify(json3) })
-    return route.fulfill({ contentType: 'text/html', body: ytHtml(!u.includes('notracks')) })
+    return route.fulfill({ contentType: 'text/html', body: ytHtml(!u.includes('notracks'), u.includes('emptytt')) })
   })
   await ctx.route('https://article.test/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: `<!doctype html><title>Long read</title><article><p>${'First paragraph about gardens and soil. '.repeat(10)}</p><p>${'Second paragraph about compost and water. '.repeat(10)}</p></article>` }))
@@ -44,11 +45,12 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
         return r
       }
       window.__calls = []
-      const store = {}
+      const store = Object.assign({}, o.local || {})
+      window.__store = store
       const rt = {
         sendMessage: async (m) => {
           window.__calls.push(m)
-          if (m.type === 'cc-ai-status') return { ok: true, ready: o.ready !== false, model: 'm', lang: '中文', transcribe: true, maxChars: 600000 }
+          if (m.type === 'cc-ai-status') return { ok: true, ready: o.ready !== false, model: 'm', lang: '中文', transcribe: true, subtitles: true, maxChars: 600000 }
           if (m.type === 'cc-ai-run') {
             window.__job = m.req
             return { ok: true, id: 7 }
@@ -61,10 +63,16 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
               ask: { answer: '因为它没有垃圾回收 [0:41]。', refs: [41000] },
               cards: { cards: [{ q: 'Rust 的特点？', a: '又快又安全', t: 41000 }] },
               quotes: { quotes: [{ text: 'Rust is fast and safe.', t: 41000 }] },
-              translate: { lines: window.__job.lines.map((l) => ({ t: l.t, text: '译:' + l.text })), failed: 0 },
+              translate: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: '译:' + l.text })), failed: 0 },
               rewrite: { text: '改写后的文案' },
+              explain: { text: 'Rust 是一门系统语言。' },
+              note: { quote: '整理后的完整句子。' },
+              refine: { quote: '优化后的笔记。' },
+              punctuate: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: l.text + '。' })), failed: 0 },
+              subtitles: { lines: o.subs === false ? [] : [{ t: 1000, text: '在线字幕第一句' }, { t: 6000, text: '在线字幕第二句' }], durationMs: 12000, track: '在线字幕（en）', source: 'subtitles' },
+              transcribe: { lines: [{ t: 0, text: '大家好，今天讲讲 Rust。' }, { t: 5000, text: '它又快又安全。' }], durationMs: 12000, track: '清影转写' },
             }[k]
-            return { ok: true, state: 'done', done: 1, total: 1, result }
+            return { ok: true, state: 'done', done: 1, total: 1, note: k === 'transcribe' ? '正在转写…' : '', result }
           }
           if (m.type === 'cc-note' || m.type === 'cc-send-page') return { ok: true }
           return { ok: false, error: 'unknown ' + m.type }
@@ -85,6 +93,66 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       b.click()
     }, [label, sel])
   const settle = (page, ms = 1200) => page.waitForTimeout(ms)
+
+
+  // ---- 笔记 / 划词解释 / 顺句
+  {
+    const { page, errors } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '文稿')
+    // 点 ＋ 记一条
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('.ln .rec')).find(Boolean).click())
+    await settle(page, 300)
+    ok('点 ＋ 存进了笔记', await page.evaluate(() => window.__store.vsumNotes?.length === 1))
+    // 划词
+    await page.evaluate(() => {
+      const r = window.__roots.find((x) => x.querySelector('.ln'))
+      const span = r.querySelector('.ln span:nth-child(2)')
+      const rng = document.createRange()
+      rng.setStart(span.firstChild, 0)
+      rng.setEnd(span.firstChild, 3)
+      const s = r.getSelection ? r.getSelection() : getSelection()
+      s.removeAllRanges()
+      s.addRange(rng)
+      r.querySelector('#lines').dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+      span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    })
+    ok('划词出现工具条', (await text(page, '#selbar')).includes('解释'))
+    await clickText(page, '解释')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('Rust 是一门系统语言')), null, { timeout: 8000 })
+    const ex = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1).req)
+    ok('解释请求带选中文字和上下文', ex.kind === 'explain' && ex.text.length > 0 && typeof ex.context === 'string', JSON.stringify(ex).slice(0, 160))
+    await clickText(page, '存为笔记')
+    await settle(page, 300)
+    ok('划词存为笔记（原文）', await page.evaluate(() => window.__store.vsumNotes.length === 2))
+    // 顺句
+    await clickText(page, '顺句')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('还原顺句前')), null, { timeout: 8000 })
+    ok('顺句后文稿有标点', (await text(page, '#lines')).includes('。'))
+    await clickText(page, '还原顺句前')
+    ok('可以还原', !(await text(page)).includes('还原顺句前'))
+    // 笔记页
+    await clickText(page, '笔记')
+    ok('笔记页列出 2 条', (await text(page)).includes('2 条'))
+    await clickText(page, 'AI 整理')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('整理后的完整句子')), null, { timeout: 8000 })
+    await clickText(page, '替换')
+    await settle(page, 300)
+    ok('AI 整理后替换原文', await page.evaluate(() => window.__store.vsumNotes.some((n) => n.text === '整理后的完整句子。')))
+    // 导出
+    const dl = page.waitForEvent('download', { timeout: 5000 }).catch(() => null)
+    await clickText(page, '导出笔记 (.md)')
+    await dl
+    // 搜索
+    await page.evaluate(() => {
+      const i = window.__roots.map((r) => r.querySelector('.body input[type=text]')).find(Boolean)
+      i.value = '不存在的词'
+      i.dispatchEvent(new Event('input'))
+    })
+    ok('搜索无结果', (await text(page)).includes('0 条'))
+    ok('笔记流程无页面错误', errors.length === 0, errors.join('|'))
+    await page.close()
+  }
 
   // ---- YouTube：读字幕 → 摘要
   {
@@ -181,12 +249,94 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
 
   // ---- YouTube 没有字幕
   {
-    const { page } = await open(YT + '&notracks=1')
-    await page.waitForFunction(() => window.__roots?.some((r) => /没有字幕|没有找到字幕/.test(r.textContent)), null, { timeout: 8000 })
-    ok('没有字幕：提示并给出“让清影下载并转写”', /让清影下载并转写/.test(await text(page)) && /导入字幕文件/.test(await text(page)))
-    await clickText(page, '让清影下载并转写')
+    const { page } = await open(YT + '&notracks=1', { subs: false })
+    await page.waitForFunction(() => window.__roots?.some((r) => /清影也没有/.test(r.textContent)), null, { timeout: 8000 })
+    ok('没有字幕：提示并给出“用清影转写”', /用清影转写/.test(await text(page)) && /导入字幕文件/.test(await text(page)))
+    await clickText(page, '用清影转写（语音识别）')
+    await page.waitForFunction(() => window.__roots?.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    const tr = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-ai-run' && c.req.kind === 'transcribe')?.req)
+    ok('转写请求带页面网址和标题', tr && /youtube\.com/.test(tr.url) && !!tr.title, JSON.stringify(tr))
+    ok('转写完成后文稿有 2 段、轨道是清影转写', /2 段/.test(await text(page, '.meta')) && /清影转写/.test(await text(page, '.meta')), await text(page, '.meta'))
+    const before = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)
+    await clickText(page, '生成摘要').catch(() => {})
+    await settle(page, 400)
+    const sumReq = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1)?.req)
+    ok('转写出的文稿可以继续做摘要', sumReq && (sumReq.kind === 'summary' ? sumReq.lines.length === 2 && sumReq.lines[1].t === 5000 : before > 0), JSON.stringify(sumReq)?.slice(0, 200))
+    await page.evaluate(() => {})
+    await page.close()
+  }
+
+  // ---- YouTube 字幕地址返回空内容：清影用 yt-dlp 取在线字幕
+  {
+    const { page, errors } = await open(YT + '&emptytt=1')
+    await page.waitForFunction(() => window.__roots?.some((r) => /在线字幕（en）/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    const kinds = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').map((c) => c.req.kind))
+    ok('空字幕：不再报 JSON 错误，改让清影取在线字幕', kinds.includes('subtitles') && !(await text(page)).includes('Unexpected end'), kinds.join(','))
+    ok('取到的在线字幕有 2 段', /2 段/.test(await text(page, '.meta')), await text(page, '.meta'))
+    ok('空字幕兜底没有页面报错', errors.length === 0, errors.join('|'))
+    await page.close()
+  }
+
+  // ---- 在线取不到时用记住的本地字幕；在线读得到时以在线为准
+  {
+    const local = { vsumLocal: { 'youtube:abc123XYZ_-': { ts: 1, data: { name: 'my.srt', lines: [{ t: 0, text: '本地第一句' }, { t: 3000, text: '本地第二句' }, { t: 6000, text: '本地第三句' }] } } } }
+    const a = await open(YT + '&emptytt=1', { local })
+    await a.page.waitForFunction(() => window.__roots?.some((r) => /本地字幕/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    const calls = await a.page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)
+    ok('在线读不到：自动用记住的本地字幕，不再请求清影', calls === 0 && /3 段/.test(await text(a.page, '.meta')), await text(a.page, '.meta'))
+    await a.page.close()
+    const b = await open(YT, { local })
+    await b.page.waitForFunction(() => window.__roots?.some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    ok('在线字幕读得到时优先用在线的', /English/.test(await text(b.page, '.meta')) && !/本地/.test(await text(b.page, '.meta')), await text(b.page, '.meta'))
+    await b.page.close()
+  }
+
+  // ---- 粘贴 / 导入的字幕按视频记住
+  {
+    const { page } = await open(YT + '&notracks=1&emptytt=1', { subs: false })
+    await page.waitForFunction(() => window.__roots?.some((r) => /清影也没有|没有字幕|没有找到字幕/.test(r.textContent)), null, { timeout: 8000 })
+    await clickText(page, '粘贴文字')
+    await page.evaluate(() => {
+      window.__roots.map((r) => r.querySelector('#paste')).find(Boolean).value = '[0:00] 第一句\n[0:05] 第二句'
+    })
+    await clickText(page, '使用粘贴的文字')
     await settle(page, 300)
-    ok('点了会把当前页发给清影', await page.evaluate(() => window.__calls.some((c) => c.type === 'cc-send-page')))
+    const saved = await page.evaluate(() => window.__store.vsumLocal && Object.values(window.__store.vsumLocal)[0]?.data?.lines?.length)
+    ok('粘贴的文字按视频记住', saved >= 1, String(saved))
+    await page.close()
+  }
+
+  // ---- 导图：全屏查看、缩放
+  {
+    const { page } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '导图')
+    await clickText(page, '生成思维导图')
+    await page.waitForFunction(() => window.__roots.some((r) => r.querySelector('.svgbox svg')), null, { timeout: 8000 })
+    await clickText(page, '全屏查看 / 缩放')
+    await settle(page, 300)
+    const tf = () => page.evaluate(() => window.__roots.map((r) => r.querySelector('.mapview .stage > svg')).find(Boolean)?.style.transform || '')
+    const scale = async () => Number((await tf()).match(/scale\(([\d.]+)\)/)?.[1] || 0)
+    const s0 = await scale()
+    ok('全屏导图打开并适应窗口', s0 > 0, await tf())
+    await clickText(page, '+')
+    const s1 = await scale()
+    ok('点 + 放大', s1 > s0, `${s0} → ${s1}`)
+    await page.mouse.move(640, 400)
+    await page.mouse.wheel(0, -300)
+    await settle(page, 200)
+    ok('滚轮放大', (await scale()) > s1)
+    const t1 = await tf()
+    await page.mouse.move(640, 400)
+    await page.mouse.down()
+    await page.mouse.move(540, 360, { steps: 4 })
+    await page.mouse.up()
+    ok('拖动平移', (await tf()) !== t1)
+    await clickText(page, '适应窗口')
+    ok('适应窗口还原缩放', Math.abs((await scale()) - s0) < 0.01)
+    await page.keyboard.press('Escape')
+    await settle(page, 200)
+    ok('Esc 关闭全屏导图', !(await page.evaluate(() => window.__roots.some((r) => r.querySelector('.mapview')))))
     await page.close()
   }
 
