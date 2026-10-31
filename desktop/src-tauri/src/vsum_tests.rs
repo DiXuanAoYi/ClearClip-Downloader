@@ -310,3 +310,10 @@ fn custom_prompts_replace_the_built_in_one_and_language_is_detected() {
     assert!(!is_chinese(&[Line { t: 0, text: "This is English only".into() }]));
     assert!(!is_chinese(&[]));
 }
+
+#[test]
+fn chunk_start_label_reads_the_first_timestamp() {
+    assert_eq!(chunk_start_label("[12:30] hello\n[12:35] world"), "12:30");
+    assert_eq!(chunk_start_label("\n  [1:02:03] x"), "1:02:03");
+    assert_eq!(chunk_start_label("no stamps here"), "");
+}

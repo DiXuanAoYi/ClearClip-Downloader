@@ -179,14 +179,15 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '文稿')
     ok('文稿列出 3 行', (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 3)
     await page.evaluate(() => {
-      const i = window.__roots.map((r) => r.querySelector('input[placeholder="搜索文稿"]')).find(Boolean)
+      const i = window.__roots.map((r) => r.querySelector('input#tsearch')).find(Boolean)
       i.value = 'rust'
       i.dispatchEvent(new Event('input'))
     })
     await settle(page, 300)
-    ok('搜索只留下命中的行', (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 1)
+    ok('搜索：全部行保留，命中的行加亮并标出词', (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 3 && (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln.hit mark').length, 0))) >= 1)
+    ok('搜索：显示 1/1 计数', /1\/1/.test(await text(page)))
     await page.evaluate(() => {
-      const i = window.__roots.map((r) => r.querySelector('input[placeholder="搜索文稿"]')).find(Boolean)
+      const i = window.__roots.map((r) => r.querySelector('input#tsearch')).find(Boolean)
       i.value = ''
       i.dispatchEvent(new Event('input'))
     })

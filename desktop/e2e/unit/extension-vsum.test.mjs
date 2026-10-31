@@ -247,3 +247,18 @@ assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: 
 }
 
 console.log('extension-vsum: ok')
+
+// ---- 搜索高亮 / 回答引用校验
+{
+  assert.deepEqual(plain(V.splitMarks('Hello hello World', 'hello')), [{ s: 'Hello', hit: true }, { s: ' ', hit: false }, { s: 'hello', hit: true }, { s: ' World', hit: false }])
+  assert.deepEqual(plain(V.splitMarks('abc', '  ')), [{ s: 'abc', hit: false }])
+
+  const lines = [{ t: 0, text: 'intro' }, { t: 60000, text: 'the key point' }, { t: 120000, text: 'wrap up' }]
+  const c = V.citations('结论在 [1:00]，另见 [1:00-1:10] 和 [99:00]。', lines)
+  assert.equal(c.refs.length, 1)
+  assert.equal(c.refs[0].text, 'the key point')
+  assert.equal(c.bad, 1)
+  assert.equal(c.unsupported, false)
+  assert.equal(V.citations('随便说说', lines).unsupported, true)
+  assert.equal(V.citations('字幕中未找到相关内容', lines).unsupported, false)
+}

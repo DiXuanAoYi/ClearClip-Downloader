@@ -612,6 +612,17 @@ fn model_err() -> AppError {
     AppError::parser("模型没有按要求返回内容，请换一个模型或稍后重试。")
 }
 
+/// 一段 `[m:ss] …` 文稿的起点标签，用来告诉用户哪一段没生成成功。
+fn chunk_start_label(chunk: &str) -> String {
+    chunk
+        .lines()
+        .find_map(|l| {
+            let l = l.trim();
+            l.strip_prefix('[').and_then(|r| r.split_once(']')).map(|(t, _)| t.to_string())
+        })
+        .unwrap_or_default()
+}
+
 /// 按类型处理，返回给扩展的 JSON。
 pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usize, req: &Req, progress: Progress<'_>) -> AppResult<Value> {
     let lang = if req.lang.trim().is_empty() { default_lang } else { req.lang.trim() };
@@ -628,10 +639,32 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             let system = summary_system(lang, &req.style, !article, false);
             let n = chunks.len() + usize::from(chunks.len() > 1);
             let mut parts: Vec<(ai::Summary, Vec<String>)> = vec![];
+            // 某一段偶尔失败（超时 / 限流 / 模型没按格式回）：重试一次，还不行就跳过，别让整份摘要作废；
+            // 全部失败才报第一个真实错误。跳过的段落起点随结果返回，界面会提示。
+            let mut failed: Vec<String> = vec![];
+            let mut first_err: Option<AppError> = None;
             for (i, c) in chunks.iter().enumerate() {
                 progress(i, n)?;
-                let resp = chat(ep, model, &system, c).await?;
-                parts.push((parse_summary(&resp).ok_or_else(model_err)?, parse_keywords(&resp)));
+                let mut got = None;
+                for _ in 0..2 {
+                    match chat(ep, model, &system, c).await {
+                        Ok(resp) => match parse_summary(&resp) {
+                            Some(sm) => {
+                                got = Some((sm, parse_keywords(&resp)));
+                                break;
+                            }
+                            None => first_err = first_err.or_else(|| Some(model_err())),
+                        },
+                        Err(e) => first_err = first_err.or(Some(e)),
+                    }
+                }
+                match got {
+                    Some(p) => parts.push(p),
+                    None => failed.push(chunk_start_label(c)),
+                }
+            }
+            if parts.is_empty() {
+                return Err(first_err.unwrap_or_else(model_err));
             }
             let (mut sum, keywords) = if parts.len() == 1 {
                 let (s, k) = parts.remove(0);
@@ -658,7 +691,7 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             let total = req.lines.iter().map(|l| l.t).max().unwrap_or(0) + 1000;
             sum.chapters = ai::close_chapters(sum.chapters, total);
             progress(n, n)?;
-            Ok(json!({"summary": sum.summary, "points": sum.points, "chapters": sum.chapters, "keywords": keywords}))
+            Ok(json!({"summary": sum.summary, "points": sum.points, "chapters": sum.chapters, "keywords": keywords, "failed": failed}))
         }
         "mindmap" => {
             let chunks = chunk_lines(&lines, CHUNK_CHARS);

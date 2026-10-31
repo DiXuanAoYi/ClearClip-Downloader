@@ -25,6 +25,11 @@
     .ln { display: flex; gap: 8px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
     .ln:hover { background: #d9762b14; }
     .ln.cur { background: #d9762b2e; }
+    .ln.hit { background: #f3d06a30; }
+    .ln.hit.now { outline: 2px solid #d9762b; }
+    mark { background: #ffe066; color: #1b1f1d; border-radius: 2px; padding: 0 1px; }
+    .src { border-left: 3px solid #d9762b66; margin: 4px 0 0 2px; padding: 2px 8px; font-size: 12px; color: #5d6862; cursor: pointer; }
+    .warn { color: #a4561a; font-size: 12px; margin-top: 4px; }
     .ln .tm { color: #b4561a; font-variant-numeric: tabular-nums; flex: none; }
     .ln .tr { color: #5d6862; display: block; }
     .mute { color: #5d6862; font-size: 12px; }
@@ -65,7 +70,7 @@
       .selbar, .note { background: #262f2a; border-color: #3a443e; }
       .card, .msg .b, select, input[type=text], textarea { background: #262f2a; border-color: #3a443e; color: #eef1ee; }
       button.sec { background: #262f2a; color: #eef1ee; border-color: #3a443e; }
-      .ln .tr, .meta, .mute { color: #a9b3ad; }
+      .ln .tr, .meta, .mute, .src { color: #a9b3ad; }
       .warn { background: #3a2f1e; border-color: #6b5530; }
     }
   `
@@ -78,6 +83,8 @@
     prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: false, view: 'both', lead: 3, pill: true, prompts: {} },
     res: {}, // 本次的结果：summary / outline / cards / quotes / translated / rewrite
     chat: [],
+    hit: 0, // 当前搜索命中的第几处
+    detached: false, // 用户手动滚走了，不再自动跟随
     job: null, // { id, kind, done, total }
     busy: false,
     query: '',
@@ -392,6 +399,7 @@
       box.append(h('div', { class: 'mute', text: '读取字幕后，由清影用你设置的大模型生成：总结、要点、关键词和章节。长视频会自动分段处理。' }))
       return box
     }
+    if (r.failed?.length) box.append(h('div', { class: 'warn', text: `有 ${r.failed.length} 段没生成成功（从 ${r.failed.filter(Boolean).join('、') || '部分位置'} 起），摘要不完整；点“重新生成”可再试。` }))
     box.append(h('h4', { text: '总结' }), h('div', { class: 'card', text: r.summary }))
     if (r.keywords?.length) box.append(h('div', { class: 'chips' }, ...r.keywords.map((k) => h('span', { class: 'chip', text: k }))))
     if (r.points?.length) box.append(h('h4', { text: '要点' }), h('ul', {}, ...r.points.map((p) => h('li', {}, ...linkify(p)))))
@@ -425,24 +433,30 @@
 
   function tabTranscript() {
     const d = S.data
-    const hits = S.query.trim() ? new Set(V.searchLines(d.lines, S.query)) : null
+    const found = S.query.trim() ? V.searchLines(d.lines, S.query) : []
+    const hits = found.length ? new Set(found) : null
+    if (S.hit >= found.length) S.hit = 0
+    const nowIdx = found[S.hit]
     const tr = S.res.translated
     const mode = S.prefs.view
     const body = h('div', { id: 'lines', onmouseup: onSelect })
     d.lines.forEach((l, i) => {
-      if (hits && !hits.has(i)) return
       const [main, sub] = V.viewLine(l.text, tr?.[i], mode)
-      body.append(h('div', { class: 'ln', 'data-i': i, onclick: () => !getSel() && seek(l.t) },
+      body.append(h('div', { class: `ln${hits?.has(i) ? ' hit' : ''}${i === nowIdx ? ' now' : ''}`, 'data-i': i, onclick: () => !getSel() && seek(l.t) },
         isVideo() && h('span', { class: 'tm', text: V.fmtClock(l.t) }),
-        h('span', { style: 'flex:1' }, main, sub ? h('span', { class: 'tr', text: sub }) : null),
+        h('span', { style: 'flex:1' }, ...marks(main), sub ? h('span', { class: 'tr' }, ...marks(sub)) : null),
         h('button', { class: 'rec', title: '把这句记成笔记', text: '＋', onclick: (e) => (e.stopPropagation(), addNote({ t: l.t, text: l.text })) })))
     })
     return h('div', {},
       h('div', { class: 'tools' },
-        h('input', { type: 'text', placeholder: '搜索文稿', value: S.query, style: 'flex:1', oninput: (e) => ((S.query = e.target.value), (S.keepFocus = true), render()) }),
-        hits && h('span', { class: 'mute', text: `${hits.size} 处` }),
+        h('input', { type: 'text', id: 'tsearch', placeholder: '搜索文稿（/）', value: S.query, style: 'flex:1', oninput: (e) => ((S.query = e.target.value), (S.hit = 0), (S.keepFocus = true), (S.jumpHit = true), render()), onkeydown: (e) => e.key === 'Enter' && !e.isComposing && (e.preventDefault(), stepHit(e.shiftKey ? -1 : 1)) }),
+        found.length > 0 && h('span', { class: 'mute', text: `${S.hit + 1}/${found.length}` }),
+        S.query.trim() && !found.length && h('span', { class: 'mute', text: '没有' }),
+        found.length > 1 && h('button', { class: 'sec', text: '↑', title: '上一处（Shift+Enter）', onclick: () => stepHit(-1) }),
+        found.length > 1 && h('button', { class: 'sec', text: '↓', title: '下一处（Enter）', onclick: () => stepHit(1) }),
       ),
       h('div', { class: 'tools' },
+        S.detached && S.prefs.follow && isVideo() && h('button', { text: '回到当前句', onclick: () => ((S.detached = false), tick(true)) }),
         isVideo() && h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.follow, onchange: (e) => ((S.prefs.follow = e.target.checked), savePrefs()) }), ' 跟随播放'),
         h('button', { class: 'sec', text: tr ? '重新翻译' : `翻译成${outLang()}`, disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
         tr && sel([['both', '双语'], ['orig', '只看原文'], ['tr', '只看译文']], mode, (v) => ((S.prefs.view = v), savePrefs(), render()), '显示'),
@@ -455,6 +469,21 @@
       body,
     )
   }
+
+  /** 把文字里的搜索词用 <mark> 标出来。 */
+  function marks(text) {
+    return V.splitMarks(text, S.query).map((p) => (p.hit ? h('mark', { text: p.s }) : p.s))
+  }
+
+  function stepHit(d) {
+    const n = V.searchLines(S.data.lines, S.query).length
+    if (!n) return
+    S.hit = (S.hit + d + n) % n
+    S.jumpHit = true
+    S.keepFocus = ui.root.activeElement?.id === 'tsearch'
+    render()
+  }
+
 
   async function punctuate() {
     const before = S.data.lines
@@ -530,6 +559,13 @@
   }
 
   function onKey(e) {
+    if (e.key === '/' && S.tab === 'transcript' && S.data && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing) {
+      const t = e.composedPath?.()[0] || e.target
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return
+      const box = ui.root.getElementById?.('tsearch') || ui.root.querySelector('#tsearch')
+      if (box) (e.preventDefault(), e.stopPropagation(), box.focus())
+      return
+    }
     if (e.key !== 'n' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.isComposing) return
     const el = e.composedPath?.()[0] || e.target
     if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return
@@ -752,7 +788,13 @@
       box.append(h('div', { class: 'mute', text: '针对这个视频提问。回答里的 [m:ss] 可以点，直接跳到那一刻。' }),
         h('div', { class: 'chips' }, ...V.SUGGESTIONS.map((q) => h('button', { class: 'sec', text: q, onclick: () => ask(q) }))))
     }
-    for (const m of S.chat) box.append(h('div', { class: `msg${m.role === 'user' ? ' u' : ''}` }, h('div', { class: 'b' }, ...linkify(m.text))))
+    for (const m of S.chat) {
+      const cite = m.role === 'assistant' ? V.citations(m.text, S.data.lines) : null
+      box.append(h('div', { class: `msg${m.role === 'user' ? ' u' : ''}` }, h('div', { class: 'b' }, ...linkify(m.text),
+        ...(cite?.refs || []).map((r) => h('div', { class: 'src', title: '回答引用的原话，点一下跳到那里', onclick: () => seek(r.ms) }, `[${r.label}] ${r.text}`)),
+        cite?.unsupported && h('div', { class: 'warn', text: '这条回答没有给出可核对的时间点，请当作参考，别全信。' }),
+        cite?.bad && h('div', { class: 'warn', text: `有 ${cite.bad} 处时间点超出了文稿范围，已忽略。` }))))
+    }
     if (S.chat.length) box.append(h('div', { class: 'tools' }, h('button', { class: 'sec', text: '清空对话', onclick: () => ((S.chat = []), render()) }), h('button', { class: 'sec', text: '复制对话', onclick: () => copy(S.chat.map((m) => `${m.role === 'user' ? '问' : '答'}：${m.text}`).join('\n\n'), '对话') })))
     return box
   }
@@ -969,6 +1011,10 @@
     panel.replaceChildren(...children)
     renderProgress()
     ui.root.querySelector('.body').scrollTop = keepScroll
+    if (S.jumpHit) {
+      S.jumpHit = false
+      ui.root.querySelector('.ln.now')?.scrollIntoView({ block: 'center' })
+    }
     if (S.keepFocus) {
       S.keepFocus = false
       const i = ui.root.querySelector('.body input[type=text]')
@@ -980,7 +1026,7 @@
   }
 
   /** 跟随播放：高亮当前行 / 章节。 */
-  function tick() {
+  function tick(force) {
     const v = video()
     placePill(v)
     if (!v || !S.data || !isVideo()) return
@@ -992,8 +1038,8 @@
       if (prev !== cur) {
         prev?.classList.remove('cur')
         cur?.classList.add('cur')
-        if (S.prefs.follow && cur && !S.query) cur.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      }
+        if (S.prefs.follow && cur && !S.query && !S.detached) cur.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      } else if (force && cur) cur.scrollIntoView({ block: 'center', behavior: 'smooth' })
     } else if (S.tab === 'chapters') {
       const i = V.chapterAt(chapterList().list, ms)
       const cur = ui.root.querySelector(`.ln[data-ch="${i}"]`)
@@ -1047,6 +1093,15 @@
     if (S.job) send({ type: 'cc-ai-cancel', id: S.job.id })
     ui.remove()
     delete globalThis.__ccVsum
+  }
+
+  for (const ev of ['wheel', 'touchmove']) {
+    ui.root.addEventListener(ev, () => {
+      if (S.tab === 'transcript' && S.prefs.follow && isVideo() && !S.detached && !S.query) {
+        S.detached = true
+        render()
+      }
+    }, { passive: true })
   }
 
   globalThis.__ccVsum = { stop }
