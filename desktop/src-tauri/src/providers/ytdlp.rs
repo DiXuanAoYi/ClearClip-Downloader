@@ -638,6 +638,79 @@ pub async fn download(
     std::fs::metadata(out).map(|m| m.len()).map_err(|e| DlError::Io(e.to_string()))
 }
 
+/// 只取一个网页视频的音频（用来转写），保存到 `dir` 下的 `audio.<扩展名>`，返回文件路径。
+/// `canceled` 每隔一会儿被问一次，返回 true 就结束 yt-dlp；`on_percent` 收到 0–100 的下载进度。
+pub async fn fetch_audio(ctx: &Ctx<'_>, page_url: &str, dir: &Path, canceled: impl Fn() -> bool, mut on_percent: impl FnMut(f64)) -> AppResult<PathBuf> {
+    let (mut cmd, cookie_file) = command(ctx, page_url)?;
+    cmd.args(["--newline", "--no-playlist", "--no-mtime", "--no-download-archive", "--progress", "--progress-template"])
+        .arg(progress_template())
+        .args(["-f", "bestaudio/best", "-o"])
+        .arg(dir.join("audio.%(ext)s"))
+        .arg("--")
+        .arg(page_url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| AppError::new(ErrorKind::NeedUpdate, format!("无法运行 yt-dlp：{e}")))?;
+    let stdout = child.stdout.take().ok_or_else(|| AppError::msg("yt-dlp 无输出"))?;
+    let stderr = child.stderr.take().ok_or_else(|| AppError::msg("yt-dlp 无输出"))?;
+    let err_task = tokio::spawn(async move {
+        let mut text = String::new();
+        let mut e = stderr;
+        let _ = tokio::io::AsyncReadExt::read_to_string(&mut e, &mut text).await;
+        text
+    });
+    let mut lines = BufReader::new(stdout).lines();
+    let mut tick = tokio::time::interval(Duration::from_millis(300));
+    let deadline = tokio::time::Instant::now() + FETCH_AUDIO_TIMEOUT;
+    let mut stopped: Option<AppError> = None;
+    loop {
+        tokio::select! {
+            l = lines.next_line() => match l {
+                Ok(Some(line)) => {
+                    if let Some(p) = parse_progress(&line) {
+                        if let Some(t) = p.total {
+                            on_percent((p.downloaded as f64 / t as f64 * 100.0).clamp(0.0, 100.0));
+                        }
+                    }
+                }
+                _ => break,
+            },
+            _ = tick.tick() => {
+                if canceled() {
+                    stopped = Some(AppError::msg("canceled"));
+                    break;
+                }
+                if tokio::time::Instant::now() > deadline {
+                    stopped = Some(AppError::new(ErrorKind::Network, "取音频超时（超过 30 分钟）"));
+                    break;
+                }
+            }
+        }
+    }
+    if let Some(e) = stopped {
+        let _ = child.kill().await;
+        if let Some(cf) = &cookie_file {
+            cf.merge_back(ctx.cookies);
+        }
+        return Err(e);
+    }
+    let status = child.wait().await.map_err(|e| AppError::msg(e.to_string()))?;
+    let tail = err_task.await.unwrap_or_default();
+    if let Some(cf) = &cookie_file {
+        cf.merge_back(ctx.cookies);
+    }
+    if !status.success() {
+        return Err(classify_stderr(&tail));
+    }
+    std::fs::read_dir(dir)?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.file_stem().is_some_and(|s| s == "audio") && !p.extension().is_some_and(|e| e == "part" || e == "ytdl"))
+        .ok_or_else(|| AppError::msg("yt-dlp 没有取到音频"))
+}
+
+const FETCH_AUDIO_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
 /// 交给 yt-dlp 的输出路径：临时文件名后加上真实扩展名，完成后再改回临时文件名。
 pub fn output_path(part: &Path, ext: &str) -> PathBuf {
     let ext = if ext.is_empty() || !ext.chars().all(|c| c.is_ascii_alphanumeric()) { "mp4" } else { ext };
@@ -824,5 +897,66 @@ mod tests {
         assert!(!path.exists());
         assert!(store.header_for("https://www.youtube.com/").unwrap().contains("SID=9"));
         assert!(CookieFile::create(&store, "https://vimeo.com/1").is_none());
+    }
+
+    #[cfg(unix)]
+    fn scratch() -> PathBuf {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let d = std::env::temp_dir().join(format!("cc-ytdlp-test-{}-{}", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[cfg(unix)]
+    fn fake_ytdlp(dir: &Path, script: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = dir.join("yt-dlp");
+        std::fs::write(&bin, format!("#!/bin/sh\n{script}\n")).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        bin
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fetch_audio_returns_the_downloaded_file_and_reports_progress() {
+        let dir = scratch();
+        let work = dir.as_path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        // 找到 -o 后面的模板，把 %(ext)s 换成 m4a，写一个文件并打印两行进度
+        let bin = fake_ytdlp(
+            dir.as_path(),
+            r#"while [ $# -gt 0 ]; do if [ "$1" = "-o" ]; then out="$2"; fi; shift; done
+f=$(echo "$out" | sed 's/%(ext)s/m4a/')
+echo "CCPROG 50 100 NA 10"
+echo "CCPROG 100 100 NA 10"
+echo audio > "$f""#,
+        );
+        let (client, settings, store) = (reqwest::Client::new(), Settings::default(), CookieStore::in_memory());
+        let mut ctx = Ctx::new(&client, &settings, &store);
+        ctx.ytdlp = Some(bin);
+        let seen = std::sync::Mutex::new(vec![]);
+        let f = fetch_audio(&ctx, "https://example.com/v", &work, || false, |p| seen.lock().unwrap().push(p)).await.unwrap();
+        assert_eq!(f.file_name().unwrap(), "audio.m4a");
+        assert_eq!(*seen.lock().unwrap(), vec![50.0, 100.0]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fetch_audio_stops_when_canceled_and_reports_failures() {
+        let dir = scratch();
+        let work = dir.as_path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let (client, settings, store) = (reqwest::Client::new(), Settings::default(), CookieStore::in_memory());
+        let mut ctx = Ctx::new(&client, &settings, &store);
+        ctx.ytdlp = Some(fake_ytdlp(dir.as_path(), "sleep 30"));
+        let started = std::time::Instant::now();
+        let e = fetch_audio(&ctx, "https://example.com/v", &work, || true, |_| {}).await.unwrap_err();
+        assert_eq!(e.message, "canceled");
+        assert!(started.elapsed() < Duration::from_secs(10));
+
+        ctx.ytdlp = Some(fake_ytdlp(dir.as_path(), "echo 'ERROR: Video unavailable' >&2; exit 1"));
+        let e = fetch_audio(&ctx, "https://example.com/v", &work, || false, |_| {}).await.unwrap_err();
+        assert!(e.message.contains("unavailable") || !e.message.is_empty());
     }
 }

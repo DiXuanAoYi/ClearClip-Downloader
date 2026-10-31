@@ -261,3 +261,13 @@ fn job_table_reports_state_and_forgets_old_jobs() {
 fn cancel_job_flag(id: u64, flag: &AtomicBool) -> bool {
     cancel(id) && flag.load(Ordering::Relaxed)
 }
+
+#[test]
+fn transcribe_requests_need_a_web_address_and_no_transcript() {
+    let ok = Req { kind: "transcribe".into(), url: "https://www.youtube.com/watch?v=abc".into(), ..Default::default() };
+    assert!(check(&ok).is_ok());
+    let no_url = Req { kind: "transcribe".into(), ..Default::default() };
+    assert!(check(&no_url).is_err());
+    let local = Req { kind: "transcribe".into(), url: "file:///etc/passwd".into(), ..Default::default() };
+    assert!(check(&local).is_err());
+}

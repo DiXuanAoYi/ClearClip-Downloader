@@ -61,10 +61,11 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
               ask: { answer: '因为它没有垃圾回收 [0:41]。', refs: [41000] },
               cards: { cards: [{ q: 'Rust 的特点？', a: '又快又安全', t: 41000 }] },
               quotes: { quotes: [{ text: 'Rust is fast and safe.', t: 41000 }] },
-              translate: { lines: window.__job.lines.map((l) => ({ t: l.t, text: '译:' + l.text })), failed: 0 },
+              translate: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: '译:' + l.text })), failed: 0 },
               rewrite: { text: '改写后的文案' },
+              transcribe: { lines: [{ t: 0, text: '大家好，今天讲讲 Rust。' }, { t: 5000, text: '它又快又安全。' }], durationMs: 12000, track: '清影转写' },
             }[k]
-            return { ok: true, state: 'done', done: 1, total: 1, result }
+            return { ok: true, state: 'done', done: 1, total: 1, note: k === 'transcribe' ? '正在转写…' : '', result }
           }
           if (m.type === 'cc-note' || m.type === 'cc-send-page') return { ok: true }
           return { ok: false, error: 'unknown ' + m.type }
@@ -183,10 +184,18 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
   {
     const { page } = await open(YT + '&notracks=1')
     await page.waitForFunction(() => window.__roots?.some((r) => /没有字幕|没有找到字幕/.test(r.textContent)), null, { timeout: 8000 })
-    ok('没有字幕：提示并给出“让清影下载并转写”', /让清影下载并转写/.test(await text(page)) && /导入字幕文件/.test(await text(page)))
-    await clickText(page, '让清影下载并转写')
-    await settle(page, 300)
-    ok('点了会把当前页发给清影', await page.evaluate(() => window.__calls.some((c) => c.type === 'cc-send-page')))
+    ok('没有字幕：提示并给出“用清影转写”', /用清影转写/.test(await text(page)) && /导入字幕文件/.test(await text(page)))
+    await clickText(page, '用清影转写（语音识别）')
+    await page.waitForFunction(() => window.__roots?.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    const tr = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-ai-run' && c.req.kind === 'transcribe')?.req)
+    ok('转写请求带页面网址和标题', tr && /youtube\.com/.test(tr.url) && !!tr.title, JSON.stringify(tr))
+    ok('转写完成后文稿有 2 段、轨道是清影转写', /2 段/.test(await text(page, '.meta')) && /清影转写/.test(await text(page, '.meta')), await text(page, '.meta'))
+    const before = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)
+    await clickText(page, '生成摘要').catch(() => {})
+    await settle(page, 400)
+    const sumReq = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1)?.req)
+    ok('转写出的文稿可以继续做摘要', sumReq && (sumReq.kind === 'summary' ? sumReq.lines.length === 2 && sumReq.lines[1].t === 5000 : before > 0), JSON.stringify(sumReq)?.slice(0, 200))
+    await page.evaluate(() => {})
     await page.close()
   }
 

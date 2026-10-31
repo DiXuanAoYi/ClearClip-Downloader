@@ -56,11 +56,14 @@ pub struct Req {
     pub text: String,
     pub question: String,
     pub history: Vec<Turn>,
+    /// transcribe：要转写的网页视频地址
+    pub url: String,
 }
 
 // ---------- 任务表 ----------
 
 struct Job {
+    note: String,
     done: usize,
     total: usize,
     result: Option<Value>,
@@ -85,7 +88,7 @@ pub fn job_json(id: u64) -> Option<Value> {
         } else {
             "running"
         };
-        json!({"state": state, "done": j.done, "total": j.total, "result": j.result, "error": j.error})
+        json!({"state": state, "done": j.done, "total": j.total, "note": j.note, "result": j.result, "error": j.error})
     })
 }
 
@@ -102,7 +105,7 @@ fn new_job() -> (u64, Arc<AtomicBool>) {
         let Some(oldest) = jobs.iter().min_by_key(|(_, j)| j.created).map(|(k, _)| *k) else { break };
         jobs.remove(&oldest);
     }
-    jobs.insert(id, Job { done: 0, total: 1, result: None, error: None, cancel: cancel.clone(), created: Instant::now() });
+    jobs.insert(id, Job { note: String::new(), done: 0, total: 1, result: None, error: None, cancel: cancel.clone(), created: Instant::now() });
     (id, cancel)
 }
 
@@ -110,6 +113,9 @@ fn new_job() -> (u64, Arc<AtomicBool>) {
 pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     use tauri::Manager;
     check(&req)?;
+    if req.kind == "transcribe" {
+        return start_transcribe(app, req);
+    }
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
     let ep = ai::chat_endpoint(&st, &settings)?;
@@ -137,8 +143,85 @@ pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     Ok(id)
 }
 
+// ---------- 没有字幕时：取音频 → 转写 ----------
+
+/// 把网页视频转写成带时间戳的文稿。作为清影的后台任务运行（任务列表里也看得到、可取消），结果交给扩展。
+fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
+    use tauri::Manager;
+    let st = app.state::<Arc<crate::AppState>>().inner().clone();
+    let settings = st.settings();
+    ai::stt_ready(&st, &settings)?;
+    if crate::postprocess::find_ffmpeg(&st).is_none() {
+        return Err(crate::postprocess::ffmpeg_missing());
+    }
+    if !settings.use_ytdlp || crate::tools::resolve(&st, crate::tools::Tool::YtDlp).is_none() {
+        return Err(AppError::new(crate::error::ErrorKind::NeedUpdate, "转写网页视频需要 yt-dlp 组件。请在“设置 → 组件”中安装 yt-dlp 后重试。"));
+    }
+    let (id, cancel) = new_job();
+    let title = if req.title.trim().is_empty() { "网页视频".to_string() } else { req.title.trim().chars().take(80).collect() };
+    let url = req.url.clone();
+    let lang = if req.lang.trim().is_empty() { String::new() } else { req.lang.trim().to_string() };
+    crate::media_tools::spawn_job(app, title, "视频转写", move |ctx| async move {
+        // 扩展点了取消 → 取消清影里对应的后台任务；后台任务的进度 → 扩展轮询到的进度
+        let watcher = {
+            let (st, media_id) = (ctx.st.clone(), ctx.id);
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                    if cancel.load(Ordering::Relaxed) {
+                        st.media_jobs.cancel(media_id);
+                    }
+                    if let Some(s) = st.media_jobs.snapshot().into_iter().find(|s| s.id == media_id) {
+                        with_job(id, |j| {
+                            j.done = s.percent.round() as usize;
+                            j.total = 100;
+                            j.note =
+                                if s.status == "queued" { "排队中（清影里还有别的任务在处理）".into() } else { s.note.unwrap_or_default() };
+                        });
+                    }
+                }
+            })
+        };
+        let out = transcribe_page(&ctx, &url, &lang).await;
+        watcher.abort();
+        with_job(id, |j| match &out {
+            Ok(v) => j.result = Some(v.clone()),
+            Err(e) => j.error = Some(if e.message == "canceled" { "已取消".to_string() } else { e.message.clone() }),
+        });
+        out.map(|_| std::path::PathBuf::new())
+    });
+    Ok(id)
+}
+
+async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str) -> AppResult<Value> {
+    let settings = ctx.st.settings();
+    let ffmpeg = crate::postprocess::find_ffmpeg(&ctx.st).ok_or_else(crate::postprocess::ffmpeg_missing)?;
+    let lang = if lang.is_empty() { settings.ai.stt_language.clone() } else { lang.to_string() };
+    let work = std::env::temp_dir().join(format!("clearclip-vsum-{}-{}", std::process::id(), ctx.id));
+    let _ = std::fs::remove_dir_all(&work);
+    std::fs::create_dir_all(&work)?;
+    let result = async {
+        ctx.note("正在取视频的音频…");
+        let pctx = ctx.st.parse_ctx(&settings);
+        let audio = crate::providers::ytdlp::fetch_audio(&pctx, url, &work, || ctx.canceled(), |p| ctx.percent(p * 0.3)).await?;
+        ctx.check()?;
+        let cues = ai::transcribe_cues(ctx, &settings, &ffmpeg, &audio, &lang, &work).await?;
+        let lines: Vec<Value> = cues
+            .iter()
+            .map(|c| (c.start, c.lines.join(" ").trim().to_string()))
+            .filter(|(_, t)| !t.is_empty())
+            .map(|(t, text)| json!({"t": t, "text": text}))
+            .collect();
+        let duration = cues.iter().map(|c| c.end).max().unwrap_or(0);
+        Ok(json!({"lines": lines, "durationMs": duration, "track": "清影转写"}))
+    }
+    .await;
+    let _ = std::fs::remove_dir_all(&work);
+    result
+}
+
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 8] = ["summary", "mindmap", "cards", "quotes", "ask", "translate", "rewrite", "article"];
+    const KINDS: [&str; 9] = ["summary", "mindmap", "cards", "quotes", "ask", "translate", "rewrite", "article", "transcribe"];
     if !KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::invalid("不支持的类型"));
     }
@@ -152,6 +235,9 @@ pub fn check(req: &Req) -> AppResult<()> {
     }
     if matches!(req.kind.as_str(), "article" | "rewrite") && req.text.trim().is_empty() {
         return Err(AppError::invalid("没有可处理的文字。"));
+    }
+    if req.kind == "transcribe" && !(req.url.starts_with("http://") || req.url.starts_with("https://")) {
+        return Err(AppError::invalid("没有可转写的视频地址。"));
     }
     if req.kind == "ask" && req.question.trim().is_empty() {
         return Err(AppError::invalid("请输入问题。"));
@@ -557,7 +643,7 @@ pub fn status(st: &crate::AppState) -> Value {
         "ready": ready,
         "model": s.ai.model,
         "lang": s.ai.target_lang,
-        "transcribe": ai::whisper_available(&s) || (s.ai.stt_engine == "api" && !s.ai.stt_url().is_empty()),
+        "transcribe": ai::stt_ready(st, &s).is_ok(),
         "maxChars": MAX_CHARS,
     })
 }

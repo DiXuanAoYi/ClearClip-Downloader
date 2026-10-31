@@ -1113,7 +1113,7 @@ where
                 Ok(out) => {
                     s.status = "done".into();
                     s.percent = 100.0;
-                    s.output = Some(out.to_string_lossy().into_owned());
+                    s.output = Some(out.to_string_lossy().into_owned()).filter(|o| !o.is_empty());
                 }
                 Err(e) if e.message == "canceled" => s.status = "canceled".into(),
                 Err(e) => {

@@ -186,9 +186,16 @@
       if (hit) return hit
     }
     const req = { kind, title: S.data.title, lang, style, lines: linesForReq(), ...extra }
+    const result = await submit(req, kind)
+    if (key) putCache(key, result)
+    return result
+  }
+
+  /** 提交一个任务并轮询到结束，返回结果；进度显示在面板顶部，可取消。 */
+  async function submit(req, kind) {
     const sub = await send({ type: 'cc-ai-run', req })
     if (!sub.ok) throw new Error(sub.error)
-    S.job = { id: sub.id, kind, done: 0, total: 0 }
+    S.job = { id: sub.id, kind, done: 0, total: 0, note: '' }
     renderProgress()
     try {
       for (;;) {
@@ -197,17 +204,41 @@
         if (!j.ok) throw new Error(j.error)
         S.job.done = j.done
         S.job.total = j.total
+        S.job.note = j.note || ''
         renderProgress()
-        if (j.state === 'done') {
-          if (key) putCache(key, j.result)
-          return j.result
-        }
+        if (j.state === 'done') return j.result
         if (j.state === 'error') throw new Error(j.error || '失败了')
         if (j.state === 'cancelled') throw new Error('已取消')
       }
     } finally {
       S.job = null
       renderProgress()
+    }
+  }
+
+  /** 没有字幕：让清影取音频、用语音识别转成带时间的文稿，之后和有字幕的视频一样处理。 */
+  async function transcribeNow() {
+    if (S.busy) return toast(ui, '上一个任务还在进行', true)
+    if (S.status?.transcribe === false) return toast(ui, '清影里还没有配置语音转文字：到“设置 → AI”选择本机 whisper.cpp 或填写接口', true, 6000)
+    const url = S.data?.url || location.href
+    const title = S.data?.title || document.title
+    S.busy = true
+    render()
+    try {
+      const key = `tr:${url}`
+      let r = await cached(key)
+      if (!r) {
+        r = await submit({ kind: 'transcribe', url, title }, 'transcribe')
+        if (r?.lines?.length) putCache(key, r)
+      }
+      if (!r?.lines?.length) throw new Error('没有识别出任何语音')
+      setData({ ...S.data, lines: r.lines, durationMs: r.durationMs || S.data?.durationMs || 0, track: r.track, noSubtitle: false, note: '', trackUrl: '', tracks: S.data?.tracks || [] })
+      toast(ui, `转写完成，共 ${r.lines.length} 句`)
+    } catch (e) {
+      toast(ui, e.message, true, 7000)
+    } finally {
+      S.busy = false
+      render()
     }
   }
 
@@ -235,7 +266,7 @@
       { class: 'warn' },
       d?.note || '还没有文稿',
       h('div', { class: 'tools', style: 'margin-top:6px' },
-        d?.noSubtitle && h('button', { text: '让清影下载并转写', title: S.status?.transcribe === false ? '清影里还没有配置语音转写' : '', onclick: sendForTranscribe }),
+        d?.noSubtitle && h('button', { text: '用清影转写（语音识别）', title: S.status?.transcribe === false ? '清影里还没有配置语音转文字' : '取视频的音频，在清影里转成文字后再总结', onclick: transcribeNow }),
         h('button', { class: 'sec', text: '导入字幕文件', onclick: importFile }),
         h('button', { class: 'sec', text: '粘贴文字', onclick: () => (S.tab = 'more') && render() }),
       ),
@@ -408,7 +439,8 @@
       ),
       h('h4', { text: '没有字幕 / 想换文稿' }),
       h('div', { class: 'tools' },
-        isVideo() && h('button', { class: 'sec', text: '让清影下载并转写', onclick: sendForTranscribe }),
+        isVideo() && h('button', { class: 'sec', text: '用清影转写（语音识别）', onclick: transcribeNow }),
+        isVideo() && h('button', { class: 'sec', text: '只把视频发给清影下载', onclick: sendForTranscribe }),
         h('button', { class: 'sec', text: '导入 .srt / .vtt / .txt', onclick: importFile }),
         S.data.tracks?.length > 1 && sel(S.data.tracks.map((t) => [t.url, `${t.name}${t.auto ? '（自动）' : ''}`]), S.data.trackUrl || S.data.tracks[0].url, reloadTrack, '字幕轨'),
         h('button', { class: 'sec', text: '总结选中的文字', onclick: () => loadArticleFromSelection() }),
@@ -475,7 +507,7 @@
     if (!S.job) return
     const pct = S.job.total ? Math.round((S.job.done / S.job.total) * 100) : 5
     el.append(
-      h('div', { class: 'mute' }, `清影正在处理…${S.job.total ? ` ${S.job.done}/${S.job.total}` : ''} `, h('button', { class: 'sec', text: '取消', onclick: () => send({ type: 'cc-ai-cancel', id: S.job.id }) })),
+      h('div', { class: 'mute' }, `${S.job.note || '清影正在处理…'}${S.job.total ? (S.job.kind === 'transcribe' ? ` ${S.job.done}%` : ` ${S.job.done}/${S.job.total}`) : ''} `, h('button', { class: 'sec', text: '取消', onclick: () => send({ type: 'cc-ai-cancel', id: S.job.id }) })),
       h('div', { class: 'bar' }, h('i', { style: `width:${pct}%` })),
     )
   }

@@ -2640,4 +2640,10 @@ export const en: Record<string, string> = {
   "用伴奏替换原声": "Replace the original sound with the instrumental",
   "这个片段变了速，分离出来的声音不会跟着变速，对不上画面。": "This clip has a speed change. The separated audio does not follow it, so it will not match the picture.",
   "这个片段没有声音（或已静音），没有可以分离的。": "This clip has no sound (or is muted), so there is nothing to separate.",
+  "按需下载的模型文件，不装也能用其它功能。下载地址可以改成镜像，也可以导入自己下载好的文件。": "Models you download on demand; other features work without them. You can change the download address to a mirror or import a file you downloaded yourself.",
+  "模型下载地址（可改成镜像）": "Model download address (can be a mirror)",
+  "程序（在“设置 → AI”里填路径）；也可以改用接口转写，不用装这些。装好第一个模型后会自动填入“设置 → AI”的模型路径。": "program (set its path in Settings → AI); or use an API for transcription instead and skip all this. After the first model is installed its path is filled into Settings → AI automatically.",
+  "视频摘要的“用清影转写”、剪辑的文稿剪辑 / 智能字幕会用到。除了模型，还需要 whisper.cpp 的": "Used by “Transcribe with ClearClip” in video summary and by transcript editing / smart subtitles in Edit. Besides a model you also need whisper.cpp's",
+  "语音识别（Whisper，本地转写）": "Speech recognition (Whisper, local)",
+  "降噪（RNNoise）": "Noise reduction (RNNoise)",
 }

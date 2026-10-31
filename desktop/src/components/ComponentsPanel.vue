@@ -7,6 +7,7 @@ import { api, errorText, events } from '../api'
 import { useAppStore } from '../stores/app'
 import type { CapsSummary, ToolProgress, ToolStatus } from '../types'
 import { formatBytes } from '../utils/format'
+import EditModels from './toolbox/edit/EditModels.vue'
 
 const mirrors = defineModel<string[]>({ required: true })
 const edition = defineModel<'lite' | 'full'>('edition', { default: 'lite' })
@@ -181,6 +182,20 @@ onUnmounted(() => unlisten?.())
         <el-button size="small" :disabled="t.busy" @click="importFile(t)">导入本地文件…</el-button>
         <el-button v-if="t.id === 'yt-dlp' && t.installed" size="small" link @click="showSites">支持的网站</el-button>
       </div>
+    </section>
+
+    <section class="card block" data-testid="model-components">
+      <h3>模型</h3>
+      <p class="mute small">按需下载的模型文件，不装也能用其它功能。下载地址可以改成镜像，也可以导入自己下载好的文件。</p>
+      <h4>降噪（RNNoise）</h4>
+      <EditModels kind="denoise" />
+      <h4>语音识别（Whisper，本地转写）</h4>
+      <p class="mute small">视频摘要的“用清影转写”、剪辑的文稿剪辑 / 智能字幕会用到。除了模型，还需要 whisper.cpp 的 <code>whisper-cli</code> 程序（在“设置 → AI”里填路径）；也可以改用接口转写，不用装这些。装好第一个模型后会自动填入“设置 → AI”的模型路径。</p>
+      <EditModels kind="whisper" />
+      <h4>人像抠图</h4>
+      <EditModels kind="matte" />
+      <h4>人声分离</h4>
+      <EditModels kind="vocals" />
     </section>
 
     <section class="card block">
