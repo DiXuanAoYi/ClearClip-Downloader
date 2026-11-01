@@ -605,7 +605,22 @@ async fn run_whisper_local(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, inp
         _ = cancelled => return Err(AppError::msg("canceled")),
     };
     match status {
-        (Ok(s), _) if s.success() => std::fs::read_to_string(prefix.with_extension("srt")).map_err(|_| AppError::msg("whisper.cpp 没有生成字幕文件。")),
+        (Ok(s), tail) if s.success() => {
+            // 不同版本 whisper.cpp 对 -of 的处理不一样：先找约定的 out.srt，再找工作目录里任意 .srt
+            let want = prefix.with_extension("srt");
+            let found = if want.is_file() {
+                Some(want)
+            } else {
+                std::fs::read_dir(work).ok().and_then(|d| d.flatten().map(|e| e.path()).find(|p| p.extension().is_some_and(|x| x == "srt")))
+            };
+            match found.and_then(|p| std::fs::read_to_string(p).ok()) {
+                Some(t) => Ok(t),
+                None => Err(AppError::msg(format!(
+                    "whisper.cpp 没有生成字幕文件（可能是模型文件不对或音频里没有可识别的语音）。程序输出：{}",
+                    if tail.is_empty() { "（无）" } else { tail.as_str() }
+                ))),
+            }
+        }
         (_, tail) => Err(AppError::msg(format!("whisper.cpp 运行失败：{tail}"))),
     }
 }

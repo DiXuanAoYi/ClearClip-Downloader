@@ -169,7 +169,10 @@ pub fn classify_stderr(stderr: &str) -> AppError {
     } else {
         ErrorKind::Other
     };
-    let msg = if msg.is_empty() { "yt-dlp 解析失败".to_string() } else { format!("yt-dlp：{msg}") };
+    let mut msg = if msg.is_empty() { "yt-dlp 解析失败".to_string() } else { format!("yt-dlp：{msg}") };
+    if lower.contains("not a bot") {
+        msg.push_str("\n这是 YouTube 的“确认不是机器人”检查：请先在浏览器里登录 YouTube，再用清影扩展同步该网站的 Cookie（扩展“工具”→ 同步 Cookie），然后重试；换网络/关掉代理也可能有帮助。");
+    }
     AppError::new(kind, msg)
 }
 
