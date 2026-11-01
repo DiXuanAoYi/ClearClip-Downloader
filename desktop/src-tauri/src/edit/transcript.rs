@@ -470,7 +470,8 @@ pub async fn edit_translate_lines(state: St<'_>, lines: Vec<String>, language: S
         .enumerate()
         .map(|(i, t)| crate::subtitle::Cue { start: i as u64, end: i as u64 + 1, lines: t.split('\n').map(str::to_string).collect() })
         .collect();
-    let done = ai::translate_cues(&ep, &settings.ai.model, &language, &cues, 20, &|_, _| Ok(())).await?;
+    let terms = if settings.ai.glossary_on { state.glossary.terms_for("", ai::lang_tag(&language)) } else { vec![] };
+    let done = ai::translate_cues_g(&ep, &settings.ai.model, &language, &cues, 20, &terms, &|_, _| Ok(())).await?;
     Ok(done.texts)
 }
 

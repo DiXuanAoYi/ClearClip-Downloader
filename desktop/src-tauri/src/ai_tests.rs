@@ -403,3 +403,31 @@ async fn single_pool_service_keeps_its_own_error_message() {
     let err = chat(&ep, "", "s", "u").await.unwrap_err();
     assert!(err.message.contains("no such model") && !err.message.contains("个服务"), "{}", err.message);
 }
+
+#[tokio::test]
+async fn glossary_terms_reach_only_the_batches_that_mention_them() {
+    let systems = Arc::new(Mutex::new(vec![]));
+    let s2 = systems.clone();
+    let base = mock(Arc::new(move |_, body, _| {
+        let v: serde_json::Value = serde_json::from_slice(body).unwrap();
+        s2.lock().unwrap().push(v["messages"][0]["content"].as_str().unwrap().to_string());
+        let arr = user_array(body);
+        (200, reply(&serde_json::to_string(&arr.iter().map(|t| format!("T{t}")).collect::<Vec<_>>()).unwrap()))
+    }))
+    .await;
+    let cues = vec![cue(0, "The Kubernetes pod restarted"), cue(1000, "nothing special"), cue(2000, "pod again")];
+    let terms = vec![
+        crate::glossary::Term { source: "pod".into(), target: "容器组".into(), note: String::new() },
+        crate::glossary::Term { source: "Helm".into(), target: "Helm".into(), note: String::new() },
+    ];
+    let t = translate_cues_g(&ep(&base), "m", "简体中文", &cues, 2, &terms, &|_, _| Ok(())).await.unwrap();
+    assert_eq!(t.failed, 0);
+    let sys = systems.lock().unwrap().clone();
+    assert_eq!(sys.len(), 2);
+    assert!(sys[0].contains("- pod => 容器组"), "第一批提到了 pod");
+    assert!(!sys[0].contains("Helm"), "没出现的术语不放进提示词");
+    assert!(sys[1].contains("- pod => 容器组"), "第二批也提到了 pod");
+    let none = translate_cues_g(&ep(&base), "m", "简体中文", &cues[1..2], 5, &terms, &|_, _| Ok(())).await.unwrap();
+    assert_eq!(none.failed, 0);
+    assert!(!systems.lock().unwrap().last().unwrap().contains("Glossary"), "没有命中时提示词保持原样");
+}

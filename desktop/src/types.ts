@@ -595,6 +595,58 @@ export interface AutoRule {
   then: RuleThen
 }
 
+export interface GlossaryTerm {
+  source: string
+  target: string
+  note: string
+}
+
+export interface Glossary {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  origin: 'user' | 'community' | 'extracted'
+  remoteId: string
+  matches: string[]
+  lang: string
+  terms: GlossaryTerm[]
+  updated: number
+}
+
+export interface GlossaryCandidate {
+  id: string
+  source: string
+  target: string
+  note: string
+  site: string
+  count: number
+  found: number
+}
+
+export interface ExtractSite {
+  pattern: string
+  enabled: boolean
+  glossary: string
+  last: number
+  found: number
+}
+
+export interface GlossaryData {
+  glossaries: Glossary[]
+  candidates: GlossaryCandidate[]
+  sites: ExtractSite[]
+}
+
+export interface CommunityGlossary {
+  id: string
+  name: string
+  description: string
+  author: string
+  matches: string[]
+  langs: string[]
+}
+
 export interface PoolEntry {
   id: string
   preset: string
@@ -635,6 +687,7 @@ export interface PoolStatus {
 export interface AiSettings {
   pool: PoolEntry[]
   supadataOn: boolean
+  glossaryOn: boolean
   baseUrl: string
   model: string
   targetLang: string

@@ -46,8 +46,8 @@ function trFlushSoon() {
 
 // ---------- 两个引擎 ----------
 
-async function trClearclip(texts, target, context = '') {
-  const sub = await call('/api/v1/ai/run', { kind: 'webtrans', lang: ccTrans.promptName(target), context, lines: texts.map((text, t) => ({ t, text })) })
+async function trClearclip(texts, target, context = '', host = '') {
+  const sub = await call('/api/v1/ai/run', { kind: 'webtrans', lang: ccTrans.promptName(target), context, url: host ? `https://${host}` : '', lines: texts.map((text, t) => ({ t, text })) })
   const deadline = Date.now() + 5 * 60_000
   for (;;) {
     await sleep(450)
@@ -159,7 +159,7 @@ async function translateTexts(texts, { target, engine, page = null, domain = fal
     else {
       await trSlot()
       try {
-        res = await trClearclip(src, target, ctx)
+        res = await trClearclip(src, target, ctx, page?.host || '')
       } finally {
         trFree()
       }

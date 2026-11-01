@@ -582,6 +582,8 @@ pub struct AiSettings {
     pub pool: Vec<PoolEntry>,
     /// 用 Supadata 取在线字幕（备用通道，密钥在保险箱 `ai.supadata`）
     pub supadata_on: bool,
+    /// 翻译时使用术语库
+    pub glossary_on: bool,
     /// 兼容 OpenAI 接口的地址（OpenAI、DeepSeek、通义、月之暗面、本机 Ollama 等），如 `https://api.openai.com/v1`
     pub base_url: String,
     pub model: String,
@@ -613,6 +615,7 @@ impl Default for AiSettings {
         AiSettings {
             pool: vec![],
             supadata_on: false,
+            glossary_on: true,
             base_url: "https://api.openai.com/v1".into(),
             model: "gpt-4o-mini".into(),
             target_lang: "简体中文".into(),

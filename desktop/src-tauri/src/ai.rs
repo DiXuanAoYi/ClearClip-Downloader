@@ -289,7 +289,20 @@ pub async fn translate_cues(
     batch: usize,
     ctx: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
 ) -> AppResult<Translated> {
-    map_cues(ep, model, &translate_system(lang), cues, batch, ctx).await
+    translate_cues_g(ep, model, lang, cues, batch, &[], ctx).await
+}
+
+/// 同 `translate_cues`，并把术语库里出现在每一批文字中的术语写进提示词。
+pub async fn translate_cues_g(
+    ep: &Endpoint,
+    model: &str,
+    lang: &str,
+    cues: &[Cue],
+    batch: usize,
+    terms: &[crate::glossary::Term],
+    ctx: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
+) -> AppResult<Translated> {
+    map_cues_g(ep, model, &translate_system(lang), cues, batch, terms, ctx).await
 }
 
 /// 同一套“一批进、一批出、对不上就拆”的流程，系统提示词由调用方给（翻译、顺句都用它）。
@@ -301,6 +314,18 @@ pub async fn map_cues(
     batch: usize,
     ctx: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
 ) -> AppResult<Translated> {
+    map_cues_g(ep, model, system, cues, batch, &[], ctx).await
+}
+
+pub async fn map_cues_g(
+    ep: &Endpoint,
+    model: &str,
+    system: &str,
+    cues: &[Cue],
+    batch: usize,
+    terms: &[crate::glossary::Term],
+    ctx: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
+) -> AppResult<Translated> {
     let texts: Vec<String> = cues.iter().map(|c| c.lines.join("\n")).collect();
     let mut out: Vec<Option<String>> = vec![None; texts.len()];
     let mut queue: VecDeque<(usize, usize)> = (0..texts.len()).step_by(batch.max(1)).map(|s| (s, (s + batch.max(1)).min(texts.len()))).collect();
@@ -309,7 +334,9 @@ pub async fn map_cues(
     while let Some((a, b)) = queue.pop_front() {
         ctx(done, texts.len())?;
         let user = serde_json::to_string(&texts[a..b])?;
-        let resp = chat(ep, model, system, &user).await;
+        let hit = crate::glossary::relevant(terms, &texts[a..b], crate::glossary::MAX_IN_PROMPT);
+        let sys = if hit.is_empty() { std::borrow::Cow::Borrowed(system) } else { std::borrow::Cow::Owned(format!("{system}{}", crate::glossary::prompt_block(&hit))) };
+        let resp = chat(ep, model, &sys, &user).await;
         let parsed = match resp {
             Ok(r) => parse_array(&r, b - a),
             Err(e) if matches!(e.kind, ErrorKind::NeedLogin | ErrorKind::Invalid | ErrorKind::RateLimited | ErrorKind::Network) => return Err(e),
@@ -884,7 +911,8 @@ pub async fn run_translate(ctx: &JobCtx, input: &Path) -> AppResult<PathBuf> {
         ctx.percent(done as f64 / total.max(1) as f64 * 100.0);
         Ok(())
     };
-    let t = translate_cues(&ep, &settings.ai.model, &settings.ai.target_lang, &cues, settings.ai.batch_size, &progress).await?;
+    let terms = if settings.ai.glossary_on { ctx.st.glossary.terms_for("", lang_tag(&settings.ai.target_lang)) } else { vec![] };
+    let t = translate_cues_g(&ep, &settings.ai.model, &settings.ai.target_lang, &cues, settings.ai.batch_size, &terms, &progress).await?;
     let merged = apply_translation(&cues, &t.texts, settings.ai.bilingual);
     let tag = lang_tag(&settings.ai.target_lang);
     let base = strip_lang_suffix(&stem_of(input)).to_string();

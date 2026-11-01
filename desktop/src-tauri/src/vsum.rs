@@ -66,6 +66,9 @@ pub struct Req {
     pub track: String,
     /// 自己改过的系统提示词（单次调用的类型才生效：explain / punctuate / note / refine / ask / mindmap / rewrite）
     pub system: String,
+    /// 术语库里与本次翻译有关的术语（由应用按网址和目标语言填入，扩展不用传）
+    #[serde(skip_deserializing)]
+    pub terms: Vec<crate::glossary::Term>,
 }
 
 /// 自定义提示词的长度上限。
@@ -121,7 +124,7 @@ fn new_job() -> (u64, Arc<AtomicBool>) {
 }
 
 /// 校验请求并在后台开始处理，返回任务编号。
-pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
+pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
     use tauri::Manager;
     check(&req)?;
     if req.kind == "tracks" {
@@ -141,6 +144,19 @@ pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     let model = settings.ai.model.clone();
     let default_lang = settings.ai.target_lang.clone();
     let batch = settings.ai.batch_size;
+    // 术语库：按网址和目标语言挑出可用的术语，翻译时放进提示词
+    if settings.ai.glossary_on && matches!(req.kind.as_str(), "translate" | "webtrans") {
+        let target = if req.lang.trim().is_empty() {
+            if req.kind == "translate" && is_chinese(&req.lines) { "English".to_string() } else { default_lang.clone() }
+        } else {
+            req.lang.trim().to_string()
+        };
+        req.terms = st.glossary.terms_for(&req.url, ai::lang_tag(&target));
+    }
+    // 提取网站：在这些网站上翻译时顺手提取术语，放进“待确认”
+    let auto_extract = if matches!(req.kind.as_str(), "domain" | "translate") && !req.url.trim().is_empty() { st.glossary.site_for(&req.url).map(|_| req.url.clone()) } else { None };
+    let extract_text = auto_extract.as_ref().map(|_| if req.kind == "domain" { req.text.clone() } else { req.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n") });
+    let st2 = st.clone();
     let (id, cancel) = new_job();
     tauri::async_runtime::spawn(async move {
         let progress = move |done: usize, total: usize| -> AppResult<()> {
@@ -154,6 +170,13 @@ pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
             Ok(())
         };
         let out = process(&ep, &model, &default_lang, batch, &req, &progress).await;
+        if let (Some(url), Some(text), true) = (auto_extract, extract_text, out.is_ok()) {
+            let lang = if req.lang.trim().is_empty() { default_lang.clone() } else { req.lang.trim().to_string() };
+            if let Ok(found) = crate::glossary::extract(&ep, &model, &lang, &text).await {
+                let host = url::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or(url);
+                let _ = crate::glossary::file_found(&st2.glossary, found, &host, crate::db::now());
+            }
+        }
         with_job(id, |j| match out {
             Ok(v) => j.result = Some(v),
             Err(e) => j.error = Some(e.message),
@@ -1028,7 +1051,7 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             } else {
                 target.to_string()
             };
-            let t = ai::translate_cues(ep, model, &target, &cues, batch, progress).await?;
+            let t = ai::translate_cues_g(ep, model, &target, &cues, batch, &req.terms, progress).await?;
             let out: Vec<Value> =
                 cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
             Ok(json!({"lines": out, "failed": t.failed}))
@@ -1042,7 +1065,7 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
                 .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
                 .collect();
             let system = with_domain(pick_system(req, webtrans_system(lang)), &req.context);
-            let t = ai::map_cues(ep, model, &system, &cues, batch.max(8), progress).await?;
+            let t = ai::map_cues_g(ep, model, &system, &cues, batch.max(8), &req.terms, progress).await?;
             let out: Vec<Value> =
                 cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
             Ok(json!({"lines": out, "failed": t.failed}))

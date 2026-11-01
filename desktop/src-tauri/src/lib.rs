@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod ai_cmds;
+pub mod glossary_cmds;
 pub mod ai_pool;
 pub mod api;
 pub mod audiofx;
@@ -51,6 +52,7 @@ pub mod secret;
 pub mod security;
 pub mod security_cmds;
 pub mod settings;
+pub mod glossary;
 pub mod subs;
 pub mod supadata;
 pub mod subtitle;
@@ -113,6 +115,7 @@ pub struct AppState {
     pub media_jobs: media_tools::MediaJobs,
     /// AI 模型池的运行状态（今日用量、冷却）
     pub ai_pool: Arc<ai_pool::AiPool>,
+    pub glossary: Arc<glossary::Store>,
     /// 加密保存的密钥（API 密钥、密码等）
     pub vault: vault::Vault,
     /// 应用锁状态
@@ -332,6 +335,7 @@ pub fn run() {
                 live: live::LiveState::default(),
                 media_jobs: media_tools::MediaJobs::default(),
                 ai_pool: Arc::new(ai_pool::AiPool::default()),
+                glossary: Arc::new(glossary::Store::open(&data_dir)),
                 vault,
                 lock: security::LockState::new(locked),
                 safebox: safebox::Safebox::new(data_dir.join("safebox")),
@@ -561,6 +565,17 @@ pub fn run() {
             ai_cmds::ai_pool_presets,
             ai_cmds::ai_pool_reset,
             ai_cmds::ai_pool_test,
+            glossary_cmds::glossary_state,
+            glossary_cmds::glossary_save,
+            glossary_cmds::glossary_delete,
+            glossary_cmds::glossary_import,
+            glossary_cmds::glossary_import_file,
+            glossary_cmds::glossary_export,
+            glossary_cmds::glossary_community,
+            glossary_cmds::glossary_community_install,
+            glossary_cmds::glossary_extract,
+            glossary_cmds::glossary_resolve,
+            glossary_cmds::glossary_sites_save,
             ai_cmds::ai_translate,
             ai_cmds::ai_summarize,
             ai_cmds::ai_transcribe,
