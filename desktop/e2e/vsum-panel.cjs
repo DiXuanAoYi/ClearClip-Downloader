@@ -185,10 +185,12 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-summary.png' })
     // 章节：AI 章节优先
     await clickText(page, '章节')
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-chapters.png' })
     ok('章节页显示 AI 章节', /AI 开场/.test(await text(page)) && /AI 正文/.test(await text(page)))
 
     // 文稿：搜索、翻译
     await clickText(page, '文稿')
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-transcript.png' })
     ok('文稿列出 3 行', (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 3)
     await page.evaluate(() => {
       const i = window.__roots.map((r) => r.querySelector('input#tsearch')).find(Boolean)
@@ -251,6 +253,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '更多')
     await clickText(page, '生成问答卡片')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('Rust 的特点')), null, { timeout: 8000 })
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-more.png' })
     await clickText(page, '提取金句')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('“Rust is fast and safe.”')), null, { timeout: 8000 })
     await clickText(page, '小红书文案')
