@@ -496,12 +496,13 @@ async function loadSettings() {
 
 // ---------- 网页翻译 ----------
 
+let appLang = ''
 function fillLangs(sel, value) {
   sel.innerHTML = ''
   for (const l of ccTrans.LANGS) {
     const o = document.createElement('option')
     o.value = l.code
-    o.textContent = `${l.name}${l.name === l.en ? '' : ` · ${l.en}`}`
+    o.textContent = ccTrans.label(l.code, appLang)
     sel.append(o)
   }
   sel.value = value
@@ -515,6 +516,15 @@ async function saveTransCfg(patch) {
 async function loadTransCfg() {
   const { transCfg } = await api.storage.local.get('transCfg')
   const c = ccTrans.normalizeCfg(transCfg)
+  appLang = (await api.storage.local.get('appLang')).appLang || ''
+  // 问一下清影现在的界面语言；变了就把下拉框重新排一遍
+  api.runtime.sendMessage({ type: 'cc-app-lang' }).then((r) => {
+    if (r?.ok && r.lang && r.lang !== appLang) {
+      appLang = r.lang
+      for (const id of ['trTarget', 'trTarget2']) fillLangs($(id), $(id).value)
+      fillLangs($('trInputLang'), $('trInputLang').value)
+    }
+  }).catch(() => {})
   for (const id of ['trTarget', 'trTarget2']) fillLangs($(id), c.target)
   fillLangs($('trInputLang'), c.inputLang)
   $('trMode').value = c.mode
@@ -524,6 +534,7 @@ async function loadTransCfg() {
   $('trSelect').checked = c.select
   $('trInput').checked = c.input
   $('trLazy').checked = c.lazy
+  $('trDomain').checked = c.domain
   $('trSkip').checked = c.skipTarget
   $('trAuto').value = c.auto.join('\n')
   $('trNever').value = c.never.join('\n')
@@ -542,6 +553,7 @@ $('saveTrans').onclick = async () => {
     select: $('trSelect').checked,
     input: $('trInput').checked,
     lazy: $('trLazy').checked,
+    domain: $('trDomain').checked,
     skipTarget: $('trSkip').checked,
     auto: ccTrans.hostList($('trAuto').value),
     never: ccTrans.hostList($('trNever').value),

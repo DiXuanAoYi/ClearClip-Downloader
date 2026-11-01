@@ -147,7 +147,7 @@
     <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option></select>
     <div class="rowBtns">
       <div class="col"><label>目标语言</label><select id="trTarget2"></select></div>
-      <div class="col"><label>译文样式</label><select id="trStyle"><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>
+      <div class="col"><label>译文样式</label><select id="trStyle"><option value="card">底色块（醒目）</option><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>
     </div>
     <div class="rowBtns">
       <div class="col"><label>悬停翻译（单击此键）</label><select id="trHover"><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="off">关闭</option></select></div>
@@ -155,6 +155,7 @@
     </div>
     <label class="row"><input id="trSelect" type="checkbox" /> 选中文字后显示“译”按钮</label>
     <label class="row"><input id="trInput" type="checkbox" /> 输入框里连按三次空格，翻译成上面的语言</label>
+    <label class="row"><input id="trDomain" type="checkbox" /> 翻译前先判断网页领域，按领域选词（更准，多一次模型调用；只对“清影（大模型）”有效）</label>
     <label class="row"><input id="trLazy" type="checkbox" /> 只翻译看得见（和快要看见）的段落</label>
     <label class="row"><input id="trSkip" type="checkbox" /> 本来就是目标语言的段落 / 页面不翻译</label>
     <label>打开就自动翻译的网站（每行一个，含子域名）</label>

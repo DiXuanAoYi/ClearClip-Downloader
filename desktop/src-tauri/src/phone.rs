@@ -648,7 +648,9 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
         }
         ("GET", "/api/ping") => {
             let version = app.package_info().version.to_string();
-            json(sock, "200 OK", serde_json::json!({"app": "ClearClip", "version": version})).await;
+            // lang：清影界面语言（zh / en / ja），扩展用它决定语言下拉框的显示语言
+            let lang = state.settings().language;
+            json(sock, "200 OK", serde_json::json!({"app": "ClearClip", "version": version, "lang": lang})).await;
         }
         // 手机网页打开时调用：登记配对请求，返回是否已配对和上传上限
         ("GET", "/api/hello") => {

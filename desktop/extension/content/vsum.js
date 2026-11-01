@@ -87,6 +87,7 @@
     fontStyle.textContent = `.panel { font-size: ${fs}px; }`
   }
   const S = {
+    appLang: '', // 清影界面语言（zh / en / ja），语言下拉框按它显示
     data: null, // 当前文稿：{ title, url, lines, chapters, tracks, ... }
     tab: 'summary',
     status: null, // 清影的状态：{ ready, model, lang, transcribe, maxChars }
@@ -133,7 +134,11 @@
   const TL = globalThis.ccTrans
   /** 写进请求的输出语言（提示词里的名字）；留空 = 清影设置里的目标语言（中文视频的翻译默认译成英文）。 */
   const outLang = () => (S.prefs.lang.trim() ? TL.promptName(S.prefs.lang) : S.status?.lang || '中文')
-  const outLabel = () => (S.prefs.lang.trim() ? TL.nameOf(TL.LANGS.find((l) => l.en === TL.promptName(S.prefs.lang))?.code || S.prefs.lang.trim()) : '')
+  const outLabel = () => {
+    if (!S.prefs.lang.trim()) return ''
+    const code = TL.LANGS.find((l) => l.code === S.prefs.lang.trim() || l.en === TL.promptName(S.prefs.lang))?.code
+    return code ? TL.label(code, S.appLang).split(' · ')[0] : S.prefs.lang.trim()
+  }
   const video = () => [...document.querySelectorAll('video')].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0] || null
   const isVideo = () => S.data && S.data.site !== 'article' && S.data.site !== 'manual'
 
@@ -187,7 +192,7 @@
   /** 输出 / 翻译语言下拉：自动 + 常用的几十种语言；以前手填的别的写法也保留成一项。 */
   function langSelect(title, after) {
     const known = TL.LANGS.some((l) => l.code === S.prefs.lang)
-    const opts = [['', `自动（${S.status?.lang || '中文'}；中文视频译成英文）`], ...TL.LANGS.map((l) => [l.code, l.name])]
+    const opts = [['', `自动（${S.status?.lang || '中文'}；中文视频译成英文）`], ...TL.LANGS.map((l) => [l.code, TL.label(l.code, S.appLang)])]
     if (S.prefs.lang && !known) opts.push([S.prefs.lang, S.prefs.lang])
     return sel(opts, S.prefs.lang, (v) => ((S.prefs.lang = v), savePrefs(), after?.()), title)
   }
@@ -1351,6 +1356,21 @@
       setData({ title: document.title, url: location.href, site: 'html5', lines: [], chapters: [], tracks: [], note: `读取失败：${e.message}` })
     }
     ensureReady().catch(() => {}).finally(() => S.data && render())
+    refreshAppLang()
+  }
+
+  /** 语言下拉框按清影的界面语言显示：先用上次记下的，再问一下清影，变了就重画。 */
+  async function refreshAppLang() {
+    try {
+      S.appLang = (await api.storage.local.get('appLang')).appLang || ''
+    } catch {
+      // 读不到就用浏览器语言
+    }
+    const r = await send({ type: 'cc-app-lang' })
+    if (r?.ok && r.lang && r.lang !== S.appLang) {
+      S.appLang = r.lang
+      if (S.data) render()
+    }
   }
 
   function stop() {

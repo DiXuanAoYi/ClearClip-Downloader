@@ -46,8 +46,8 @@ function trFlushSoon() {
 
 // ---------- 两个引擎 ----------
 
-async function trClearclip(texts, target) {
-  const sub = await call('/api/v1/ai/run', { kind: 'webtrans', lang: ccTrans.promptName(target), lines: texts.map((text, t) => ({ t, text })) })
+async function trClearclip(texts, target, context = '') {
+  const sub = await call('/api/v1/ai/run', { kind: 'webtrans', lang: ccTrans.promptName(target), context, lines: texts.map((text, t) => ({ t, text })) })
   const deadline = Date.now() + 5 * 60_000
   for (;;) {
     await sleep(450)
@@ -113,10 +113,44 @@ async function trGoogle(texts, target) {
   return out
 }
 
+// ---------- 网页领域（翻译前先判断一次，按页面记住）----------
+
+const trDomains = new Map() // 页面键 -> Promise<{domain, note}|null>
+const trDomainKey = (p) => `${p.host}|${String(p.title || '').slice(0, 80)}`
+
+/** 看页面标题和一小段文字，让大模型判断领域并给出选词说明；失败返回 null（翻译照常进行）。 */
+function pageDomain(page) {
+  if (!page || !page.host || !String(page.sample || '').trim()) return Promise.resolve(null)
+  const key = trDomainKey(page)
+  if (!trDomains.has(key)) {
+    const job = (async () => {
+      const sub = await call('/api/v1/ai/run', { kind: 'domain', title: String(page.title || '').slice(0, 200), url: `https://${page.host}`, text: String(page.sample).slice(0, 1500) })
+      const deadline = Date.now() + 60_000
+      for (;;) {
+        await sleep(400)
+        const j = await call(`/api/v1/ai/job?id=${encodeURIComponent(String(sub.id))}`)
+        if (j.state === 'done') {
+          const domain = String(j.result?.domain || '').trim()
+          const note = String(j.result?.note || '').trim()
+          return domain || note ? { domain, note } : null
+        }
+        if (j.state === 'failed' || j.state === 'cancelled' || Date.now() > deadline) return null
+      }
+    })().catch(() => null)
+    trDomains.set(key, job)
+    if (trDomains.size > 50) trDomains.delete(trDomains.keys().next().value)
+    job.then((v) => v || trDomains.delete(key))
+  }
+  return trDomains.get(key)
+}
+
 /** 翻译一批文字。先查缓存，剩下的交给引擎，返回和输入一一对应的译文。 */
-async function translateTexts(texts, { target, engine }) {
+async function translateTexts(texts, { target, engine, page = null, domain = false }) {
+  const dom = engine === 'clearclip' && domain ? await pageDomain(page) : null
+  const ctx = dom ? [dom.domain && `Domain: ${dom.domain}.`, dom.note].filter(Boolean).join(' ') : ''
+  const keyEngine = dom?.domain ? `${engine}:${dom.domain.toLowerCase().slice(0, 40)}` : engine
   const cache = await trCacheMap()
-  const out = texts.map((t) => cache[ccTrans.cacheKey(engine, target, t)]?.[0] ?? null)
+  const out = texts.map((t) => cache[ccTrans.cacheKey(keyEngine, target, t)]?.[0] ?? null)
   const todo = out.map((v, i) => (v == null ? i : -1)).filter((i) => i >= 0)
   if (todo.length) {
     const src = todo.map((i) => texts[i])
@@ -125,7 +159,7 @@ async function translateTexts(texts, { target, engine }) {
     else {
       await trSlot()
       try {
-        res = await trClearclip(src, target)
+        res = await trClearclip(src, target, ctx)
       } finally {
         trFree()
       }
@@ -133,11 +167,11 @@ async function translateTexts(texts, { target, engine }) {
     todo.forEach((i, k) => {
       out[i] = res[k]
       // 原样返回（没翻译）的不进缓存，免得以后换了模型也一直是原文
-      if (res[k] && res[k].trim() !== src[k].trim()) cache[ccTrans.cacheKey(engine, target, texts[i])] = [res[k], Date.now()]
+      if (res[k] && res[k].trim() !== src[k].trim()) cache[ccTrans.cacheKey(keyEngine, target, texts[i])] = [res[k], Date.now()]
     })
     trFlushSoon()
   }
-  return { texts: out, cached: texts.length - todo.length }
+  return { texts: out, cached: texts.length - todo.length, domain: dom?.domain || '' }
 }
 
 async function clearTransCache() {

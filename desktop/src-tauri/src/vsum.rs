@@ -423,7 +423,7 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 16] = [
+    const KINDS: [&str; 17] = [
         "summary",
         "mindmap",
         "cards",
@@ -440,6 +440,7 @@ pub fn check(req: &Req) -> AppResult<()> {
         "note",
         "refine",
         "webtrans",
+        "domain",
     ];
     if !KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::invalid("不支持的类型"));
@@ -461,7 +462,7 @@ pub fn check(req: &Req) -> AppResult<()> {
     if req.system.chars().count() > MAX_SYSTEM {
         return Err(AppError::invalid("自定义提示词太长（上限 2 万字）。"));
     }
-    if matches!(req.kind.as_str(), "explain" | "note" | "refine") && req.text.trim().is_empty() {
+    if matches!(req.kind.as_str(), "explain" | "note" | "refine" | "domain") && req.text.trim().is_empty() {
         return Err(AppError::invalid("没有可处理的文字。"));
     }
     if req.kind == "ask" && req.question.trim().is_empty() {
@@ -570,6 +571,29 @@ pub fn webtrans_system(lang: &str) -> String {
          (3) If a text is already in {lang}, or is only a name, number, URL, code or symbol, return it unchanged. (4) Keep URLs, e-mail addresses, code, numbers, units, emoji and placeholders such as {{{{1}}}} exactly as they are, \
          and keep placeholders in a natural position. (5) Translate fluently like a native writer of {lang}, keep terminology consistent; no explanations. (6) A line break inside a text is written as \\n and must stay as \\n."
     )
+}
+
+/// 网页翻译前先看一眼页面，判断它属于什么领域，给翻译一份“术语怎么选”的说明。
+pub fn domain_system() -> String {
+    "You analyse a web page so that a translator can choose the right terminology. From the page title, address and text sample, decide the page's subject domain \
+     (for example: software development, medicine, finance, law, gaming, cooking, academic paper, e-commerce, news). \
+     Reply with ONE JSON object only, no code fences: {\"domain\": \"2-5 word domain label in English\", \"note\": \"at most 60 words of English guidance: the register/tone, \
+     and how to translate ambiguous terms in this domain (give up to 5 concrete examples such as 'bug = software defect', 'pitch = sales presentation')\"}. \
+     Be specific to this page; do not translate anything yourself."
+        .to_string()
+}
+
+/// 把领域说明接到网页翻译的提示词后面。
+pub fn with_domain(system: String, context: &str) -> String {
+    let c = context.trim();
+    if c.is_empty() {
+        system
+    } else {
+        format!(
+            "{system}\n(7) Page context — use it to pick the right sense of ambiguous words and the right terminology: {}",
+            c.chars().take(600).collect::<String>()
+        )
+    }
 }
 
 fn pick_system(req: &Req, built_in: String) -> String {
@@ -988,11 +1012,20 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
                 .filter(|l| !l.text.trim().is_empty())
                 .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
                 .collect();
-            let system = pick_system(req, webtrans_system(lang));
+            let system = with_domain(pick_system(req, webtrans_system(lang)), &req.context);
             let t = ai::map_cues(ep, model, &system, &cues, batch.max(8), progress).await?;
             let out: Vec<Value> =
                 cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
             Ok(json!({"lines": out, "failed": t.failed}))
+        }
+        "domain" => {
+            progress(0, 1)?;
+            let user = format!("TITLE: {}\nADDRESS: {}\nTEXT SAMPLE:\n{}", req.title.trim(), req.url.trim(), req.text.trim());
+            let resp = chat(ep, model, &domain_system(), &user).await?;
+            progress(1, 1)?;
+            let v = serde_json::from_str::<Value>(ai::strip_fences(&resp)).unwrap_or_else(|_| json!({}));
+            let g = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").trim().chars().take(400).collect::<String>();
+            Ok(json!({"domain": g("domain"), "note": g("note")}))
         }
         "punctuate" => {
             let cues: Vec<Cue> = req

@@ -186,6 +186,16 @@ const HANDLERS = {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     return { text: await r.text() }
   },
+  // 清影界面语言：问一次清影并记下来；清影没开就用上次记下的
+  'cc-app-lang': async () => {
+    try {
+      const r = await call('/api/ping')
+      if (r.lang) await api.storage.local.set({ appLang: r.lang })
+    } catch {
+      // 清影没开：用上次的
+    }
+    return { lang: (await api.storage.local.get('appLang')).appLang || '' }
+  },
   'cc-ai-run': async (m) => ({ ...(await call('/api/v1/ai/run', m.req && typeof m.req === 'object' ? m.req : {})) }),
   'cc-ai-job': async (m) => ({ ...(await call(`/api/v1/ai/job?id=${encodeURIComponent(String(m.id))}`)) }),
   'cc-ai-cancel': async (m) => ({ ...(await call(`/api/v1/ai/cancel?id=${encodeURIComponent(String(m.id))}`, {})) }),
@@ -195,7 +205,9 @@ const HANDLERS = {
     const texts = (Array.isArray(m.texts) ? m.texts : []).map((t) => String(t)).slice(0, 60)
     if (!texts.length) return { texts: [], cached: 0 }
     const engine = ccTrans.ENGINES.includes(m.engine) ? m.engine : cfg.engine
-    return translateTexts(texts, { target: String(m.target || cfg.target), engine })
+    const p = m.page && typeof m.page === 'object' ? m.page : null
+    const page = p ? { host: String(p.host || '').slice(0, 100), title: String(p.title || ''), sample: String(p.sample || '') } : null
+    return translateTexts(texts, { target: String(m.target || cfg.target), engine, page, domain: cfg.domain })
   },
   'cc-tr-clear': async () => (await clearTransCache(), {}),
   // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）

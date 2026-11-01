@@ -50,6 +50,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       const rt = {
         sendMessage: async (m) => {
           window.__calls.push(m)
+          if (m.type === 'cc-app-lang') return { ok: true, lang: 'zh' }
           if (m.type === 'cc-ai-status') return { ok: true, ready: o.ready !== false, model: 'm', lang: '中文', transcribe: true, subtitles: true, maxChars: 600000 }
           if (m.type === 'cc-ai-run') {
             window.__job = m.req
@@ -215,7 +216,8 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       sel.value = 'ja'
       sel.dispatchEvent(new Event('change'))
     })
-    await clickText(page, '翻译成日本語')
+    ok('语言下拉按界面语言显示：日语 · 日本語', await page.evaluate(() => [...window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).find((x) => [...x.options].some((o) => o.value === 'ja')).options].some((o) => o.value === 'ja' && o.text === '日语 · 日本語')))
+    await clickText(page, '翻译成日语')
     await page.waitForFunction(() => window.__calls.some((c) => c.type === 'cc-ai-run' && c.req.kind === 'translate' && c.req.lang === 'Japanese'), null, { timeout: 8000 })
     ok('选日语后请求带 lang=Japanese', true)
     await page.waitForFunction(() => window.__roots.every((r) => !r.querySelector('.panel button[disabled]')), null, { timeout: 8000 })

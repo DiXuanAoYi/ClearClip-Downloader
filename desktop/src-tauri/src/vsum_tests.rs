@@ -404,3 +404,38 @@ async fn web_translation_targets_any_language_and_keeps_indexes() {
     assert_eq!(v["lines"], json!([{"t": 0, "text": "訳:Hello"}, {"t": 7, "text": "訳:你好"}]));
     assert!(check(&Req { kind: "webtrans".into(), ..Default::default() }).is_err(), "没有文字");
 }
+
+#[tokio::test]
+async fn web_translation_gets_page_domain_and_passes_it_to_the_prompt() {
+    // 领域判断：返回领域标签和术语说明
+    let base = mock(Arc::new(|_| {
+        r#"```json
+{"domain":"software development","note":"Technical tone. bug = software defect."}
+```"#
+            .to_string()
+    }))
+    .await;
+    let r = Req { kind: "domain".into(), title: "Fix a bug".into(), text: "git commit merge".into(), ..Default::default() };
+    assert!(check(&r).is_ok());
+    let v = run(&base, &r).await.unwrap();
+    assert_eq!(v["domain"], "software development");
+    assert!(v["note"].as_str().unwrap().contains("bug"));
+    assert!(check(&Req { kind: "domain".into(), ..Default::default() }).is_err(), "没有页面文字");
+    // 翻译提示词里带上领域说明
+    let base = mock(Arc::new(|p| {
+        assert!(p.contains("Page context") && p.contains("bug = software defect"), "{p}");
+        let user = p.split("=====\n").nth(1).unwrap_or("[]");
+        let src: Vec<String> = serde_json::from_str(user).unwrap_or_default();
+        serde_json::to_string(&src).unwrap()
+    }))
+    .await;
+    let r = Req {
+        kind: "webtrans".into(),
+        lang: "Chinese".into(),
+        context: "bug = software defect".into(),
+        lines: vec![Line { t: 0, text: "a bug".into() }],
+        ..Default::default()
+    };
+    run(&base, &r).await.unwrap();
+    assert!(with_domain("S".into(), "").eq("S"));
+}

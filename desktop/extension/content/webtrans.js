@@ -35,6 +35,7 @@
     st.id = 'cc-tr-style'
     st.textContent = `
       [${ATTR}] { display: block; margin: .25em 0 .35em; font-size: .95em; line-height: 1.5; text-indent: 0; white-space: pre-wrap; word-break: break-word; unicode-bidi: plaintext; }
+      [${ATTR}][data-style="card"] { background: rgba(37,99,235,.13); border-left: 3px solid rgba(37,99,235,.75); border-radius: 4px; padding: .3em .6em; margin: .35em 0 .45em; }
       [${ATTR}][data-style="dim"] { opacity: .78; }
       [${ATTR}][data-style="underline"] { text-decoration: underline dashed; text-underline-offset: 3px; text-decoration-color: #b4561a99; }
       [${ATTR}][data-style="highlight"] { background: #ffe9a8; color: #1d2420 !important; border-radius: 3px; padding: 0 .25em; }
@@ -239,6 +240,16 @@
     }
   }
 
+  /** 给后台判断网页领域用：站名、标题、描述、标题文字和开头一段正文（只取一次，很短）。 */
+  function pageInfo() {
+    if (S.pageInfo) return S.pageInfo
+    const meta = (n) => document.querySelector(`meta[name="${n}"],meta[property="${n}"]`)?.content || ''
+    const heads = [...document.querySelectorAll('h1,h2,h3')].slice(0, 12).map((e) => (e.textContent || '').trim()).filter(Boolean)
+    const body = (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 600)
+    const sample = [meta('description') || meta('og:description'), heads.join(' | '), body].filter(Boolean).join('\n').slice(0, 1500)
+    return (S.pageInfo = { host: location.hostname, title: document.title || '', sample })
+  }
+
   async function run(batch) {
     S.inflight++
     for (const it of batch) {
@@ -246,7 +257,7 @@
       if (rec) rec.state = 'busy'
     }
     status()
-    const r = await send({ type: 'cc-tr', texts: batch.map((b) => b.text), target: S.cfg.target, engine: S.cfg.engine })
+    const r = await send({ type: 'cc-tr', texts: batch.map((b) => b.text), target: S.cfg.target, engine: S.cfg.engine, page: pageInfo() })
     S.inflight--
     if (!r.ok) {
       S.err = r.error || '翻译失败了'
@@ -462,7 +473,7 @@
     selCard.style.left = `${Math.max(8, Math.min(box.left, innerWidth - 400))}px`
     selCard.style.top = `${Math.max(8, Math.min(box.bottom + 8, innerHeight - 200))}px`
     uiRoot().add(selCard)
-    const r = await send({ type: 'cc-tr', texts: [text], target: S.cfg.target, engine: S.cfg.engine })
+    const r = await send({ type: 'cc-tr', texts: [text], target: S.cfg.target, engine: S.cfg.engine, page: pageInfo() })
     if (!selCard) return
     if (!r.ok) {
       out.textContent = r.error || '翻译失败了'

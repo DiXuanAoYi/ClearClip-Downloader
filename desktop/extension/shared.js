@@ -85,6 +85,7 @@ async function checkConnection() {
   if (!c.port || !c.token) return { ok: false, message: '还没有设置端口和访问令牌' }
   try {
     const r = await call('/api/ping')
+    if (r.lang) await api.storage.local.set({ appLang: r.lang })
     return { ok: true, message: `已连接清影 ${r.version}` }
   } catch (e) {
     return { ok: false, message: e.message }
