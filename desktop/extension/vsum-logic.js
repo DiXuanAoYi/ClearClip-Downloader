@@ -440,6 +440,26 @@
   // ---------- 导出 ----------
 
   /** 完整的笔记（Markdown）：标题、链接、摘要、要点、章节（带跳转链接）、金句、卡片、文稿。 */
+  /** 总结文字拆成“一句话”和后面的段落。新格式第一段就是一句话；旧结果取第一句。 */
+  function splitSummary(text) {
+    const paras = String(text || '').split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean)
+    if (!paras.length) return { lead: '', paras: [] }
+    if (paras.length > 1) return { lead: paras[0], paras: paras.slice(1) }
+    const m = paras[0].match(/^(.+?[。！？!?.])(\s+|(?=[^\s]))(.*)$/s)
+    if (m && m[1].length >= 8 && m[3].trim()) return { lead: m[1].trim(), paras: [m[3].trim()] }
+    return { lead: paras[0], paras: [] }
+  }
+
+  /** 要点：“**标题** 说明 [m:ss]” 拆成 { title, detail, time }；旧的整句要点只有 detail。 */
+  function parsePoint(text) {
+    let t = String(text || '').trim()
+    const tm = t.match(/\[(\d{1,2}(?::\d{2}){1,2})\]/)
+    const time = tm ? tm[1] : ''
+    if (tm) t = (t.slice(0, tm.index) + t.slice(tm.index + tm[0].length)).replace(/\s{2,}/g, ' ').trim()
+    const m = t.match(/^\*\*(.+?)\*\*[\s:：—-]*(.*)$/s)
+    return m ? { title: m[1].trim(), detail: m[2].trim(), time } : { title: '', detail: t, time }
+  }
+
   function toMarkdown(d) {
     const url = d.url || ''
     const link = (ms) => (url ? timeLink(url, ms) : '')
@@ -694,6 +714,6 @@
   globalThis.ccVsum = {
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
     videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
-    searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
+    searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, splitSummary, parsePoint, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
   }
 })()

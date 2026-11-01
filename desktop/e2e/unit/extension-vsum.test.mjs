@@ -283,3 +283,14 @@ console.log('extension-vsum: ok')
   assert.equal(V.searchNotes([n], 'up主').length, 1)
   assert.equal(V.searchNotes([n], '不存在').length, 0)
 }
+
+// ---- 摘要页：一句话 + 段落、要点标题 / 说明 / 时间
+{
+  assert.deepEqual(plain(V.splitSummary('核心结论。\n\n第一段。\n\n第二段。')), { lead: '核心结论。', paras: ['第一段。', '第二段。'] })
+  assert.deepEqual(plain(V.splitSummary('这是旧格式的第一句话。后面还有第二句，第三句。')), { lead: '这是旧格式的第一句话。', paras: ['后面还有第二句，第三句。'] })
+  assert.deepEqual(plain(V.splitSummary('短。')), { lead: '短。', paras: [] })
+  assert.deepEqual(plain(V.splitSummary('')), { lead: '', paras: [] })
+  assert.deepEqual(plain(V.parsePoint('**拖延是情绪问题** 不是时间管理问题。 [0:41]')), { title: '拖延是情绪问题', detail: '不是时间管理问题。', time: '0:41' })
+  assert.deepEqual(plain(V.parsePoint('旧格式的要点 [1:02:03]')), { title: '', detail: '旧格式的要点', time: '1:02:03' })
+  assert.deepEqual(plain(V.parsePoint('文章要点')), { title: '', detail: '文章要点', time: '' })
+}

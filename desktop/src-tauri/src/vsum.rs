@@ -495,7 +495,10 @@ fn summary_system(lang: &str, style: &str, chapters: bool, final_pass: bool) -> 
     format!(
         "You summarize video transcripts or articles. Transcript lines look like \"[m:ss] text\". Write in {lang}. {} \
          Reply with ONE JSON object only, no code fences, with keys \"summary\", \"points\" (array of key takeaways), \
-         \"keywords\" (array of 3-8 short topic tags){chap}.",
+         \"keywords\" (array of 3-8 short topic tags){chap}. \
+         Format of \"summary\": its FIRST paragraph is one standalone sentence (under 40 words) giving the single most important takeaway; \
+         then, if the style allows more than one sentence, continue in 1-3 short paragraphs; separate paragraphs with a blank line (\\n\\n). \
+         Format of each item in \"points\": \"**Short title** one sentence of detail [m:ss]\", where [m:ss] is the timestamp from the transcript where the point is made (omit it for articles without timestamps).",
         style_hint(style)
     )
 }

@@ -60,6 +60,43 @@
     .note .x { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
     .note .x button { padding: 1px 7px; font-size: 12px; }
     .pill { position: fixed; z-index: 2147483000; padding: 4px 10px; border-radius: 14px; background: #b4561acc; color: #fff; font-size: 12px; box-shadow: 0 2px 8px #0004; }
+    .sm { display: flex; flex-direction: column; gap: 12px; }
+    .sm .vid { display: grid; gap: 2px; }
+    .sm .vid b { font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .sm .vmeta { display: flex; flex-wrap: wrap; gap: 2px 10px; color: #5d6862; font-size: 12px; }
+    .sm .saved { color: #2f7a4d; }
+    .sm .ctrl { display: grid; gap: 8px; }
+    .sm .seg { display: flex; gap: 2px; padding: 2px; background: #fff; border: 1px solid #e3e6e3; border-radius: 8px; overflow-x: auto; scrollbar-width: none; }
+    .sm .seg button { flex: none; background: transparent; color: #5d6862; font-weight: 400; padding: 3px 10px; border-radius: 6px; white-space: nowrap; }
+    .sm .seg button.on { background: #b4561a; color: #fff; font-weight: 700; }
+    .sm .crow { display: flex; align-items: center; gap: 8px; }
+    .sm .crow select { min-width: 0; max-width: 150px; }
+    .sm .grow { flex: 1; }
+    .sm .lead { background: #d9762b1a; border-radius: 10px; padding: 10px 12px; }
+    .sm .lead .k { font-size: 11px; letter-spacing: .1em; color: #b4561a; font-weight: 700; margin-bottom: 2px; }
+    .sm .lead p { margin: 0; font-size: 1.15em; line-height: 1.55; font-weight: 600; }
+    .sm .sh { display: flex; align-items: baseline; gap: 4px; margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .08em; color: #5d6862; }
+    .sm .sh em { font-style: normal; font-weight: 400; letter-spacing: 0; }
+    .sm .sh .lnk { margin-left: auto; background: transparent; color: #b4561a; padding: 0; font-weight: 400; }
+    .sm .prose p { margin: 0 0 .65em; line-height: 1.8; }
+    .sm .prose p:last-child { margin: 0; }
+    .sm .kw { display: flex; flex-wrap: wrap; gap: 6px; }
+    .sm .kw span { border: 1px solid #e3e6e3; background: #fff; border-radius: 6px; padding: 0 8px; font-size: 12px; line-height: 22px; }
+    .sm .kw span::before { content: "#"; color: #b4561a; margin-right: 2px; }
+    .sm .pts { list-style: none; margin: 0; padding: 0; position: relative; display: grid; gap: 2px; }
+    .sm .pts::before { content: ""; position: absolute; left: 25px; top: 10px; bottom: 10px; border-left: 1px dashed #cfd5d1; }
+    .sm .pts li { position: relative; display: grid; grid-template-columns: 52px 1fr; gap: 8px; padding: 6px 4px; border-radius: 8px; }
+    .sm .pts li.go { cursor: pointer; }
+    .sm .pts li.go:hover { background: #d9762b14; }
+    .sm .pts .tm { align-self: start; justify-self: start; position: relative; background: #fff; border: 1px solid #e3e6e3; color: #b4561a; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px; line-height: 20px; padding: 0 6px; border-radius: 6px; }
+    .sm .pts b { display: block; line-height: 1.5; }
+    .sm .pts .d { color: #5d6862; }
+    .sm .acts { position: sticky; bottom: -10px; display: flex; gap: 6px; padding: 8px 0 2px; background: #fbfaf8; }
+    .sm .acts button:first-child { flex: 1; }
+    .sm .empty { display: grid; gap: 6px; justify-items: center; text-align: center; padding: 16px 8px; }
+    .sm .empty p { margin: 0; max-width: 30ch; }
+    .sm .warn { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0; }
+    .sm .warn span { flex: 1; min-width: 160px; }
     h4 { margin: 10px 0 4px; font-size: 13px; }
     ul { margin: 4px 0; padding-left: 18px; }
   `
@@ -74,6 +111,13 @@
       button.sec { background: #262f2a; color: #eef1ee; border-color: #3a443e; }
       .ln .tr, .meta, .mute, .src { color: #a9b3ad; }
       .warn { background: #3a2f1e; border-color: #6b5530; }
+      .sm .seg, .sm .kw span, .sm .pts .tm { background: #262f2a; border-color: #3a443e; }
+      .sm .seg button, .sm .vmeta, .sm .sh, .sm .pts .d { color: #a9b3ad; }
+      .sm .seg button.on { background: #f0a064; color: #1d2420; }
+      .sm .lead .k, .sm .pts .tm, .sm .sh .lnk { color: #f0a064; }
+      .sm .saved { color: #6cc08a; }
+      .sm .acts { background: #1d2420; }
+      .sm .pts::before { border-color: #3a443e; }
   `
   const ui = mount(CSS)
   // 外观：主题（跟随系统 / 浅色 / 深色）和字号，改了马上生效
@@ -192,7 +236,7 @@
   /** 输出 / 翻译语言下拉：自动 + 常用的几十种语言；以前手填的别的写法也保留成一项。 */
   function langSelect(title, after) {
     const known = TL.LANGS.some((l) => l.code === S.prefs.lang)
-    const opts = [['', `自动（${S.status?.lang || '中文'}；中文视频译成英文）`], ...TL.LANGS.map((l) => [l.code, TL.label(l.code, S.appLang)])]
+    const opts = [['', '跟随视频'], ...TL.LANGS.map((l) => [l.code, TL.label(l.code, S.appLang)])]
     if (S.prefs.lang && !known) opts.push([S.prefs.lang, S.prefs.lang])
     return sel(opts, S.prefs.lang, (v) => ((S.prefs.lang = v), savePrefs(), after?.()), title)
   }
@@ -608,27 +652,52 @@
 
   function tabSummary() {
     const r = S.res.summary
-    const box = h('div')
+    const box = h('div', { class: 'sm' })
+    const d = S.data
+    const sty = V.STYLES.find(([v]) => v === S.prefs.style)?.[1] || ''
     box.append(
-      h('div', { class: 'tools' },
-        sel(V.STYLES, S.prefs.style, (v) => ((S.prefs.style = v), savePrefs()), '摘要风格'),
-        langSelect('输出语言：摘要、导图、卡片、问答都用这个语言写', () => {}),
-        h('button', { text: r ? '重新生成' : '生成摘要', disabled: S.busy, onclick: () => task('summary', {}, (x) => (S.res.summary = x)) }),
-      ),
+      h('div', { class: 'vid' },
+        h('b', { text: d?.title || '' }),
+        h('div', { class: 'vmeta' },
+          d?.durationMs > 0 && h('span', { text: V.fmtClock(d.durationMs) }),
+          h('span', { text: `${sty} · ${outLabel() || '跟随视频'}` }),
+          r && S.restored ? h('span', { class: 'saved', text: `✓ ${ago(S.restored)}生成，已保存` }) : null)),
+      h('div', { class: 'ctrl' },
+        h('div', { class: 'seg', role: 'group', 'aria-label': '摘要风格' },
+          ...V.STYLES.map(([v, n]) => h('button', { class: v === S.prefs.style ? 'on' : '', 'aria-pressed': v === S.prefs.style, text: n, disabled: S.busy, onclick: () => ((S.prefs.style = v), savePrefs(), render()) }))),
+        h('div', { class: 'crow' },
+          h('span', { class: 'mute', text: '输出语言' }),
+          langSelect(`输出语言：摘要、导图、卡片、问答都用这个语言写。“跟随视频”＝用${S.status?.lang || '中文'}，中文视频译成英文`, () => render()),
+          h('span', { class: 'grow' }),
+          h('button', { class: r ? 'sec' : '', text: r ? '重新生成' : '生成摘要', disabled: S.busy, onclick: () => task('summary', {}, (x) => (S.res.summary = x)) }))),
     )
     if (!r) {
-      box.append(h('div', { class: 'mute', text: '读取字幕后，由清影用你设置的大模型生成：总结、要点、关键词和章节。长视频会自动分段处理。' }))
+      box.append(h('div', { class: 'empty' }, h('b', { text: '还没有摘要' }), h('p', { class: 'mute', text: '读取字幕后，由清影用你设置的大模型生成：总结、要点、关键词和章节。长视频会自动分段处理。' })))
       return box
     }
     if (r.failed?.length) {
-      box.append(h('div', { class: 'warn' }, `有 ${r.failed.length} 段没生成成功（从 ${r.failed.filter(Boolean).join('、') || '部分位置'} 起），摘要不完整。 `,
-        r.failedRanges?.length ? h('button', { class: 'sec', text: '只补这几段', disabled: S.busy, onclick: () => retryFailed() }) : null))
+      box.append(h('div', { class: 'warn' }, h('span', { text: `有 ${r.failed.length} 段没生成成功（从 ${r.failed.filter(Boolean).join('、') || '部分位置'} 起），摘要不完整。` }),
+        r.failedRanges?.length ? h('button', { text: '只补这几段', disabled: S.busy, onclick: () => retryFailed() }) : null))
     }
-    if (S.restored) box.append(h('div', { class: 'mute', text: `已保存的结果 · ${ago(S.restored)}生成，没有重新请求大模型` }))
-    box.append(h('h4', { text: '总结' }), h('div', { class: 'card', text: r.summary }))
-    if (r.keywords?.length) box.append(h('div', { class: 'chips' }, ...r.keywords.map((k) => h('span', { class: 'chip', text: k }))))
-    if (r.points?.length) box.append(h('h4', { text: '要点' }), h('ul', {}, ...r.points.map((p) => h('li', {}, ...linkify(p)))))
-    box.append(h('div', { class: 'tools' }, h('button', { class: 'sec', text: '复制 Markdown', onclick: () => copy(V.toMarkdown(exportData()), ' Markdown') })))
+    const { lead, paras } = V.splitSummary(r.summary)
+    if (lead) box.append(h('div', { class: 'lead' }, h('div', { class: 'k', text: '一句话看完' }), h('p', { text: lead })))
+    if (paras.length) box.append(h('div', {}, h('div', { class: 'sh', text: '总结' }), h('div', { class: 'prose' }, ...paras.map((p) => h('p', { text: p })))))
+    if (r.keywords?.length) box.append(h('div', { class: 'kw' }, ...r.keywords.map((k) => h('span', { text: k }))))
+    if (r.points?.length) {
+      box.append(h('div', {},
+        h('div', { class: 'sh' }, '要点', h('em', { text: ` ${r.points.length} 条${isVideo() ? '，点时间跳转' : ''}` }),
+          r.chapters?.length ? h('button', { class: 'lnk', text: '看章节 ›', onclick: () => ((S.tab = 'chapters'), render()) }) : null),
+        h('ul', { class: 'pts' }, ...r.points.map((p) => {
+          const x = V.parsePoint(p)
+          const ms = x.time ? V.parseClock(x.time) : -1
+          return h('li', { class: ms >= 0 && isVideo() ? 'go' : '', onclick: () => ms >= 0 && seek(ms) },
+            h('span', { class: 'tm', text: x.time || '·' }),
+            h('div', {}, x.title && h('b', { text: x.title }), x.detail && h('span', { class: x.title ? 'd' : '', text: x.detail })))
+        }))))
+    }
+    box.append(h('div', { class: 'acts' },
+      h('button', { text: '复制 Markdown', onclick: () => copy(V.toMarkdown(exportData()), ' Markdown') }),
+      h('button', { class: 'sec', text: '下载 .md', onclick: () => saveFile(V.fileName(d.title + ' 摘要', 'md'), V.toMarkdown(exportData()), 'text/markdown') })))
     return box
   }
 

@@ -178,9 +178,9 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const run = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-ai-run').req)
     ok('提交的请求带类型、风格、语言、整理好的行', run.kind === 'summary' && run.style === 'standard' && run.lines.length === 3 && run.lines[1].t === 41000 && run.lang === '中文', JSON.stringify(run))
     ok('关键词、要点显示', /Rust/.test(await text(page)) && /性能/.test(await text(page)) && /又快又安全/.test(await text(page)))
-    ok('要点里的 [0:41] 变成可点的时间', await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('button.ts')].some((b) => b.textContent === '[0:41]'))))
+    ok('要点里的 [0:41] 变成左边的时间标签', await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('.pts .tm')].some((b) => b.textContent === '0:41'))))
     // 点时间会让页面的视频跳转（没有媒体源时 currentTime 不变，只要不报错）
-    await page.evaluate(() => window.__roots[0].querySelector('button.ts').click())
+    await page.evaluate(() => window.__roots[0].querySelector('.pts li.go').click())
 
     if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-summary.png' })
     // 章节：AI 章节优先
@@ -302,7 +302,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await settle(again.page, 300)
     const t = await text(again.page)
     ok('重新打开：摘要也在，没有请求清影', /这个视频介绍了 Rust/.test(t) && (await again.page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)) === 0)
-    ok('重新打开：提示是已保存的结果', /已保存的结果/.test(t))
+    ok('重新打开：提示是已保存的结果', /生成，已保存/.test(t))
     await again.page.close()
   }
 
