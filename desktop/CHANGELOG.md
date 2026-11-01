@@ -2,7 +2,7 @@
 
 版本号与 `tauri.conf.json` 一致；每个版本对应一个 `desktop-v<版本>` 的 Release。
 
-## 未发布
+## 0.11.0
 
 **修复**
 - **YouTube“确认不是机器人”与 Whisper 无字幕文件的提示更清楚**：遇到 YouTube 的机器人检查，会直接说明要先登录 YouTube 并用扩展同步 Cookie；whisper.cpp 退出正常却找不到字幕文件时，改为在工作目录里找任意 .srt，仍找不到则附上程序输出，方便排查。
