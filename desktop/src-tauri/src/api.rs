@@ -178,8 +178,40 @@ pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply
             let id = req.query.get("id").and_then(|i| i.parse::<u64>().ok()).unwrap_or(0);
             ok(json!({"ok": crate::vsum::cancel(id)}))
         }
+        // 字幕工坊：生成字幕 / AI 纠错（路径是清影所在电脑上的文件），返回任务编号，用 /subtitle/job 查进度
+        ("POST", "/api/v1/subtitle/generate") => match serde_json::from_slice::<SubReq>(&req.body) {
+            Ok(r) => match crate::ai_cmds::subgen_start(app.clone(), r.path, r.opts) {
+                Ok(id) => ok(json!({"id": id})),
+                Err(e) => err("400 Bad Request", &e.message),
+            },
+            Err(_) => err("400 Bad Request", "请求格式不对"),
+        },
+        ("POST", "/api/v1/subtitle/correct") => match serde_json::from_slice::<SubReq>(&req.body) {
+            Ok(r) => match crate::ai_cmds::subgen_correct(app.clone(), r.path, r.mode) {
+                Ok(id) => ok(json!({"id": id})),
+                Err(e) => err("400 Bad Request", &e.message),
+            },
+            Err(_) => err("400 Bad Request", "请求格式不对"),
+        },
+        ("GET", "/api/v1/subtitle/job") => {
+            let id = req.query.get("id").and_then(|i| i.parse::<u64>().ok()).unwrap_or(0);
+            match state.media_jobs.snapshot().into_iter().find(|j| j.id == id) {
+                Some(j) => ok(serde_json::to_value(&j).unwrap_or(Value::Null)),
+                None => err("404 Not Found", "任务不存在或已过期"),
+            }
+        }
         _ => err("404 Not Found", "未知接口"),
     })
+}
+
+/// 字幕接口的请求体：`path` + 生成选项（字段同 GenOpts）；纠错时用 `mode`。
+#[derive(serde::Deserialize)]
+struct SubReq {
+    path: String,
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(flatten)]
+    opts: crate::subgen::GenOpts,
 }
 
 /// 在文件管理器里显示文件；文件已不在时打开它所在的文件夹。

@@ -24,6 +24,11 @@ pub const HELP: &str = "清影 ClearClip 命令行
   clearclip cancel <编号>      取消任务
   clearclip remove <编号>      从列表移除任务
   clearclip search <关键词>    搜索媒体库
+  clearclip subtitle generate <文件> [--lang 语言] [--translate zh,en] [--display orig|trans|orig-top|trans-top]
+                               [--format srt,vtt,ass,lrc,txt,json] [--correct auto|conservative|aggressive|rules|off] [--no-resegment] [--semantic] [--reflect] [--word-timing]
+                               给没有字幕的视频 / 音频生成字幕（识别 → 纠错 → 断句 → 翻译 → 导出）
+  clearclip subtitle correct <字幕或视频文件> [--mode conservative|aggressive|rules]
+                               对已有字幕做 AI 纠错（补标点、改同音错字），另存为新文件
   clearclip help               显示这份说明
 
 除 add 外的命令需要先在清影的“设置 → 手机与浏览器扩展”里开启服务。加 --json 输出原始 JSON。";
@@ -71,6 +76,8 @@ pub enum Cmd {
     Cancel(i64),
     Remove(i64),
     Search(String),
+    /// 字幕工坊：(接口路径, 请求体 JSON)
+    Subtitle(&'static str, String),
 }
 
 /// 解析命令；`add` 和其他不认识的返回 None（交给桌面应用处理）。
@@ -92,6 +99,7 @@ pub fn parse(args: &[String]) -> Option<Result<Cmd, String>> {
         "resume" => all_or_id("继续").map(Cmd::Resume),
         "cancel" => id(rest.first()).map(Cmd::Cancel).ok_or_else(|| "用法：clearclip cancel <任务编号>".to_string()),
         "remove" | "rm" => id(rest.first()).map(Cmd::Remove).ok_or_else(|| "用法：clearclip remove <任务编号>".to_string()),
+        "subtitle" | "sub" => parse_subtitle(&args[2..]).map(|(p, b)| Cmd::Subtitle(p, b)),
         "search" => {
             if rest.is_empty() {
                 Err("用法：clearclip search <关键词>".into())
@@ -153,6 +161,62 @@ fn pad(s: &str, width: usize) -> String {
 }
 
 /// 把接口返回的内容整理成适合终端阅读的文字。
+/// `subtitle generate|correct <文件> [选项]` → (接口路径, JSON)。文件转成绝对路径（命令行的当前目录和清影不同）。
+fn parse_subtitle(args: &[String]) -> Result<(&'static str, String), String> {
+    const USAGE: &str = "用法：clearclip subtitle generate|correct <文件> [选项]，clearclip help 查看全部选项";
+    let sub = args.first().map(String::as_str).ok_or(USAGE)?;
+    let path = match sub {
+        "generate" | "gen" => "/api/v1/subtitle/generate",
+        "correct" | "fix" => "/api/v1/subtitle/correct",
+        _ => return Err(USAGE.into()),
+    };
+    let mut file: Option<String> = None;
+    let mut body = serde_json::Map::new();
+    let list = |v: &str| Value::Array(v.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|s| Value::String(s.into())).collect());
+    let mut it = args[1..].iter().filter(|a| a.as_str() != "--json");
+    while let Some(a) = it.next() {
+        let mut val = |name: &str| it.next().cloned().ok_or_else(|| format!("{name} 后面需要一个值"));
+        match a.as_str() {
+            "--lang" => {
+                body.insert("language".into(), Value::String(val("--lang")?));
+            }
+            "--translate" => {
+                body.insert("targets".into(), list(&val("--translate")?));
+            }
+            "--display" => {
+                body.insert("display".into(), Value::String(val("--display")?));
+            }
+            "--format" => {
+                body.insert("formats".into(), list(&val("--format")?));
+            }
+            "--correct" => {
+                body.insert("correct".into(), Value::String(val("--correct")?));
+            }
+            "--mode" => {
+                body.insert("mode".into(), Value::String(val("--mode")?));
+            }
+            "--no-resegment" => {
+                body.insert("resegment".into(), Value::Bool(false));
+            }
+            "--semantic" => {
+                body.insert("semantic".into(), Value::Bool(true));
+            }
+            "--word-timing" => {
+                body.insert("wordTiming".into(), Value::Bool(true));
+            }
+            "--reflect" => {
+                body.insert("reflect".into(), Value::Bool(true));
+            }
+            f if f.starts_with("--") => return Err(format!("不认识的选项“{f}”")),
+            f => file = Some(f.to_string()),
+        }
+    }
+    let file = file.ok_or(USAGE)?;
+    let abs = std::fs::canonicalize(&file).map_err(|_| format!("找不到文件“{file}”"))?;
+    body.insert("path".into(), Value::String(abs.to_string_lossy().trim_start_matches(r"\\?\").to_string()));
+    Ok((path, Value::Object(body).to_string()))
+}
+
 pub fn render(cmd: &Cmd, body: &Value) -> String {
     match cmd {
         Cmd::Status => {
@@ -191,6 +255,9 @@ pub fn render(cmd: &Cmd, body: &Value) -> String {
                 .collect::<Vec<_>>()
                 .join("\n")
         }
+        Cmd::Subtitle(..) => {
+            format!("已开始，任务编号 {}。在清影的“工具箱”任务列表里查看进度，或用 GET /api/v1/subtitle/job?id={} 查询。", body["id"], body["id"])
+        }
         Cmd::Search(_) => {
             let items = body["items"].as_array().cloned().unwrap_or_default();
             if items.is_empty() {
@@ -227,7 +294,12 @@ fn run_cmd(cmd: &Cmd, json: bool) -> Result<String, String> {
     if phone["enabled"].as_bool() != Some(true) || port == 0 || token.is_empty() {
         return Err("还没有开启本机接口：请在清影的“设置 → 手机与浏览器扩展”里打开服务。".into());
     }
+    let mut post_body: Option<&str> = None;
     let (method, path): (&str, String) = match cmd {
+        Cmd::Subtitle(p, b) => {
+            post_body = Some(b.as_str());
+            ("POST", (*p).to_string())
+        }
         Cmd::Help => return Ok(HELP.into()),
         Cmd::Status => ("GET", "/api/v1/status".into()),
         Cmd::List => ("GET", "/api/v1/tasks".into()),
@@ -239,7 +311,7 @@ fn run_cmd(cmd: &Cmd, json: bool) -> Result<String, String> {
         Cmd::Remove(id) => ("POST", format!("/api/v1/tasks/{id}/remove")),
         Cmd::Search(q) => ("GET", format!("/api/v1/library?limit=30&q={}", url::form_urlencoded::byte_serialize(q.as_bytes()).collect::<String>())),
     };
-    let (code, body) = http(port, token, method, &path, None)?;
+    let (code, body) = http(port, token, method, &path, post_body)?;
     let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
     if code != 200 {
         return Err(v["error"].as_str().map(str::to_string).unwrap_or_else(|| format!("接口返回 {code}")));
@@ -294,6 +366,26 @@ mod tests {
         assert!(matches!(parse(&a(&["cancel"])), Some(Err(_))));
         assert_eq!(parse(&a(&["search", "rust", "入门"])), Some(Ok(Cmd::Search("rust 入门".into()))));
         assert_eq!(parse(&a(&["--help"])), Some(Ok(Cmd::Help)));
+        // 字幕命令：文件转绝对路径，选项进 JSON
+        let f = std::env::temp_dir().join("cli-sub-test.mp4");
+        std::fs::write(&f, b"x").unwrap();
+        let fs = f.to_string_lossy().to_string();
+        match parse(&a(&["subtitle", "generate", &fs, "--translate", "zh,en", "--format", "vtt", "--no-resegment", "--semantic", "--reflect"])) {
+            Some(Ok(Cmd::Subtitle(p, b))) => {
+                assert_eq!(p, "/api/v1/subtitle/generate");
+                let v: Value = serde_json::from_str(&b).unwrap();
+                assert_eq!(v["targets"], serde_json::json!(["zh", "en"]));
+                assert_eq!(v["formats"], serde_json::json!(["vtt"]));
+                assert_eq!(v["resegment"], false);
+                assert_eq!(v["semantic"], true);
+                assert_eq!(v["reflect"], true);
+                assert!(v["path"].as_str().unwrap().ends_with("cli-sub-test.mp4"));
+            }
+            o => panic!("{o:?}"),
+        }
+        assert!(matches!(parse(&a(&["subtitle", "generate"])), Some(Err(_))));
+        assert!(matches!(parse(&a(&["subtitle", "correct", &fs, "--bogus"])), Some(Err(_))));
+        std::fs::remove_file(&f).ok();
         // add 和启动参数交给桌面应用
         assert_eq!(parse(&a(&["add", "https://x.com/1"])), None);
         assert_eq!(parse(&a(&["--autostart"])), None);

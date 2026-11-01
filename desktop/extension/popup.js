@@ -52,7 +52,7 @@ async function renderSync() {
   $('autoSite').disabled = !site
   $('autoSync').checked = !!c.autoSync
   $('sites').innerHTML = ''
-  if (!c.syncSites.length) $('sites').textContent = '还没有自动同步的网站。在网站上打开扩展，勾选“登录状态变化时自动同步此网站”即可添加。'
+  if (!c.syncSites.length) $('sites').textContent = `自动同步${c.autoSync ? '已开启' : '未开启'}，但名单还是空的，所以暂时不会同步任何网站。到要同步的网站页面打开扩展，勾选“登录状态变化时自动同步此网站”，它就会出现在这里。`
   for (const s of c.syncSites) {
     const row = document.createElement('div')
     const name = document.createElement('span')
@@ -540,6 +540,7 @@ async function loadTransCfg() {
   $('trSkip').checked = c.skipTarget
   $('trAuto').value = c.auto.join('\n')
   $('trNever').value = c.never.join('\n')
+  $('trSites').value = ccTrans.formatSites(c.sites)
 }
 
 $('trTarget').onchange = async () => (await saveTransCfg({ target: $('trTarget').value }), ($('trTarget2').value = $('trTarget').value))
@@ -559,6 +560,7 @@ $('saveTrans').onclick = async () => {
     skipTarget: $('trSkip').checked,
     auto: ccTrans.hostList($('trAuto').value),
     never: ccTrans.hostList($('trNever').value),
+    sites: ccTrans.parseSites($('trSites').value),
   })
   await loadTransCfg()
   msg('网页翻译设置已保存', 'ok')
@@ -759,6 +761,7 @@ async function init() {
   const f = await getFeatures()
   $('pageTools').classList.toggle('hidden', !f.onDemand)
   $('vsumTools').classList.toggle('hidden', !f.vsum)
+  $('subLayerTools').classList.toggle('hidden', !f.subLayer)
   $('transTools').classList.toggle('hidden', !f.webtrans)
   $('tabLater').classList.toggle('hidden', !(f.readLater && typeof renderLater === 'function'))
   await loadSettings()
@@ -823,6 +826,7 @@ $('batchLinks').onclick = async () => {
   msg(`已把 ${r.count} 条链接发到清影，请在电脑上选择要下载的`, 'ok')
 }
 $('startVsum').onclick = () => runOnPage('vsum')
+$('startSubLayer').onclick = () => runOnPage('sublayer')
 $('openSettings').onclick = () => show('settings')
 $('saveRules').onclick = saveRules
 $('notifyDone').onchange = () => api.storage.local.set({ notifyDone: $('notifyDone').checked })

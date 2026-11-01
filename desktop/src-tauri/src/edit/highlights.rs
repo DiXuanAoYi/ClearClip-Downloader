@@ -417,7 +417,7 @@ pub async fn edit_highlights_llm(state: St<'_>, req: HighlightReq) -> AppResult<
         return Err(AppError::invalid("文稿太长（超过 4000 句），请先裁短或分段再试。"));
     }
     let settings = state.settings();
-    let ep = ai::chat_endpoint(&state, &settings)?;
+    let ep = ai::chat_endpoint_for(&state, &settings, crate::ai_pool::Task::Edit)?;
     llm_pick(&ep, &settings.ai.model, &req.sentences, Opts::new(req.count, req.min_secs, req.max_secs)).await
 }
 

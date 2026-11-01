@@ -26,25 +26,25 @@ const plain = (v) => JSON.parse(JSON.stringify(v))
   assert.equal(f.seek, true)
   assert.equal(f.floatButton, false) // 其他常驻注入类默认关
   assert.equal(f.hoverZoom, false)
-  assert.equal(f.unlock, false)
+  assert.equal(f.unlock, true) // 默认开启
   assert.equal(f.cleanLink, true)
   assert.equal(plain(X('normalizeFeatures')({ floatButton: true, speed: 'yes', nope: true })).floatButton, true)
   assert.equal(plain(X('normalizeFeatures')({ speed: 'yes' })).speed, true) // 不是布尔值就用默认
   assert.equal('nope' in plain(X('normalizeFeatures')({ nope: true })), false)
   // 默认注册实时音效、播放控制脚本和网页翻译脚本（悬停 / 划词 / 输入框三连空格）
   assert.equal(f.audioFx, true) // 实时音效默认开（响度标准化默认开，混响 / 均衡器默认关）
-  assert.deepEqual(plain(X('neededScripts')(undefined)), ['cc-audio', 'cc-video', 'cc-trans'])
+  assert.deepEqual(plain(X('neededScripts')(undefined)), ['cc-audio', 'cc-video', 'cc-trans', 'cc-unlock'])
   assert.deepEqual(plain(X('neededScripts')({ floatButton: true, hoverZoom: true, unlock: true })), ['cc-float', 'cc-zoom', 'cc-audio', 'cc-video', 'cc-trans', 'cc-unlock'])
-  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, audioFx: false })), [])
-  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, audioFx: false, videoTools: true })), ['cc-video'])
-  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false })), ['cc-audio'])
+  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, audioFx: false })), ['cc-unlock'])
+  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, audioFx: false, videoTools: true })), ['cc-video', 'cc-unlock'])
+  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false })), ['cc-audio', 'cc-unlock'])
   // 音效脚本按顺序加载：界面工具 → 纯逻辑 → 处理链 → 内容脚本
   assert.deepEqual(plain(X('RESIDENT_SCRIPTS').find((r) => r.id === 'cc-audio').js), ['content/ui.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'])
 }
 
 // ---- 站点规则
 {
-  const r = plain(X('normalizeSiteRules')({ off: { video: [' A.com ', 'a.com', ''] }, unlockOn: ['B.com'], unlockAll: 'x', zoomRules: 5 }))
+  const r = plain(X('normalizeSiteRules')({ off: { video: [' A.com ', 'a.com', ''] }, unlockOn: ['B.com'], unlockAll: false, zoomRules: 5 }))
   assert.deepEqual(r.off.video, ['a.com'])
   assert.deepEqual(r.unlockOn, ['b.com'])
   assert.equal(r.unlockAll, false)
@@ -254,10 +254,11 @@ console.log('extension-tools ok')
 // ---- 解除限制的注册范围
 {
   const um = (r) => plain(X('unlockMatches')(r))
-  assert.deepEqual(um({}), []) // 名单是空的：不注册
-  assert.deepEqual(um({ unlockOn: ['Example.com'] }), ['*://example.com/*', '*://*.example.com/*'])
-  assert.deepEqual(um({ unlockOn: ['bad host!', 'a-b.co'] }), ['*://a-b.co/*', '*://*.a-b.co/*']) // 不合法的主机名丢掉
+  assert.deepEqual(um({ unlockAll: false }), []) // 关闭“所有网站”且名单为空：不注册
+  assert.deepEqual(um({ unlockAll: false, unlockOn: ['Example.com'] }), ['*://example.com/*', '*://*.example.com/*'])
+  assert.deepEqual(um({ unlockAll: false, unlockOn: ['bad host!', 'a-b.co'] }), ['*://a-b.co/*', '*://*.a-b.co/*']) // 不合法的主机名丢掉
   assert.deepEqual(um({ unlockAll: true, unlockOn: ['x.com'] }), ['http://*/*', 'https://*/*'])
   assert.ok(X('neededScripts')({ unlock: true }).includes('cc-unlock'))
-  assert.ok(!X('neededScripts')({}).includes('cc-unlock'))
+  assert.ok(!X('neededScripts')({ unlock: false }).includes('cc-unlock'))
+  assert.ok(X('neededScripts')({}).includes('cc-unlock')) // 默认开启
 }

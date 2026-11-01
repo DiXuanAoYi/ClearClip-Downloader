@@ -46,8 +46,8 @@ function trFlushSoon() {
 
 // ---------- 两个引擎 ----------
 
-async function trClearclip(texts, target, context = '') {
-  const sub = await call('/api/v1/ai/run', { kind: 'webtrans', lang: ccTrans.promptName(target), context, lines: texts.map((text, t) => ({ t, text })) })
+async function trClearclip(texts, target, context = '', host = '') {
+  const sub = await call('/api/v1/ai/run', { kind: 'webtrans', lang: ccTrans.promptName(target), context, url: host ? `https://${host}` : '', lines: texts.map((text, t) => ({ t, text })) })
   const deadline = Date.now() + 5 * 60_000
   for (;;) {
     await sleep(450)
@@ -116,16 +116,18 @@ async function trGoogle(texts, target) {
 // ---------- 网页领域（翻译前先判断一次，按页面记住）----------
 
 const trDomains = new Map() // 页面键 -> Promise<{domain, note}|null>
+const trDomainFail = new Map() // 页面键 -> 失败时间；几分钟内不再重试，免得每一批都空等
 const trDomainKey = (p) => `${p.host}|${String(p.title || '').slice(0, 80)}`
 
 /** 看页面标题和一小段文字，让大模型判断领域并给出选词说明；失败返回 null（翻译照常进行）。 */
 function pageDomain(page) {
   if (!page || !page.host || !String(page.sample || '').trim()) return Promise.resolve(null)
   const key = trDomainKey(page)
+  if (Date.now() - (trDomainFail.get(key) || 0) < 5 * 60_000) return Promise.resolve(null)
   if (!trDomains.has(key)) {
     const job = (async () => {
       const sub = await call('/api/v1/ai/run', { kind: 'domain', title: String(page.title || '').slice(0, 200), url: `https://${page.host}`, text: String(page.sample).slice(0, 1500) })
-      const deadline = Date.now() + 60_000
+      const deadline = Date.now() + 20_000
       for (;;) {
         await sleep(400)
         const j = await call(`/api/v1/ai/job?id=${encodeURIComponent(String(sub.id))}`)
@@ -134,21 +136,40 @@ function pageDomain(page) {
           const note = String(j.result?.note || '').trim()
           return domain || note ? { domain, note } : null
         }
-        if (j.state === 'failed' || j.state === 'cancelled' || Date.now() > deadline) return null
+        if (j.state === 'error' || j.state === 'failed' || j.state === 'cancelled' || Date.now() > deadline) return null
       }
     })().catch(() => null)
     trDomains.set(key, job)
     if (trDomains.size > 50) trDomains.delete(trDomains.keys().next().value)
-    job.then((v) => v || trDomains.delete(key))
+    job.then((v) => {
+      if (v) return
+      trDomains.delete(key)
+      trDomainFail.set(key, Date.now())
+      if (trDomainFail.size > 50) trDomainFail.delete(trDomainFail.keys().next().value)
+    })
   }
   return trDomains.get(key)
+}
+
+// 模型 / AI 专家 / 术语库变了，应用端的 promptVersion 会变，旧译文不再命中缓存（60 秒内不重复问）
+let pvMemo = { v: '', t: 0 }
+async function promptVersion() {
+  if (Date.now() - pvMemo.t < 60_000) return pvMemo.v
+  try {
+    const s = await call('/api/v1/ai/status')
+    pvMemo = { v: String(s.promptVersion || ''), t: Date.now() }
+  } catch {
+    pvMemo = { v: pvMemo.v, t: Date.now() - 50_000 }
+  }
+  return pvMemo.v
 }
 
 /** 翻译一批文字。先查缓存，剩下的交给引擎，返回和输入一一对应的译文。 */
 async function translateTexts(texts, { target, engine, page = null, domain = false }) {
   const dom = engine === 'clearclip' && domain ? await pageDomain(page) : null
   const ctx = dom ? [dom.domain && `Domain: ${dom.domain}.`, dom.note].filter(Boolean).join(' ') : ''
-  const keyEngine = dom?.domain ? `${engine}:${dom.domain.toLowerCase().slice(0, 40)}` : engine
+  const pv = engine === 'clearclip' ? await promptVersion() : ''
+  const keyEngine = (dom?.domain ? `${engine}:${dom.domain.toLowerCase().slice(0, 40)}` : engine) + (pv ? `@${pv}` : '')
   const cache = await trCacheMap()
   const out = texts.map((t) => cache[ccTrans.cacheKey(keyEngine, target, t)]?.[0] ?? null)
   const todo = out.map((v, i) => (v == null ? i : -1)).filter((i) => i >= 0)
@@ -159,7 +180,7 @@ async function translateTexts(texts, { target, engine, page = null, domain = fal
     else {
       await trSlot()
       try {
-        res = await trClearclip(src, target, ctx)
+        res = await trClearclip(src, target, ctx, page?.host || '')
       } finally {
         trFree()
       }
@@ -187,11 +208,18 @@ const TR_FILES = ['content/ui.js', 'trans-logic.js', 'content/webtrans.js']
 async function webTransDo(tab, action, extra = {}) {
   if (!isWebPage(tab)) throw new Error('当前页面不能翻译')
   const send = () => api.tabs.sendMessage(tab.id, { type: 'cc-wt', action, ...extra })
+  // 页面里没有翻译脚本时，别的内容脚本（如实时音效）也在监听消息，这时 sendMessage 不会报错，而是安静地返回 undefined；
+  // 所以“没抛错”不等于“已送达”，必须拿到翻译脚本自己的回复（带 on 字段）才算。
+  const ready = (r) => r && typeof r === 'object' && 'on' in r
   try {
-    return await send()
+    const r = await send()
+    if (ready(r)) return r
   } catch {
-    await injectFiles(tab.id, TR_FILES)
-    await sleep(60)
-    return await send()
+    // 还没注入
   }
+  await injectFiles(tab.id, TR_FILES)
+  await sleep(60)
+  const r = await send()
+  if (!ready(r)) throw new Error('页面翻译没有启动（这个页面可能不允许扩展运行脚本）')
+  return r
 }

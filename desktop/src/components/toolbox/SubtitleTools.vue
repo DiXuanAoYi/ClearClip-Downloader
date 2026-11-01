@@ -5,8 +5,10 @@ import { api, errorText } from '../../api'
 import type { SubJob, SubOp } from '../../types'
 import { parseClock } from '../../utils/time'
 import FileInput from './FileInput.vue'
+import SubtitleEditor from '../library/SubtitleEditor.vue'
 
 const OPS = [
+  { id: 'edit', name: '校对编辑', desc: '逐条改字、改时间、拆分合并、查找替换，改完另存（或覆盖并留备份）。有对应视频时可边播边校对。' },
   { id: 'shift', name: '平移时间轴', desc: '字幕整体提前或推后几秒。' },
   { id: 'align', name: '两点校准', desc: '前面对得上、越到后面越对不上时，给出开头和结尾各一个对应的时间点。' },
   { id: 'rescale', name: '按比例缩放', desc: '帧率不一致造成的逐渐偏移，例如 23.976 → 25 帧。' },
@@ -15,7 +17,8 @@ const OPS = [
   { id: 'convert', name: '转换格式', desc: 'SRT、VTT、ASS 互相转换（ASS 为默认样式，原有样式会丢失）。' },
   { id: 'danmaku', name: '弹幕转 ASS', desc: '把 B站弹幕 XML 转成 ASS，样式用“设置”里的弹幕样式。' },
 ]
-const op = ref('shift')
+const op = ref('edit')
+const editing = ref(false)
 const cur = computed(() => OPS.find((o) => o.id === op.value)!)
 const files = ref<string[]>([])
 const second = ref<string[]>([])
@@ -112,7 +115,7 @@ async function run() {
         <template v-if="op === 'danmaku'">
           <label><span>画面比例</span><el-select v-model="p.w" size="small" class="w" @change="(v: number) => (p.h = v === 1920 ? 1080 : v === 1080 ? 1920 : 1080)"><el-option :value="1920" label="横屏 16:9" /><el-option :value="1080" label="竖屏 9:16" /></el-select></label>
         </template>
-        <label v-if="op !== 'danmaku'">
+        <label v-if="op !== 'danmaku' && op !== 'edit'">
           <span>输出格式</span>
           <el-radio-group v-model="format" size="small">
             <el-radio-button value="">自动</el-radio-button>
@@ -122,7 +125,11 @@ async function run() {
           </el-radio-group>
         </label>
       </div>
-      <div class="go">
+      <div v-if="op === 'edit'" class="go">
+        <el-button type="primary" :disabled="!files.length" @click="editing = true">打开编辑器</el-button>
+      </div>
+      <SubtitleEditor v-if="files.length" v-model="editing" :path="files[0]" />
+      <div v-if="op !== 'edit'" class="go">
         <el-button type="primary" :loading="busy" :disabled="!files.length" @click="run">开始处理</el-button>
         <span v-if="result" class="res">
           已保存为 <span class="mono selectable">{{ result.output.split(/[\\/]/).pop() }}</span><template v-if="result.count">（{{ result.count }} 条）</template>

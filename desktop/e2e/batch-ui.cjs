@@ -69,14 +69,16 @@ const INIT = `
   await page.waitForFunction(() => window.__app)
   await page.waitForTimeout(400)
 
-  // —— 队列：批次卡片与分页 ——
-  ok('队列里显示批次卡片', (await page.locator('.bx').count()) === 1)
+  // —— 批量下载页：批次卡片；队列：分页 ——
+  ok('批量下载页显示批次卡片', (await page.locator('.bx').count()) === 1)
   ok('批次卡片显示完成进度', (await page.locator('.bx').innerText()).includes('1/4 完成'))
   ok('任务行显示批次序号', (await page.locator('.seq').count()) >= 1)
   await page.locator('.tabs button', { hasText: '失败' }).click()
   await page.waitForTimeout(150)
   ok('“失败”分页只剩失败的任务', (await page.locator('.task').count()) === 1)
   await page.locator('.tabs button', { hasText: '全部' }).click()
+  await page.locator('.bb button', { hasText: '查看任务' }).click()
+  ok('“查看任务”切到下载队列并只看该批次', await page.evaluate(() => window.__app.view === 'queue' && window.__app.queueBatch === 'b1'))
   await page.locator('.bb button', { hasText: '只重试失败项' }).click()
   await page.waitForTimeout(150)
   ok('“只重试失败项”调用批次操作 retry', await page.evaluate(() => window.__act?.what === 'retry' && window.__act?.id === 'b1'))
@@ -101,12 +103,17 @@ const INIT = `
   const enq = await page.evaluate(() => window.__enq)
   ok('提交的条目：普通 2 条带解析结果，列表展开 5 条待解析', enq && enq.items.length === 7 && enq.items.filter((i) => i.media).length === 2, JSON.stringify(enq && enq.items.length))
   ok('提交带批次选项与来源', enq && enq.opts.folder === true && enq.opts.concurrency === 2 && enq.source === '粘贴')
-  ok('提交后切到队列页', await page.evaluate(() => window.__app.view === 'queue'))
+  ok('提交后切到批量下载页', await page.evaluate(() => window.__app.view === 'batch'))
 
   // 设置里关闭预览：直接整批加入，不打开面板
   await page.evaluate(() => { window.__enq = null; window.__app.settings.batchPreview = false; window.__app.openBatch(['https://a.com/9', 'https://a.com/10'], '剪贴板') })
   await page.waitForTimeout(300)
   ok('关闭预览时直接加入（不打开面板）', await page.evaluate(() => window.__enq && window.__enq.items.length === 2 && window.__enq.items.every((i) => !i.media)))
+
+  // 从“新建批量下载”进来：没有链接时直接露出粘贴框
+  await page.evaluate(() => { window.__app.settings.batchPreview = true; window.__app.openBatch([], '手动添加') })
+  await page.waitForTimeout(300)
+  ok('空链接打开面板时直接显示粘贴框', (await page.locator('.bd .more textarea').count()) === 1)
 
   ok('页面没有脚本错误', errors.length === 0, errors.join('; '))
   await page.screenshot({ path: '/tmp/batch-ui.png' })

@@ -233,6 +233,15 @@ impl DownloadManager {
         self.lock().iter().any(|e| e.snap.status == TaskStatus::Running)
     }
 
+    /// 某个批次里还没结束（正在下载或排队）的任务数。
+    pub fn batch_unfinished(&self, batch_id: &str) -> usize {
+        self.lock()
+            .iter()
+            .filter(|e| matches!(e.snap.status, TaskStatus::Running | TaskStatus::Queued))
+            .filter(|e| e.spec.batch.as_ref().is_some_and(|b| b.id == batch_id))
+            .count()
+    }
+
     pub fn has_active(&self) -> bool {
         self.lock().iter().any(|e| matches!(e.snap.status, TaskStatus::Running | TaskStatus::Queued))
     }
@@ -1280,6 +1289,7 @@ async fn download_input(
                     let ctx = st.parse_ctx(settings);
                     let format_id = asset.format_id.clone().unwrap_or_else(|| "best".into());
                     let page = if media.source_url.is_empty() { asset.url.clone() } else { media.source_url.clone() };
+                    let remaining = spec.batch.as_ref().map_or(0, |b| st.downloads.batch_unfinished(&b.id));
                     providers::ytdlp::download(
                         &ctx,
                         &page,
@@ -1287,7 +1297,7 @@ async fn download_input(
                         &asset.ext,
                         part,
                         rx,
-                        st.batches.task_limit(spec.batch.as_ref(), settings, st.net.effective_limit(settings.speed_limit_kbps)),
+                        st.batches.task_limit(spec.batch.as_ref(), settings, st.net.effective_limit(settings.speed_limit_kbps), remaining),
                         |p| reporter.update(p.downloaded, p.total, p.speed, None),
                     )
                     .await

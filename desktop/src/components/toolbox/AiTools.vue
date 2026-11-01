@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TARGET_LANGS } from '../../utils/langs'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
@@ -8,13 +9,30 @@ import type { AiStatus, Chapter, JobSnap } from '../../types'
 import { parseChapterLines } from '../../utils/time'
 import FileInput from './FileInput.vue'
 
-const props = defineProps<{ preset?: string[]; mode?: 'transcribe' | 'translate' | 'summarize' }>()
+const props = defineProps<{ preset?: string[]; mode?: 'transcribe' | 'translate' | 'summarize' | 'correct' }>()
 const app = useAppStore()
-const mode = ref<'transcribe' | 'translate' | 'summarize'>(props.mode ?? 'transcribe')
+const mode = ref<'transcribe' | 'translate' | 'summarize' | 'correct'>(props.mode ?? 'transcribe')
 const status = ref<AiStatus | null>(null)
 const media = ref<string[]>(props.mode === 'transcribe' ? [...(props.preset ?? [])] : [])
 const subs = ref<string[]>(props.mode && props.mode !== 'transcribe' ? [...(props.preset ?? [])] : [])
 const language = ref('')
+// 生成字幕 / 纠错的选项
+const correct = ref<'auto' | 'conservative' | 'aggressive' | 'rules' | 'off'>('auto')
+const resegment = ref(true)
+const semantic = ref(false)
+const reflect = ref(false)
+const wordTiming = ref(false)
+const targets = ref<string[]>([])
+const display = ref<'orig' | 'trans' | 'orig-top' | 'trans-top'>('orig-top')
+const formats = ref<string[]>([])
+const FORMATS = [
+  ['vtt', 'VTT'],
+  ['ass', 'ASS'],
+  ['lrc', 'LRC 歌词'],
+  ['txt', 'TXT 文稿'],
+  ['json', 'JSON'],
+]
+const correctMode = ref<'conservative' | 'aggressive' | 'rules'>('conservative')
 const busy = ref(false)
 const summaryJob = ref<number | null>(null)
 const summaryText = ref('')
@@ -50,8 +68,22 @@ async function go() {
   try {
     if (mode.value === 'transcribe') {
       if (!media.value.length) return ElMessage.warning('请先选择视频或音频文件。')
-      await api.aiTranscribe(media.value[0], language.value || undefined)
-      ElMessage.success('已开始转写，进度在下方；完成后字幕会保存在视频旁边并登记到媒体库。')
+      await api.subgenStart(media.value[0], {
+        language: language.value || undefined,
+        correct: correct.value === 'auto' ? undefined : correct.value,
+        resegment: resegment.value,
+        semantic: semantic.value || undefined,
+        reflect: reflect.value || undefined,
+        wordTiming: wordTiming.value || undefined,
+        targets: targets.value,
+        display: display.value,
+        formats: formats.value,
+      })
+      ElMessage.success('已开始生成字幕，进度在下方；完成后字幕会保存在视频旁边并登记到媒体库。')
+    } else if (mode.value === 'correct') {
+      if (!subs.value.length) return ElMessage.warning('请先选择字幕文件。')
+      await api.subgenCorrect(subs.value[0], correctMode.value)
+      ElMessage.success('已开始纠错，完成后生成“已修正”的新字幕，原字幕不会被修改，改动明细保存在 .改动.json 里。')
     } else if (mode.value === 'translate') {
       if (!subs.value.length) return ElMessage.warning('请先选择字幕文件。')
       await api.aiTranslate(subs.value[0])
@@ -97,20 +129,73 @@ async function writeChapters() {
   <div class="ai">
     <div class="modes">
       <el-radio-group v-model="mode" size="small">
-        <el-radio-button value="transcribe">语音转文字</el-radio-button>
+        <el-radio-button value="transcribe">生成字幕</el-radio-button>
+        <el-radio-button value="correct">AI 纠错</el-radio-button>
         <el-radio-button value="translate">翻译字幕</el-radio-button>
         <el-radio-button value="summarize">摘要与章节</el-radio-button>
       </el-radio-group>
     </div>
     <div class="panel card">
       <template v-if="mode === 'transcribe'">
-        <h3>语音转文字</h3>
-        <p class="mute desc">把视频或音频里的说话内容转成 SRT 字幕，保存在文件旁边，并登记到媒体库、加入字幕搜索。</p>
+        <h3>给没有字幕的视频生成字幕</h3>
+        <p class="mute desc">识别说话内容 → 去掉误识别 → 补标点、改错字 → 断句 → 可选翻译成双语，保存在视频旁边并登记到媒体库、加入字幕搜索。</p>
         <el-alert v-if="status && !status.sttReady" type="warning" :closable="false" show-icon title="还没有配置语音转文字">
           <el-button link type="primary" size="small" @click="app.goSettings('ai')">去“设置 → AI”配置</el-button>
         </el-alert>
         <FileInput v-model="media" :kinds="['video', 'audio']" :extensions="['mp4', 'mkv', 'webm', 'mov', 'flv', 'ts', 'm4v', 'mp3', 'm4a', 'flac', 'wav', 'ogg', 'opus', 'aac']" label="视频或音频" />
         <label class="row"><span>语言</span><el-input v-model="language" size="small" class="short mono" placeholder="留空用设置里的；zh / en / ja" /></label>
+        <label class="row">
+          <span>AI 纠错</span>
+          <el-select v-model="correct" size="small" class="short">
+            <el-option value="auto" label="自动（识别结果没有标点时才用 AI）" />
+            <el-option value="conservative" label="保守：补标点 + 改明显错字" />
+            <el-option value="aggressive" label="积极：再修语法、更书面" />
+            <el-option value="rules" label="只用规则（离线，去口头禅、统一标点）" />
+            <el-option value="off" label="不处理" />
+          </el-select>
+        </label>
+        <label class="row"><span>断句</span><el-switch v-model="resegment" active-text="过长的字幕按标点自动拆开" /></label>
+        <label v-if="resegment" class="row"><span>语义断句</span><el-switch v-model="semantic" active-text="让 AI 在语义停顿处断开（不改一个字，不行就退回规则）" /></label>
+        <label v-if="resegment" class="row"><span>逐词时间</span><el-switch v-model="wordTiming" active-text="拆开的字幕对到真实的词间停顿（仅本机 whisper.cpp）" /></label>
+        <label v-if="targets.length" class="row"><span>反思翻译</span><el-switch v-model="reflect" active-text="译完再让 AI 对照原文检查润色（更准，请求量约翻倍）" /></label>
+        <label class="row">
+          <span>翻译成</span>
+          <el-select v-model="targets" multiple filterable allow-create default-first-option size="small" class="wide" placeholder="不翻译（可多选，也可直接输入语言名）" collapse-tags collapse-tags-tooltip>
+            <el-option v-for="l in TARGET_LANGS" :key="l" :value="l" :label="l" />
+          </el-select>
+        </label>
+        <label v-if="targets.length" class="row">
+          <span>显示方式</span>
+          <el-radio-group v-model="display" size="small">
+            <el-radio-button value="orig-top">双语（原文在上）</el-radio-button>
+            <el-radio-button value="trans-top">双语（译文在上）</el-radio-button>
+            <el-radio-button value="trans">只要译文</el-radio-button>
+            <el-radio-button value="orig">只要原文</el-radio-button>
+          </el-radio-group>
+        </label>
+        <label class="row">
+          <span>另存格式</span>
+          <el-checkbox-group v-model="formats" size="small">
+            <el-checkbox v-for="f in FORMATS" :key="f[0]" :value="f[0]">{{ f[1] }}</el-checkbox>
+          </el-checkbox-group>
+        </label>
+        <small class="mute">SRT 总会保存。原字幕轨、译文轨、双语轨各是一个文件（如 视频.zh.srt、视频.zh.双语.srt）。云端识别和翻译会把内容发给你配置的服务。</small>
+      </template>
+      <template v-else-if="mode === 'correct'">
+        <h3>AI 纠错：补标点、改同音错字</h3>
+        <p class="mute desc">适合没有标点的自动字幕（语音识别、YouTube 自动字幕、B 站 AI 字幕）。每一行的改动都会被检查：改得太多、改了数字、动了术语库里的词，都会被拒绝并保留原文；时间不会变。结果存成新文件，原字幕不动。</p>
+        <el-alert v-if="status && !status.chatReady && correctMode !== 'rules'" type="warning" :closable="false" show-icon title="还没有配置对话模型，只能用“只用规则”">
+          <el-button link type="primary" size="small" @click="app.goSettings('ai')">去“设置 → AI”配置</el-button>
+        </el-alert>
+        <FileInput v-model="subs" :kinds="['subtitle']" :extensions="['srt', 'vtt', 'ass', 'ssa']" label="字幕文件" />
+        <label class="row">
+          <span>力度</span>
+          <el-radio-group v-model="correctMode" size="small">
+            <el-radio-button value="conservative">保守</el-radio-button>
+            <el-radio-button value="aggressive">积极</el-radio-button>
+            <el-radio-button value="rules">只用规则</el-radio-button>
+          </el-radio-group>
+        </label>
       </template>
       <template v-else-if="mode === 'translate'">
         <h3>翻译字幕</h3>
@@ -190,6 +275,9 @@ h4 {
 }
 .short {
   width: 260px;
+}
+.wide {
+  width: 360px;
 }
 .rh {
   display: flex;

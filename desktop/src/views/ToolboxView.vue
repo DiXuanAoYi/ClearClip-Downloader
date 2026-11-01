@@ -14,7 +14,7 @@ const app = useAppStore()
 const tab = ref<ToolboxTab>('video')
 const preset = ref<string[] | undefined>()
 const tool = ref<string | undefined>()
-const aiMode = ref<'transcribe' | 'translate' | 'summarize' | undefined>()
+const aiMode = ref<'transcribe' | 'translate' | 'summarize' | 'correct' | undefined>()
 const hint = ref<string | undefined>()
 const lut = ref<string | undefined>()
 /** 从媒体库送进剪辑的文件，剪辑收下就清掉，免得切走再回来又添加一遍。 */

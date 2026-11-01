@@ -7,7 +7,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::error::{AppError, AppResult};
-use crate::{ai, media_tools, vault, AppState};
+use crate::{ai, ai_pool, media_tools, vault, AppState};
 
 type St<'a> = State<'a, Arc<AppState>>;
 
@@ -50,16 +50,78 @@ pub fn ai_status(state: St<'_>) -> AiStatus {
     let chat_key = state.vault.has(ai::KEY_CHAT);
     let stt_key = state.vault.has(ai::KEY_STT) || chat_key;
     AiStatus {
-        chat_ready: !s.ai.base_url.is_empty() && !s.ai.model.is_empty() && chat_key,
+        chat_ready: (!s.ai.base_url.is_empty() && !s.ai.model.is_empty() && chat_key)
+            || s.ai.pool.iter().any(|e| e.enabled && !e.base_url.is_empty() && !e.model.is_empty() && state.vault.has(&ai_pool::key_name(&e.id))),
         chat_key,
         stt_ready: if ai::use_local_stt(&state, &s) {
             !s.ai.whisper_model.is_empty()
         } else {
-            !s.ai.stt_url().is_empty() && !s.ai.stt_model.is_empty() && stt_key
+            (!s.ai.stt_url().is_empty() && !s.ai.stt_model.is_empty() && stt_key) || ai::stt_pool_endpoint(&state, &s).is_some()
         },
         stt_key,
         whisper_found: ai::whisper_available(&s),
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PoolStatus {
+    pub id: String,
+    pub has_key: bool,
+    pub used: u32,
+    pub ok: u32,
+    pub fail: u32,
+    /// 还要冷却多少秒，0 = 可用
+    pub cooling_secs: i64,
+    pub cool_reason: String,
+    pub bad_key: bool,
+    pub last_error: String,
+}
+
+/// 模型池里每个服务（含“默认”）今天用了多少次、是否在冷却、最近的错误。
+#[tauri::command]
+pub fn ai_pool_status(state: St<'_>) -> Vec<PoolStatus> {
+    let s = state.settings();
+    let now = crate::db::now();
+    let rt = state.ai_pool.snapshot(now);
+    let mut ids: Vec<(String, bool)> = s.ai.pool.iter().map(|e| (e.id.clone(), state.vault.has(&ai_pool::key_name(&e.id)))).collect();
+    ids.push(("default".into(), state.vault.has(ai::KEY_CHAT)));
+    ids.into_iter()
+        .map(|(id, has_key)| {
+            let r = rt.get(&id).cloned().unwrap_or_default();
+            PoolStatus {
+                has_key,
+                used: r.used,
+                ok: r.ok,
+                fail: r.fail,
+                cooling_secs: (r.cool_until - now).max(0),
+                cool_reason: if r.cool_until > now { r.cool_reason } else { String::new() },
+                bad_key: r.bad_key,
+                last_error: r.last_error,
+                id,
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn ai_pool_presets() -> Vec<ai_pool::Preset> {
+    ai_pool::PRESETS.to_vec()
+}
+
+/// 清除某个服务的冷却和今日计数（改了密钥、或想马上再试）。
+#[tauri::command]
+pub fn ai_pool_reset(state: St<'_>, id: String) {
+    state.ai_pool.reset(&id);
+}
+
+/// 只用这一个服务发一句话，测试接口、密钥和模型。
+#[tauri::command]
+pub async fn ai_pool_test(state: St<'_>, id: String) -> AppResult<String> {
+    let settings = state.settings();
+    let ep = ai::entry_endpoint(&state, &settings, &id)?;
+    let reply = ai::chat(&ep, "", "You are a connectivity test. Answer with the single word: OK", "ping").await?;
+    Ok(reply.chars().take(80).collect())
 }
 
 /// 发一句话测试对话接口、密钥和模型是否可用。
@@ -102,6 +164,25 @@ pub fn ai_transcribe(app: AppHandle, path: String, language: Option<String>) -> 
     Ok(media_tools::spawn_job(&app, title_of(&p), "语音转文字", move |ctx| async move {
         ai::run_transcribe(&ctx, &p, language.filter(|l| !l.is_empty())).await
     }))
+}
+
+/// 字幕工坊：给没有字幕的视频 / 音频生成字幕（识别 → 过滤 → AI 纠错 → 断句 → 翻译 → 导出）。
+#[tauri::command]
+pub fn subgen_start(app: AppHandle, path: String, opts: crate::subgen::GenOpts) -> AppResult<u64> {
+    let p = existing_file(&path)?;
+    for f in &opts.formats {
+        if !matches!(f.as_str(), "srt" | "vtt" | "ass" | "lrc" | "txt" | "json") {
+            return Err(AppError::invalid("输出格式只能是 SRT、VTT、ASS、LRC、TXT 或 JSON。"));
+        }
+    }
+    Ok(media_tools::spawn_job(&app, title_of(&p), "生成字幕", move |ctx| async move { crate::subgen::run_subgen(&ctx, &p, opts).await }))
+}
+
+/// 对已有字幕做 AI 纠错（补标点、改同音错字），保存为新文件，原字幕不动。
+#[tauri::command]
+pub fn subgen_correct(app: AppHandle, path: String, mode: Option<String>) -> AppResult<u64> {
+    let p = existing_file(&path)?;
+    Ok(media_tools::spawn_job(&app, title_of(&p), "字幕纠错", move |ctx| async move { crate::subgen::run_correct(&ctx, &p, mode).await }))
 }
 
 /// 读取 AI 任务输出的文本结果（摘要 .md、章节 .txt、字幕 .srt）。只能读任务列表里自己生成的文件。

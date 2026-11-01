@@ -55,7 +55,15 @@ async fn mock(handler: Handler) -> String {
 }
 
 fn ep(base: &str) -> Endpoint {
-    Endpoint { base: base.to_string(), key: Some("sk-test".into()), client: reqwest::Client::builder().no_proxy().build().unwrap(), retry_ms: 5 }
+    Endpoint {
+        base: base.to_string(),
+        key: Some("sk-test".into()),
+        client: reqwest::Client::builder().no_proxy().build().unwrap(),
+        retry_ms: 5,
+        attempts: 3,
+        cands: vec![],
+        pool: None,
+    }
 }
 
 fn reply(content: &str) -> String {
@@ -188,6 +196,11 @@ fn language_helpers() {
     assert_eq!(lang_tag("English"), "en");
     assert_eq!(lang_tag("日本語"), "ja");
     assert_eq!(lang_tag("Klingon"), "ai");
+    for (name, tag) in
+        [("Português", "pt"), ("Bahasa Indonesia", "id"), ("Tiếng Việt", "vi"), ("日语", "ja"), ("Türkçe", "tr"), ("українська", "uk"), ("العربية", "ar")]
+    {
+        assert_eq!(lang_tag(name), tag, "{name}");
+    }
     assert_eq!(strip_lang_suffix("课程.en"), "课程");
     assert_eq!(strip_lang_suffix("课程.zh-Hant"), "课程");
     assert_eq!(strip_lang_suffix("课程"), "课程");
@@ -326,6 +339,68 @@ async fn audio_is_split_and_transcribed_with_offsets() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[tokio::test]
+async fn cloud_stt_rotates_to_next_service_when_one_fails() {
+    let dir = std::env::temp_dir().join(format!("clearclip-stt-rot-{}-{}", std::process::id(), crate::db::now()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("a.m4a");
+    std::fs::write(&file, b"fake audio").unwrap();
+    let limited = mock(Arc::new(|_, _, _| (429, r#"{"error":{"message":"quota"}}"#.into()))).await;
+    let good = mock(Arc::new(|_, body, _| {
+        let t = String::from_utf8_lossy(body).into_owned();
+        // 用的是第二家自己的语音模型，不是第一家的
+        assert!(t.contains("name=\"model\"\r\n\r\nmodel-b"), "{t}");
+        (200, "1\n00:00:01,000 --> 00:00:02,000\n好\n\n".into())
+    }))
+    .await;
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let cand = |id: &str, base: &str, model: &str| Candidate {
+        id: id.into(),
+        name: id.into(),
+        base: base.into(),
+        key: Some("k".into()),
+        model: model.into(),
+        client: client.clone(),
+    };
+    let pool = Arc::new(crate::ai_pool::AiPool::default());
+    let mut e = ep(&limited);
+    e.attempts = 1;
+    e.cands = vec![cand("a", &limited, "model-a"), cand("b", &good, "model-b")];
+    e.pool = Some(pool.clone());
+    let out = transcribe_rotating(&e, "ignored", "zh", &file).await.unwrap();
+    assert!(out.contains("-->"));
+    // 第一家被记下冷却，下次排队时会被跳过
+    assert!(pool.snapshot(crate::db::now()).get("a").is_some_and(|r| r.cool_until > crate::db::now()));
+    // 都失败时报出每一家
+    let mut e2 = ep(&limited);
+    e2.attempts = 1;
+    e2.cands = vec![cand("a", &limited, "m"), cand("c", &limited, "m")];
+    let err = transcribe_rotating(&e2, "x", "", &file).await.unwrap_err();
+    assert!(err.message.contains("2 个语音转文字服务都失败"), "{}", err.message);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn reflection_improves_good_drafts_and_keeps_bad_ones() {
+    let base = mock(Arc::new(|path, body, _| {
+        assert_eq!(path, "/chat/completions");
+        let req: Value = serde_json::from_slice(body).unwrap();
+        let user = req["messages"][1]["content"].as_str().unwrap();
+        assert!(user.contains("SOURCE: ") && user.contains("DRAFT: "), "{user}");
+        // 第 1 条润色；第 2 条把数字改了（应被拒绝）；第 3 条原样返回
+        (200, reply(r#"["你好，世界！","我们有 9 个方案","DRAFT: 再见"]"#))
+    }))
+    .await;
+    let cues = vec![cue(0, "hello world"), cue(1000, "we have 3 plans"), cue(2000, "bye")];
+    let drafts = vec![Some("你好 世界".to_string()), Some("我们有 3 个方案".to_string()), Some("再见".to_string())];
+    let noop = |_: usize, _: usize| Ok(());
+    let r = reflect_translations(&ep(&base), "m", "简体中文", &cues, &drafts, 10, &[], &noop).await.unwrap();
+    assert_eq!(r.texts[0].as_deref(), Some("你好，世界！"));
+    assert_eq!(r.texts[1].as_deref(), Some("我们有 3 个方案"));
+    assert_eq!(r.texts[2].as_deref(), Some("再见"));
+    assert_eq!((r.changed, r.kept), (1, 2));
+}
+
 #[test]
 fn settings_are_normalized() {
     let mut s = crate::settings::AiSettings {
@@ -351,4 +426,124 @@ fn existing_subtitles_decide_auto_translation() {
     assert!(!has_lang(&["sub-en".into(), "danmaku".into(), "auto-en".into()], "zh"));
     assert!(!has_lang(&["sub-zh".into()], "ai"), "unknown target language never counts as present");
     assert!(is_local_url("http://localhost:11434/v1") && is_local_url("http://127.0.0.1:8080") && !is_local_url("https://api.openai.com/v1"));
+}
+
+// ---------- 模型池 ----------
+
+fn cand_for(id: &str, base: &str, model: &str) -> Candidate {
+    Candidate {
+        id: id.into(),
+        name: id.into(),
+        base: base.into(),
+        key: Some("k".into()),
+        model: model.into(),
+        client: reqwest::Client::builder().no_proxy().build().unwrap(),
+    }
+}
+
+fn pooled(cands: Vec<Candidate>, pool: Arc<AiPool>) -> Endpoint {
+    Endpoint { base: cands[0].base.clone(), key: None, client: reqwest::Client::new(), retry_ms: 5, attempts: 1, cands, pool: Some(pool) }
+}
+
+#[tokio::test]
+async fn pool_fails_over_when_the_first_service_is_out_of_quota() {
+    let seen_models = Arc::new(Mutex::new(Vec::<String>::new()));
+    let a = mock(Arc::new(|_, _, _| (429, r#"{"error":{"message":"You exceeded your current quota"}}"#.into()))).await;
+    let sm = seen_models.clone();
+    let b = mock(Arc::new(move |_, body, _| {
+        let v: Value = serde_json::from_slice(body).unwrap();
+        sm.lock().unwrap().push(v["model"].as_str().unwrap().to_string());
+        (200, reply("OK-B"))
+    }))
+    .await;
+    let pool = Arc::new(AiPool::default());
+    let ep = pooled(vec![cand_for("a", &a, "model-a"), cand_for("b", &b, "model-b")], pool.clone());
+    let out = chat(&ep, "ignored", "s", "u").await.unwrap();
+    assert_eq!(out, "OK-B");
+    assert_eq!(*seen_models.lock().unwrap(), vec!["model-b"], "用的是第二家自己的模型，不是调用方传的");
+    let snap = pool.snapshot(crate::db::now());
+    assert!(snap["a"].cool_until > crate::db::now(), "额度用完 → 冷却到次日零点（临近零点时可能不足一小时）");
+    assert_eq!(snap["b"].ok, 1);
+}
+
+#[tokio::test]
+async fn pool_reports_every_service_when_all_fail_and_keeps_the_error_kind() {
+    let a = mock(Arc::new(|_, _, _| (401, r#"{"error":{"message":"bad key"}}"#.into()))).await;
+    let b = mock(Arc::new(|_, _, _| (500, "oops".into()))).await;
+    let pool = Arc::new(AiPool::default());
+    let ep = pooled(vec![cand_for("a", &a, "m"), cand_for("b", &b, "m")], pool.clone());
+    let err = chat(&ep, "", "s", "u").await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Network, "保留最后一个错误的分类");
+    assert!(err.message.contains("2 个服务都失败") && err.message.contains("a：") && err.message.contains("b："), "{}", err.message);
+    assert!(pool.snapshot(crate::db::now())["a"].bad_key);
+}
+
+#[tokio::test]
+async fn single_pool_service_keeps_its_own_error_message() {
+    let a = mock(Arc::new(|_, _, _| (404, r#"{"error":{"message":"no such model"}}"#.into()))).await;
+    let ep = pooled(vec![cand_for("a", &a, "m")], Arc::new(AiPool::default()));
+    let err = chat(&ep, "", "s", "u").await.unwrap_err();
+    assert!(err.message.contains("no such model") && !err.message.contains("个服务"), "{}", err.message);
+}
+
+#[tokio::test]
+async fn glossary_terms_reach_only_the_batches_that_mention_them() {
+    let systems = Arc::new(Mutex::new(vec![]));
+    let s2 = systems.clone();
+    let base = mock(Arc::new(move |_, body, _| {
+        let v: serde_json::Value = serde_json::from_slice(body).unwrap();
+        s2.lock().unwrap().push(v["messages"][0]["content"].as_str().unwrap().to_string());
+        let arr = user_array(body);
+        (200, reply(&serde_json::to_string(&arr.iter().map(|t| format!("T{t}")).collect::<Vec<_>>()).unwrap()))
+    }))
+    .await;
+    let cues = vec![cue(0, "The Kubernetes pod restarted"), cue(1000, "nothing special"), cue(2000, "pod again")];
+    let terms = vec![
+        crate::glossary::Term { source: "pod".into(), target: "容器组".into(), note: String::new() },
+        crate::glossary::Term { source: "Helm".into(), target: "Helm".into(), note: String::new() },
+    ];
+    let t = translate_cues_g(&ep(&base), "m", "简体中文", &cues, 2, &terms, &|_, _| Ok(())).await.unwrap();
+    assert_eq!(t.failed, 0);
+    let sys = systems.lock().unwrap().clone();
+    assert_eq!(sys.len(), 2);
+    assert!(sys[0].contains("- pod => 容器组"), "第一批提到了 pod");
+    assert!(!sys[0].contains("Helm"), "没出现的术语不放进提示词");
+    assert!(sys[1].contains("- pod => 容器组"), "第二批也提到了 pod");
+    let none = translate_cues_g(&ep(&base), "m", "简体中文", &cues[1..2], 5, &terms, &|_, _| Ok(())).await.unwrap();
+    assert_eq!(none.failed, 0);
+    assert!(!systems.lock().unwrap().last().unwrap().contains("Glossary"), "没有命中时提示词保持原样");
+}
+
+#[tokio::test]
+async fn subgen_correction_goes_through_guard_with_a_model() {
+    use crate::subgen::{correct_cues, Mode};
+    // 模型：第 1 行补标点（采用）；第 2 行整句重写（拒绝）；第 3 行改了数字（拒绝）；第 4 行改同音字（采用）
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let s2 = seen.clone();
+    let base = mock(Arc::new(move |_p, body, _n| {
+        s2.lock().unwrap().push(String::from_utf8_lossy(body).into_owned());
+        (200, reply(r#"["大家好，欢迎收看。","这是一段被模型彻底改写成别的意思的长句子","一共有36个人","这是每个人的权力。"]"#))
+    }))
+    .await;
+    let cues = vec![cue(0, "大家好欢迎收看"), cue(1000, "今天讲咖啡"), cue(2000, "一共有35个人"), cue(3000, "这是每个人的权利")];
+    let r = correct_cues(Some(&ep(&base)), "m", &cues, Mode::Conservative, "咖啡入门", &[], 20, &|_, _| Ok(())).await.unwrap();
+    assert_eq!(r.cues[0].lines, vec!["大家好，欢迎收看。"]);
+    assert_eq!(r.cues[1].lines, cues[1].lines);
+    assert_eq!(r.cues[2].lines, vec!["一共有 35 个人"]); // 模型改的数字被拒绝，只保留规则层加的空格
+    assert_eq!(r.rejected, 2);
+    assert_eq!(r.changes.len(), 3); // 第 1、4 行是模型改的，第 3 行是规则层加的空格
+    assert!(r.cues.iter().zip(&cues).all(|(a, b)| a.start == b.start && a.end == b.end));
+    // 提示词里带了视频标题
+    assert!(seen.lock().unwrap()[0].contains("咖啡入门"));
+}
+
+#[tokio::test]
+async fn subgen_correction_wrong_line_count_keeps_original() {
+    use crate::subgen::{correct_cues, Mode};
+    // 模型总是少回一行：整批无法对齐，最终逐条保留原文，不会错位
+    let base = mock(Arc::new(|_p, _b, _n| (200, reply(r#"["只有一行"]"#)))).await;
+    let cues = vec![cue(0, "第一句话"), cue(1000, "第二句话")];
+    let r = correct_cues(Some(&ep(&base)), "m", &cues, Mode::Conservative, "", &[], 20, &|_, _| Ok(())).await.unwrap();
+    assert_eq!(r.cues.len(), 2);
+    assert_eq!(r.cues[1].lines, cues[1].lines);
 }

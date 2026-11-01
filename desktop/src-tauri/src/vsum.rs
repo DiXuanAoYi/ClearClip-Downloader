@@ -66,6 +66,12 @@ pub struct Req {
     pub track: String,
     /// 自己改过的系统提示词（单次调用的类型才生效：explain / punctuate / note / refine / ask / mindmap / rewrite）
     pub system: String,
+    /// 术语库里与本次翻译有关的术语（由应用按网址和目标语言填入，扩展不用传）
+    #[serde(skip_deserializing)]
+    pub terms: Vec<crate::glossary::Term>,
+    /// 翻译专家（AI 专家）追加的策略说明（由应用按设置和网址填入，扩展不用传）
+    #[serde(skip_deserializing)]
+    pub guide: String,
 }
 
 /// 自定义提示词的长度上限。
@@ -121,7 +127,7 @@ fn new_job() -> (u64, Arc<AtomicBool>) {
 }
 
 /// 校验请求并在后台开始处理，返回任务编号。
-pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
+pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
     use tauri::Manager;
     check(&req)?;
     if req.kind == "tracks" {
@@ -132,10 +138,49 @@ pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     }
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
-    let ep = ai::chat_endpoint(&st, &settings)?;
+    let task = match req.kind.as_str() {
+        "translate" | "punctuate" | "webtrans" | "domain" => crate::ai_pool::Task::Translate,
+        "summary" | "article" | "mindmap" | "cards" | "quotes" | "rewrite" => crate::ai_pool::Task::Summary,
+        _ => crate::ai_pool::Task::Chat,
+    };
+    let ep = ai::chat_endpoint_for(&st, &settings, task)?;
     let model = settings.ai.model.clone();
     let default_lang = settings.ai.target_lang.clone();
     let batch = settings.ai.batch_size;
+    // 术语库：按网址和目标语言挑出可用的术语，翻译时放进提示词
+    if settings.ai.glossary_on && matches!(req.kind.as_str(), "translate" | "webtrans") {
+        let target = if req.lang.trim().is_empty() {
+            if req.kind == "translate" && is_chinese(&req.lines) {
+                "English".to_string()
+            } else {
+                default_lang.clone()
+            }
+        } else {
+            req.lang.trim().to_string()
+        };
+        req.terms = st.glossary.terms_for(&req.url, ai::lang_tag(&target));
+    }
+    // AI 专家：按设置（和网址）挑出这次用哪位，策略说明接在提示词后面
+    if matches!(req.kind.as_str(), "translate" | "webtrans") {
+        let ai = &settings.ai;
+        if let Some(e) = st.experts.resolve(&ai.expert, ai.expert_auto, &req.url) {
+            req.guide = crate::experts::guide_block(&e);
+        }
+    }
+    // 提取网站：在这些网站上翻译时顺手提取术语，放进“待确认”
+    let auto_extract = if matches!(req.kind.as_str(), "domain" | "translate") && !req.url.trim().is_empty() {
+        st.glossary.site_for(&req.url).map(|_| req.url.clone())
+    } else {
+        None
+    };
+    let extract_text = auto_extract.as_ref().map(|_| {
+        if req.kind == "domain" {
+            req.text.clone()
+        } else {
+            req.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n")
+        }
+    });
+    let st2 = st.clone();
     let (id, cancel) = new_job();
     tauri::async_runtime::spawn(async move {
         let progress = move |done: usize, total: usize| -> AppResult<()> {
@@ -149,6 +194,13 @@ pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
             Ok(())
         };
         let out = process(&ep, &model, &default_lang, batch, &req, &progress).await;
+        if let (Some(url), Some(text), true) = (auto_extract, extract_text, out.is_ok()) {
+            let lang = if req.lang.trim().is_empty() { default_lang.clone() } else { req.lang.trim().to_string() };
+            if let Ok(found) = crate::glossary::extract(&ep, &model, &lang, &text).await {
+                let host = url::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or(url);
+                let _ = crate::glossary::file_found(&st2.glossary, found, &host, crate::db::now());
+            }
+        }
         with_job(id, |j| match out {
             Ok(v) => j.result = Some(v),
             Err(e) => j.error = Some(e.message),
@@ -178,7 +230,8 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
         return Ok(id);
     }
     // 先取在线字幕，取不到才转写，所以转写的条件（语音转文字、ffmpeg）等到真要转写时再检查
-    if !settings.use_ytdlp || crate::tools::resolve(&st, crate::tools::Tool::YtDlp).is_none() {
+    let supadata_ready = settings.ai.supadata_on && st.vault.has(crate::ai_pool::KEY_SUPADATA);
+    if !(supadata_ready && subs_only) && (!settings.use_ytdlp || crate::tools::resolve(&st, crate::tools::Tool::YtDlp).is_none()) {
         return Err(AppError::new(crate::error::ErrorKind::NeedUpdate, "取网页视频的字幕 / 音频需要 yt-dlp 组件。请在“设置 → 组件”中安装 yt-dlp 后重试。"));
     }
     let (id, cancel) = new_job();
@@ -229,6 +282,26 @@ async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str
     let result = async {
         let pctx = ctx.st.parse_ctx(&settings);
         let want_track = if subs_only && !track.is_empty() { Some(track) } else { None };
+        // 开了 Supadata：先问它（快，也不占 YouTube 的限流）；失败或没有字幕再走 yt-dlp
+        if !force_audio && want_track.is_none() && settings.ai.supadata_on {
+            if let Some(key) = ctx.st.vault.get(crate::ai_pool::KEY_SUPADATA).filter(|k| !k.is_empty()) {
+                ctx.note("正在通过 Supadata 取字幕…");
+                let client = ctx.st.net.clients_for(&settings.network, crate::supadata::API)?.download;
+                match crate::supadata::fetch(&client, crate::supadata::API, &key, url, lang, || ctx.canceled()).await {
+                    Ok(Some((code, cues))) => {
+                        let lines = cues_to_lines(&cues);
+                        if !lines.is_empty() {
+                            let duration = cues.iter().map(|c| c.end).max().unwrap_or(0);
+                            let label = if code.is_empty() { "Supadata 字幕".to_string() } else { format!("Supadata 字幕（{code}）") };
+                            return Ok(json!({"lines": lines, "durationMs": duration, "track": label, "source": "subtitles"}));
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) if e.message == "canceled" => return Err(e),
+                    Err(_) => {} // 额度用完 / 密钥问题：静默退回 yt-dlp，设置页的“测试”能看到原因
+                }
+            }
+        }
         let online = if force_audio {
             Ok(vec![])
         } else {
@@ -1002,7 +1075,8 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             } else {
                 target.to_string()
             };
-            let t = ai::translate_cues(ep, model, &target, &cues, batch, progress).await?;
+            let system = format!("{}{}", ai::translate_system(&target), req.guide);
+            let t = ai::map_cues_g(ep, model, &system, &cues, batch, &req.terms, progress).await?;
             let out: Vec<Value> =
                 cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
             Ok(json!({"lines": out, "failed": t.failed}))
@@ -1015,8 +1089,8 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
                 .filter(|l| !l.text.trim().is_empty())
                 .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
                 .collect();
-            let system = with_domain(pick_system(req, webtrans_system(lang)), &req.context);
-            let t = ai::map_cues(ep, model, &system, &cues, batch.max(8), progress).await?;
+            let system = format!("{}{}", with_domain(pick_system(req, webtrans_system(lang)), &req.context), req.guide);
+            let t = ai::map_cues_g(ep, model, &system, &cues, batch.max(8), &req.terms, progress).await?;
             let out: Vec<Value> =
                 cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
             Ok(json!({"lines": out, "failed": t.failed}))
@@ -1094,7 +1168,21 @@ pub fn status(st: &crate::AppState) -> Value {
         "transcribe": ai::stt_ready(st, &s).is_ok(),
         "subtitles": s.use_ytdlp && crate::tools::resolve(st, crate::tools::Tool::YtDlp).is_some(),
         "maxChars": MAX_CHARS,
+        // 影响译文的设置（模型、专家、已启用的术语库）变了它就会变，扩展据此让旧的翻译缓存失效
+        "promptVersion": prompt_version(st),
     })
+}
+
+/// 模型、AI 专家（含内容）、已启用术语库的指纹，8 位十六进制。
+pub fn prompt_version(st: &crate::AppState) -> String {
+    use sha2::{Digest, Sha256};
+    let s = st.settings();
+    let glossaries: Vec<_> = st.glossary.snapshot().glossaries.into_iter().filter(|g| g.enabled).collect();
+    let material = serde_json::json!({
+        "model": s.ai.model, "expert": s.ai.expert, "auto": s.ai.expert_auto, "glossaryOn": s.ai.glossary_on,
+        "experts": st.experts.all(), "glossaries": glossaries,
+    });
+    hex::encode(&Sha256::digest(material.to_string().as_bytes())[..4])
 }
 
 #[cfg(test)]

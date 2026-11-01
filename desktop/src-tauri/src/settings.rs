@@ -271,6 +271,8 @@ pub struct Settings {
     pub ffmpeg_edition: String,
     /// 剪贴板监听是否识别所有网址；关闭时只识别内置平台和 `clipboard_domains`
     pub clipboard_all_sites: bool,
+    /// 可选组件：微信公众号文章视频下载（默认关闭）
+    pub wechat_on: bool,
     /// 剪贴板监听额外识别的网站（域名后缀）
     pub clipboard_domains: Vec<String>,
     /// 手机发链接到电脑
@@ -549,9 +551,58 @@ impl Default for SiteRule {
 }
 
 /// AI 功能的设置。API 密钥不在这里，保存在加密的保险箱里（`ai.api_key`、`stt.api_key`）。
+/// 模型池里的一个服务（密钥单独保存在保险箱里，名字见 `ai_pool::key_name`）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PoolEntry {
+    /// 只含小写字母、数字、`-`、`_`
+    pub id: String,
+    /// 来自哪个预设（`ai_pool::PRESETS`），自定义为 `custom`
+    pub preset: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    /// 语音转文字模型；填了并且“适用任务”里勾了 stt，才会参与云端字幕识别的轮换
+    pub stt_model: String,
+    pub enabled: bool,
+    /// 只用于这些任务（translate / summary / chat / edit / stt）；空 = 全部（stt 除外，要明确勾选）
+    pub tasks: Vec<String>,
+    /// 数字越小越先用；相同时今天用得少的先用
+    pub priority: u32,
+    /// 每天最多请求多少次（0 = 不限），用来避开免费额度
+    pub daily_limit: u32,
+}
+
+impl Default for PoolEntry {
+    fn default() -> Self {
+        PoolEntry {
+            id: String::new(),
+            preset: "custom".into(),
+            name: String::new(),
+            base_url: String::new(),
+            model: String::new(),
+            stt_model: String::new(),
+            enabled: true,
+            tasks: vec![],
+            priority: 10,
+            daily_limit: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AiSettings {
+    /// 模型池：多个服务按任务自动选择、轮流使用。空时只用下面这一组“默认”设置。
+    pub pool: Vec<PoolEntry>,
+    /// 用 Supadata 取在线字幕（备用通道，密钥在保险箱 `ai.supadata`）
+    pub supadata_on: bool,
+    /// 翻译时使用术语库
+    pub glossary_on: bool,
+    /// 翻译用哪位 AI 专家（专家 id，空 / general = 通用）
+    pub expert: String,
+    /// 选“通用”时，按网址自动换成匹配的专家
+    pub expert_auto: bool,
     /// 兼容 OpenAI 接口的地址（OpenAI、DeepSeek、通义、月之暗面、本机 Ollama 等），如 `https://api.openai.com/v1`
     pub base_url: String,
     pub model: String,
@@ -576,11 +627,22 @@ pub struct AiSettings {
     pub auto_translate: bool,
     /// 下载的视频没有字幕时自动转写
     pub auto_transcribe: bool,
+    /// AI 纠错（补标点、改同音错字）的力度：`conservative`（只补标点和明显错字）/ `aggressive`（再修语法）/ `rules`（只用规则）
+    pub correct_mode: String,
+    /// 自动转写 / 自动下载的字幕几乎没有标点时，自动做 AI 纠错
+    pub correct_auto: bool,
+    /// whisper.cpp 的 VAD 模型（ggml-silero-*.bin）；填了且 whisper-cli 支持时，只识别有人声的部分
+    pub whisper_vad_model: String,
 }
 
 impl Default for AiSettings {
     fn default() -> Self {
         AiSettings {
+            pool: vec![],
+            supadata_on: false,
+            glossary_on: true,
+            expert: "general".into(),
+            expert_auto: true,
             base_url: "https://api.openai.com/v1".into(),
             model: "gpt-4o-mini".into(),
             target_lang: "简体中文".into(),
@@ -594,6 +656,9 @@ impl Default for AiSettings {
             whisper_model: String::new(),
             auto_translate: false,
             auto_transcribe: false,
+            correct_mode: "conservative".into(),
+            correct_auto: false,
+            whisper_vad_model: String::new(),
         }
     }
 }
@@ -623,6 +688,42 @@ impl AiSettings {
         self.stt_language = self.stt_language.trim().to_ascii_lowercase();
         self.whisper_bin = self.whisper_bin.trim().to_string();
         self.whisper_model = self.whisper_model.trim().to_string();
+        self.whisper_vad_model = self.whisper_vad_model.trim().to_string();
+        if !matches!(self.correct_mode.as_str(), "conservative" | "aggressive" | "rules") {
+            self.correct_mode = "conservative".into();
+        }
+        self.normalize_pool();
+    }
+
+    fn normalize_pool(&mut self) {
+        let mut seen = std::collections::HashSet::new();
+        self.pool.truncate(24);
+        for e in &mut self.pool {
+            e.id =
+                e.id.trim().to_ascii_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_')).take(32).collect();
+            if e.id.is_empty() || !seen.insert(e.id.clone()) {
+                // 重复或空的 id 换一个新的
+                let mut n = seen.len() + 1;
+                loop {
+                    let id = format!("svc-{n}");
+                    if seen.insert(id.clone()) {
+                        e.id = id;
+                        break;
+                    }
+                    n += 1;
+                }
+            }
+            let u = e.base_url.trim().trim_end_matches('/');
+            e.base_url = if u.starts_with("http://") || u.starts_with("https://") { u.to_string() } else { String::new() };
+            e.model = e.model.trim().to_string();
+            e.name = e.name.trim().chars().filter(|c| !c.is_control()).take(40).collect();
+            e.preset = e.preset.trim().to_string();
+            e.tasks.retain(|t| matches!(t.as_str(), "translate" | "summary" | "chat" | "edit" | "stt"));
+            e.stt_model = e.stt_model.trim().to_string();
+            e.tasks.dedup();
+            e.priority = e.priority.min(999);
+            e.daily_limit = e.daily_limit.min(1_000_000);
+        }
     }
 
     /// 语音转文字用的接口地址。
@@ -814,6 +915,7 @@ impl Default for Settings {
             component_mirrors: vec![],
             ffmpeg_edition: "lite".into(),
             clipboard_all_sites: false,
+            wechat_on: false,
             clipboard_domains: DEFAULT_CLIPBOARD_DOMAINS.iter().map(|d| d.to_string()).collect(),
             phone: PhoneSettings::default(),
             embed_metadata: true,

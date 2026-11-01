@@ -4,6 +4,7 @@ const api = globalThis.browser ?? globalThis.chrome
 async function getConfig() {
   const c = await api.storage.local.get(['port', 'token', 'device', 'autoSync', 'syncSites', 'lastSync'])
   c.syncSites = c.syncSites || []
+  c.autoSync = c.autoSync !== false // 默认开启
   c.lastSync = c.lastSync || {}
   if (!c.device) {
     c.device = 'ext-' + Math.random().toString(36).slice(2, 12)

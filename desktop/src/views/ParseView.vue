@@ -56,6 +56,15 @@ let unlistenBatch: UnlistenFn | undefined
 const result = computed(() => parse.result)
 const images = computed(() => result.value?.assets.filter((a) => a.kind === 'image') ?? [])
 const videoFormats = computed(() => result.value?.assets.filter((a) => a.kind === 'video') ?? [])
+async function toggleAutoSub(v: boolean) {
+  const s = app.settings
+  if (!s) return
+  try {
+    await app.patch({ ai: { ...s.ai, autoTranscribe: v } })
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
 const subtitleAssets = computed(() => result.value?.assets.filter((a) => a.kind === 'subtitle') ?? [])
 const extras = computed(() => result.value?.assets.filter((a) => a.kind !== 'image' && a.kind !== 'video' && a.kind !== 'subtitle') ?? [])
 const videoSelected = computed(() => videoFormats.value.some((v) => selected.value.has(v.id)))
@@ -522,6 +531,19 @@ function sizeText(a: Asset) {
           @toggle="toggle"
           @pick="pickSubs"
         />
+        <div v-if="!subtitleAssets.length && videoFormats.length && !isPlaylist && app.settings" class="nosub" data-testid="parse-nosub">
+          <span class="mute">这个视频没有可下载的字幕。</span>
+          <el-switch
+            :model-value="app.settings.ai.autoTranscribe"
+            size="small"
+            inline-prompt
+            active-text="开"
+            inactive-text="关"
+            @update:model-value="(v: string | number | boolean) => toggleAutoSub(!!v)"
+          />
+          <span>下载完成后用 AI 自动生成字幕</span>
+          <small class="mute">（需要在“设置 → AI”配好本机 whisper 或云端识别；也可以下载完后在队列里点“生成字幕”）</small>
+        </div>
         <ClipPicker v-if="canClip" v-model:clip="clip" v-model:split="splitOn" :duration-ms="result.durationMs" :chapters="result.chapters ?? []" />
 
         <template v-if="isPlaylist">
@@ -905,5 +927,13 @@ function sizeText(a: Asset) {
   object-fit: contain;
   background: #000;
   display: block;
+}
+.nosub {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  padding: 6px 2px;
 }
 </style>

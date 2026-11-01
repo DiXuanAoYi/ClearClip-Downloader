@@ -705,6 +705,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 样式 ASS（双语）能烧进画面；预览用的“-ss + setpts”写法抽出的那一帧确实带着字幕。
+    #[tokio::test]
+    async fn styled_bilingual_ass_burns_and_previews() {
+        let Some(ff) = ffmpeg_bin() else { return };
+        let dir = temp_dir("styled");
+        let src = make_video(&ff, &dir, "src.mp4").await;
+        let cues = vec![crate::subtitle::Cue { start: 1000, end: 4000, lines: vec!["你好 Hello".into(), "Second line".into()] }];
+        let ass = dir.join("s.ass");
+        std::fs::write(&ass, crate::subedit::styled_ass(&cues, &crate::subedit::preset("bilingual").unwrap(), 320, 240)).unwrap();
+        let out = dir.join("burned.mp4");
+        if burn_subtitles(&ff, &src, &out, &out, std::slice::from_ref(&ass)).await.is_err() {
+            return; // 没有 libass 的 ffmpeg
+        }
+        assert!(probe(&ff, &out).await.readable());
+        let frame = |vf: &str, name: &str| {
+            let args: Vec<String> =
+                ["-hide_banner", "-y", "-ss", "2.000", "-i", src.to_str().unwrap(), "-vf", vf, "-frames:v", "1", name].iter().map(|s| s.to_string()).collect();
+            args
+        };
+        run_ffmpeg_in(&ff, &frame("setpts=PTS+2.000/TB,ass=s.ass", "with.png"), Some(&dir)).await.unwrap();
+        run_ffmpeg_in(&ff, &frame("setpts=PTS+2.000/TB", "without.png"), Some(&dir)).await.unwrap();
+        assert_ne!(std::fs::read(dir.join("with.png")).unwrap(), std::fs::read(dir.join("without.png")).unwrap(), "字幕应当出现在预览帧里");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[tokio::test]
     async fn embed_and_burn_subtitles() {
         let Some(ff) = ffmpeg_bin() else { return };

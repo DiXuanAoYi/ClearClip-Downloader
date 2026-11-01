@@ -10,7 +10,7 @@ const TAKEOVER_TYPES = [
 ]
 
 const DEFAULT_TAKEOVER = {
-  enabled: false,
+  enabled: true,
   // types：只接管列表里的类型；all：所有下载（仍受大小和站点限制）
   mode: 'types',
   types: TAKEOVER_TYPES,
@@ -28,7 +28,7 @@ function normalizeTakeover(raw) {
   const types = list(r.types, ext)
   const size = Number(r.minSizeMB)
   return {
-    enabled: r.enabled === true,
+    enabled: r.enabled !== false,
     mode: r.mode === 'all' ? 'all' : 'types',
     types: types.length ? types : TAKEOVER_TYPES.slice(),
     minSizeMB: Number.isFinite(size) && size >= 0 ? Math.min(size, 100000) : DEFAULT_TAKEOVER.minSizeMB,

@@ -249,15 +249,18 @@ impl BatchStore {
     }
 
     /// 不能共用限速器的下载方式（yt-dlp 自己限速）：把批次限速平均分给批次里同时下载的任务。
-    pub fn task_limit(&self, tag: Option<&BatchTag>, settings: &Settings, global: u64) -> u64 {
+    /// `remaining`：批次里还没结束的任务数（含这条）。收尾阶段只剩一两条时，
+    /// 每条分到的份额按实际数量算，而不是按并发上限算，否则最后几条会被白白压慢。
+    pub fn task_limit(&self, tag: Option<&BatchTag>, settings: &Settings, global: u64, remaining: usize) -> u64 {
         let Some(tag) = tag else { return global };
         let kbps = self.effective_kbps(&tag.id, settings);
         if kbps == 0 {
             return global;
         }
         let conc = self.with_rec(&tag.id, |r| r.opts.concurrency).unwrap_or(0);
-        let conc = if conc == 0 { settings.concurrency.max(1) } else { conc } as u64;
-        min_nonzero(global, (kbps / conc).max(1))
+        let conc = if conc == 0 { settings.concurrency.max(1) } else { conc };
+        let share = conc.min(remaining.max(1)) as u64;
+        min_nonzero(global, (kbps / share).max(1))
     }
 }
 
@@ -1000,9 +1003,13 @@ mod tests {
         });
         let s = Settings::default();
         let tag = BatchTag { id: "b1".into(), seq: 1 };
-        assert_eq!(store.task_limit(Some(&tag), &s, 0), 500);
-        assert_eq!(store.task_limit(Some(&tag), &s, 300), 300);
-        assert_eq!(store.task_limit(None, &s, 700), 700);
+        assert_eq!(store.task_limit(Some(&tag), &s, 0, 10), 500);
+        assert_eq!(store.task_limit(Some(&tag), &s, 300, 10), 300);
+        assert_eq!(store.task_limit(None, &s, 700, 10), 700);
+        // 收尾：只剩 1 条时独享整个批次限速，剩 2 条时各一半
+        assert_eq!(store.task_limit(Some(&tag), &s, 0, 1), 1000);
+        assert_eq!(store.task_limit(Some(&tag), &s, 0, 2), 500);
+        assert_eq!(store.task_limit(Some(&tag), &s, 0, 0), 1000);
         assert!(store.limiter_for("b1", &s).is_some());
         assert!(store.limiter_for("nope", &s).is_none());
     }

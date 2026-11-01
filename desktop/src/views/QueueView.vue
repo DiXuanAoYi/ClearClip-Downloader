@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { siteName } from '../utils/siteGuides'
 import VirtualList from '../components/VirtualList.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
 import { useAppStore, useQueueStore } from '../stores/app'
 import type { BatchView, OrphanPart, TaskSnapshot } from '../types'
@@ -21,7 +20,7 @@ const scheduling = ref<TaskSnapshot | null>(null)
 const scheduleAt = ref<Date | null>(null)
 
 const batches = ref<BatchView[]>([])
-const batchFilter = ref<string | null>(null)
+const batchFilter = computed({ get: () => app.queueBatch, set: (v: string | null) => (app.queueBatch = v) })
 const tab = ref<'all' | 'running' | 'queued' | 'failed' | 'done'>('all')
 let unBatch: (() => void) | null = null
 let refreshTimer: number | undefined
@@ -43,32 +42,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(refreshTimer)
 })
 
-async function batchDo(b: BatchView, what: string) {
-  if (what === 'delete' || what === 'cancel') {
-    try {
-      await ElMessageBox.confirm(what === 'delete' ? `删除批次“${b.name}”及其所有任务记录？已下载的文件不会删除。` : `取消批次“${b.name}”里所有未完成的任务？`, '确认', { type: 'warning', confirmButtonText: '确定', cancelButtonText: '返回' })
-    } catch {
-      return
-    }
-  }
-  await run(api.batchAction, b.id, what)
-  await loadBatches()
-}
-
-async function exportFailed(b: BatchView) {
-  try {
-    const text = await api.batchExportFailed(b.id)
-    const path = await saveDialog({ defaultPath: `${b.name}-失败清单.txt`, filters: [{ name: '文本', extensions: ['txt'] }] })
-    if (!path) return
-    await api.batchSaveText(path, text)
-    ElMessage.success('失败清单已导出，可以直接拖回清影重新批量添加')
-  } catch (e) {
-    ElMessage.error(errorText(e))
-  }
-}
-
 const batchName = (id: string | null | undefined) => batches.value.find((b) => b.id === id)?.name
-const batchPct = (b: BatchView) => (b.total ? Math.round(((b.done + b.failed + b.failedLinks.length) / b.total) * 100) : 0)
 
 onMounted(async () => {
   unBatch = await events.onBatchChanged(refreshSoon)
@@ -147,6 +121,8 @@ const tasks = computed(() => {
   })
 })
 
+const MEDIA_EXT = /\.(mp4|mkv|webm|mov|m4v|flv|ts|avi|mp3|m4a|aac|flac|wav|ogg|opus)$/i
+const isMedia = (p?: string | null) => !!p && MEDIA_EXT.test(p)
 const statusText: Record<TaskSnapshot['status'], string> = {
   queued: '等待',
   running: '下载中',
@@ -217,31 +193,6 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
       </el-select>
     </div>
 
-    <div v-if="batches.length" class="batches">
-      <div v-for="b in batches" :key="b.id" class="bx card" :class="{ sel: batchFilter === b.id }">
-        <div class="bh" @click="batchFilter = batchFilter === b.id ? null : b.id">
-          <b class="ellipsis">{{ b.name }}</b>
-          <span class="mute small">{{ b.source }} · {{ b.done }}/{{ b.total }} 完成</span>
-          <span v-if="b.running" class="pl run">下载中 {{ b.running }}</span>
-          <span v-if="b.queued" class="pl">排队 {{ b.queued }}</span>
-          <span v-if="b.pending" class="pl">待解析 {{ b.pending }}</span>
-          <span v-if="b.paused" class="pl">暂停 {{ b.paused }}</span>
-          <span v-if="b.failed + b.failedLinks.length" class="pl bad">失败 {{ b.failed + b.failedLinks.length }}</span>
-        </div>
-        <div class="bar"><i :style="{ width: batchPct(b) + '%' }" /></div>
-        <div class="bb">
-          <el-button link size="small" :disabled="!b.running && !b.queued" @click="batchDo(b, 'pause')">暂停批次</el-button>
-          <el-button link size="small" :disabled="!b.paused" @click="batchDo(b, 'resume')">继续批次</el-button>
-          <el-button link size="small" type="primary" :disabled="!b.failed && !b.failedLinks.length" @click="batchDo(b, 'retry')">只重试失败项</el-button>
-          <el-button link size="small" :disabled="!b.failed && !b.failedLinks.length" @click="exportFailed(b)">导出失败清单</el-button>
-          <el-button link size="small" @click="run(api.revealFile, b.baseDir)">打开文件夹</el-button>
-          <el-button link size="small" @click="batchDo(b, 'clear')">清理已完成</el-button>
-          <el-button link size="small" @click="batchDo(b, 'cancel')">取消</el-button>
-          <el-button link size="small" @click="batchDo(b, 'delete')">删除批次</el-button>
-        </div>
-      </div>
-    </div>
-
     <div class="tabs">
       <button v-for="[k, l] in [['all', '全部'], ['running', '进行中'], ['queued', '排队/暂停'], ['failed', '失败'], ['done', '已完成']]" :key="k" :class="{ on: tab === k }" @click="tab = k as typeof tab">{{ l }}</button>
       <span v-if="batchFilter" class="mute small">只看批次“{{ batchName(batchFilter) }}” <el-button link size="small" @click="batchFilter = null">显示全部</el-button></span>
@@ -279,6 +230,7 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
           <el-button v-if="t.status === 'failed' || t.status === 'canceled'" link size="small" type="primary" @click="run(api.resumeTask, t.id)">重试</el-button>
           <el-button v-if="t.status === 'done'" link size="small" type="primary" @click="run(api.openFile, t.filePath)">打开</el-button>
           <el-button v-if="t.status === 'done'" link size="small" @click="run(api.revealFile, t.filePath)">文件夹</el-button>
+          <el-button v-if="t.status === 'done' && isMedia(t.filePath)" link size="small" @click="app.goToolbox([t.filePath], undefined, { tab: 'ai', aiMode: 'transcribe' })">生成字幕</el-button>
           <el-button link size="small" @click="detailId = t.id">详情</el-button>
           <el-button v-if="t.status === 'running' || t.status === 'paused' || t.status === 'queued'" link size="small" @click="run(api.cancelTask, t.id)">取消</el-button>
           <el-button v-else link size="small" @click="run(api.removeTask, t.id)">移除</el-button>
@@ -315,52 +267,6 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
 </template>
 
 <style scoped>
-.batches {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 210px;
-  overflow: auto;
-}
-.bx {
-  padding: 8px 12px;
-}
-.bx.sel {
-  border-color: var(--cc-acc);
-}
-.bh {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  cursor: pointer;
-  flex-wrap: wrap;
-}
-.bx .bar {
-  margin: 5px 0 2px;
-}
-.bb {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-}
-.bb :deep(.el-button) {
-  margin-left: 0;
-}
-.pl {
-  font-size: 11px;
-  border: 1px solid var(--cc-line);
-  border-radius: 10px;
-  padding: 0 7px;
-  color: var(--cc-mute);
-}
-.pl.run {
-  color: var(--cc-acc);
-  border-color: var(--cc-acc);
-}
-.pl.bad {
-  color: var(--cc-err);
-  border-color: var(--cc-err);
-}
 .tabs {
   display: flex;
   gap: 6px;

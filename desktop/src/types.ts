@@ -595,7 +595,102 @@ export interface AutoRule {
   then: RuleThen
 }
 
+export interface GlossaryTerm {
+  source: string
+  target: string
+  note: string
+}
+
+export interface Glossary {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  origin: 'user' | 'community' | 'extracted'
+  remoteId: string
+  matches: string[]
+  lang: string
+  terms: GlossaryTerm[]
+  updated: number
+}
+
+export interface GlossaryCandidate {
+  id: string
+  source: string
+  target: string
+  note: string
+  site: string
+  count: number
+  found: number
+}
+
+export interface ExtractSite {
+  pattern: string
+  enabled: boolean
+  glossary: string
+  last: number
+  found: number
+}
+
+export interface GlossaryData {
+  glossaries: Glossary[]
+  candidates: GlossaryCandidate[]
+  sites: ExtractSite[]
+}
+
+export interface CommunityGlossary {
+  id: string
+  name: string
+  description: string
+  author: string
+  matches: string[]
+  langs: string[]
+}
+
+export interface PoolEntry {
+  id: string
+  preset: string
+  name: string
+  baseUrl: string
+  model: string
+  sttModel: string
+  enabled: boolean
+  tasks: string[]
+  priority: number
+  dailyLimit: number
+}
+
+export interface PoolPreset {
+  id: string
+  name: string
+  baseUrl: string
+  model: string
+  signupUrl: string
+  keyUrl: string
+  note: string
+  free: boolean
+  local: boolean
+  tasks: string[]
+}
+
+export interface PoolStatus {
+  id: string
+  hasKey: boolean
+  used: number
+  ok: number
+  fail: number
+  coolingSecs: number
+  coolReason: string
+  badKey: boolean
+  lastError: string
+}
+
 export interface AiSettings {
+  pool: PoolEntry[]
+  supadataOn: boolean
+  glossaryOn: boolean
+  expert: string
+  expertAuto: boolean
   baseUrl: string
   model: string
   targetLang: string
@@ -609,6 +704,60 @@ export interface AiSettings {
   whisperModel: string
   autoTranslate: boolean
   autoTranscribe: boolean
+  correctMode: 'conservative' | 'aggressive' | 'rules'
+  correctAuto: boolean
+  whisperVadModel: string
+}
+
+export interface SubgenOpts {
+  language?: string
+  /** off / rules / conservative / aggressive；不填 = 识别结果没标点时按设置里的力度纠错 */
+  correct?: string
+  resegment?: boolean
+  /** 语义断句（AI），默认关 */
+  semantic?: boolean
+  /** 逐词时间：拆开的字幕对到真实词间停顿（仅本机 whisper.cpp），默认关 */
+  wordTiming?: boolean
+  /** 反思翻译（译完再检查润色），默认关 */
+  reflect?: boolean
+  targets: string[]
+  display?: 'orig' | 'trans' | 'orig-top' | 'trans-top'
+  formats: string[]
+}
+
+export interface SubTrackInfo {
+  path: string
+  label: string
+  ext: string
+  cues: number
+  bilingual: boolean
+  size: number
+}
+
+export interface SubIssue {
+  index: number
+  kind: 'reversed' | 'overlap' | 'empty' | 'too-long' | 'too-short' | 'too-fast'
+  message: string
+}
+
+export interface BurnStyle {
+  font: string
+  size: number
+  size2: number
+  color: string
+  color2: string
+  outline: number
+  shadow: number
+  boxed: boolean
+  bold: boolean
+  margin: number
+  position: 'bottom' | 'top'
+}
+
+export interface MuxOpts {
+  mode: 'soft' | 'hard'
+  tracks: string[]
+  style?: BurnStyle | null
 }
 
 export interface AiStatus {
@@ -847,6 +996,7 @@ export interface Settings {
   componentMirrors: string[]
   ffmpegEdition: 'lite' | 'full'
   clipboardAllSites: boolean
+  wechatOn: boolean
   clipboardDomains: string[]
   phone: PhoneSettings
   embedMetadata: boolean
@@ -1825,4 +1975,21 @@ export interface BatchRequest {
   urls: string[]
   source: string
   truncated?: boolean
+}
+
+export interface AiExpert {
+  id: string
+  name: string
+  description: string
+  origin: 'builtin' | 'user' | 'community'
+  guide: string
+  matches: string[]
+  remoteId: string
+  updated: number
+}
+export interface ExpertsState {
+  experts: AiExpert[]
+  selected: string
+  auto: boolean
+  communityPage: string
 }

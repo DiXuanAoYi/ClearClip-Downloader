@@ -122,6 +122,7 @@ pub async fn save_settings(app: AppHandle, state: St<'_>, settings: Settings) ->
     s.phone = old.phone.clone();
     s.save(&state.settings_path)?;
     *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s.clone();
+    providers::wechat::set_enabled(s.wechat_on);
     if old.shortcut != s.shortcut || old.security.panic_shortcut != s.security.panic_shortcut {
         apply_shortcut(&app, &s.shortcut);
     }
