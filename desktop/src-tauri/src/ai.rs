@@ -82,7 +82,13 @@ pub fn chat_endpoint_for(st: &AppState, settings: &Settings, task: Task) -> AppR
         let key = st.vault.get(&ai_pool::key_name(&e.id)).filter(|k| !k.is_empty());
         let usable = !e.base_url.is_empty() && !e.model.is_empty() && (key.is_some() || is_local_url(&e.base_url));
         cands.push(ai_pool::from_entry(e, usable));
-        rows.push(Row { id: e.id.clone(), name: if e.name.is_empty() { e.id.clone() } else { e.name.clone() }, base: e.base_url.clone(), model: e.model.clone(), key });
+        rows.push(Row {
+            id: e.id.clone(),
+            name: if e.name.is_empty() { e.id.clone() } else { e.name.clone() },
+            base: e.base_url.clone(),
+            model: e.model.clone(),
+            key,
+        });
     }
     if !ai.base_url.is_empty() && !ai.model.is_empty() {
         let key = st.vault.get(KEY_CHAT).filter(|k| !k.is_empty());
@@ -103,7 +109,9 @@ pub fn chat_endpoint_for(st: &AppState, settings: &Settings, task: Task) -> AppR
     if order.is_empty() {
         let any_usable = cands.iter().any(|c| c.usable);
         return Err(match (any_usable, ai_pool::earliest_ready(&cands, &rt, task, now)) {
-            (true, Some(t)) => AppError::new(ErrorKind::RateLimited, format!("模型池里的服务暂时都不可用（额度用完或在冷却），最早 {} 秒后恢复。", (t - now).max(1))),
+            (true, Some(t)) => {
+                AppError::new(ErrorKind::RateLimited, format!("模型池里的服务暂时都不可用（额度用完或在冷却），最早 {} 秒后恢复。", (t - now).max(1)))
+            }
             (true, None) => AppError::invalid("模型池里没有适用于这个任务的服务，请在“设置 → AI → 模型池”里检查“适用任务”。"),
             (false, _) => AppError::invalid("模型池里还没有可用的服务：请启用并填好 API 密钥。"),
         });
@@ -116,7 +124,15 @@ pub fn chat_endpoint_for(st: &AppState, settings: &Settings, task: Task) -> AppR
     }
     let attempts = if out.len() == 1 { 3 } else { 1 };
     let first = &out[0];
-    Ok(Endpoint { base: first.base.clone(), key: first.key.clone(), client: first.client.clone(), retry_ms: 2000, attempts, cands: out, pool: Some(st.ai_pool.clone()) })
+    Ok(Endpoint {
+        base: first.base.clone(),
+        key: first.key.clone(),
+        client: first.client.clone(),
+        retry_ms: 2000,
+        attempts,
+        cands: out,
+        pool: Some(st.ai_pool.clone()),
+    })
 }
 
 pub fn stt_endpoint(st: &AppState, settings: &Settings) -> AppResult<Endpoint> {
@@ -201,7 +217,15 @@ pub async fn chat(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppRe
     let mut tried: Vec<String> = Vec::new();
     let mut last: Option<AppError> = None;
     for c in &ep.cands {
-        let one = Endpoint { base: c.base.clone(), key: c.key.clone(), client: c.client.clone(), retry_ms: ep.retry_ms, attempts: ep.attempts, cands: vec![], pool: None };
+        let one = Endpoint {
+            base: c.base.clone(),
+            key: c.key.clone(),
+            client: c.client.clone(),
+            retry_ms: ep.retry_ms,
+            attempts: ep.attempts,
+            cands: vec![],
+            pool: None,
+        };
         match chat_one(&one, &c.model, system, user).await {
             Ok(t) => {
                 if let Some(p) = &ep.pool {
@@ -335,7 +359,11 @@ pub async fn map_cues_g(
         ctx(done, texts.len())?;
         let user = serde_json::to_string(&texts[a..b])?;
         let hit = crate::glossary::relevant(terms, &texts[a..b], crate::glossary::MAX_IN_PROMPT);
-        let sys = if hit.is_empty() { std::borrow::Cow::Borrowed(system) } else { std::borrow::Cow::Owned(format!("{system}{}", crate::glossary::prompt_block(&hit))) };
+        let sys = if hit.is_empty() {
+            std::borrow::Cow::Borrowed(system)
+        } else {
+            std::borrow::Cow::Owned(format!("{system}{}", crate::glossary::prompt_block(&hit)))
+        };
         let resp = chat(ep, model, &sys, &user).await;
         let parsed = match resp {
             Ok(r) => parse_array(&r, b - a),
@@ -662,6 +690,18 @@ pub fn whisper_args(model: &str, wav: &Path, out_prefix: &Path, language: &str) 
     ]
 }
 
+/// 这个 whisper-cli 支持 `--vad` 吗（较新的版本才有）。
+async fn whisper_has_vad(bin: &Path) -> bool {
+    let mut c = tokio::process::Command::new(bin);
+    c.arg("--help").stdin(std::process::Stdio::null()).kill_on_drop(true);
+    #[cfg(windows)]
+    c.creation_flags(0x0800_0000);
+    match tokio::time::timeout(Duration::from_secs(8), c.output()).await {
+        Ok(Ok(o)) => String::from_utf8_lossy(&o.stdout).contains("--vad") || String::from_utf8_lossy(&o.stderr).contains("--vad"),
+        _ => false,
+    }
+}
+
 /// whisper.cpp 输出里的进度（`progress =  35%`）。
 pub fn whisper_progress(line: &str) -> Option<f64> {
     let rest = line.split("progress =").nth(1)?;
@@ -723,11 +763,17 @@ async fn run_whisper_local(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, inp
     ctx.note("正在用本机 whisper.cpp 转写（第一次会比较慢）…");
     let prefix = work.join("out");
     let mut cmd = tokio::process::Command::new(&bin);
-    cmd.args(whisper_args(model, &wav, &prefix, language))
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
+    let mut args = whisper_args(model, &wav, &prefix, language);
+    let vad = settings.ai.whisper_vad_model.trim();
+    if !vad.is_empty() && Path::new(vad).is_file() {
+        if whisper_has_vad(&bin).await {
+            args.extend(["--vad".to_string(), "--vad-model".to_string(), vad.to_string()]);
+            ctx.note("已启用 VAD：只识别有人声的部分。");
+        } else {
+            ctx.note("这个版本的 whisper.cpp 不支持 VAD，已忽略 VAD 模型。");
+        }
+    }
+    cmd.args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped()).kill_on_drop(true);
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000);
     let mut child = cmd.spawn().map_err(|e| AppError::new(ErrorKind::NeedUpdate, format!("无法运行 whisper.cpp：{e}")))?;
@@ -845,6 +891,7 @@ pub fn auto_transcribe(app: &tauri::AppHandle, st: &Arc<AppState>, item: &crate:
         return;
     }
     let (app, st, item) = (app.clone(), st.clone(), item.clone());
+    let auto_correct = s.ai.correct_auto;
     tauri::async_runtime::spawn(async move {
         // 字幕通常和视频一起下载，等一会儿再看有没有
         tokio::time::sleep(Duration::from_secs(20)).await;
@@ -852,22 +899,25 @@ pub fn auto_transcribe(app: &tauri::AppHandle, st: &Arc<AppState>, item: &crate:
             return;
         }
         let path = PathBuf::from(&item.path);
-        crate::media_tools::spawn_job(&app, stem_of(&path), "语音转文字", move |ctx| async move { run_transcribe(&ctx, &path, None).await });
+        let correct = if auto_correct { None } else { Some("off".to_string()) };
+        crate::media_tools::spawn_job(&app, stem_of(&path), "语音转文字", move |ctx| async move {
+            crate::subgen::run_subgen(&ctx, &path, crate::subgen::GenOpts { correct, ..Default::default() }).await
+        });
     });
 }
 
 // ---------- 流程（后台任务） ----------
 
-fn stem_of(p: &Path) -> String {
+pub(crate) fn stem_of(p: &Path) -> String {
     p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "output".into())
 }
 
-fn out_beside(input: &Path, base: &str, tag: &str, ext: &str) -> PathBuf {
+pub(crate) fn out_beside(input: &Path, base: &str, tag: &str, ext: &str) -> PathBuf {
     crate::naming::unique_path(input.with_file_name(format!("{base}.{tag}.{ext}")), &|p: &Path| p.exists())
 }
 
 /// 把新字幕登记进媒体库：挂在原视频（或原字幕）所属的作品下，并建立搜索索引。
-fn register_subtitle(st: &AppState, source: &Path, sub: &Path, lang: &str) {
+pub(crate) fn register_subtitle(st: &AppState, source: &Path, sub: &Path, lang: &str) {
     let source_str = source.to_string_lossy().into_owned();
     let (platform, media_id, platform_name, title) = match st.db.item_by_path(&source_str).ok().flatten() {
         Some(i) => (i.platform, i.media_id, i.platform_name, stem_of(sub)),

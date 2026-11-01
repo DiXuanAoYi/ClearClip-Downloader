@@ -54,7 +54,18 @@ pub struct Glossary {
 
 impl Default for Glossary {
     fn default() -> Self {
-        Glossary { id: String::new(), name: String::new(), description: String::new(), enabled: true, origin: "user".into(), remote_id: String::new(), matches: vec![], lang: String::new(), terms: vec![], updated: 0 }
+        Glossary {
+            id: String::new(),
+            name: String::new(),
+            description: String::new(),
+            enabled: true,
+            origin: "user".into(),
+            remote_id: String::new(),
+            matches: vec![],
+            lang: String::new(),
+            terms: vec![],
+            updated: 0,
+        }
     }
 }
 
@@ -166,7 +177,11 @@ pub fn clean_terms(terms: Vec<Term>) -> Vec<Term> {
             if source.is_empty() {
                 return None;
             }
-            seen.insert(source.to_lowercase()).then(|| Term { source, target: t.target.trim().chars().take(300).collect(), note: t.note.trim().chars().take(200).collect() })
+            seen.insert(source.to_lowercase()).then(|| Term {
+                source,
+                target: t.target.trim().chars().take(300).collect(),
+                note: t.note.trim().chars().take(200).collect(),
+            })
         })
         .take(MAX_TERMS)
         .collect()
@@ -249,10 +264,14 @@ pub fn to_csv(terms: &[Term], lang: &str) -> String {
 // ---------- 网站与语言匹配 ----------
 
 fn host_of(url: &str) -> String {
-    url::Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.to_lowercase())).or_else(|| {
-        let t = url.trim().to_lowercase();
-        (!t.is_empty() && !t.contains('/') && !t.contains(' ')).then_some(t)
-    }).unwrap_or_default()
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_lowercase()))
+        .or_else(|| {
+            let t = url.trim().to_lowercase();
+            (!t.is_empty() && !t.contains('/') && !t.contains(' ')).then_some(t)
+        })
+        .unwrap_or_default()
 }
 
 fn glob(pattern: &str, text: &str) -> bool {
@@ -457,7 +476,9 @@ pub fn merge_candidates(data: &mut Data, found: Vec<Term>, site: &str, now: i64)
 /// 纯文本里取出可读文字（去脚本、样式和标签）。
 pub fn html_to_text(html: &str) -> String {
     use std::sync::LazyLock;
-    static BLOCK: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?is)<script\b.*?</script\s*>|<style\b.*?</style\s*>|<noscript\b.*?</noscript\s*>|<svg\b.*?</svg\s*>|<head\b.*?</head\s*>").unwrap());
+    static BLOCK: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?is)<script\b.*?</script\s*>|<style\b.*?</style\s*>|<noscript\b.*?</noscript\s*>|<svg\b.*?</svg\s*>|<head\b.*?</head\s*>").unwrap()
+    });
     static BREAK: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?i)</?(p|div|br|li|h[1-6]|tr|section|article)\b[^>]*>").unwrap());
     static TAG: LazyLock<regex::Regex> = LazyLock::new(|| regex::Regex::new(r"(?s)<[^>]*>").unwrap());
     let t = BLOCK.replace_all(html, " ");
@@ -492,7 +513,14 @@ fn pick_i18n(meta: &Value, key: &str) -> String {
 pub fn parse_community_meta(meta: &Value) -> Option<CommunityItem> {
     let id = meta.get("id").and_then(Value::as_str)?.to_string();
     let strs = |k: &str| meta.get(k).and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
-    Some(CommunityItem { name: pick_i18n(meta, "name").chars().take(60).collect::<String>().trim().to_string(), description: pick_i18n(meta, "description"), author: meta.get("author").and_then(Value::as_str).unwrap_or("").to_string(), matches: strs("matches"), langs: strs("langs"), id })
+    Some(CommunityItem {
+        name: pick_i18n(meta, "name").chars().take(60).collect::<String>().trim().to_string(),
+        description: pick_i18n(meta, "description"),
+        author: meta.get("author").and_then(Value::as_str).unwrap_or("").to_string(),
+        matches: strs("matches"),
+        langs: strs("langs"),
+        id,
+    })
 }
 
 /// 在社区术语库支持的语言里，选最合适目标语言的 CSV 后缀；返回 (语言, 文件名)。
@@ -601,7 +629,13 @@ mod tests {
     #[test]
     fn selection_respects_enabled_site_lang_and_priority() {
         let mk = |id: &str, origin: &str, matches: &[&str], lang: &str, terms: Vec<Term>| Glossary {
-            id: id.into(), name: id.into(), origin: origin.into(), matches: matches.iter().map(|s| s.to_string()).collect(), lang: lang.into(), terms, ..Default::default()
+            id: id.into(),
+            name: id.into(),
+            origin: origin.into(),
+            matches: matches.iter().map(|s| s.to_string()).collect(),
+            lang: lang.into(),
+            terms,
+            ..Default::default()
         };
         let list = vec![
             mk("com", "community", &[], "zh-CN", vec![t("Token", "令牌"), t("Gas", "燃料")]),
@@ -660,7 +694,9 @@ mod tests {
         assert!(parts.iter().all(|p| p.chars().count() <= 6000));
         assert_eq!(sample_chunks("short", 6000, 4), vec!["short"]);
         assert!(sample_chunks("", 10, 3).is_empty());
-        let text = html_to_text("<html><head><title>x</title><style>a{}</style></head><body><h1>Hello&nbsp;World</h1><script>var a=1</script><p>One <b>two</b></p></body></html>");
+        let text = html_to_text(
+            "<html><head><title>x</title><style>a{}</style></head><body><h1>Hello&nbsp;World</h1><script>var a=1</script><p>One <b>two</b></p></body></html>",
+        );
         assert_eq!(text, "Hello World\nOne two");
     }
 

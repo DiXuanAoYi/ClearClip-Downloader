@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
+  SubgenOpts,
   AccountStatus,
   HighlightCandidate,
   KeyGuess,
@@ -281,6 +282,8 @@ export const api = {
   aiTranslate: (path: string) => invoke<number>('ai_translate', { path }),
   aiSummarize: (path: string) => invoke<number>('ai_summarize', { path }),
   aiTranscribe: (path: string, language?: string) => invoke<number>('ai_transcribe', { path, language }),
+  subgenStart: (path: string, opts: SubgenOpts) => invoke<number>('subgen_start', { path, opts }),
+  subgenCorrect: (path: string, mode?: string) => invoke<number>('subgen_correct', { path, mode }),
   mediaJobText: (id: number, which?: 'chapters') => invoke<string>('media_job_text', { id, which }),
   mediaJobStart: (job: ToolJob) => invoke<number>('media_job_start', { job }),
   mediaJobs: () => invoke<JobSnap[]>('media_jobs'),

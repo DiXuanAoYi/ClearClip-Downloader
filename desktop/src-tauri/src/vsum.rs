@@ -150,7 +150,11 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
     // 术语库：按网址和目标语言挑出可用的术语，翻译时放进提示词
     if settings.ai.glossary_on && matches!(req.kind.as_str(), "translate" | "webtrans") {
         let target = if req.lang.trim().is_empty() {
-            if req.kind == "translate" && is_chinese(&req.lines) { "English".to_string() } else { default_lang.clone() }
+            if req.kind == "translate" && is_chinese(&req.lines) {
+                "English".to_string()
+            } else {
+                default_lang.clone()
+            }
         } else {
             req.lang.trim().to_string()
         };
@@ -164,8 +168,18 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
         }
     }
     // 提取网站：在这些网站上翻译时顺手提取术语，放进“待确认”
-    let auto_extract = if matches!(req.kind.as_str(), "domain" | "translate") && !req.url.trim().is_empty() { st.glossary.site_for(&req.url).map(|_| req.url.clone()) } else { None };
-    let extract_text = auto_extract.as_ref().map(|_| if req.kind == "domain" { req.text.clone() } else { req.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n") });
+    let auto_extract = if matches!(req.kind.as_str(), "domain" | "translate") && !req.url.trim().is_empty() {
+        st.glossary.site_for(&req.url).map(|_| req.url.clone())
+    } else {
+        None
+    };
+    let extract_text = auto_extract.as_ref().map(|_| {
+        if req.kind == "domain" {
+            req.text.clone()
+        } else {
+            req.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n")
+        }
+    });
     let st2 = st.clone();
     let (id, cancel) = new_job();
     tauri::async_runtime::spawn(async move {

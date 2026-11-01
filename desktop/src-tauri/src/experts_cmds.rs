@@ -8,7 +8,7 @@ use tauri::State;
 
 use crate::error::{AppError, AppResult, ErrorKind};
 use crate::experts::{self, Expert};
-use crate::{AppState};
+use crate::AppState;
 
 type St<'a> = State<'a, Arc<AppState>>;
 
@@ -24,7 +24,12 @@ pub struct ExpertsState {
 #[tauri::command]
 pub fn experts_state(state: St<'_>) -> ExpertsState {
     let ai = state.settings().ai;
-    ExpertsState { experts: state.experts.all(), selected: if ai.expert.trim().is_empty() { experts::GENERAL.into() } else { ai.expert }, auto: ai.expert_auto, community_page: experts::COMMUNITY_PAGE }
+    ExpertsState {
+        experts: state.experts.all(),
+        selected: if ai.expert.trim().is_empty() { experts::GENERAL.into() } else { ai.expert },
+        auto: ai.expert_auto,
+        community_page: experts::COMMUNITY_PAGE,
+    }
 }
 
 /// 新建或保存自建 / 已安装的专家（内置的不能改，要改请先复制成自己的）。
@@ -95,7 +100,8 @@ async fn get_yaml(st: &AppState, id: &str) -> AppResult<String> {
     let url = format!("{}/{}.yml", experts::COMMUNITY_RAW, id);
     let settings = st.settings();
     let client = st.net.clients_for(&settings.network, &url)?.download;
-    let resp = client.get(&url).timeout(Duration::from_secs(30)).send().await.map_err(|e| AppError::new(ErrorKind::Network, format!("无法连接 GitHub：{e}")))?;
+    let resp =
+        client.get(&url).timeout(Duration::from_secs(30)).send().await.map_err(|e| AppError::new(ErrorKind::Network, format!("无法连接 GitHub：{e}")))?;
     if !resp.status().is_success() {
         return Err(AppError::msg(format!("GitHub 返回 {}（{id}）", resp.status().as_u16())));
     }

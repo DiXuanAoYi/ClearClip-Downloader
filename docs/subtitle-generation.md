@@ -1,6 +1,6 @@
 # 给没有字幕的视频加字幕：设计规划（字幕工坊）
 
-状态：**设计稿，尚未实现**。实现前请先确认文末“需要你决定的事”。
+状态：**S1 已实现**（生成 / AI 纠错 / 翻译 / 双语 / 导出 / 工具箱面板 / 设置 / CLI·API）；词级时间戳、编辑器、播放器与扩展字幕层（S2–S4）未做。决策已确认：本机 whisper.cpp 默认、云端仅 Groq 与硅基流动、自动生成默认关闭。
 
 ## 1. 现状：已经有什么、缺什么
 
@@ -180,3 +180,13 @@ Track { id, mediaId, lang, kind: asr | human | machine-translation | imported,
 2. **免费云端识别**：推荐只接 Groq / 硅基这类有公开 API 和免费额度的；不接必剪 / 剪映这类未公开接口，是否同意？
 3. **实现顺序**：推荐先做 S1，再做 S2；扩展里的字幕层（S3）是否要提前到 S2 之前？
 4. **自动生成默认关闭**：“下载后没有字幕自动生成”默认关闭（会占用算力 / 产生费用），是否同意？
+
+## 附：命令行与接口（S1）
+
+```
+clearclip subtitle generate <文件> [--lang zh] [--translate zh,en] [--display orig|trans|orig-top|trans-top]
+                                   [--format srt,vtt,ass,lrc,txt,json] [--correct auto|conservative|aggressive|rules|off] [--no-resegment]
+clearclip subtitle correct  <字幕或视频文件> [--mode conservative|aggressive|rules]
+```
+
+HTTP（需开启本机接口，带 `X-Token`）：`POST /api/v1/subtitle/generate`（JSON：`path` 加 `language`/`correct`/`resegment`/`targets`/`display`/`formats`）、`POST /api/v1/subtitle/correct`（`path`、`mode`），均返回 `{"id": 任务编号}`；`GET /api/v1/subtitle/job?id=` 查进度与输出路径。

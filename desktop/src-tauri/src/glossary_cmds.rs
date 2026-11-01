@@ -78,7 +78,11 @@ pub fn glossary_import_file(state: St<'_>, path: String, name: String, into: Str
     if bytes.len() > 8 * 1024 * 1024 {
         return Err(AppError::invalid("文件太大（上限 8 MB）。"));
     }
-    let name = if name.trim().is_empty() { std::path::Path::new(&path).file_stem().and_then(|s| s.to_str()).unwrap_or("导入的术语库").to_string() } else { name };
+    let name = if name.trim().is_empty() {
+        std::path::Path::new(&path).file_stem().and_then(|s| s.to_str()).unwrap_or("导入的术语库").to_string()
+    } else {
+        name
+    };
     glossary_import(state, String::from_utf8_lossy(&bytes).to_string(), name, into, lang)
 }
 
@@ -97,7 +101,12 @@ async fn get_text(st: &AppState, path: &str) -> AppResult<String> {
     let url = format!("{}/{}", glossary::COMMUNITY_RAW, path);
     let settings = st.settings();
     let client = st.net.clients_for(&settings.network, &url)?.download;
-    let resp = client.get(&url).timeout(Duration::from_secs(30)).send().await.map_err(|e| AppError::new(crate::error::ErrorKind::Network, format!("无法连接 GitHub：{e}")))?;
+    let resp = client
+        .get(&url)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|e| AppError::new(crate::error::ErrorKind::Network, format!("无法连接 GitHub：{e}")))?;
     if !resp.status().is_success() {
         return Err(AppError::msg(format!("GitHub 返回 {}（{path}）", resp.status().as_u16())));
     }
@@ -218,9 +227,16 @@ pub async fn glossary_extract(state: St<'_>, source: ExtractReq) -> AppResult<Ex
         "file" => (text_of_file(&source.value)?, String::new()),
         "url" => {
             let url = source.value.trim().to_string();
-            let parsed = url::Url::parse(&url).ok().filter(|u| matches!(u.scheme(), "http" | "https")).ok_or_else(|| AppError::invalid("请输入 http(s) 网址。"))?;
+            let parsed =
+                url::Url::parse(&url).ok().filter(|u| matches!(u.scheme(), "http" | "https")).ok_or_else(|| AppError::invalid("请输入 http(s) 网址。"))?;
             let client = st.net.clients_for(&settings.network, &url)?.api;
-            let resp = client.get(&url).header("User-Agent", "Mozilla/5.0 ClearClip").timeout(Duration::from_secs(30)).send().await.map_err(|e| AppError::new(crate::error::ErrorKind::Network, format!("打不开这个网页：{e}")))?;
+            let resp = client
+                .get(&url)
+                .header("User-Agent", "Mozilla/5.0 ClearClip")
+                .timeout(Duration::from_secs(30))
+                .send()
+                .await
+                .map_err(|e| AppError::new(crate::error::ErrorKind::Network, format!("打不开这个网页：{e}")))?;
             if !resp.status().is_success() {
                 return Err(AppError::msg(format!("网页返回 {}。需要登录的页面请直接粘贴文字。", resp.status().as_u16())));
             }
@@ -250,7 +266,13 @@ pub fn glossary_resolve(state: St<'_>, ids: Vec<String>, glossary_id: String, ne
             let g = match idx {
                 Some(i) => &mut d.glossaries[i],
                 None => {
-                    d.glossaries.push(Glossary { id: glossary::new_id(), name: new_name.clone(), origin: "extracted".into(), lang: String::new(), ..Default::default() });
+                    d.glossaries.push(Glossary {
+                        id: glossary::new_id(),
+                        name: new_name.clone(),
+                        origin: "extracted".into(),
+                        lang: String::new(),
+                        ..Default::default()
+                    });
                     d.glossaries.last_mut().expect("just pushed")
                 }
             };

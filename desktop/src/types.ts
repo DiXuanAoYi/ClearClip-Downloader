@@ -703,6 +703,19 @@ export interface AiSettings {
   whisperModel: string
   autoTranslate: boolean
   autoTranscribe: boolean
+  correctMode: 'conservative' | 'aggressive' | 'rules'
+  correctAuto: boolean
+  whisperVadModel: string
+}
+
+export interface SubgenOpts {
+  language?: string
+  /** off / rules / conservative / aggressive；不填 = 识别结果没标点时按设置里的力度纠错 */
+  correct?: string
+  resegment?: boolean
+  targets: string[]
+  display?: 'orig' | 'trans' | 'orig-top' | 'trans-top'
+  formats: string[]
 }
 
 export interface AiStatus {

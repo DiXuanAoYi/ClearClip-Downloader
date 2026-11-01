@@ -29,7 +29,7 @@ export const useAppStore = defineStore('app', () => {
   /** 命令面板请求解析页解析这段文字；处理后清空 */
   const pendingParse = ref<string | null>(null)
   /** 请求工具箱打开并预选文件（媒体库里的“用工具箱处理”）；处理后清空 */
-  const toolboxRequest = ref<{ paths: string[]; tool?: string; tab?: ToolboxTab; aiMode?: 'transcribe' | 'translate' | 'summarize'; hint?: string; lut?: string } | null>(null)
+  const toolboxRequest = ref<{ paths: string[]; tool?: string; tab?: ToolboxTab; aiMode?: 'transcribe' | 'translate' | 'summarize' | 'correct'; hint?: string; lut?: string } | null>(null)
 
   /** 请求打开“批量添加”面板（链接已提取好）；面板打开后清空 */
   const batchRequest = ref<BatchRequest | null>(null)
@@ -48,7 +48,7 @@ export const useAppStore = defineStore('app', () => {
     view.value = 'settings'
   }
 
-  function goToolbox(paths: string[], tool?: string, extra?: { tab?: ToolboxTab; aiMode?: 'transcribe' | 'translate' | 'summarize'; hint?: string; lut?: string }) {
+  function goToolbox(paths: string[], tool?: string, extra?: { tab?: ToolboxTab; aiMode?: 'transcribe' | 'translate' | 'summarize' | 'correct'; hint?: string; lut?: string }) {
     toolboxRequest.value = { paths, tool, ...extra }
     view.value = 'tools'
   }

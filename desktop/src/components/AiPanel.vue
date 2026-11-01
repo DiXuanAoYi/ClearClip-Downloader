@@ -25,6 +25,7 @@ const CHAT_PRESETS = [
 const STT_PRESETS = [
   { name: 'OpenAI', url: '', model: 'whisper-1' },
   { name: 'Groq', url: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3-turbo' },
+  { name: '硅基流动', url: 'https://api.siliconflow.cn/v1', model: 'FunAudioLLM/SenseVoiceSmall' },
 ]
 const LANGS = ['简体中文', '繁體中文', 'English', '日本語', '한국어', 'Français', 'Deutsch', 'Español', 'Русский']
 
@@ -57,8 +58,8 @@ async function test() {
   }
 }
 
-async function pickFile(field: 'whisperBin' | 'whisperModel') {
-  const f = await open({ multiple: false, title: field === 'whisperBin' ? '选择 whisper-cli 可执行文件' : '选择 ggml 模型文件', filters: field === 'whisperModel' ? [{ name: 'ggml 模型', extensions: ['bin'] }] : undefined })
+async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel') {
+  const f = await open({ multiple: false, title: field === 'whisperBin' ? '选择 whisper-cli 可执行文件' : field === 'whisperVadModel' ? '选择 VAD 模型文件' : '选择 ggml 模型文件', filters: field !== 'whisperBin' ? [{ name: 'ggml 模型', extensions: ['bin'] }] : undefined })
   if (typeof f === 'string') {
     ai.value[field] = f
     refresh()
@@ -146,6 +147,22 @@ async function pickFile(field: 'whisperBin' | 'whisperModel') {
         </div>
       </template>
       <div class="field"><label>音频语言</label><el-input v-model="ai.sttLanguage" size="small" class="short mono" placeholder="留空自动识别，或 zh / en / ja" /></div>
+      <div v-if="ai.sttEngine === 'local'" class="field">
+        <label>VAD 模型（可选，ggml-silero-*.bin）</label>
+        <div class="keyrow"><el-input v-model="ai.whisperVadModel" size="small" class="mono" placeholder="填了且 whisper-cli 支持时，只识别有人声的部分，减少静音处的胡乱识别" /><el-button size="small" @click="pickFile('whisperVadModel')">选择…</el-button></div>
+      </div>
+      <div class="field">
+        <label>AI 纠错力度（补标点、改同音错字）</label>
+        <el-radio-group v-model="ai.correctMode" size="small">
+          <el-radio-button value="conservative">保守</el-radio-button>
+          <el-radio-button value="aggressive">积极</el-radio-button>
+          <el-radio-button value="rules">只用规则</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div class="kv">
+        <span>自动转写的字幕几乎没有标点时，自动 AI 纠错<small class="mute block">会多用一次对话模型；改动过大的行会被拒绝，原文保留</small></span>
+        <el-switch v-model="ai.correctAuto" />
+      </div>
       <div class="kv">
         <span>下载的视频没有字幕时自动转写<small class="mute block">在线接口会按音频时长计费，请确认额度；导入的文件不会自动转写</small></span>
         <el-switch v-model="ai.autoTranscribe" />

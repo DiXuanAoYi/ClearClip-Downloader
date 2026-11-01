@@ -56,7 +56,14 @@ fn status_error(status: u16, body: &str) -> AppError {
 }
 
 /// 取视频已有的字幕。没有字幕（接口说不可用 / 404 / 206）返回 `Ok(None)`。
-pub async fn fetch(client: &reqwest::Client, base: &str, key: &str, url: &str, lang: &str, canceled: impl Fn() -> bool) -> AppResult<Option<(String, Vec<Cue>)>> {
+pub async fn fetch(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+    url: &str,
+    lang: &str,
+    canceled: impl Fn() -> bool,
+) -> AppResult<Option<(String, Vec<Cue>)>> {
     let mut q = vec![("url", url.to_string()), ("text", "false".into()), ("mode", "native".into())];
     if !lang.is_empty() {
         q.push(("lang", lang.to_string()));

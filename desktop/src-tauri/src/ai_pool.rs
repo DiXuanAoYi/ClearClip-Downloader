@@ -253,7 +253,9 @@ pub struct Cool {
 
 fn mentions_quota(msg: &str) -> bool {
     let m = msg.to_lowercase();
-    ["额度", "余额", "欠费", "quota", "insufficient", "exceeded your", "billing", "balance", "free tier", "resource_exhausted", "daily"].iter().any(|k| m.contains(k))
+    ["额度", "余额", "欠费", "quota", "insufficient", "exceeded your", "billing", "balance", "free tier", "resource_exhausted", "daily"]
+        .iter()
+        .any(|k| m.contains(k))
 }
 
 pub fn classify(err: &AppError, now: i64) -> Cool {

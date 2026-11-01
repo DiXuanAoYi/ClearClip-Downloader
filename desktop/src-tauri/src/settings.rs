@@ -573,7 +573,17 @@ pub struct PoolEntry {
 
 impl Default for PoolEntry {
     fn default() -> Self {
-        PoolEntry { id: String::new(), preset: "custom".into(), name: String::new(), base_url: String::new(), model: String::new(), enabled: true, tasks: vec![], priority: 10, daily_limit: 0 }
+        PoolEntry {
+            id: String::new(),
+            preset: "custom".into(),
+            name: String::new(),
+            base_url: String::new(),
+            model: String::new(),
+            enabled: true,
+            tasks: vec![],
+            priority: 10,
+            daily_limit: 0,
+        }
     }
 }
 
@@ -614,6 +624,12 @@ pub struct AiSettings {
     pub auto_translate: bool,
     /// 下载的视频没有字幕时自动转写
     pub auto_transcribe: bool,
+    /// AI 纠错（补标点、改同音错字）的力度：`conservative`（只补标点和明显错字）/ `aggressive`（再修语法）/ `rules`（只用规则）
+    pub correct_mode: String,
+    /// 自动转写 / 自动下载的字幕几乎没有标点时，自动做 AI 纠错
+    pub correct_auto: bool,
+    /// whisper.cpp 的 VAD 模型（ggml-silero-*.bin）；填了且 whisper-cli 支持时，只识别有人声的部分
+    pub whisper_vad_model: String,
 }
 
 impl Default for AiSettings {
@@ -637,6 +653,9 @@ impl Default for AiSettings {
             whisper_model: String::new(),
             auto_translate: false,
             auto_transcribe: false,
+            correct_mode: "conservative".into(),
+            correct_auto: false,
+            whisper_vad_model: String::new(),
         }
     }
 }
@@ -666,6 +685,10 @@ impl AiSettings {
         self.stt_language = self.stt_language.trim().to_ascii_lowercase();
         self.whisper_bin = self.whisper_bin.trim().to_string();
         self.whisper_model = self.whisper_model.trim().to_string();
+        self.whisper_vad_model = self.whisper_vad_model.trim().to_string();
+        if !matches!(self.correct_mode.as_str(), "conservative" | "aggressive" | "rules") {
+            self.correct_mode = "conservative".into();
+        }
         self.normalize_pool();
     }
 
@@ -673,7 +696,8 @@ impl AiSettings {
         let mut seen = std::collections::HashSet::new();
         self.pool.truncate(24);
         for e in &mut self.pool {
-            e.id = e.id.trim().to_ascii_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_')).take(32).collect();
+            e.id =
+                e.id.trim().to_ascii_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_')).take(32).collect();
             if e.id.is_empty() || !seen.insert(e.id.clone()) {
                 // 重复或空的 id 换一个新的
                 let mut n = seen.len() + 1;

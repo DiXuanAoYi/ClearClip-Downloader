@@ -142,7 +142,7 @@ function toEdit() {
   app.goToolbox([props.item.path], undefined, { tab: 'edit' })
 }
 
-function toAi(aiMode: 'transcribe' | 'translate' | 'summarize') {
+function toAi(aiMode: 'transcribe' | 'translate' | 'summarize' | 'correct') {
   if (!props.item) return
   emit('update:modelValue', false)
   app.goToolbox([props.item.path], undefined, { tab: 'ai', aiMode })
@@ -171,9 +171,10 @@ function cover(i: LibraryItem) {
         <el-button v-if="item.exists && (item.kind === 'video' || item.kind === 'audio')" size="small" @click="toTools">用工具箱处理…</el-button>
         <el-button v-if="item.exists && item.kind === 'video'" size="small" @click="toNormalize">视频规整…</el-button>
         <el-button v-if="item.exists && item.kind === 'video'" size="small" @click="toEdit">放进剪辑…</el-button>
-        <el-button v-if="item.exists && (item.kind === 'video' || item.kind === 'audio')" size="small" @click="toAi('transcribe')">语音转文字</el-button>
+        <el-button v-if="item.exists && (item.kind === 'video' || item.kind === 'audio')" size="small" @click="toAi('transcribe')">生成字幕</el-button>
         <template v-if="item.exists && item.kind === 'subtitle' && !item.path.endsWith('.xml')">
           <el-button size="small" @click="toAi('translate')">翻译字幕</el-button>
+          <el-button size="small" @click="toAi('correct')">AI 纠错</el-button>
           <el-button size="small" @click="toAi('summarize')">摘要与章节</el-button>
         </template>
       </div>

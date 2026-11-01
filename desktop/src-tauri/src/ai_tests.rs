@@ -55,7 +55,15 @@ async fn mock(handler: Handler) -> String {
 }
 
 fn ep(base: &str) -> Endpoint {
-    Endpoint { base: base.to_string(), key: Some("sk-test".into()), client: reqwest::Client::builder().no_proxy().build().unwrap(), retry_ms: 5, attempts: 3, cands: vec![], pool: None }
+    Endpoint {
+        base: base.to_string(),
+        key: Some("sk-test".into()),
+        client: reqwest::Client::builder().no_proxy().build().unwrap(),
+        retry_ms: 5,
+        attempts: 3,
+        cands: vec![],
+        pool: None,
+    }
 }
 
 fn reply(content: &str) -> String {
@@ -356,7 +364,14 @@ fn existing_subtitles_decide_auto_translation() {
 // ---------- 模型池 ----------
 
 fn cand_for(id: &str, base: &str, model: &str) -> Candidate {
-    Candidate { id: id.into(), name: id.into(), base: base.into(), key: Some("k".into()), model: model.into(), client: reqwest::Client::builder().no_proxy().build().unwrap() }
+    Candidate {
+        id: id.into(),
+        name: id.into(),
+        base: base.into(),
+        key: Some("k".into()),
+        model: model.into(),
+        client: reqwest::Client::builder().no_proxy().build().unwrap(),
+    }
 }
 
 fn pooled(cands: Vec<Candidate>, pool: Arc<AiPool>) -> Endpoint {
@@ -430,4 +445,38 @@ async fn glossary_terms_reach_only_the_batches_that_mention_them() {
     let none = translate_cues_g(&ep(&base), "m", "简体中文", &cues[1..2], 5, &terms, &|_, _| Ok(())).await.unwrap();
     assert_eq!(none.failed, 0);
     assert!(!systems.lock().unwrap().last().unwrap().contains("Glossary"), "没有命中时提示词保持原样");
+}
+
+#[tokio::test]
+async fn subgen_correction_goes_through_guard_with_a_model() {
+    use crate::subgen::{correct_cues, Mode};
+    // 模型：第 1 行补标点（采用）；第 2 行整句重写（拒绝）；第 3 行改了数字（拒绝）；第 4 行改同音字（采用）
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let s2 = seen.clone();
+    let base = mock(Arc::new(move |_p, body, _n| {
+        s2.lock().unwrap().push(String::from_utf8_lossy(body).into_owned());
+        (200, reply(r#"["大家好，欢迎收看。","这是一段被模型彻底改写成别的意思的长句子","一共有36个人","这是每个人的权力。"]"#))
+    }))
+    .await;
+    let cues = vec![cue(0, "大家好欢迎收看"), cue(1000, "今天讲咖啡"), cue(2000, "一共有35个人"), cue(3000, "这是每个人的权利")];
+    let r = correct_cues(Some(&ep(&base)), "m", &cues, Mode::Conservative, "咖啡入门", &[], 20, &|_, _| Ok(())).await.unwrap();
+    assert_eq!(r.cues[0].lines, vec!["大家好，欢迎收看。"]);
+    assert_eq!(r.cues[1].lines, cues[1].lines);
+    assert_eq!(r.cues[2].lines, vec!["一共有 35 个人"]); // 模型改的数字被拒绝，只保留规则层加的空格
+    assert_eq!(r.rejected, 2);
+    assert_eq!(r.changes.len(), 3); // 第 1、4 行是模型改的，第 3 行是规则层加的空格
+    assert!(r.cues.iter().zip(&cues).all(|(a, b)| a.start == b.start && a.end == b.end));
+    // 提示词里带了视频标题
+    assert!(seen.lock().unwrap()[0].contains("咖啡入门"));
+}
+
+#[tokio::test]
+async fn subgen_correction_wrong_line_count_keeps_original() {
+    use crate::subgen::{correct_cues, Mode};
+    // 模型总是少回一行：整批无法对齐，最终逐条保留原文，不会错位
+    let base = mock(Arc::new(|_p, _b, _n| (200, reply(r#"["只有一行"]"#)))).await;
+    let cues = vec![cue(0, "第一句话"), cue(1000, "第二句话")];
+    let r = correct_cues(Some(&ep(&base)), "m", &cues, Mode::Conservative, "", &[], 20, &|_, _| Ok(())).await.unwrap();
+    assert_eq!(r.cues.len(), 2);
+    assert_eq!(r.cues[1].lines, cues[1].lines);
 }

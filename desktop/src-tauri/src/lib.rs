@@ -1,6 +1,5 @@
 pub mod ai;
 pub mod ai_cmds;
-pub mod glossary_cmds;
 pub mod ai_pool;
 pub mod api;
 pub mod audiofx;
@@ -20,6 +19,10 @@ pub mod ed2k;
 pub mod edit;
 pub mod engine;
 pub mod error;
+pub mod experts;
+pub mod experts_cmds;
+pub mod glossary;
+pub mod glossary_cmds;
 pub mod grab;
 pub mod i18n;
 pub mod inbox;
@@ -52,14 +55,12 @@ pub mod secret;
 pub mod security;
 pub mod security_cmds;
 pub mod settings;
-pub mod experts;
-pub mod experts_cmds;
-pub mod glossary;
+pub mod subgen;
 pub mod subs;
-pub mod supadata;
 pub mod subtitle;
 pub mod subtitle_io;
 pub mod subtitle_tools;
+pub mod supadata;
 pub mod tools;
 pub mod track;
 pub mod transfer;
@@ -594,6 +595,8 @@ pub fn run() {
             ai_cmds::ai_translate,
             ai_cmds::ai_summarize,
             ai_cmds::ai_transcribe,
+            ai_cmds::subgen_start,
+            ai_cmds::subgen_correct,
             ai_cmds::media_job_text,
             media_cmds::media_job_start,
             media_cmds::media_jobs,

@@ -68,12 +68,24 @@ impl Provider for Wechat {
 }
 
 fn decode_entities(s: &str) -> String {
-    s.replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&nbsp;", " ")
+    s.replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&nbsp;", " ")
 }
 
 /// 页面里的 URL 常被 JS 转义（\x26amp;、/ 等），统一还原。
 fn normalize(s: &str) -> String {
-    s.replace("\\u002F", "/").replace("\\u002f", "/").replace("\\x26amp;", "&").replace("\\u0026amp;", "&").replace("\\x26", "&").replace("\\u0026", "&").replace("\\/", "/")
+    s.replace("\\u002F", "/")
+        .replace("\\u002f", "/")
+        .replace("\\x26amp;", "&")
+        .replace("\\u0026amp;", "&")
+        .replace("\\x26", "&")
+        .replace("\\u0026", "&")
+        .replace("\\/", "/")
 }
 
 static BLOCKED_TITLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<title>[^<]*(环境异常|操作频繁|访问频繁|系统繁忙|验证)[^<]*</title>").unwrap());
@@ -219,7 +231,13 @@ pub fn parse_article(html: &str, source_url: &str) -> AppResult<MediaInfo> {
                 continue;
             }
             let id = if gi == 0 && qi == 0 { "video".to_string() } else { format!("video-{}-{}", gi + 1, v.format_id) };
-            let mut a = Asset::base(id, AssetKind::Video, v.url.clone(), if multi { format!("视频 {} · {}", gi + 1, v.label) } else { format!("视频 · {}", v.label) }, "mp4");
+            let mut a = Asset::base(
+                id,
+                AssetKind::Video,
+                v.url.clone(),
+                if multi { format!("视频 {} · {}", gi + 1, v.label) } else { format!("视频 · {}", v.label) },
+                "mp4",
+            );
             a.width = (v.width > 0).then_some(v.width);
             a.height = (v.height > 0).then_some(v.height);
             a.quality = Some(v.label.clone());
@@ -235,14 +253,23 @@ pub fn parse_article(html: &str, source_url: &str) -> AppResult<MediaInfo> {
     }
     let og: BTreeMap<String, String> = OG.captures_iter(html).map(|c| (c[1].to_lowercase(), decode_entities(&c[2]).trim().to_string())).collect();
     let title = og.get("og:title").cloned().filter(|s| !s.is_empty()).unwrap_or_else(|| "微信公众号视频".into());
-    let author = NICKNAME.captures(html).map(|c| decode_entities(&c[1])).filter(|s| !s.is_empty()).or_else(|| og.get("og:article:author").cloned()).unwrap_or_else(|| "公众号".into());
+    let author = NICKNAME
+        .captures(html)
+        .map(|c| decode_entities(&c[1]))
+        .filter(|s| !s.is_empty())
+        .or_else(|| og.get("og:article:author").cloned())
+        .unwrap_or_else(|| "公众号".into());
     let cover = og.get("og:image").cloned().filter(|s| !s.is_empty()).map(|u| u.replacen("http://", "https://", 1));
     if let Some(c) = &cover {
         let mut a = Asset::cover(c.clone());
         a.headers = vec![("Referer".into(), REFERER.into())];
         assets.push(a);
     }
-    let id = Url::parse(source_url).ok().map(|u| u.path().trim_start_matches("/s/").trim_start_matches("/s").to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "article".into());
+    let id = Url::parse(source_url)
+        .ok()
+        .map(|u| u.path().trim_start_matches("/s/").trim_start_matches("/s").to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "article".into());
     Ok(MediaInfo {
         platform: "wechat".into(),
         platform_name: "微信公众号".into(),
@@ -303,7 +330,10 @@ window.__mpVideoData = { mp_video_trans_info: [
         assert_eq!(v.url, "https://mpvideo.qpic.cn/x/y.f10003.mp4?dis_k=1&dis_t=2");
         assert_eq!(v.quality.as_deref(), Some("高清"));
         assert!(parse_article("<title>环境异常</title>", "https://mp.weixin.qq.com/s/x").unwrap_err().to_string().contains("拦截"));
-        assert!(parse_article("<p>纯文字</p><a href='https://v.qq.com/x/page/a.html'>x</a>", "https://mp.weixin.qq.com/s/x").unwrap_err().to_string().contains("腾讯视频"));
+        assert!(parse_article("<p>纯文字</p><a href='https://v.qq.com/x/page/a.html'>x</a>", "https://mp.weixin.qq.com/s/x")
+            .unwrap_err()
+            .to_string()
+            .contains("腾讯视频"));
         assert!(parse_article("<p>纯文字</p>", "https://mp.weixin.qq.com/s/x").unwrap_err().to_string().contains("没有在这篇文章"));
     }
 

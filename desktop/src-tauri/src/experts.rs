@@ -39,7 +39,15 @@ pub struct Expert {
 }
 
 fn b(id: &str, name: &str, desc: &str, guide: &str, matches: &[&str]) -> Expert {
-    Expert { id: id.into(), name: name.into(), description: desc.into(), origin: "builtin".into(), guide: guide.into(), matches: matches.iter().map(|s| s.to_string()).collect(), ..Default::default() }
+    Expert {
+        id: id.into(),
+        name: name.into(),
+        description: desc.into(),
+        origin: "builtin".into(),
+        guide: guide.into(),
+        matches: matches.iter().map(|s| s.to_string()).collect(),
+        ..Default::default()
+    }
 }
 
 pub fn builtin() -> Vec<Expert> {
@@ -253,12 +261,67 @@ pub fn check_remote_id(id: &str) -> AppResult<()> {
 
 /// 沉浸式翻译 prompts 仓库 plugins/ 目录里的文件名（不含 .yml）快照，GitHub 接口不可用时使用。
 pub const COMMUNITY_SNAPSHOT: &[&str] = &[
-    "VocabularyAssistant", "american-conversation", "ao3", "aviation", "basketball", "bilingual-mix", "buddhist", "chat-shorthand", "chemistry", "chess", "christian-theology",
-    "classicalToModern", "construction", "continental-philosophy", "customer-service", "dbh", "design", "ebook", "ecommerce", "electronics", "english-order-reading",
-    "english-vocabulary-reading", "fashion", "fiction", "financial", "football", "game", "github", "golf", "japanese-conversation", "japanese-history", "korean-fiction", "legal",
-    "medical", "mining", "motorsport", "music", "news", "paper-explanation", "paper", "paragraph-summarizer-expert", "paraphrase", "pinyin-reading", "plain-english",
-    "plain-language", "price-action", "programming-docs", "psychology", "reddit", "shakespeare-verse", "sports-commentary", "steam", "subliminal_lingo", "tech", "twitter",
-    "valorant-esports", "vietnamese-english-mix", "web3", "western-rap", "wordByWord", "wyw",
+    "VocabularyAssistant",
+    "american-conversation",
+    "ao3",
+    "aviation",
+    "basketball",
+    "bilingual-mix",
+    "buddhist",
+    "chat-shorthand",
+    "chemistry",
+    "chess",
+    "christian-theology",
+    "classicalToModern",
+    "construction",
+    "continental-philosophy",
+    "customer-service",
+    "dbh",
+    "design",
+    "ebook",
+    "ecommerce",
+    "electronics",
+    "english-order-reading",
+    "english-vocabulary-reading",
+    "fashion",
+    "fiction",
+    "financial",
+    "football",
+    "game",
+    "github",
+    "golf",
+    "japanese-conversation",
+    "japanese-history",
+    "korean-fiction",
+    "legal",
+    "medical",
+    "mining",
+    "motorsport",
+    "music",
+    "news",
+    "paper-explanation",
+    "paper",
+    "paragraph-summarizer-expert",
+    "paraphrase",
+    "pinyin-reading",
+    "plain-english",
+    "plain-language",
+    "price-action",
+    "programming-docs",
+    "psychology",
+    "reddit",
+    "shakespeare-verse",
+    "sports-commentary",
+    "steam",
+    "subliminal_lingo",
+    "tech",
+    "twitter",
+    "valorant-esports",
+    "vietnamese-english-mix",
+    "web3",
+    "western-rap",
+    "wordByWord",
+    "wyw",
 ];
 
 #[cfg(test)]
@@ -326,7 +389,14 @@ multipleSystemPrompt: |-
 
     #[test]
     fn json_roundtrip_and_validation() {
-        let e = Expert { name: " 我的专家 ".into(), guide: "Use formal tone.".into(), matches: vec![" a.com ".into(), "".into()], origin: "builtin".into(), id: "tech".into(), ..Default::default() };
+        let e = Expert {
+            name: " 我的专家 ".into(),
+            guide: "Use formal tone.".into(),
+            matches: vec![" a.com ".into(), "".into()],
+            origin: "builtin".into(),
+            id: "tech".into(),
+            ..Default::default()
+        };
         let text = serde_json::to_string(&e).unwrap();
         let back = parse_import(&text).unwrap();
         assert_eq!((back.name.as_str(), back.origin.as_str(), back.id.as_str()), ("我的专家", "user", ""), "导入的永远是自建，不能冒充内置，id 重新生成");
@@ -340,7 +410,17 @@ multipleSystemPrompt: |-
     fn resolve_prefers_explicit_choice_then_site() {
         let dir = tmp();
         let s = Store::open(&dir);
-        s.edit(|v| v.push(Expert { id: "mine".into(), name: "我的".into(), origin: "user".into(), guide: "G".into(), matches: vec!["x.com".into()], ..Default::default() })).unwrap();
+        s.edit(|v| {
+            v.push(Expert {
+                id: "mine".into(),
+                name: "我的".into(),
+                origin: "user".into(),
+                guide: "G".into(),
+                matches: vec!["x.com".into()],
+                ..Default::default()
+            })
+        })
+        .unwrap();
         assert_eq!(s.resolve("tech", true, "https://x.com/a").unwrap().id, "tech", "明确选了就用它");
         assert_eq!(s.resolve("general", true, "https://x.com/a").unwrap().id, "mine", "自建专家优先于内置的 social");
         assert_eq!(s.resolve("general", true, "https://github.com/a/b").unwrap().id, "tech");

@@ -166,6 +166,25 @@ pub fn ai_transcribe(app: AppHandle, path: String, language: Option<String>) -> 
     }))
 }
 
+/// 字幕工坊：给没有字幕的视频 / 音频生成字幕（识别 → 过滤 → AI 纠错 → 断句 → 翻译 → 导出）。
+#[tauri::command]
+pub fn subgen_start(app: AppHandle, path: String, opts: crate::subgen::GenOpts) -> AppResult<u64> {
+    let p = existing_file(&path)?;
+    for f in &opts.formats {
+        if !matches!(f.as_str(), "srt" | "vtt" | "ass" | "lrc" | "txt" | "json") {
+            return Err(AppError::invalid("输出格式只能是 SRT、VTT、ASS、LRC、TXT 或 JSON。"));
+        }
+    }
+    Ok(media_tools::spawn_job(&app, title_of(&p), "生成字幕", move |ctx| async move { crate::subgen::run_subgen(&ctx, &p, opts).await }))
+}
+
+/// 对已有字幕做 AI 纠错（补标点、改同音错字），保存为新文件，原字幕不动。
+#[tauri::command]
+pub fn subgen_correct(app: AppHandle, path: String, mode: Option<String>) -> AppResult<u64> {
+    let p = existing_file(&path)?;
+    Ok(media_tools::spawn_job(&app, title_of(&p), "字幕纠错", move |ctx| async move { crate::subgen::run_correct(&ctx, &p, mode).await }))
+}
+
 /// 读取 AI 任务输出的文本结果（摘要 .md、章节 .txt、字幕 .srt）。只能读任务列表里自己生成的文件。
 #[tauri::command]
 pub fn media_job_text(state: St<'_>, id: u64, which: Option<String>) -> AppResult<String> {
