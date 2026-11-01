@@ -584,6 +584,10 @@ pub struct AiSettings {
     pub supadata_on: bool,
     /// 翻译时使用术语库
     pub glossary_on: bool,
+    /// 翻译用哪位 AI 专家（专家 id，空 / general = 通用）
+    pub expert: String,
+    /// 选“通用”时，按网址自动换成匹配的专家
+    pub expert_auto: bool,
     /// 兼容 OpenAI 接口的地址（OpenAI、DeepSeek、通义、月之暗面、本机 Ollama 等），如 `https://api.openai.com/v1`
     pub base_url: String,
     pub model: String,
@@ -616,6 +620,8 @@ impl Default for AiSettings {
             pool: vec![],
             supadata_on: false,
             glossary_on: true,
+            expert: "general".into(),
+            expert_auto: true,
             base_url: "https://api.openai.com/v1".into(),
             model: "gpt-4o-mini".into(),
             target_lang: "简体中文".into(),

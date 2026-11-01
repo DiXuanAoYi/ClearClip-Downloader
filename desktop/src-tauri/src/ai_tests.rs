@@ -380,7 +380,7 @@ async fn pool_fails_over_when_the_first_service_is_out_of_quota() {
     assert_eq!(out, "OK-B");
     assert_eq!(*seen_models.lock().unwrap(), vec!["model-b"], "用的是第二家自己的模型，不是调用方传的");
     let snap = pool.snapshot(crate::db::now());
-    assert!(snap["a"].cool_until > crate::db::now() + 3600, "额度用完 → 冷却到明天");
+    assert!(snap["a"].cool_until > crate::db::now(), "额度用完 → 冷却到次日零点（临近零点时可能不足一小时）");
     assert_eq!(snap["b"].ok, 1);
 }
 

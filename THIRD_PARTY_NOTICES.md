@@ -18,7 +18,7 @@
 | 库 | 许可证 |
 | --- | --- |
 | tauri 及 tauri-plugin-*（clipboard-manager、notification、global-shortcut、dialog、opener、single-instance、log、autostart、updater） | MIT 或 Apache-2.0 |
-| serde、serde_json、reqwest、tokio、futures-util、regex、url、thiserror、chrono、log、tar、zip、hex、fs4、sha2、md-5、aes、cbc、aes-gcm、argon2、async-trait | MIT 或 Apache-2.0 |
+| serde_yaml（读取沉浸式翻译的专家文件）、serde、serde_json、reqwest、tokio、futures-util、regex、url、thiserror、chrono、log、tar、zip、hex、fs4、sha2、md-5、aes、cbc、aes-gcm、argon2、async-trait | MIT 或 Apache-2.0 |
 | rusqlite（含内置 SQLite） | MIT（SQLite 为公有领域） |
 | lzma-rs | MIT |
 | encoding_rs（读 GBK / UTF-16 字幕） | MIT 或 Apache-2.0（编码表数据为 BSD-3-Clause） |

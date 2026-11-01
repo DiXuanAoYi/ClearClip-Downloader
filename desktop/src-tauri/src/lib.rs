@@ -52,6 +52,8 @@ pub mod secret;
 pub mod security;
 pub mod security_cmds;
 pub mod settings;
+pub mod experts;
+pub mod experts_cmds;
 pub mod glossary;
 pub mod subs;
 pub mod supadata;
@@ -116,6 +118,7 @@ pub struct AppState {
     /// AI 模型池的运行状态（今日用量、冷却）
     pub ai_pool: Arc<ai_pool::AiPool>,
     pub glossary: Arc<glossary::Store>,
+    pub experts: Arc<experts::Store>,
     /// 加密保存的密钥（API 密钥、密码等）
     pub vault: vault::Vault,
     /// 应用锁状态
@@ -336,6 +339,7 @@ pub fn run() {
                 media_jobs: media_tools::MediaJobs::default(),
                 ai_pool: Arc::new(ai_pool::AiPool::default()),
                 glossary: Arc::new(glossary::Store::open(&data_dir)),
+                experts: Arc::new(experts::Store::open(&data_dir)),
                 vault,
                 lock: security::LockState::new(locked),
                 safebox: safebox::Safebox::new(data_dir.join("safebox")),
@@ -576,6 +580,14 @@ pub fn run() {
             glossary_cmds::glossary_extract,
             glossary_cmds::glossary_resolve,
             glossary_cmds::glossary_sites_save,
+            experts_cmds::experts_state,
+            experts_cmds::experts_save,
+            experts_cmds::experts_delete,
+            experts_cmds::experts_import,
+            experts_cmds::experts_import_file,
+            experts_cmds::experts_export,
+            experts_cmds::experts_community,
+            experts_cmds::experts_community_install,
             ai_cmds::ai_translate,
             ai_cmds::ai_summarize,
             ai_cmds::ai_transcribe,

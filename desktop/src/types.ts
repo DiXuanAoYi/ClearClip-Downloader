@@ -688,6 +688,8 @@ export interface AiSettings {
   pool: PoolEntry[]
   supadataOn: boolean
   glossaryOn: boolean
+  expert: string
+  expertAuto: boolean
   baseUrl: string
   model: string
   targetLang: string
@@ -1917,4 +1919,21 @@ export interface BatchRequest {
   urls: string[]
   source: string
   truncated?: boolean
+}
+
+export interface AiExpert {
+  id: string
+  name: string
+  description: string
+  origin: 'builtin' | 'user' | 'community'
+  guide: string
+  matches: string[]
+  remoteId: string
+  updated: number
+}
+export interface ExpertsState {
+  experts: AiExpert[]
+  selected: string
+  auto: boolean
+  communityPage: string
 }

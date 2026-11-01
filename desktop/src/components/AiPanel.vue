@@ -6,6 +6,7 @@ import { api, errorText } from '../api'
 import type { AiSettings, AiStatus } from '../types'
 import AiPool from './AiPool.vue'
 import GlossaryPanel from './GlossaryPanel.vue'
+import ExpertsPanel from './ExpertsPanel.vue'
 
 const ai = defineModel<AiSettings>({ required: true })
 const status = ref<AiStatus | null>(null)
@@ -69,6 +70,7 @@ async function pickFile(field: 'whisperBin' | 'whisperModel') {
   <div class="groups">
     <AiPool v-model="ai" />
     <GlossaryPanel v-model="ai" />
+    <ExpertsPanel v-model="ai" />
     <section class="group card">
       <h3>默认服务（模型池为空或都不可用时使用）</h3>
       <small class="mute">使用兼容 OpenAI 的接口。字幕文字会发送到你填写的服务商；用本机 Ollama 则完全不出本机。密钥加密保存在本机，不会写进设置文件，也不会进入备份。</small>
