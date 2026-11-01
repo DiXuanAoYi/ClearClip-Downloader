@@ -93,7 +93,8 @@ pub fn experts_export(state: St<'_>, id: String) -> AppResult<String> {
 
 // ---------- 社区专家 ----------
 
-static COMMUNITY: LazyLock<Mutex<Option<(Instant, Vec<Expert>)>>> = LazyLock::new(|| Mutex::new(None));
+type CommunityCache = Option<(Instant, Vec<Expert>)>;
+static COMMUNITY: LazyLock<Mutex<CommunityCache>> = LazyLock::new(|| Mutex::new(None));
 
 async fn get_yaml(st: &AppState, id: &str) -> AppResult<String> {
     experts::check_remote_id(id)?;

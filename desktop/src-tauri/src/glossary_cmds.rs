@@ -95,7 +95,8 @@ pub fn glossary_export(state: St<'_>, id: String) -> AppResult<String> {
 
 // ---------- 社区术语库 ----------
 
-static COMMUNITY: LazyLock<Mutex<Option<(Instant, Vec<CommunityItem>)>>> = LazyLock::new(|| Mutex::new(None));
+type CommunityCache = Option<(Instant, Vec<CommunityItem>)>;
+static COMMUNITY: LazyLock<Mutex<CommunityCache>> = LazyLock::new(|| Mutex::new(None));
 
 async fn get_text(st: &AppState, path: &str) -> AppResult<String> {
     let url = format!("{}/{}", glossary::COMMUNITY_RAW, path);

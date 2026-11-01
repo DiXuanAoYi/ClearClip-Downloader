@@ -372,8 +372,8 @@ fn occurs(haystack_lower: &str, needle: &str) -> bool {
     while let Some(pos) = haystack_lower[from..].find(&n) {
         let a = from + pos;
         let b = a + n.len();
-        let before = haystack_lower[..a].chars().next_back().is_none_or(|c| !c.is_alphanumeric());
-        let after = haystack_lower[b..].chars().next().is_none_or(|c| !c.is_alphanumeric());
+        let before = haystack_lower[..a].chars().next_back().map_or(true, |c| !c.is_alphanumeric());
+        let after = haystack_lower[b..].chars().next().map_or(true, |c| !c.is_alphanumeric());
         if before && after {
             return true;
         }

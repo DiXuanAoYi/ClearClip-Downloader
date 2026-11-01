@@ -184,7 +184,7 @@ fn bare_urls(html: &str) -> Vec<Variant> {
 
 fn rank(v: &Variant) -> (u8, u32) {
     // 同清晰度优先标准编码（10002/10003/10004 比 101xx 省流变体兼容性好），再按像素
-    let std = if matches!(v.format_id, 10002 | 10003 | 10004) { 1 } else { 0 };
+    let std = if matches!(v.format_id, 10002..=10004) { 1 } else { 0 };
     (std, v.width * v.height)
 }
 
@@ -222,7 +222,7 @@ pub fn parse_article(html: &str, source_url: &str) -> AppResult<MediaInfo> {
     let (mut w0, mut h0) = (None, None);
     for (gi, b) in order.iter().enumerate() {
         let mut list = groups.remove(b).unwrap_or_default();
-        list.sort_by(|a, b| rank(b).cmp(&rank(a)));
+        list.sort_by_key(|a| std::cmp::Reverse(rank(a)));
         // 同清晰度档位只留最好的一个，避免列表里出现一堆重复
         let mut seen = std::collections::HashSet::new();
         for (qi, v) in list.into_iter().enumerate() {
