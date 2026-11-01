@@ -16,12 +16,14 @@ function show(screen) {
 let currentTabName = 'discover'
 
 function showTab(name) {
+  if (currentTabName === 'audio' && name !== 'audio') globalThis.ccAudioPopup?.close()
   currentTabName = name
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === name)
   for (const v of document.querySelectorAll('.view')) v.classList.toggle('hidden', v.id !== `v-${name}`)
   if (name === 'downloads') startTaskPolling()
   else stopTaskPolling()
   if (name === 'tools') renderTools()
+  if (name === 'audio') globalThis.ccAudioPopup?.open()
   if (name === 'later' && typeof renderLater === 'function') renderLater()
 }
 
@@ -762,6 +764,7 @@ async function init() {
   await loadSettings()
   refreshLaterBadge()
   show(location.hash === '#settings' || !c.port || !c.token ? 'settings' : 'main')
+  if (location.hash === '#audio') showTab('audio')
   renderSniffed()
   renderTakeover()
   refreshConn()

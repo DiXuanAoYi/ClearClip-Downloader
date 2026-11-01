@@ -194,6 +194,8 @@ const HANDLERS = {
     return {}
   },
   'cc-send-items': async (m) => ({ ...(await sendBatch(Array.isArray(m.items) ? m.items : [], { url: m.page || '', title: m.title || '' })) }),
+  // 视频上的音效面板点“更多音效设置”：在新标签页打开弹窗的音效页
+  'cc-open-audio': async () => (await api.tabs.create({ url: api.runtime.getURL('popup.html#audio') }), {}),
   'cc-engines': async () => ({ engines: await getEngines() }),
   'cc-save': async (m) => {
     if (!/^https?:/i.test(String(m.url))) throw new Error('这张图片不能保存')

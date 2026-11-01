@@ -55,3 +55,18 @@ a.lnk { color: var(--accd); cursor: pointer; text-decoration: underline; }
 #sniffList .it .sub, #laterList .sub { display: block; color: var(--mute); font-size: 11px; }
 #sniffBar { display: flex; gap: 6px; margin-top: 6px; } #sniffBar button { margin: 0; padding: 5px 8px; font-size: 12px; }
 .grp { margin-top: 12px; font-weight: 700; }
+
+/* 音效页 */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chips button { width: auto; margin: 0; padding: 3px 11px; border-radius: 14px; background: var(--card); color: var(--fg); border: 1px solid var(--line); font-weight: 400; font-size: 12px; }
+.chips button[aria-pressed="true"] { border-color: var(--acc); color: var(--accd); background: color-mix(in srgb, var(--acc) 14%, var(--card)); font-weight: 600; }
+.chips button small { color: var(--mute); margin-left: 4px; font-size: 10.5px; }
+.meterRow { display: grid; grid-template-columns: 34px 1fr 64px; align-items: center; gap: 8px; font-size: 12px; }
+.meterRow b { text-align: right; font-weight: 600; }
+.meterBar { height: 8px; border-radius: 4px; background: var(--line); position: relative; overflow: hidden; }
+.meterBar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--acc); border-radius: 4px; width: 0; transition: width .35s; }
+.meterBar.tg u { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); opacity: .7; }
+#auState { flex-direction: row; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
+#auState::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+#auState.warn::before { background: #d9a441; } #auState.off::before { background: var(--mute); }
+#v-audio input[type=range] { padding: 0; accent-color: var(--acc); }

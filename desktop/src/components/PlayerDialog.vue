@@ -4,6 +4,7 @@ import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
 import type { PlayerSource, PlayerTrack } from '../types'
 import { formatClock } from '../utils/time'
+import { FX_PRESETS, FX_REVERBS, usePlayerFx } from '../audio/playerFx'
 
 const app = useAppStore()
 const src = ref<PlayerSource | null>(null)
@@ -16,6 +17,7 @@ const now = ref(0)
 const video = ref<HTMLVideoElement | null>(null)
 const listEl = ref<HTMLElement | null>(null)
 
+const fx = usePlayerFx(video)
 const open = computed(() => app.player !== null)
 const mediaUrl = computed(() => src.value?.url ?? '')
 const track = computed<PlayerTrack | null>(() => (src.value && trackIndex.value >= 0 ? src.value.tracks[trackIndex.value] : null))
@@ -129,6 +131,15 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
         <el-select v-model="speed" size="small" class="spd">
           <el-option v-for="s in SPEEDS" :key="s" :label="`${s}×`" :value="s" />
         </el-select>
+        <el-select v-model="fx.preset.value" size="small" class="fxs" aria-label="音效">
+          <el-option value="off" label="音效：关" />
+          <el-option v-for="p in FX_PRESETS" :key="p.id" :value="p.id" :label="`音效：${p.name}（${p.target} LUFS）`" />
+        </el-select>
+        <el-select v-model="fx.reverb.value" size="small" class="fxr" aria-label="混响">
+          <el-option value="" label="混响：无" />
+          <el-option v-for="r in FX_REVERBS" :key="r.id" :value="r.id" :label="`混响：${r.name}`" />
+        </el-select>
+        <span v-if="fx.info.value" class="mono fxi" title="输出响度 · 当前增益">{{ fx.info.value }}</span>
         <el-select v-if="src?.tracks.length" v-model="trackIndex" size="small" class="trk">
           <el-option :value="-1" label="不显示字幕" />
           <el-option v-for="(t, i) in src.tracks" :key="t.path" :value="i" :label="t.label" />
@@ -151,8 +162,11 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
             :class="{ audio: src.kind === 'audio' }"
             :src="mediaUrl"
             controls
+            crossorigin="anonymous"
             preload="metadata"
             @loadedmetadata="onMeta"
+            @play="fx.attach()"
+            @emptied="fx.reset()"
             @timeupdate="now = video?.currentTime ?? 0"
             @error="onVideoError"
           >
@@ -213,6 +227,17 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 }
 .trk {
   width: 170px;
+}
+.fxs {
+  width: 168px;
+}
+.fxr {
+  width: 118px;
+}
+.fxi {
+  font-size: 11px;
+  color: var(--cc-mute);
+  white-space: nowrap;
 }
 .stage {
   display: flex;

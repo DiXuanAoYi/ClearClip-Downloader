@@ -2658,4 +2658,8 @@ export const en: Record<string, string> = {
   "视频摘要的“用清影转写”、剪辑的文稿剪辑 / 智能字幕会用到。除了模型，还需要 whisper.cpp 的": "Used by “Transcribe with ClearClip” in video summary and by transcript editing / smart subtitles in Edit. Besides a model you also need whisper.cpp's",
   "语音识别（Whisper，本地转写）": "Speech recognition (Whisper, local)",
   "降噪（RNNoise）": "Noise reduction (RNNoise)",
+  "音效": "Sound",
+  "音效：关": "Sound: off",
+  "混响：无": "Reverb: none",
+  "输出响度 · 当前增益": "Output loudness · current gain",
 }
