@@ -194,11 +194,18 @@ const TR_FILES = ['content/ui.js', 'trans-logic.js', 'content/webtrans.js']
 async function webTransDo(tab, action, extra = {}) {
   if (!isWebPage(tab)) throw new Error('当前页面不能翻译')
   const send = () => api.tabs.sendMessage(tab.id, { type: 'cc-wt', action, ...extra })
+  // 页面里没有翻译脚本时，别的内容脚本（如实时音效）也在监听消息，这时 sendMessage 不会报错，而是安静地返回 undefined；
+  // 所以“没抛错”不等于“已送达”，必须拿到翻译脚本自己的回复（带 on 字段）才算。
+  const ready = (r) => r && typeof r === 'object' && 'on' in r
   try {
-    return await send()
+    const r = await send()
+    if (ready(r)) return r
   } catch {
-    await injectFiles(tab.id, TR_FILES)
-    await sleep(60)
-    return await send()
+    // 还没注入
   }
+  await injectFiles(tab.id, TR_FILES)
+  await sleep(60)
+  const r = await send()
+  if (!ready(r)) throw new Error('页面翻译没有启动（这个页面可能不允许扩展运行脚本）')
+  return r
 }
