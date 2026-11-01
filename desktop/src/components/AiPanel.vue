@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../api'
 import type { AiSettings, AiStatus } from '../types'
+import AiPool from './AiPool.vue'
 
 const ai = defineModel<AiSettings>({ required: true })
 const status = ref<AiStatus | null>(null)
@@ -65,8 +66,9 @@ async function pickFile(field: 'whisperBin' | 'whisperModel') {
 
 <template>
   <div class="groups">
+    <AiPool v-model="ai" />
     <section class="group card">
-      <h3>对话模型（翻译字幕、摘要与章节）</h3>
+      <h3>默认服务（模型池为空或都不可用时使用）</h3>
       <small class="mute">使用兼容 OpenAI 的接口。字幕文字会发送到你填写的服务商；用本机 Ollama 则完全不出本机。密钥加密保存在本机，不会写进设置文件，也不会进入备份。</small>
       <div class="presets">
         <el-button v-for="p in CHAT_PRESETS" :key="p.name" size="small" link type="primary" @click="ai.baseUrl = p.url; ai.model = p.model">{{ p.name }}</el-button>

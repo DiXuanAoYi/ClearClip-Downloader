@@ -595,7 +595,46 @@ export interface AutoRule {
   then: RuleThen
 }
 
+export interface PoolEntry {
+  id: string
+  preset: string
+  name: string
+  baseUrl: string
+  model: string
+  enabled: boolean
+  tasks: string[]
+  priority: number
+  dailyLimit: number
+}
+
+export interface PoolPreset {
+  id: string
+  name: string
+  baseUrl: string
+  model: string
+  signupUrl: string
+  keyUrl: string
+  note: string
+  free: boolean
+  local: boolean
+  tasks: string[]
+}
+
+export interface PoolStatus {
+  id: string
+  hasKey: boolean
+  used: number
+  ok: number
+  fail: number
+  coolingSecs: number
+  coolReason: string
+  badKey: boolean
+  lastError: string
+}
+
 export interface AiSettings {
+  pool: PoolEntry[]
+  supadataOn: boolean
   baseUrl: string
   model: string
   targetLang: string
