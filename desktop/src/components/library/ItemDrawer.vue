@@ -7,6 +7,8 @@ import { useAppStore } from '../../stores/app'
 import type { Chapter, LibraryItem, TagCount } from '../../types'
 import { formatBytes, formatDateTime, formatDuration } from '../../utils/format'
 import { formatClock } from '../../utils/time'
+import SubtitleTab from './SubtitleTab.vue'
+import SubtitleEditor from './SubtitleEditor.vue'
 
 const props = defineProps<{ modelValue: boolean; item: LibraryItem | null; tags: TagCount[] }>()
 const emit = defineEmits<{ 'update:modelValue': [v: boolean]; changed: [] }>()
@@ -22,6 +24,7 @@ const scenes = ref<Chapter[]>([])
 const sceneLoading = ref(false)
 const threshold = ref(0.4)
 const splitting = ref(false)
+const editSub = ref(false)
 
 watch(
   () => [props.item?.id, props.modelValue] as const,
@@ -200,6 +203,19 @@ function cover(i: LibraryItem) {
         <span class="label">备注</span>
         <el-input v-model="note" type="textarea" :rows="3" maxlength="2000" placeholder="写点什么，比如为什么收藏它" @blur="saveNote" />
       </div>
+
+      <template v-if="item.exists && (item.kind === 'video' || item.kind === 'audio')">
+        <el-divider />
+        <div class="field">
+          <span class="label">字幕</span>
+          <SubtitleTab :video="item.path" />
+        </div>
+      </template>
+      <template v-if="item.exists && item.kind === 'subtitle' && !item.path.endsWith('.xml')">
+        <el-divider />
+        <el-button size="small" @click="editSub = true">校对 / 编辑这个字幕</el-button>
+        <SubtitleEditor v-model="editSub" :path="item.path" @saved="emit('changed')" />
+      </template>
 
       <template v-if="isVideo">
         <el-divider />

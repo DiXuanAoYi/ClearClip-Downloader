@@ -55,6 +55,7 @@ pub mod secret;
 pub mod security;
 pub mod security_cmds;
 pub mod settings;
+pub mod subedit;
 pub mod subgen;
 pub mod subs;
 pub mod subtitle;
@@ -597,6 +598,13 @@ pub fn run() {
             ai_cmds::ai_transcribe,
             ai_cmds::subgen_start,
             ai_cmds::subgen_correct,
+            subedit::subtitle_tracks,
+            subedit::subedit_load,
+            subedit::subedit_validate,
+            subedit::subedit_save,
+            subedit::subgen_burn_presets,
+            subedit::subgen_mux,
+            subedit::subgen_burn_preview,
             ai_cmds::media_job_text,
             media_cmds::media_job_start,
             media_cmds::media_jobs,

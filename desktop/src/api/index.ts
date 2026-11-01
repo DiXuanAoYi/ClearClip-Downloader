@@ -1,7 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import type { ECue } from '../utils/subedit'
 import type {
   SubgenOpts,
+  SubTrackInfo,
+  SubIssue,
+  BurnStyle,
+  MuxOpts,
   AccountStatus,
   HighlightCandidate,
   KeyGuess,
@@ -284,6 +289,14 @@ export const api = {
   aiTranscribe: (path: string, language?: string) => invoke<number>('ai_transcribe', { path, language }),
   subgenStart: (path: string, opts: SubgenOpts) => invoke<number>('subgen_start', { path, opts }),
   subgenCorrect: (path: string, mode?: string) => invoke<number>('subgen_correct', { path, mode }),
+  subtitleTracks: (path: string) => invoke<SubTrackInfo[]>('subtitle_tracks', { path }),
+  subeditLoad: (path: string) => invoke<ECue[]>('subedit_load', { path }),
+  subeditValidate: (cues: ECue[]) => invoke<SubIssue[]>('subedit_validate', { cues }),
+  subeditSave: (path: string, cues: ECue[], overwrite: boolean, format?: string) =>
+    invoke<{ path: string; backup: string | null; count: number }>('subedit_save', { path, cues, overwrite, format: format ?? null }),
+  subgenBurnPresets: () => invoke<[string, string, BurnStyle][]>('subgen_burn_presets'),
+  subgenMux: (video: string, opts: MuxOpts) => invoke<number>('subgen_mux', { video, opts }),
+  subgenBurnPreview: (video: string, track: string, style: BurnStyle, atMs?: number) => invoke<string>('subgen_burn_preview', { video, track, style, atMs: atMs ?? null }),
   mediaJobText: (id: number, which?: 'chapters') => invoke<string>('media_job_text', { id, which }),
   mediaJobStart: (job: ToolJob) => invoke<number>('media_job_start', { job }),
   mediaJobs: () => invoke<JobSnap[]>('media_jobs'),

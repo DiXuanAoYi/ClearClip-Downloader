@@ -718,6 +718,41 @@ export interface SubgenOpts {
   formats: string[]
 }
 
+export interface SubTrackInfo {
+  path: string
+  label: string
+  ext: string
+  cues: number
+  bilingual: boolean
+  size: number
+}
+
+export interface SubIssue {
+  index: number
+  kind: 'reversed' | 'overlap' | 'empty' | 'too-long' | 'too-short' | 'too-fast'
+  message: string
+}
+
+export interface BurnStyle {
+  font: string
+  size: number
+  size2: number
+  color: string
+  color2: string
+  outline: number
+  shadow: number
+  boxed: boolean
+  bold: boolean
+  margin: number
+  position: 'bottom' | 'top'
+}
+
+export interface MuxOpts {
+  mode: 'soft' | 'hard'
+  tracks: string[]
+  style?: BurnStyle | null
+}
+
 export interface AiStatus {
   chatReady: boolean
   chatKey: boolean

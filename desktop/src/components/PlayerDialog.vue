@@ -4,6 +4,7 @@ import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
 import type { PlayerSource, PlayerTrack } from '../types'
 import { formatClock } from '../utils/time'
+import { viewLines, type View } from '../utils/subedit'
 import { FX_PRESETS, FX_REVERBS, usePlayerFx } from '../audio/playerFx'
 
 const app = useAppStore()
@@ -21,11 +22,35 @@ const fx = usePlayerFx(video)
 const open = computed(() => app.player !== null)
 const mediaUrl = computed(() => src.value?.url ?? '')
 const track = computed<PlayerTrack | null>(() => (src.value && trackIndex.value >= 0 ? src.value.tracks[trackIndex.value] : null))
-const subtitleText = computed(() => (currentCue.value >= 0 && track.value ? track.value.cues[currentCue.value].text : ''))
+// 字幕显示设置（记在本机）：双语显示方式、字号、延迟微调
+const SUB_KEY = 'clearclip.player.sub'
+function loadSub(): { view: View; size: number; delay: number } {
+  try {
+    return { view: 'both', size: 18, delay: 0, ...JSON.parse(localStorage.getItem(SUB_KEY) || '{}') }
+  } catch {
+    return { view: 'both', size: 18, delay: 0 }
+  }
+}
+const subView = ref<View>(loadSub().view)
+const subSize = ref(loadSub().size)
+const subDelay = ref(0)
+watch([subView, subSize], () => {
+  try {
+    localStorage.setItem(SUB_KEY, JSON.stringify({ view: subView.value, size: subSize.value }))
+  } catch {
+    /* 存不了就算了 */
+  }
+})
+const bilingualTrack = computed(() => {
+  const cs = track.value?.cues ?? []
+  return cs.length > 0 && cs.filter((c) => c.text.includes('\n')).length * 2 > cs.length
+})
+const subtitleText = computed(() => (currentCue.value >= 0 && track.value ? viewLines(track.value.cues[currentCue.value].text, subView.value) : ''))
 const currentCue = computed(() => {
   const t = track.value
   if (!t) return -1
-  const ms = now.value * 1000
+  // 延迟为正 = 字幕晚出现（等于把当前时间往回拨）
+  const ms = now.value * 1000 - subDelay.value * 1000
   return t.cues.findIndex((c) => ms >= c.startMs && ms < c.endMs)
 })
 
@@ -39,6 +64,7 @@ watch(
     trackIndex.value = -1
     now.value = 0
     speed.value = 1
+    subDelay.value = 0
     if (!p) return
     try {
       const s = p.taskId !== undefined ? await api.previewSource(p.taskId) : await api.playerSource(p.path)
@@ -144,6 +170,16 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
           <el-option :value="-1" label="不显示字幕" />
           <el-option v-for="(t, i) in src.tracks" :key="t.path" :value="i" :label="t.label" />
         </el-select>
+        <template v-if="track">
+          <el-select v-if="bilingualTrack" v-model="subView" size="small" class="sv" aria-label="双语显示">
+            <el-option value="both" label="双语" />
+            <el-option value="first" label="仅第一行" />
+            <el-option value="second" label="仅第二行" />
+            <el-option value="swap" label="上下互换" />
+          </el-select>
+          <el-input-number v-model="subSize" size="small" :min="12" :max="48" class="sz" aria-label="字幕字号" />
+          <el-input-number v-model="subDelay" size="small" :step="0.5" :precision="1" class="sz" aria-label="字幕延迟（秒）" title="字幕延迟（秒）：正数 = 晚出现" />
+        </template>
         <el-button size="small" @click="close">关闭</el-button>
       </div>
 
@@ -171,7 +207,7 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
             @error="onVideoError"
           >
           </video>
-          <div v-if="subtitleText" class="sub" :class="{ audio: src.kind === 'audio' }">{{ subtitleText }}</div>
+          <div v-if="subtitleText" class="sub" :class="{ audio: src.kind === 'audio' }" :style="{ fontSize: subSize + 'px' }">{{ subtitleText }}</div>
           <div v-if="failed" class="failed">
             <p>播放器打不开这个文件（常见于 mkv / flv / HEVC / 部分 ts，或系统缺少对应的解码器）。</p>
             <p v-if="failWhy" class="mono why">{{ failWhy }}</p>
@@ -272,6 +308,12 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
   white-space: pre-line;
   text-shadow: 0 0 3px #000, 0 1px 3px #000, 0 0 8px #000;
   pointer-events: none;
+}
+.sv {
+  width: 110px;
+}
+.sz {
+  width: 96px;
 }
 .sub.audio {
   position: static;

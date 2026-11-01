@@ -121,6 +121,8 @@ const tasks = computed(() => {
   })
 })
 
+const MEDIA_EXT = /\.(mp4|mkv|webm|mov|m4v|flv|ts|avi|mp3|m4a|aac|flac|wav|ogg|opus)$/i
+const isMedia = (p?: string | null) => !!p && MEDIA_EXT.test(p)
 const statusText: Record<TaskSnapshot['status'], string> = {
   queued: '等待',
   running: '下载中',
@@ -228,6 +230,7 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
           <el-button v-if="t.status === 'failed' || t.status === 'canceled'" link size="small" type="primary" @click="run(api.resumeTask, t.id)">重试</el-button>
           <el-button v-if="t.status === 'done'" link size="small" type="primary" @click="run(api.openFile, t.filePath)">打开</el-button>
           <el-button v-if="t.status === 'done'" link size="small" @click="run(api.revealFile, t.filePath)">文件夹</el-button>
+          <el-button v-if="t.status === 'done' && isMedia(t.filePath)" link size="small" @click="app.goToolbox([t.filePath], undefined, { tab: 'ai', aiMode: 'transcribe' })">生成字幕</el-button>
           <el-button link size="small" @click="detailId = t.id">详情</el-button>
           <el-button v-if="t.status === 'running' || t.status === 'paused' || t.status === 'queued'" link size="small" @click="run(api.cancelTask, t.id)">取消</el-button>
           <el-button v-else link size="small" @click="run(api.removeTask, t.id)">移除</el-button>
