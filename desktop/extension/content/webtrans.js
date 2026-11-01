@@ -545,7 +545,7 @@
   async function loadCfg() {
     try {
       const { transCfg } = await api.storage.local.get('transCfg')
-      S.cfg = T.normalizeCfg(transCfg)
+      S.cfg = T.effectiveCfg(T.normalizeCfg(transCfg), location.hostname)
     } catch {
       S.cfg = T.normalizeCfg()
     }
@@ -573,7 +573,7 @@
     api.storage.onChanged.addListener((ch, area) => {
       if (area !== 'local' || !ch.transCfg) return
       const was = S.cfg
-      S.cfg = T.normalizeCfg(ch.transCfg.newValue)
+      S.cfg = T.effectiveCfg(T.normalizeCfg(ch.transCfg.newValue), location.hostname)
       if (S.on && (was.mode !== S.cfg.mode || was.style !== S.cfg.style)) restyle()
       // 目标语言 / 引擎变了：已经翻好的作废，重新来
       if (S.on && (was.target !== S.cfg.target || was.engine !== S.cfg.engine)) {

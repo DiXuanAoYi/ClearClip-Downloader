@@ -196,6 +196,11 @@ fn language_helpers() {
     assert_eq!(lang_tag("English"), "en");
     assert_eq!(lang_tag("日本語"), "ja");
     assert_eq!(lang_tag("Klingon"), "ai");
+    for (name, tag) in
+        [("Português", "pt"), ("Bahasa Indonesia", "id"), ("Tiếng Việt", "vi"), ("日语", "ja"), ("Türkçe", "tr"), ("українська", "uk"), ("العربية", "ar")]
+    {
+        assert_eq!(lang_tag(name), tag, "{name}");
+    }
     assert_eq!(strip_lang_suffix("课程.en"), "课程");
     assert_eq!(strip_lang_suffix("课程.zh-Hant"), "课程");
     assert_eq!(strip_lang_suffix("课程"), "课程");

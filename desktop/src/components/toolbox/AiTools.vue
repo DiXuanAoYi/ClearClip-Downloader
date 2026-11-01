@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TARGET_LANGS } from '../../utils/langs'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
@@ -24,7 +25,6 @@ const wordTiming = ref(false)
 const targets = ref<string[]>([])
 const display = ref<'orig' | 'trans' | 'orig-top' | 'trans-top'>('orig-top')
 const formats = ref<string[]>([])
-const TARGET_LANGS = ['简体中文', '繁體中文', 'English', '日本語', '한국어', 'Français', 'Deutsch', 'Español', 'Русский']
 const FORMATS = [
   ['vtt', 'VTT'],
   ['ass', 'ASS'],
@@ -160,7 +160,7 @@ async function writeChapters() {
         <label v-if="targets.length" class="row"><span>反思翻译</span><el-switch v-model="reflect" active-text="译完再让 AI 对照原文检查润色（更准，请求量约翻倍）" /></label>
         <label class="row">
           <span>翻译成</span>
-          <el-select v-model="targets" multiple size="small" class="wide" placeholder="不翻译（可多选）" collapse-tags collapse-tags-tooltip>
+          <el-select v-model="targets" multiple filterable allow-create default-first-option size="small" class="wide" placeholder="不翻译（可多选，也可直接输入语言名）" collapse-tags collapse-tags-tooltip>
             <el-option v-for="l in TARGET_LANGS" :key="l" :value="l" :label="l" />
           </el-select>
         </label>

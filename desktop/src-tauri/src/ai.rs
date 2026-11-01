@@ -594,6 +594,28 @@ pub fn lang_tag(target: &str) -> &'static str {
         "zh-Hant"
     } else if has(&["中文", "汉语", "漢語", "chinese", "zh"]) {
         "zh"
+    } else if has(&["português", "portugues", "葡萄牙", "portuguese"]) {
+        "pt"
+    } else if has(&["italiano", "意大利", "italian"]) {
+        "it"
+    } else if has(&["العربية", "阿拉伯", "arabic"]) {
+        "ar"
+    } else if has(&["ไทย", "泰语", "thai"]) {
+        "th"
+    } else if has(&["tiếng việt", "越南", "vietnamese"]) {
+        "vi"
+    } else if has(&["indonesia", "印度尼西亚", "印尼", "bahasa"]) {
+        "id"
+    } else if has(&["türkçe", "土耳其", "turkish"]) {
+        "tr"
+    } else if has(&["polski", "波兰", "polish"]) {
+        "pl"
+    } else if has(&["nederlands", "荷兰", "dutch"]) {
+        "nl"
+    } else if has(&["українська", "乌克兰", "ukrainian"]) {
+        "uk"
+    } else if has(&["हिन्दी", "印地", "hindi"]) {
+        "hi"
     } else if has(&["english", "英语", "英文", "en"]) {
         "en"
     } else if has(&["日语", "日本語", "日文", "japanese", "ja"]) {

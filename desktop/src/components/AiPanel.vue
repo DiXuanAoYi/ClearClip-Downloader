@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TARGET_LANGS } from '../utils/langs'
 import { onMounted, ref } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
@@ -27,7 +28,7 @@ const STT_PRESETS = [
   { name: 'Groq', url: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3-turbo' },
   { name: '硅基流动', url: 'https://api.siliconflow.cn/v1', model: 'FunAudioLLM/SenseVoiceSmall' },
 ]
-const LANGS = ['简体中文', '繁體中文', 'English', '日本語', '한국어', 'Français', 'Deutsch', 'Español', 'Русский']
+const LANGS = TARGET_LANGS
 
 async function refresh() {
   status.value = await api.aiStatus().catch(() => null)

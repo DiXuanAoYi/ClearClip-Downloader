@@ -92,3 +92,20 @@ assert.ok('k49' in pruned && !('k0' in pruned), '丢最旧的')
 const small = { a: ['b', 1] }
 assert.equal(T.pruneCache(small), small, '没超限就原样返回')
 console.log('extension-trans: ok')
+
+// ---- 各网站单独设置
+{
+  const cfg = T.normalizeCfg({ target: 'zh-CN', mode: 'bilingual', sites: { 'GitHub.com': { target: 'ja', mode: 'replace' }, '*.docs.github.com': { target: 'fr' }, 'x.com': { mode: 'bad' }, '': { target: 'en' } } })
+  assert.deepEqual(Object.keys(cfg.sites).sort(), ['docs.github.com', 'github.com'])
+  assert.equal(T.effectiveCfg(cfg, 'github.com').target, 'ja')
+  assert.equal(T.effectiveCfg(cfg, 'gist.github.com').mode, 'replace')
+  // 最长匹配的域名赢；没写的字段沿用全局
+  const d = T.effectiveCfg(cfg, 'a.docs.github.com')
+  assert.equal(d.target, 'fr')
+  assert.equal(d.mode, 'bilingual')
+  assert.equal(T.effectiveCfg(cfg, 'example.com'), cfg)
+  const text = 'github.com ja replace\nnews.site.com - replace\n\nbad.com - nope'
+  const parsed = T.parseSites(text)
+  assert.deepEqual(JSON.parse(JSON.stringify(parsed)), { 'github.com': { target: 'ja', mode: 'replace' }, 'news.site.com': { mode: 'replace' } })
+  assert.equal(T.formatSites(parsed), 'github.com ja replace\nnews.site.com - replace')
+}

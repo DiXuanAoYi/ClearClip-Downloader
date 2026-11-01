@@ -540,6 +540,7 @@ async function loadTransCfg() {
   $('trSkip').checked = c.skipTarget
   $('trAuto').value = c.auto.join('\n')
   $('trNever').value = c.never.join('\n')
+  $('trSites').value = ccTrans.formatSites(c.sites)
 }
 
 $('trTarget').onchange = async () => (await saveTransCfg({ target: $('trTarget').value }), ($('trTarget2').value = $('trTarget').value))
@@ -559,6 +560,7 @@ $('saveTrans').onclick = async () => {
     skipTarget: $('trSkip').checked,
     auto: ccTrans.hostList($('trAuto').value),
     never: ccTrans.hostList($('trNever').value),
+    sites: ccTrans.parseSites($('trSites').value),
   })
   await loadTransCfg()
   msg('网页翻译设置已保存', 'ok')

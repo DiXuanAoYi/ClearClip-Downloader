@@ -212,12 +212,56 @@
     inputLang: 'en',
     auto: [], // 这些网站打开就自动翻译
     never: [], // 这些网站永远不翻译
+    sites: {}, // 各网站单独的设置：{ 域名: { target?, mode?, style? } }，覆盖上面的全局值
     lazy: true, // 只翻译看得见（和快要看见）的段落
     skipTarget: true, // 本来就是目标语言的段落 / 页面不翻译
     domain: true, // 翻译前先判断网页领域，按领域选词（只对“清影（大模型）”有效）
   }
 
   const hostList = (v) => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/)).map((x) => String(x || '').trim().toLowerCase().replace(/^\*?\.?/, '')).filter(Boolean))]
+
+  /** 各网站单独设置：只留认得出的字段；域名统一小写、去掉 `*.`。 */
+  function normalizeSites(raw) {
+    const out = {}
+    if (!raw || typeof raw !== 'object') return out
+    for (const [k, v] of Object.entries(raw)) {
+      const host = hostList([k])[0]
+      if (!host || !v || typeof v !== 'object') continue
+      const e = {}
+      if (typeof v.target === 'string' && v.target.trim()) e.target = v.target.trim()
+      if (MODES.includes(v.mode)) e.mode = v.mode
+      if (STYLES.includes(v.style)) e.style = v.style
+      if (Object.keys(e).length) out[host] = e
+    }
+    return out
+  }
+
+  /** 文本框 ↔ 对象。每行：`域名 语言代码 [bilingual|replace]`，如 `github.com ja replace`；语言写 `-` 表示沿用全局。 */
+  function parseSites(text) {
+    const o = {}
+    for (const line of String(text || '').split(/\n/)) {
+      const [host, lang, mode] = line.trim().split(/\s+/)
+      if (!host) continue
+      const e = {}
+      if (lang && lang !== '-') e.target = lang
+      if (MODES.includes(mode)) e.mode = mode
+      o[host] = e
+    }
+    return normalizeSites(o)
+  }
+  const formatSites = (sites) =>
+    Object.entries(sites || {})
+      .map(([h, e]) => [h, e.target || '-', e.mode].filter(Boolean).join(' '))
+      .join('\n')
+
+  /** 套用当前网站的单独设置（最长匹配的域名赢）；没有就原样返回。 */
+  function effectiveCfg(cfg, host) {
+    const h = String(host || '').toLowerCase()
+    const key = Object.keys(cfg.sites || {})
+      .filter((s) => h === s || h.endsWith('.' + s))
+      .sort((a, b) => b.length - a.length)[0]
+    return key ? { ...cfg, ...cfg.sites[key] } : cfg
+  }
 
   function normalizeCfg(raw) {
     const r = raw && typeof raw === 'object' ? raw : {}
@@ -233,6 +277,7 @@
       inputLang: lang(r.inputLang, DEFAULT_CFG.inputLang),
       auto: hostList(r.auto),
       never: hostList(r.never),
+      sites: normalizeSites(r.sites),
       lazy: r.lazy !== false,
       skipTarget: r.skipTarget !== false,
       domain: r.domain !== false,
@@ -296,7 +341,7 @@
 
   globalThis.ccTrans = {
     LANGS, NAMES, uiLang, label, byCode, promptName, nameOf, scriptCounts, inTarget, worthTranslating, pageInTarget, batchPlan,
-    DEFAULT_CFG, MODES, STYLES, ENGINES, HOVER_KEYS, normalizeCfg, hostList, shouldAuto, autoMatches, listed,
+    DEFAULT_CFG, MODES, STYLES, ENGINES, HOVER_KEYS, normalizeCfg, normalizeSites, parseSites, formatSites, effectiveCfg, hostList, shouldAuto, autoMatches, listed,
     googleUrl, parseGoogle, cacheKey, pruneCache,
   }
 })()
