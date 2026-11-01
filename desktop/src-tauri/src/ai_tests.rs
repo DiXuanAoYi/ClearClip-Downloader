@@ -55,7 +55,7 @@ async fn mock(handler: Handler) -> String {
 }
 
 fn ep(base: &str) -> Endpoint {
-    Endpoint { base: base.to_string(), key: Some("sk-test".into()), client: reqwest::Client::builder().no_proxy().build().unwrap(), retry_ms: 5 }
+    Endpoint { base: base.to_string(), key: Some("sk-test".into()), client: reqwest::Client::builder().no_proxy().build().unwrap(), retry_ms: 5, attempts: 3, cands: vec![], pool: None }
 }
 
 fn reply(content: &str) -> String {
@@ -351,4 +351,55 @@ fn existing_subtitles_decide_auto_translation() {
     assert!(!has_lang(&["sub-en".into(), "danmaku".into(), "auto-en".into()], "zh"));
     assert!(!has_lang(&["sub-zh".into()], "ai"), "unknown target language never counts as present");
     assert!(is_local_url("http://localhost:11434/v1") && is_local_url("http://127.0.0.1:8080") && !is_local_url("https://api.openai.com/v1"));
+}
+
+// ---------- 模型池 ----------
+
+fn cand_for(id: &str, base: &str, model: &str) -> Candidate {
+    Candidate { id: id.into(), name: id.into(), base: base.into(), key: Some("k".into()), model: model.into(), client: reqwest::Client::builder().no_proxy().build().unwrap() }
+}
+
+fn pooled(cands: Vec<Candidate>, pool: Arc<AiPool>) -> Endpoint {
+    Endpoint { base: cands[0].base.clone(), key: None, client: reqwest::Client::new(), retry_ms: 5, attempts: 1, cands, pool: Some(pool) }
+}
+
+#[tokio::test]
+async fn pool_fails_over_when_the_first_service_is_out_of_quota() {
+    let seen_models = Arc::new(Mutex::new(Vec::<String>::new()));
+    let a = mock(Arc::new(|_, _, _| (429, r#"{"error":{"message":"You exceeded your current quota"}}"#.into()))).await;
+    let sm = seen_models.clone();
+    let b = mock(Arc::new(move |_, body, _| {
+        let v: Value = serde_json::from_slice(body).unwrap();
+        sm.lock().unwrap().push(v["model"].as_str().unwrap().to_string());
+        (200, reply("OK-B"))
+    }))
+    .await;
+    let pool = Arc::new(AiPool::default());
+    let ep = pooled(vec![cand_for("a", &a, "model-a"), cand_for("b", &b, "model-b")], pool.clone());
+    let out = chat(&ep, "ignored", "s", "u").await.unwrap();
+    assert_eq!(out, "OK-B");
+    assert_eq!(*seen_models.lock().unwrap(), vec!["model-b"], "用的是第二家自己的模型，不是调用方传的");
+    let snap = pool.snapshot(crate::db::now());
+    assert!(snap["a"].cool_until > crate::db::now() + 3600, "额度用完 → 冷却到明天");
+    assert_eq!(snap["b"].ok, 1);
+}
+
+#[tokio::test]
+async fn pool_reports_every_service_when_all_fail_and_keeps_the_error_kind() {
+    let a = mock(Arc::new(|_, _, _| (401, r#"{"error":{"message":"bad key"}}"#.into()))).await;
+    let b = mock(Arc::new(|_, _, _| (500, "oops".into()))).await;
+    let pool = Arc::new(AiPool::default());
+    let ep = pooled(vec![cand_for("a", &a, "m"), cand_for("b", &b, "m")], pool.clone());
+    let err = chat(&ep, "", "s", "u").await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Network, "保留最后一个错误的分类");
+    assert!(err.message.contains("2 个服务都失败") && err.message.contains("a：") && err.message.contains("b："), "{}", err.message);
+    assert!(pool.snapshot(crate::db::now())["a"].bad_key);
+}
+
+#[tokio::test]
+async fn single_pool_service_keeps_its_own_error_message() {
+    let a = mock(Arc::new(|_, _, _| (404, r#"{"error":{"message":"no such model"}}"#.into()))).await;
+    let ep = pooled(vec![cand_for("a", &a, "m")], Arc::new(AiPool::default()));
+    let err = chat(&ep, "", "s", "u").await.unwrap_err();
+    assert!(err.message.contains("no such model") && !err.message.contains("个服务"), "{}", err.message);
 }

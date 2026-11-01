@@ -48,7 +48,7 @@ async fn mock(handler: Handler) -> String {
 }
 
 fn ep(base: &str) -> Endpoint {
-    Endpoint { base: base.to_string(), key: None, client: reqwest::Client::builder().no_proxy().build().unwrap(), retry_ms: 5 }
+    Endpoint { base: base.to_string(), key: None, client: reqwest::Client::builder().no_proxy().build().unwrap(), retry_ms: 5, attempts: 3, cands: vec![], pool: None }
 }
 
 fn req(kind: &str, n: usize) -> Req {

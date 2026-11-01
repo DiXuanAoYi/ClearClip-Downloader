@@ -549,9 +549,39 @@ impl Default for SiteRule {
 }
 
 /// AI 功能的设置。API 密钥不在这里，保存在加密的保险箱里（`ai.api_key`、`stt.api_key`）。
+/// 模型池里的一个服务（密钥单独保存在保险箱里，名字见 `ai_pool::key_name`）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PoolEntry {
+    /// 只含小写字母、数字、`-`、`_`
+    pub id: String,
+    /// 来自哪个预设（`ai_pool::PRESETS`），自定义为 `custom`
+    pub preset: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    pub enabled: bool,
+    /// 只用于这些任务（translate / summary / chat / edit）；空 = 全部
+    pub tasks: Vec<String>,
+    /// 数字越小越先用；相同时今天用得少的先用
+    pub priority: u32,
+    /// 每天最多请求多少次（0 = 不限），用来避开免费额度
+    pub daily_limit: u32,
+}
+
+impl Default for PoolEntry {
+    fn default() -> Self {
+        PoolEntry { id: String::new(), preset: "custom".into(), name: String::new(), base_url: String::new(), model: String::new(), enabled: true, tasks: vec![], priority: 10, daily_limit: 0 }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AiSettings {
+    /// 模型池：多个服务按任务自动选择、轮流使用。空时只用下面这一组“默认”设置。
+    pub pool: Vec<PoolEntry>,
+    /// 用 Supadata 取在线字幕（备用通道，密钥在保险箱 `ai.supadata`）
+    pub supadata_on: bool,
     /// 兼容 OpenAI 接口的地址（OpenAI、DeepSeek、通义、月之暗面、本机 Ollama 等），如 `https://api.openai.com/v1`
     pub base_url: String,
     pub model: String,
@@ -581,6 +611,8 @@ pub struct AiSettings {
 impl Default for AiSettings {
     fn default() -> Self {
         AiSettings {
+            pool: vec![],
+            supadata_on: false,
             base_url: "https://api.openai.com/v1".into(),
             model: "gpt-4o-mini".into(),
             target_lang: "简体中文".into(),
@@ -623,6 +655,36 @@ impl AiSettings {
         self.stt_language = self.stt_language.trim().to_ascii_lowercase();
         self.whisper_bin = self.whisper_bin.trim().to_string();
         self.whisper_model = self.whisper_model.trim().to_string();
+        self.normalize_pool();
+    }
+
+    fn normalize_pool(&mut self) {
+        let mut seen = std::collections::HashSet::new();
+        self.pool.truncate(24);
+        for e in &mut self.pool {
+            e.id = e.id.trim().to_ascii_lowercase().chars().filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_')).take(32).collect();
+            if e.id.is_empty() || !seen.insert(e.id.clone()) {
+                // 重复或空的 id 换一个新的
+                let mut n = seen.len() + 1;
+                loop {
+                    let id = format!("svc-{n}");
+                    if seen.insert(id.clone()) {
+                        e.id = id;
+                        break;
+                    }
+                    n += 1;
+                }
+            }
+            let u = e.base_url.trim().trim_end_matches('/');
+            e.base_url = if u.starts_with("http://") || u.starts_with("https://") { u.to_string() } else { String::new() };
+            e.model = e.model.trim().to_string();
+            e.name = e.name.trim().chars().filter(|c| !c.is_control()).take(40).collect();
+            e.preset = e.preset.trim().to_string();
+            e.tasks.retain(|t| matches!(t.as_str(), "translate" | "summary" | "chat" | "edit"));
+            e.tasks.dedup();
+            e.priority = e.priority.min(999);
+            e.daily_limit = e.daily_limit.min(1_000_000);
+        }
     }
 
     /// 语音转文字用的接口地址。

@@ -464,7 +464,7 @@ pub async fn edit_translate_lines(state: St<'_>, lines: Vec<String>, language: S
         return Err(AppError::invalid("一次最多翻译 2000 条字幕。"));
     }
     let settings = state.settings();
-    let ep = ai::chat_endpoint(&state, &settings)?;
+    let ep = ai::chat_endpoint_for(&state, &settings, crate::ai_pool::Task::Edit)?;
     let cues: Vec<crate::subtitle::Cue> = lines
         .iter()
         .enumerate()

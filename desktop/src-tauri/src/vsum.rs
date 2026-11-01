@@ -132,7 +132,12 @@ pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     }
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
-    let ep = ai::chat_endpoint(&st, &settings)?;
+    let task = match req.kind.as_str() {
+        "translate" | "punctuate" | "webtrans" | "domain" => crate::ai_pool::Task::Translate,
+        "summary" | "article" | "mindmap" | "cards" | "quotes" | "rewrite" => crate::ai_pool::Task::Summary,
+        _ => crate::ai_pool::Task::Chat,
+    };
+    let ep = ai::chat_endpoint_for(&st, &settings, task)?;
     let model = settings.ai.model.clone();
     let default_lang = settings.ai.target_lang.clone();
     let batch = settings.ai.batch_size;
@@ -178,7 +183,8 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
         return Ok(id);
     }
     // 先取在线字幕，取不到才转写，所以转写的条件（语音转文字、ffmpeg）等到真要转写时再检查
-    if !settings.use_ytdlp || crate::tools::resolve(&st, crate::tools::Tool::YtDlp).is_none() {
+    let supadata_ready = settings.ai.supadata_on && st.vault.has(crate::ai_pool::KEY_SUPADATA);
+    if !(supadata_ready && subs_only) && (!settings.use_ytdlp || crate::tools::resolve(&st, crate::tools::Tool::YtDlp).is_none()) {
         return Err(AppError::new(crate::error::ErrorKind::NeedUpdate, "取网页视频的字幕 / 音频需要 yt-dlp 组件。请在“设置 → 组件”中安装 yt-dlp 后重试。"));
     }
     let (id, cancel) = new_job();
@@ -229,6 +235,26 @@ async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str
     let result = async {
         let pctx = ctx.st.parse_ctx(&settings);
         let want_track = if subs_only && !track.is_empty() { Some(track) } else { None };
+        // 开了 Supadata：先问它（快，也不占 YouTube 的限流）；失败或没有字幕再走 yt-dlp
+        if !force_audio && want_track.is_none() && settings.ai.supadata_on {
+            if let Some(key) = ctx.st.vault.get(crate::ai_pool::KEY_SUPADATA).filter(|k| !k.is_empty()) {
+                ctx.note("正在通过 Supadata 取字幕…");
+                let client = ctx.st.net.clients_for(&settings.network, crate::supadata::API)?.download;
+                match crate::supadata::fetch(&client, crate::supadata::API, &key, url, lang, || ctx.canceled()).await {
+                    Ok(Some((code, cues))) => {
+                        let lines = cues_to_lines(&cues);
+                        if !lines.is_empty() {
+                            let duration = cues.iter().map(|c| c.end).max().unwrap_or(0);
+                            let label = if code.is_empty() { "Supadata 字幕".to_string() } else { format!("Supadata 字幕（{code}）") };
+                            return Ok(json!({"lines": lines, "durationMs": duration, "track": label, "source": "subtitles"}));
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) if e.message == "canceled" => return Err(e),
+                    Err(_) => {} // 额度用完 / 密钥问题：静默退回 yt-dlp，设置页的“测试”能看到原因
+                }
+            }
+        }
         let online = if force_audio {
             Ok(vec![])
         } else {

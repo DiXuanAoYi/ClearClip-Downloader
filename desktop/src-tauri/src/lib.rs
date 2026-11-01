@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod ai_cmds;
+pub mod ai_pool;
 pub mod api;
 pub mod audiofx;
 pub mod backup;
@@ -51,6 +52,7 @@ pub mod security;
 pub mod security_cmds;
 pub mod settings;
 pub mod subs;
+pub mod supadata;
 pub mod subtitle;
 pub mod subtitle_io;
 pub mod subtitle_tools;
@@ -109,6 +111,8 @@ pub struct AppState {
     pub live: live::LiveState,
     /// 媒体工具箱的后台任务
     pub media_jobs: media_tools::MediaJobs,
+    /// AI 模型池的运行状态（今日用量、冷却）
+    pub ai_pool: Arc<ai_pool::AiPool>,
     /// 加密保存的密钥（API 密钥、密码等）
     pub vault: vault::Vault,
     /// 应用锁状态
@@ -327,6 +331,7 @@ pub fn run() {
                 subs: subs::SubsState::default(),
                 live: live::LiveState::default(),
                 media_jobs: media_tools::MediaJobs::default(),
+                ai_pool: Arc::new(ai_pool::AiPool::default()),
                 vault,
                 lock: security::LockState::new(locked),
                 safebox: safebox::Safebox::new(data_dir.join("safebox")),
@@ -552,6 +557,10 @@ pub fn run() {
             ai_cmds::secret_has,
             ai_cmds::ai_status,
             ai_cmds::ai_test,
+            ai_cmds::ai_pool_status,
+            ai_cmds::ai_pool_presets,
+            ai_cmds::ai_pool_reset,
+            ai_cmds::ai_pool_test,
             ai_cmds::ai_translate,
             ai_cmds::ai_summarize,
             ai_cmds::ai_transcribe,

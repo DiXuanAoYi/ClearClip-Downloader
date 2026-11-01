@@ -9,6 +9,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::ai_pool::{self, AiPool, Task};
 use crate::error::{AppError, AppResult, ErrorKind};
 use crate::media_tools::JobCtx;
 use crate::model::Chapter;
@@ -28,6 +29,27 @@ pub struct Endpoint {
     pub client: reqwest::Client,
     /// 429 / 5xx / 网络错误时的重试间隔基数（毫秒）
     pub retry_ms: u64,
+    /// 单个服务内最多请求几次（模型池里有备选时只试 1 次，失败马上换下一家）
+    pub attempts: u32,
+    /// 模型池挑出的候选服务，按顺序尝试；空 = 只用上面的 base / key
+    pub cands: Vec<Candidate>,
+    pub pool: Option<Arc<AiPool>>,
+}
+
+/// 模型池里的一个可用服务（已解析好密钥和网络客户端）。
+pub struct Candidate {
+    pub id: String,
+    pub name: String,
+    pub base: String,
+    pub key: Option<String>,
+    pub model: String,
+    pub client: reqwest::Client,
+}
+
+impl Endpoint {
+    pub fn single(base: String, key: Option<String>, client: reqwest::Client, retry_ms: u64) -> Endpoint {
+        Endpoint { base, key, client, retry_ms, attempts: 3, cands: vec![], pool: None }
+    }
 }
 
 fn endpoint(st: &AppState, settings: &Settings, base: &str, key_name: &str) -> AppResult<Endpoint> {
@@ -35,14 +57,66 @@ fn endpoint(st: &AppState, settings: &Settings, base: &str, key_name: &str) -> A
         return Err(AppError::invalid("请先在“设置 → AI”里填写接口地址。"));
     }
     let client = st.net.clients_for(&settings.network, base)?.download;
-    Ok(Endpoint { base: base.to_string(), key: st.vault.get(key_name).filter(|k| !k.is_empty()), client, retry_ms: 2000 })
+    Ok(Endpoint::single(base.to_string(), st.vault.get(key_name).filter(|k| !k.is_empty()), client, 2000))
 }
 
+/// 对话类任务用的接口（问答、卡片、笔记等）。
 pub fn chat_endpoint(st: &AppState, settings: &Settings) -> AppResult<Endpoint> {
-    if settings.ai.model.is_empty() {
-        return Err(AppError::invalid("请先在“设置 → AI”里填写模型名称。"));
+    chat_endpoint_for(st, settings, Task::Chat)
+}
+
+/// 按任务类型从模型池里挑服务。池是空的就退回到“默认”那一组设置，行为和以前一样。
+pub fn chat_endpoint_for(st: &AppState, settings: &Settings, task: Task) -> AppResult<Endpoint> {
+    let ai = &settings.ai;
+    // 候选 = 池里的服务 + 原来的“默认”设置（排在最后）
+    struct Row {
+        id: String,
+        name: String,
+        base: String,
+        model: String,
+        key: Option<String>,
     }
-    endpoint(st, settings, &settings.ai.base_url, KEY_CHAT)
+    let mut rows: Vec<Row> = Vec::new();
+    let mut cands: Vec<ai_pool::Cand> = Vec::new();
+    for e in &ai.pool {
+        let key = st.vault.get(&ai_pool::key_name(&e.id)).filter(|k| !k.is_empty());
+        let usable = !e.base_url.is_empty() && !e.model.is_empty() && (key.is_some() || is_local_url(&e.base_url));
+        cands.push(ai_pool::from_entry(e, usable));
+        rows.push(Row { id: e.id.clone(), name: if e.name.is_empty() { e.id.clone() } else { e.name.clone() }, base: e.base_url.clone(), model: e.model.clone(), key });
+    }
+    if !ai.base_url.is_empty() && !ai.model.is_empty() {
+        let key = st.vault.get(KEY_CHAT).filter(|k| !k.is_empty());
+        let usable = key.is_some() || is_local_url(&ai.base_url);
+        cands.push(ai_pool::Cand { id: "default".into(), priority: 500, daily_limit: 0, tasks: vec![], usable });
+        rows.push(Row { id: "default".into(), name: "默认".into(), base: ai.base_url.clone(), model: ai.model.clone(), key });
+    }
+    if ai.pool.is_empty() {
+        // 没有用池：保持原来的行为和提示
+        if ai.model.is_empty() {
+            return Err(AppError::invalid("请先在“设置 → AI”里填写模型名称。"));
+        }
+        return endpoint(st, settings, &ai.base_url, KEY_CHAT);
+    }
+    let now = crate::db::now();
+    let rt = st.ai_pool.snapshot(now);
+    let order = ai_pool::rank(&cands, &rt, task, now);
+    if order.is_empty() {
+        let any_usable = cands.iter().any(|c| c.usable);
+        return Err(match (any_usable, ai_pool::earliest_ready(&cands, &rt, task, now)) {
+            (true, Some(t)) => AppError::new(ErrorKind::RateLimited, format!("模型池里的服务暂时都不可用（额度用完或在冷却），最早 {} 秒后恢复。", (t - now).max(1))),
+            (true, None) => AppError::invalid("模型池里没有适用于这个任务的服务，请在“设置 → AI → 模型池”里检查“适用任务”。"),
+            (false, _) => AppError::invalid("模型池里还没有可用的服务：请启用并填好 API 密钥。"),
+        });
+    }
+    let mut out = Vec::new();
+    for i in order {
+        let r = &rows[i];
+        let client = st.net.clients_for(&settings.network, &r.base)?.download;
+        out.push(Candidate { id: r.id.clone(), name: r.name.clone(), base: r.base.clone(), key: r.key.clone(), model: r.model.clone(), client });
+    }
+    let attempts = if out.len() == 1 { 3 } else { 1 };
+    let first = &out[0];
+    Ok(Endpoint { base: first.base.clone(), key: first.key.clone(), client: first.client.clone(), retry_ms: 2000, attempts, cands: out, pool: Some(st.ai_pool.clone()) })
 }
 
 pub fn stt_endpoint(st: &AppState, settings: &Settings) -> AppResult<Endpoint> {
@@ -69,7 +143,7 @@ fn api_error(status: u16, body: &str) -> AppError {
 pub(crate) async fn send(ep: &Endpoint, path: &str, content_type: &str, body: Vec<u8>, timeout: Duration) -> AppResult<String> {
     let url = format!("{}{path}", ep.base);
     let mut last: Option<AppError> = None;
-    for attempt in 0..3u32 {
+    for attempt in 0..ep.attempts.max(1) {
         if attempt > 0 {
             tokio::time::sleep(Duration::from_millis(ep.retry_ms * (1 << (attempt - 1)))).await;
         }
@@ -97,8 +171,61 @@ pub(crate) async fn send(ep: &Endpoint, path: &str, content_type: &str, body: Ve
     Err(last.unwrap_or_else(|| AppError::msg("请求失败")))
 }
 
-/// 一次对话，返回模型的回答文字。
+/// 只用池里指定的一个服务（测试按钮用）；`default` 表示原来的默认设置。
+pub fn entry_endpoint(st: &AppState, settings: &Settings, id: &str) -> AppResult<Endpoint> {
+    let ai = &settings.ai;
+    let (name, base, model, key) = if id == "default" {
+        ("默认".to_string(), ai.base_url.clone(), ai.model.clone(), st.vault.get(KEY_CHAT))
+    } else {
+        let e = ai.pool.iter().find(|e| e.id == id).ok_or_else(|| AppError::not_found("池里没有这个服务。"))?;
+        (if e.name.is_empty() { e.id.clone() } else { e.name.clone() }, e.base_url.clone(), e.model.clone(), st.vault.get(&ai_pool::key_name(&e.id)))
+    };
+    if base.is_empty() || model.is_empty() {
+        return Err(AppError::invalid("请先填写接口地址和模型名称。"));
+    }
+    let key = key.filter(|k| !k.is_empty());
+    if key.is_none() && !is_local_url(&base) {
+        return Err(AppError::invalid("请先填写 API 密钥。"));
+    }
+    let client = st.net.clients_for(&settings.network, &base)?.download;
+    let cand = Candidate { id: id.to_string(), name, base: base.clone(), key: key.clone(), model, client: client.clone() };
+    Ok(Endpoint { base, key, client, retry_ms: 1000, attempts: 1, cands: vec![cand], pool: Some(st.ai_pool.clone()) })
+}
+
+/// 一次对话，返回模型的回答文字。用了模型池时 `model` 被忽略，按候选服务各自的模型依次尝试。
 pub async fn chat(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppResult<String> {
+    if ep.cands.is_empty() {
+        return chat_one(ep, model, system, user).await;
+    }
+    let now = || crate::db::now();
+    let mut tried: Vec<String> = Vec::new();
+    let mut last: Option<AppError> = None;
+    for c in &ep.cands {
+        let one = Endpoint { base: c.base.clone(), key: c.key.clone(), client: c.client.clone(), retry_ms: ep.retry_ms, attempts: ep.attempts, cands: vec![], pool: None };
+        match chat_one(&one, &c.model, system, user).await {
+            Ok(t) => {
+                if let Some(p) = &ep.pool {
+                    p.record_ok(&c.id, now());
+                }
+                return Ok(t);
+            }
+            Err(e) => {
+                if let Some(p) = &ep.pool {
+                    p.record_fail(&c.id, &e, now());
+                }
+                tried.push(format!("{}：{}", c.name, e.message));
+                last = Some(e);
+            }
+        }
+    }
+    let last = last.unwrap_or_else(|| AppError::msg("没有可用的服务"));
+    if tried.len() == 1 {
+        return Err(last);
+    }
+    Err(AppError::new(last.kind, format!("模型池里的 {} 个服务都失败了：{}", tried.len(), tried.join("；"))))
+}
+
+async fn chat_one(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppResult<String> {
     let body = json!({
         "model": model,
         "temperature": 0.2,
@@ -749,7 +876,7 @@ fn register_subtitle(st: &AppState, source: &Path, sub: &Path, lang: &str) {
 
 pub async fn run_translate(ctx: &JobCtx, input: &Path) -> AppResult<PathBuf> {
     let settings = ctx.st.settings();
-    let ep = chat_endpoint(&ctx.st, &settings)?;
+    let ep = chat_endpoint_for(&ctx.st, &settings, Task::Translate)?;
     let cues = subtitle_tools::read(input)?;
     ctx.note(format!("正在翻译成{}…", settings.ai.target_lang));
     let progress = |done: usize, total: usize| -> AppResult<()> {
@@ -772,7 +899,7 @@ pub async fn run_translate(ctx: &JobCtx, input: &Path) -> AppResult<PathBuf> {
 
 pub async fn run_summarize(ctx: &JobCtx, input: &Path) -> AppResult<PathBuf> {
     let settings = ctx.st.settings();
-    let ep = chat_endpoint(&ctx.st, &settings)?;
+    let ep = chat_endpoint_for(&ctx.st, &settings, Task::Summary)?;
     let cues = subtitle_tools::read(input)?;
     ctx.note("正在总结…");
     let progress = |done: usize, total: usize| -> AppResult<()> {
