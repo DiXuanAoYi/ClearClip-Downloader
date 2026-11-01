@@ -88,7 +88,7 @@ async function start(list: string[], src: string, cut: boolean) {
   picked.value = new Set()
   ranges.value = {}
   filter.value = 'all'
-  showMore.value = false
+  showMore.value = list.length === 0
   more.value = ''
   opts.value = defaults()
   opts.value.folder = urls.value.length >= (app.settings?.batchFolderMin ?? 3)
@@ -98,7 +98,7 @@ async function start(list: string[], src: string, cut: boolean) {
     try {
       const r = await api.batchEnqueue(urls.value.map((u) => ({ url: u, title: '', media: null })), { ...opts.value, afterDone: 'notify' }, src)
       ElMessage.success(`已建立批次“${r.name}”，${r.pending} 条正在逐条解析并加入队列`)
-      app.view = 'queue'
+      app.view = 'batch'
     } catch (e) {
       ElMessage.error(errorText(e))
     } finally {
@@ -270,7 +270,7 @@ async function submit(paused: boolean) {
     if (r.alreadyDownloaded) parts.push(`${r.alreadyDownloaded} 条之前已下载`)
     if (r.alreadyQueued) parts.push(`${r.alreadyQueued} 条已在队列`)
     ElMessage.success(parts.join('，'))
-    app.view = 'queue'
+    app.view = 'batch'
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
