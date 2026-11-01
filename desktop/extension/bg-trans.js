@@ -116,16 +116,18 @@ async function trGoogle(texts, target) {
 // ---------- 网页领域（翻译前先判断一次，按页面记住）----------
 
 const trDomains = new Map() // 页面键 -> Promise<{domain, note}|null>
+const trDomainFail = new Map() // 页面键 -> 失败时间；几分钟内不再重试，免得每一批都空等
 const trDomainKey = (p) => `${p.host}|${String(p.title || '').slice(0, 80)}`
 
 /** 看页面标题和一小段文字，让大模型判断领域并给出选词说明；失败返回 null（翻译照常进行）。 */
 function pageDomain(page) {
   if (!page || !page.host || !String(page.sample || '').trim()) return Promise.resolve(null)
   const key = trDomainKey(page)
+  if (Date.now() - (trDomainFail.get(key) || 0) < 5 * 60_000) return Promise.resolve(null)
   if (!trDomains.has(key)) {
     const job = (async () => {
       const sub = await call('/api/v1/ai/run', { kind: 'domain', title: String(page.title || '').slice(0, 200), url: `https://${page.host}`, text: String(page.sample).slice(0, 1500) })
-      const deadline = Date.now() + 60_000
+      const deadline = Date.now() + 20_000
       for (;;) {
         await sleep(400)
         const j = await call(`/api/v1/ai/job?id=${encodeURIComponent(String(sub.id))}`)
@@ -134,12 +136,17 @@ function pageDomain(page) {
           const note = String(j.result?.note || '').trim()
           return domain || note ? { domain, note } : null
         }
-        if (j.state === 'failed' || j.state === 'cancelled' || Date.now() > deadline) return null
+        if (j.state === 'error' || j.state === 'failed' || j.state === 'cancelled' || Date.now() > deadline) return null
       }
     })().catch(() => null)
     trDomains.set(key, job)
     if (trDomains.size > 50) trDomains.delete(trDomains.keys().next().value)
-    job.then((v) => v || trDomains.delete(key))
+    job.then((v) => {
+      if (v) return
+      trDomains.delete(key)
+      trDomainFail.set(key, Date.now())
+      if (trDomainFail.size > 50) trDomainFail.delete(trDomainFail.keys().next().value)
+    })
   }
   return trDomains.get(key)
 }
