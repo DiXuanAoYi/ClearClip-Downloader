@@ -78,6 +78,27 @@
 
   // ---------- 哔哩哔哩 ----------
 
+  /**
+   * B 站字幕文件在另一个域名（hdslb.com）上，带 Cookie 的跨域请求会被浏览器拦成 “Failed to fetch”，
+   * 而字幕地址本身已带签名，不需要 Cookie。所以先不带 Cookie 取；不行再带；最后交给后台代取。
+   */
+  async function getSubtitleFile(url) {
+    const u = String(url).replace(/^\/\//, 'https://').replace(/^http:/, 'https:')
+    let lastErr
+    for (const credentials of ['omit', 'include']) {
+      try {
+        const t = (await getText(u, { credentials })).trim()
+        if (t) return JSON.parse(t)
+        lastErr = new Error('服务器返回了空内容')
+      } catch (e) {
+        lastErr = e
+      }
+    }
+    const r = await globalThis.ccUI?.send?.({ type: 'cc-fetch-sub', url: u })
+    if (r?.ok && String(r.text || '').trim()) return JSON.parse(r.text)
+    throw lastErr || new Error(r?.error || '取不到字幕')
+  }
+
   async function loadBilibili(vid, wanted) {
     const out = base('bilibili')
     const info = (await getJson(`https://api.bilibili.com/x/web-interface/view?bvid=${vid.id}`)).data
@@ -105,7 +126,7 @@
     out.track = pick.name
     out.trackUrl = pick.url
     try {
-      out.lines = V.normalizeLines(V.parseBilibili(await getJson(pick.url)))
+      out.lines = V.normalizeLines(V.parseBilibili(await getSubtitleFile(pick.url)))
     } catch (e) {
       out.note = `这条字幕读不出来（${e.message}）`
       out.fetchFailed = true

@@ -362,6 +362,31 @@ pub fn patch(app: &AppHandle, id: i64, p: Patch<'_>) {
 pub async fn process(app: &AppHandle, id: i64) {
     let Ok(Some(item)) = st(app).db.inbox_get(id) else { return };
     patch(app, id, Patch { status: Some("resolving"), message: Some(None), error_kind: Some(None), ..Default::default() });
+    // 一条记录里有多条链接（手机一次发来几条）：整批加入队列
+    let urls = crate::batch::extract(&item.text);
+    if urls.len() >= 2 {
+        let source = if item.source == "clipboard" {
+            "剪贴板"
+        } else if item.device_name.is_empty() {
+            "收件箱"
+        } else {
+            item.device_name.as_str()
+        };
+        match crate::batch::enqueue_quick(app, urls, source) {
+            Ok(r) => patch(
+                app,
+                id,
+                Patch {
+                    status: Some("queued"),
+                    title: Some(r.name.clone()),
+                    message: Some(Some(format!("已建立批次“{}”，共 {} 条，在下载队列里查看", r.name, r.queued + r.pending))),
+                    ..Default::default()
+                },
+            ),
+            Err(e) => patch(app, id, Patch { status: Some("failed"), message: Some(Some(e.message.clone())), ..Default::default() }),
+        }
+        return;
+    }
     match clipboard::resolve_and_enqueue_full(app, &item.text).await {
         Ok(r) if r.playlist.is_some() => patch(
             app,

@@ -169,7 +169,10 @@ pub fn classify_stderr(stderr: &str) -> AppError {
     } else {
         ErrorKind::Other
     };
-    let msg = if msg.is_empty() { "yt-dlp 解析失败".to_string() } else { format!("yt-dlp：{msg}") };
+    let mut msg = if msg.is_empty() { "yt-dlp 解析失败".to_string() } else { format!("yt-dlp：{msg}") };
+    if lower.contains("not a bot") {
+        msg.push_str("\n这是 YouTube 的“确认不是机器人”检查：请先在浏览器里登录 YouTube，再用清影扩展同步该网站的 Cookie（扩展“工具”→ 同步 Cookie），然后重试；换网络/关掉代理也可能有帮助。");
+    }
     AppError::new(kind, msg)
 }
 
@@ -817,8 +820,8 @@ fn rate_limited_error(left: Option<Duration>) -> AppError {
     AppError::new(ErrorKind::RateLimited, format!("YouTube 暂时限制了字幕请求（HTTP 429 Too Many Requests）。{tail}；也可以在浏览器里登录 YouTube 后让扩展同步 Cookie，或改用“音频转写”。已取到过的字幕不受影响。"))
 }
 
-const SUB_LANGS: &str = ".*-orig,zh-Hans,zh-Hant,zh-CN,zh-TW,zh,en,en-US,en-GB,ja,ko,-live_chat,-danmaku";
-const SUB_LANGS_MIN: &str = ".*-orig,zh-Hans,zh,en,-live_chat,-danmaku";
+const SUB_LANGS: &str = ".*-orig,ai-.*,zh-Hans,zh-Hant,zh-CN,zh-TW,zh,en,en-US,en-GB,ja,ko,-live_chat,-danmaku";
+const SUB_LANGS_MIN: &str = ".*-orig,ai-.*,zh-Hans,zh,en,-live_chat,-danmaku";
 
 fn is_rate_limited(text: &str) -> bool {
     let t = text.to_ascii_lowercase();
@@ -1200,6 +1203,8 @@ mod rate_limit_tests {
         assert!(!is_rate_limited("HTTP Error 404"));
         assert!(!SUB_LANGS.contains("all"));
         assert!(SUB_LANGS.contains(".*-orig") && SUB_LANGS_MIN.contains(".*-orig"));
+        // B 站的 AI 字幕语言码是 ai-zh、ai-en 这类
+        assert!(SUB_LANGS.contains("ai-.*") && SUB_LANGS_MIN.contains("ai-.*"));
     }
 }
 

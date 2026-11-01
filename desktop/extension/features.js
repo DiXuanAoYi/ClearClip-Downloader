@@ -12,6 +12,7 @@ const FEATURES = [
   { id: 'speedMemory', group: 'video', name: '记住每个网站的倍速', desc: '新视频沿用上次的倍速', tag: '同上', def: true },
   { id: 'seek', group: 'video', name: '快进快退 ±10 秒', desc: '', tag: '同上', def: true },
   { id: 'videoTools', group: 'video', name: '截图、画中画、A–B 循环、逐帧', desc: '', tag: '同上', def: false },
+  { id: 'audioFx', group: 'video', name: '实时音效：响度标准化 / 混响 / 均衡器', desc: '播放时统一不同视频的音量（默认开，-16 LUFS）；混响和均衡器默认关。跨域直链和受版权保护的视频会跳过并提示', tag: '常驻', def: true },
   { id: 'videoAdvanced', group: 'video', name: '跳过片头、音量增益、画面调整', desc: '音量增益遇到跨域视频可能没有声音，会自动撤销', tag: '同上', def: false },
   { id: 'loginAsk', group: 'link', name: '“需要登录”时询问是否同步 Cookie', desc: '确认后自动重试失败的任务', tag: '无页面注入', def: true },
   { id: 'progress', group: 'link', name: '图标角标 + 下载标签 + 完成通知', desc: '', tag: '无页面注入', def: true },
@@ -33,6 +34,7 @@ function normalizeFeatures(raw) {
 const RESIDENT_SCRIPTS = [
   { id: 'cc-float', js: ['content/ui.js', 'content/float-button.js'], need: (f) => f.floatButton },
   { id: 'cc-zoom', js: ['content/ui.js', 'content/original.js', 'content/hover-zoom.js'], need: (f) => f.hoverZoom },
+  { id: 'cc-audio', js: ['content/ui.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'], need: (f) => f.audioFx },
   { id: 'cc-video', js: ['content/ui.js', 'content/video-logic.js', 'content/video-control.js'], need: (f) => f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced },
   // 解除限制：只在用户开启过的网站里注册（unlockAll 才是所有网站），在页面自己的环境（MAIN）里尽早运行
   // 网页翻译：只在用户设为“自动翻译”的网站里常驻；其他网站点了才注入

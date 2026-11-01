@@ -85,6 +85,46 @@ async function sendBatch(items, tab) {
   return { sent, failed, pairing, error }
 }
 
+/** 收集页面里看起来是视频页面的链接（去重，最多 500 条）。函数会被注入到页面里执行，必须自成一体。 */
+function pageVideoLinks() {
+  const PATTERNS = [
+    /youtube\.com\/(watch\?|shorts\/|live\/)/i, /youtu\.be\//i, /bilibili\.com\/(video\/|bangumi\/play\/|medialist\/)/i, /b23\.tv\//i,
+    /douyin\.com\/(video|note)\//i, /v\.douyin\.com\//i, /tiktok\.com\/@[^/]+\/video\//i, /ixigua\.com\/\d+/i, /kuaishou\.com\/(short-video|f)\//i,
+    /xiaohongshu\.com\/(explore|discovery\/item)\//i, /weibo\.(com|cn)\/(tv|\d+)\//i, /vimeo\.com\/\d+/i, /twitter\.com\/[^/]+\/status\//i, /x\.com\/[^/]+\/status\//i,
+    /\.(mp4|m3u8|webm|mkv|mov|flv)(\?|$)/i, /\/(video|videos|watch|play|v)\/[\w-]{4,}/i,
+  ]
+  const seen = new Set()
+  const out = []
+  for (const a of document.querySelectorAll('a[href]')) {
+    let u
+    try {
+      u = new URL(a.href, location.href)
+    } catch {
+      continue
+    }
+    if (!/^https?:$/.test(u.protocol) || !PATTERNS.some((r) => r.test(u.href))) continue
+    u.hash = ''
+    const k = u.href
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(k)
+    if (out.length >= 500) break
+  }
+  return out
+}
+
+/** 本页所有视频链接：收集后交给清影，在电脑上打开批量添加面板。 */
+async function sendPageVideoLinks(tab) {
+  if (!isWebPage(tab)) throw new Error('当前页面不能使用这个功能')
+  const [res] = await api.scripting.executeScript({ target: { tabId: tab.id }, func: pageVideoLinks })
+  const urls = (res && res.result) || []
+  if (!urls.length) throw new Error('这个页面上没有找到视频链接')
+  const c = await getConfig()
+  const r = await call('/api/send', { text: urls.join('\n'), device: c.device, name: browserName(), batch: true })
+  if (r.state === 'pending_pair') throw new Error('第一次使用：请在电脑上点“允许”完成配对，然后再试一次')
+  return { count: r.count || urls.length }
+}
+
 /** 打开页面媒体总览：收集页面里的媒体，放进会话存储，再打开总览页。 */
 async function openOverview(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用总览')
@@ -132,7 +172,10 @@ const HANDLERS = {
     const list = arrangeSniffed(await getSniffed(sender.tab.id)).filter((x) => x.kind !== 'image')
     return { items: list.map((x) => ({ url: x.url, kind: x.kind, label: sniffLabel(x) })) }
   },
-  'cc-send-page': async (_m, sender) => ({ pairing: await sendText(await tidyUrl(sender.tab.url)) }),
+  'cc-send-page': async (_m, sender) => {
+    await firstTimeSync(sender.tab.url)
+    return { pairing: await sendText(await tidyUrl(sender.tab.url)) }
+  },
   'cc-send-media': async (m, sender) => ({ pairing: await sendText(sniffedPayload({ url: String(m.url) }, sender.tab.url, sender.tab.title)) }),
   'cc-send-batch': async (m, sender) => {
     const r = await sendBatch(Array.isArray(m.items) ? m.items : [], sender.tab)
@@ -145,11 +188,14 @@ const HANDLERS = {
     if (m.action === 'overview') await openOverview(tab)
     else if (m.action === 'picker') await startPicker(tab)
     else if (m.action === 'vsum') await startVsum(tab)
+    else if (m.action === 'batch-links') return await sendPageVideoLinks(tab)
     else if (m.action === 'webtrans') await webTransDo(tab, String(m.mode || 'toggle'))
     else throw new Error('未知操作')
     return {}
   },
   'cc-send-items': async (m) => ({ ...(await sendBatch(Array.isArray(m.items) ? m.items : [], { url: m.page || '', title: m.title || '' })) }),
+  // 视频上的音效面板点“更多音效设置”：在新标签页打开弹窗的音效页
+  'cc-open-audio': async () => (await api.tabs.create({ url: api.runtime.getURL('popup.html#audio') }), {}),
   'cc-engines': async () => ({ engines: await getEngines() }),
   'cc-save': async (m) => {
     if (!/^https?:/i.test(String(m.url))) throw new Error('这张图片不能保存')
@@ -175,6 +221,24 @@ const HANDLERS = {
   },
   // 视频摘要：面板把请求交给清影（本机），由清影调用设置里的大模型；长任务提交后轮询
   'cc-ai-status': async () => ({ ...(await call('/api/v1/ai/status')) }),
+  // 页面里直接取字幕文件被跨域规则拦住时，由后台代取（只允许 B 站的字幕域名，只读，不带 Cookie）
+  'cc-fetch-sub': async (m) => {
+    const u = new URL(String(m.url || '').replace(/^\/\//, 'https://').replace(/^http:/, 'https:'))
+    if (!/(^|\.)(hdslb\.com|bilibili\.com|biliapi\.net)$/.test(u.hostname)) throw new Error('不支持的地址')
+    const r = await fetch(u.href, { credentials: 'omit' })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return { text: await r.text() }
+  },
+  // 清影界面语言：问一次清影并记下来；清影没开就用上次记下的
+  'cc-app-lang': async () => {
+    try {
+      const r = await call('/api/ping')
+      if (r.lang) await api.storage.local.set({ appLang: r.lang })
+    } catch {
+      // 清影没开：用上次的
+    }
+    return { lang: (await api.storage.local.get('appLang')).appLang || '' }
+  },
   'cc-ai-run': async (m) => ({ ...(await call('/api/v1/ai/run', m.req && typeof m.req === 'object' ? m.req : {})) }),
   'cc-ai-job': async (m) => ({ ...(await call(`/api/v1/ai/job?id=${encodeURIComponent(String(m.id))}`)) }),
   'cc-ai-cancel': async (m) => ({ ...(await call(`/api/v1/ai/cancel?id=${encodeURIComponent(String(m.id))}`, {})) }),
@@ -184,7 +248,9 @@ const HANDLERS = {
     const texts = (Array.isArray(m.texts) ? m.texts : []).map((t) => String(t)).slice(0, 60)
     if (!texts.length) return { texts: [], cached: 0 }
     const engine = ccTrans.ENGINES.includes(m.engine) ? m.engine : cfg.engine
-    return translateTexts(texts, { target: String(m.target || cfg.target), engine })
+    const p = m.page && typeof m.page === 'object' ? m.page : null
+    const page = p ? { host: String(p.host || '').slice(0, 100), title: String(p.title || ''), sample: String(p.sample || '') } : null
+    return translateTexts(texts, { target: String(m.target || cfg.target), engine, page, domain: cfg.domain })
   },
   'cc-tr-clear': async () => (await clearTransCache(), {}),
   // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）

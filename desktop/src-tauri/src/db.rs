@@ -161,6 +161,11 @@ impl Db {
                 created_at INTEGER NOT NULL,
                 finished_at INTEGER
              );
+             CREATE TABLE IF NOT EXISTS batches (
+                id TEXT PRIMARY KEY,
+                json TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+             );
              CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at);
              CREATE INDEX IF NOT EXISTS idx_downloads_finished ON downloads(finished_at);",
         )?;
@@ -547,6 +552,26 @@ impl Db {
 
     pub fn update_job_asset(&self, id: i64, asset_json: &str) -> AppResult<()> {
         self.conn().execute("UPDATE jobs SET asset_json=?2 WHERE id=?1", params![id, asset_json])?;
+        Ok(())
+    }
+
+    pub fn save_batch(&self, id: &str, json: &str, created_at: i64) -> AppResult<()> {
+        self.conn().execute(
+            "INSERT INTO batches (id, json, created_at) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET json=excluded.json",
+            params![id, json, created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_batches(&self) -> AppResult<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT json FROM batches ORDER BY created_at, id")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delete_batch(&self, id: &str) -> AppResult<()> {
+        self.conn().execute("DELETE FROM batches WHERE id=?1", params![id])?;
         Ok(())
     }
 

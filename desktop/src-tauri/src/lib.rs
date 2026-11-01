@@ -3,6 +3,7 @@ pub mod ai_cmds;
 pub mod api;
 pub mod audiofx;
 pub mod backup;
+pub mod batch;
 pub mod bt;
 pub mod checksum;
 pub mod cli;
@@ -102,6 +103,8 @@ pub struct AppState {
     pub phone: phone::PhoneState,
     /// 全部下载完成后的动作：none / sleep / shutdown（不保存，每次启动为 none）
     pub after_all_done: Mutex<String>,
+    /// 批量下载的批次
+    pub batches: batch::BatchStore,
     pub subs: subs::SubsState,
     pub live: live::LiveState,
     /// 媒体工具箱的后台任务
@@ -320,6 +323,7 @@ pub fn run() {
                 data_dir: data_dir.clone(),
                 phone: phone::PhoneState::default(),
                 after_all_done: Mutex::new("none".into()),
+                batches: batch::BatchStore::default(),
                 subs: subs::SubsState::default(),
                 live: live::LiveState::default(),
                 media_jobs: media_tools::MediaJobs::default(),
@@ -337,6 +341,7 @@ pub fn run() {
             let _ = std::fs::create_dir_all(&previews);
             let _ = app.asset_protocol_scope().allow_directory(&previews, false);
             download::restore(&handle);
+            batch::restore(&handle);
             if let Ok(n) = app.state::<Arc<AppState>>().db.inbox_prune(settings.inbox.keep_days, settings.inbox.max_items) {
                 if n > 0 {
                     log::info!("pruned {n} old inbox items");
@@ -466,6 +471,17 @@ pub fn run() {
             commands::move_task,
             commands::schedule_task,
             commands::get_after_all_done,
+            commands::batch_extract,
+            commands::batch_read_file,
+            commands::batch_preview,
+            commands::batch_preview_cancel,
+            commands::batch_enqueue,
+            commands::batch_list,
+            commands::batch_action,
+            commands::batch_update,
+            commands::batch_export_failed,
+            commands::batch_save_text,
+            commands::batch_quick,
             commands::set_after_all_done,
             commands::read_links_file,
             commands::is_portable,

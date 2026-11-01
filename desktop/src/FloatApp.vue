@@ -47,6 +47,12 @@ async function addText(raw: string) {
       say('没有找到链接', true)
       return
     }
+    if (links.length >= 2) {
+      // 多条链接：整批加入队列（按批次间隔逐条解析，队列里按批次显示）
+      const r = await api.batchQuick(links.slice(0, 500), '悬浮窗')
+      say(`已建立批次：${r.queued + r.pending} 条`)
+      return
+    }
     let ok = 0
     let last = ''
     for (const url of links.slice(0, 20)) {

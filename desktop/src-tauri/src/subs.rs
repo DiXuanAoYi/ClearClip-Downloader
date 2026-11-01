@@ -654,6 +654,7 @@ async fn download_entries(app: &AppHandle, sub: &Subscription, entries: Vec<SubE
                 origin: Some("subscription".into()),
                 sub_item: Some((sub.id, e.id.clone())),
                 tried: vec![],
+                ..Default::default()
             };
             download::enqueue_ext(app, info, &ids, post, extra)
         }

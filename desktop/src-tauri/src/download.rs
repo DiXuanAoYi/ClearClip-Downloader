@@ -109,6 +109,9 @@ pub struct JobSpec {
     /// 已经试过的视频格式（自动降级时避免重复）
     #[serde(default)]
     pub tried: Vec<String>,
+    /// 所属批次（批量添加的任务）
+    #[serde(default)]
+    pub batch: Option<crate::batch::BatchTag>,
 }
 
 impl JobSpec {
@@ -158,6 +161,9 @@ pub struct TaskSnapshot {
     pub start_at: Option<i64>,
     pub created_at: i64,
     pub finished_at: Option<i64>,
+    /// 所属批次 ID 和在批次里的序号（从 1 开始）
+    pub batch_id: Option<String>,
+    pub batch_seq: Option<u32>,
 }
 
 struct Entry {
@@ -282,6 +288,7 @@ fn parse_spec(json: &str) -> Option<JobSpec> {
             priority: 0,
             start_at: None,
             origin: None,
+            batch: None,
             sub_item: None,
             tried: vec![],
         })
@@ -382,6 +389,8 @@ fn snapshot_for(id: i64, media: &MediaInfo, spec: &JobSpec, path: &str, status: 
         start_at: spec.start_at,
         created_at,
         finished_at: None,
+        batch_id: spec.batch.as_ref().map(|b| b.id.clone()),
+        batch_seq: spec.batch.as_ref().map(|b| b.seq),
     }
 }
 
@@ -398,7 +407,7 @@ pub fn build_specs(media: &MediaInfo, asset_ids: &[String]) -> Vec<JobSpec> {
                     inputs.push(audio.clone());
                 }
             }
-            JobSpec { inputs, post: PostOptions::default(), priority: 0, start_at: None, origin: None, sub_item: None, tried: vec![] }
+            JobSpec { inputs, post: PostOptions::default(), priority: 0, start_at: None, origin: None, sub_item: None, tried: vec![], batch: None }
         })
         .collect()
 }
@@ -424,6 +433,10 @@ pub struct EnqueueExtra {
     pub sub_item: Option<(i64, String)>,
     /// 已经试过的视频格式（自动降级时使用）
     pub tried: Vec<String>,
+    /// 所属批次
+    pub batch: Option<crate::batch::BatchTag>,
+    /// 文件名模板里 `{index}` 的内容（批次序号，补零）
+    pub seq_label: Option<String>,
 }
 
 /// 这个任务适用的后处理选项：字幕转换、内嵌、裁剪、章节只对相应类型的资源有意义。
@@ -485,7 +498,11 @@ pub fn enqueue_ext(app: &AppHandle, media: MediaInfo, asset_ids: &[String], post
     let root = extra.dir.clone().unwrap_or_else(|| settings.download_root());
     let mut dir = if extra.dir.is_some() { root } else { naming::target_dir(&root, &media, settings.subfolder_by_platform) };
     // 文件名主体按任务单独生成（模板里的 {quality} 随各个资源的清晰度变化）；剧集命名可能带子文件夹
-    let (series_dirs, _) = naming::plan_base(extra.template.as_deref(), &settings.series_template, &settings.filename_template, &media, "");
+    let seq = extra.seq_label.clone().unwrap_or_default();
+    let tpl_extra = extra.template.as_deref().map(|t| t.replace("{index}", &seq));
+    let tpl_series = settings.series_template.replace("{index}", &seq);
+    let tpl_file = settings.filename_template.replace("{index}", &seq);
+    let (series_dirs, _) = naming::plan_base(tpl_extra.as_deref(), &tpl_series, &tpl_file, &media, "");
     dir.extend(series_dirs);
     let media_json = serde_json::to_string(&*media)?;
 
@@ -497,6 +514,7 @@ pub fn enqueue_ext(app: &AppHandle, media: MediaInfo, asset_ids: &[String], post
             spec.origin = extra.origin.clone();
             spec.sub_item = extra.sub_item.clone();
             spec.tried = extra.tried.clone();
+            spec.batch = extra.batch.clone();
             let primary = spec.primary().clone();
             let in_queue = list.iter().any(|e| {
                 e.snap.platform == media.platform
@@ -522,13 +540,7 @@ pub fn enqueue_ext(app: &AppHandle, media: MediaInfo, asset_ids: &[String], post
             if let Some(fmt) = &spec.post.extract_audio {
                 out_asset.ext = fmt.clone();
             }
-            let (_, base) = naming::plan_base(
-                extra.template.as_deref(),
-                &settings.series_template,
-                &settings.filename_template,
-                &media,
-                primary.quality.as_deref().unwrap_or(""),
-            );
+            let (_, base) = naming::plan_base(tpl_extra.as_deref(), &tpl_series, &tpl_file, &media, primary.quality.as_deref().unwrap_or(""));
             let wanted = naming::fit_path(&dir, &base, &out_asset, MAX_PATH_LEN);
             let path = match settings.conflict_policy {
                 ConflictPolicy::Skip if wanted.exists() => {
@@ -599,9 +611,12 @@ pub fn schedule(app: &AppHandle) {
     let st = state(app);
     let settings = st.settings();
     let mut to_start = Vec::new();
+    let mut wake: Option<Duration> = None;
     {
         let mut list = st.downloads.lock();
         let mut running: Vec<String> = list.iter().filter(|e| e.snap.status == TaskStatus::Running).map(|e| e.snap.platform.clone()).collect();
+        let mut running_batches: Vec<String> =
+            list.iter().filter(|e| e.snap.status == TaskStatus::Running).filter_map(|e| e.spec.batch.as_ref().map(|b| b.id.clone())).collect();
         let now = db::now();
         // 按优先级（大的先）和加入顺序
         let mut order: Vec<usize> = (0..list.len()).collect();
@@ -617,6 +632,20 @@ pub fn schedule(app: &AppHandle) {
             if running.iter().filter(|p| **p == platform).count() >= site_limit(&st, &settings, &platform) {
                 continue;
             }
+            let tag = list[i].spec.batch.clone();
+            if let Some(tag) = &tag {
+                let in_batch = running_batches.iter().filter(|b| **b == tag.id).count();
+                match st.batches.gate(&tag.id, &platform, in_batch, &settings) {
+                    crate::batch::Gate::Go => {}
+                    crate::batch::Gate::Wait(d) => {
+                        wake = Some(wake.map_or(d, |w: Duration| w.min(d)));
+                        continue;
+                    }
+                    crate::batch::Gate::Block => continue,
+                }
+                st.batches.note_start(&tag.id, &platform, &settings);
+                running_batches.push(tag.id.clone());
+            }
             let e = &mut list[i];
             e.snap.status = TaskStatus::Running;
             e.snap.error = None;
@@ -631,6 +660,10 @@ pub fn schedule(app: &AppHandle) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move { run_task(app, id).await });
     }
+    if let Some(d) = wake {
+        crate::batch::wake_later(app, d);
+    }
+    crate::batch::check_done(app);
     crate::power::keep_awake(settings.prevent_sleep && st.downloads.has_active_running());
     emit_all(app);
 }
@@ -643,6 +676,7 @@ pub fn spawn_timer(app: &AppHandle) {
             tokio::time::sleep(Duration::from_secs(20)).await;
             let st = state(&app);
             let now = db::now();
+            crate::batch::window_tick(&app);
             let due = st.downloads.lock().iter().any(|e| e.snap.status == TaskStatus::Queued && e.spec.start_at.is_some_and(|t| t <= now));
             if due {
                 schedule(&app);
@@ -761,6 +795,7 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
         speed_limit_kbps: settings.speed_limit_kbps,
         disk_reserve: settings.disk_reserve_mb * 1024 * 1024,
         net: Some(st.net.clone()),
+        batch_limit: spec.batch.as_ref().and_then(|b| st.batches.limiter_for(&b.id, &settings)),
     };
     let start_len: u64 = (0..count).map(|i| input_received(&parts[i], &meta.inputs[i])).sum();
     if start_len > 0 {
@@ -1173,6 +1208,7 @@ async fn download_input(
                         speed_limit_kbps: settings.speed_limit_kbps,
                         disk_reserve: opts.disk_reserve,
                         net: opts.net.clone(),
+                        batch_limit: opts.batch_limit.clone(),
                     };
                     hls_engine::download(&client, &req, part, rx, &hopts, |received, total| reporter.update(received, total, None, None)).await.map(|r| {
                         *fmp4 = r.fmp4;
@@ -1244,9 +1280,16 @@ async fn download_input(
                     let ctx = st.parse_ctx(settings);
                     let format_id = asset.format_id.clone().unwrap_or_else(|| "best".into());
                     let page = if media.source_url.is_empty() { asset.url.clone() } else { media.source_url.clone() };
-                    providers::ytdlp::download(&ctx, &page, &format_id, &asset.ext, part, rx, st.net.effective_limit(settings.speed_limit_kbps), |p| {
-                        reporter.update(p.downloaded, p.total, p.speed, None)
-                    })
+                    providers::ytdlp::download(
+                        &ctx,
+                        &page,
+                        &format_id,
+                        &asset.ext,
+                        part,
+                        rx,
+                        st.batches.task_limit(spec.batch.as_ref(), settings, st.net.effective_limit(settings.speed_limit_kbps)),
+                        |p| reporter.update(p.downloaded, p.total, p.speed, None),
+                    )
                     .await
                     .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
                 }
@@ -1746,6 +1789,12 @@ fn on_all_done(app: &AppHandle, st: &AppState, settings: &Settings, last_file: O
     if action == "none" {
         return;
     }
+    start_power_countdown(app, &action);
+}
+
+/// 睡眠 / 关机前倒计时 60 秒（界面里可以取消）：倒计时结束时队列仍然空闲才执行。
+pub(crate) fn start_power_countdown(app: &AppHandle, action: &str) {
+    let action = action.to_string();
     let _ = app.emit(EVT_POWER_COUNTDOWN, serde_json::json!({ "action": action, "seconds": 60 }));
     crate::tray::show_main(app);
     let app = app.clone();
@@ -2074,6 +2123,16 @@ fn human_bytes(n: u64) -> String {
     } else {
         format!("{:.0} KB", (n as f64 / 1024.0).max(1.0))
     }
+}
+
+/// 批次里的任务的来源信息（标题、原始链接、状态、错误），导出失败清单和批次详情用。
+pub fn batch_sources(st: &AppState, batch_id: &str) -> Vec<(String, String, TaskStatus, Option<String>)> {
+    st.downloads
+        .lock()
+        .iter()
+        .filter(|e| e.spec.batch.as_ref().is_some_and(|b| b.id == batch_id))
+        .map(|e| (e.snap.title.clone(), e.media.source_url.clone(), e.snap.status, e.snap.error.clone()))
+        .collect()
 }
 
 #[cfg(test)]

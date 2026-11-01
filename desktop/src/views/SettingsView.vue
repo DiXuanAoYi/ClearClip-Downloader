@@ -231,6 +231,41 @@ function insertVar(v: string) {
           </section>
 
           <section class="group card">
+            <h3>批量下载</h3>
+            <div class="kv">
+              <span>批量添加时先预览<small class="mute block">先解析每条链接，标出重复、已下载过、需要登录的，再确定要下载哪些；关闭后直接按默认选项整批加入</small></span>
+              <el-switch v-model="form.batchPreview" />
+            </div>
+            <div class="kv">
+              <span>几条起默认放进批次文件夹<small class="mute block">用批次名当文件夹名</small></span>
+              <el-input-number v-model="form.batchFolderMin" :min="1" :max="500" size="small" />
+            </div>
+            <div class="kv">
+              <span>同一网站相邻两条的随机间隔（秒）<small class="mute block">避免连续请求被网站限制</small></span>
+              <span style="display:flex;gap:6px;align-items:center">
+                <el-input-number v-model="form.batchJitterMin" :min="0" :max="form.batchJitterMax" size="small" />
+                <span class="mute small">—</span>
+                <el-input-number v-model="form.batchJitterMax" :min="form.batchJitterMin" :max="120" size="small" />
+              </span>
+            </div>
+            <div class="kv">
+              <span>启用“只在设定时段下载”<small class="mute block">批量添加时勾选“只在设定时段下载”的批次，时段外暂停（限速填 0）或按下面的限速继续</small></span>
+              <el-switch v-model="form.runWindowOn" />
+            </div>
+            <div v-if="form.runWindowOn" class="win">
+              <el-checkbox-group v-model="form.runWindow.days" size="small">
+                <el-checkbox-button v-for="(d, k) in DAYS" :key="k" :value="k + 1">{{ d }}</el-checkbox-button>
+              </el-checkbox-group>
+              <el-time-select v-model="form.runWindow.start" size="small" class="tsel" start="00:00" end="23:30" step="00:30" :clearable="false" />
+              <span class="mute small">到</span>
+              <el-time-select v-model="form.runWindow.end" size="small" class="tsel" start="00:00" end="23:30" step="00:30" :clearable="false" />
+              <span class="mute small">时段外限速</span>
+              <el-input-number v-model="form.runWindow.limitKbps" :min="0" :max="1048576" :step="256" size="small" class="lim" />
+              <span class="mute small">KB/s（0 = 暂停）</span>
+            </div>
+          </section>
+
+          <section class="group card">
             <h3>限速计划与省流量</h3>
             <div class="col">
               <span>限速计划<small class="mute block">在指定时段改用另一个限速，没命中任何时段时使用上面的全局限速；多个时段重叠时取最先匹配的</small></span>

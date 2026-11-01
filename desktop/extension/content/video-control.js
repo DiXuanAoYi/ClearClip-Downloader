@@ -246,6 +246,17 @@
   }
 
   function setGain(el, pct) {
+    // 装了“实时音效”的话共用它那条处理链（一个元素只能接一次 Web Audio）
+    const E = globalThis.ccAudioEngine
+    if (E) {
+      if (pct > 100 && L.audioGraphUnsafe(el.currentSrc || el.src, location.origin, el.crossOrigin)) {
+        flash(el, '这个视频来自其他网站，放大音量会让它没有声音，已取消')
+        return false
+      }
+      const ok = E.setBoost(el, pct)
+      if (ok === false) flash(el, '这个视频不能放大音量')
+      return ok
+    }
     const s = S(el)
     if (!s.gain) {
       if (pct <= 100) return
@@ -523,7 +534,7 @@
         return i
       }
       kids.push(row('跳过片头（秒）', num(cfg.skipIntro), h('span', { text: '0 = 不跳' })), row('跳过片尾（秒）', num(cfg.skipOutro)))
-      const g = h('input', { type: 'range', min: '100', max: '400', step: '10', value: String(Math.round((s.gain?.gain.gain.value || 1) * 100)) })
+      const g = h('input', { type: 'range', min: '100', max: '400', step: '10', value: String(Math.round((globalThis.ccAudioEngine ? globalThis.ccAudioEngine.getBoost(el) : s.gain?.gain.gain.value || 1) * 100)) })
       const gl = h('span', { style: 'flex:0 0 40px', text: `${g.value}%` })
       g.addEventListener('input', () => {
         if (setGain(el, Number(g.value)) === false) g.value = '100'

@@ -43,6 +43,27 @@
     { code: 'la', name: 'Latina', en: 'Latin', g: 'la' },
   ]
 
+  /** 语言名称的界面语言版本（英文用上面的 en 字段）。 */
+  const NAMES = {
+    zh: { 'zh-CN': '简体中文', 'zh-TW': '繁体中文', 'en': '英语', 'ja': '日语', 'ko': '韩语', 'fr': '法语', 'de': '德语', 'es': '西班牙语', 'pt': '葡萄牙语', 'it': '意大利语', 'ru': '俄语', 'uk': '乌克兰语', 'pl': '波兰语', 'nl': '荷兰语', 'sv': '瑞典语', 'da': '丹麦语', 'fi': '芬兰语', 'no': '挪威语', 'cs': '捷克语', 'hu': '匈牙利语', 'ro': '罗马尼亚语', 'el': '希腊语', 'tr': '土耳其语', 'ar': '阿拉伯语', 'he': '希伯来语', 'fa': '波斯语', 'hi': '印地语', 'bn': '孟加拉语', 'ta': '泰米尔语', 'th': '泰语', 'vi': '越南语', 'id': '印度尼西亚语', 'ms': '马来语', 'tl': '菲律宾语', 'sw': '斯瓦希里语', 'la': '拉丁语' },
+    ja: { 'zh-CN': '中国語（簡体字）', 'zh-TW': '中国語（繁体字）', 'en': '英語', 'ja': '日本語', 'ko': '韓国語', 'fr': 'フランス語', 'de': 'ドイツ語', 'es': 'スペイン語', 'pt': 'ポルトガル語', 'it': 'イタリア語', 'ru': 'ロシア語', 'uk': 'ウクライナ語', 'pl': 'ポーランド語', 'nl': 'オランダ語', 'sv': 'スウェーデン語', 'da': 'デンマーク語', 'fi': 'フィンランド語', 'no': 'ノルウェー語', 'cs': 'チェコ語', 'hu': 'ハンガリー語', 'ro': 'ルーマニア語', 'el': 'ギリシャ語', 'tr': 'トルコ語', 'ar': 'アラビア語', 'he': 'ヘブライ語', 'fa': 'ペルシア語', 'hi': 'ヒンディー語', 'bn': 'ベンガル語', 'ta': 'タミル語', 'th': 'タイ語', 'vi': 'ベトナム語', 'id': 'インドネシア語', 'ms': 'マレー語', 'tl': 'フィリピン語', 'sw': 'スワヒリ語', 'la': 'ラテン語' },
+  }
+  /** 界面语言：清影主程序的语言（zh / en / ja），认不出来就看浏览器语言。 */
+  function uiLang(v) {
+    const s = String(v || '').toLowerCase()
+    if (s === 'zh' || s === 'en' || s === 'ja') return s
+    const n = String((globalThis.navigator && navigator.language) || '').toLowerCase()
+    return n.startsWith('zh') ? 'zh' : n.startsWith('ja') ? 'ja' : 'en'
+  }
+  /** 下拉框里的一项：左边是界面语言写的名字，右边是这种语言自己的写法，如 “日语 · 日本語” / “Japanese · 日本語”；两边一样就只写一个。 */
+  function label(code, ui) {
+    const l = LANGS.find((x) => x.code === code)
+    if (!l) return String(code || '')
+    const u = uiLang(ui)
+    const left = u === 'en' ? l.en : NAMES[u]?.[l.code] || l.en
+    return left === l.name ? left : `${left} · ${l.name}`
+  }
+
   const byCode = (code) => LANGS.find((l) => l.code === code) || null
   /** 写进提示词的语言名：认识的代码 / 名称换成英文名，其他（用户自己填的）原样用。 */
   function promptName(v) {
@@ -176,14 +197,14 @@
   // ---------- 设置 ----------
 
   const MODES = ['bilingual', 'replace']
-  const STYLES = ['dim', 'underline', 'highlight', 'plain']
+  const STYLES = ['card', 'dim', 'underline', 'highlight', 'plain']
   const ENGINES = ['clearclip', 'google']
   const HOVER_KEYS = ['off', 'Control', 'Alt', 'Shift']
 
   const DEFAULT_CFG = {
     target: 'zh-CN', // 网页翻译的目标语言
     mode: 'bilingual', // bilingual 双语对照 / replace 只显示译文
-    style: 'dim', // 译文样式
+    style: 'card', // 译文样式（card 淡蓝底色 + 左侧竖线）
     engine: 'clearclip', // clearclip 用清影里设置的大模型 / google 免费的谷歌翻译（页面文字会发给谷歌）
     hover: 'Control', // 单击一下这个键，翻译鼠标指着的段落；off 关闭
     select: true, // 选中文字后出现“译”按钮
@@ -193,6 +214,7 @@
     never: [], // 这些网站永远不翻译
     lazy: true, // 只翻译看得见（和快要看见）的段落
     skipTarget: true, // 本来就是目标语言的段落 / 页面不翻译
+    domain: true, // 翻译前先判断网页领域，按领域选词（只对“清影（大模型）”有效）
   }
 
   const hostList = (v) => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/)).map((x) => String(x || '').trim().toLowerCase().replace(/^\*?\.?/, '')).filter(Boolean))]
@@ -213,6 +235,7 @@
       never: hostList(r.never),
       lazy: r.lazy !== false,
       skipTarget: r.skipTarget !== false,
+      domain: r.domain !== false,
     }
   }
 
@@ -272,7 +295,7 @@
   }
 
   globalThis.ccTrans = {
-    LANGS, byCode, promptName, nameOf, scriptCounts, inTarget, worthTranslating, pageInTarget, batchPlan,
+    LANGS, NAMES, uiLang, label, byCode, promptName, nameOf, scriptCounts, inTarget, worthTranslating, pageInTarget, batchPlan,
     DEFAULT_CFG, MODES, STYLES, ENGINES, HOVER_KEYS, normalizeCfg, hostList, shouldAuto, autoMatches, listed,
     googleUrl, parseGoogle, cacheKey, pruneCache,
   }

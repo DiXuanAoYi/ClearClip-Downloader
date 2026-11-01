@@ -16,12 +16,14 @@ function show(screen) {
 let currentTabName = 'discover'
 
 function showTab(name) {
+  if (currentTabName === 'audio' && name !== 'audio') globalThis.ccAudioPopup?.close()
   currentTabName = name
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === name)
   for (const v of document.querySelectorAll('.view')) v.classList.toggle('hidden', v.id !== `v-${name}`)
   if (name === 'downloads') startTaskPolling()
   else stopTaskPolling()
   if (name === 'tools') renderTools()
+  if (name === 'audio') globalThis.ccAudioPopup?.open()
   if (name === 'later' && typeof renderLater === 'function') renderLater()
 }
 
@@ -496,12 +498,13 @@ async function loadSettings() {
 
 // ---------- 网页翻译 ----------
 
+let appLang = ''
 function fillLangs(sel, value) {
   sel.innerHTML = ''
   for (const l of ccTrans.LANGS) {
     const o = document.createElement('option')
     o.value = l.code
-    o.textContent = `${l.name}${l.name === l.en ? '' : ` · ${l.en}`}`
+    o.textContent = ccTrans.label(l.code, appLang)
     sel.append(o)
   }
   sel.value = value
@@ -515,6 +518,15 @@ async function saveTransCfg(patch) {
 async function loadTransCfg() {
   const { transCfg } = await api.storage.local.get('transCfg')
   const c = ccTrans.normalizeCfg(transCfg)
+  appLang = (await api.storage.local.get('appLang')).appLang || ''
+  // 问一下清影现在的界面语言；变了就把下拉框重新排一遍
+  api.runtime.sendMessage({ type: 'cc-app-lang' }).then((r) => {
+    if (r?.ok && r.lang && r.lang !== appLang) {
+      appLang = r.lang
+      for (const id of ['trTarget', 'trTarget2']) fillLangs($(id), $(id).value)
+      fillLangs($('trInputLang'), $('trInputLang').value)
+    }
+  }).catch(() => {})
   for (const id of ['trTarget', 'trTarget2']) fillLangs($(id), c.target)
   fillLangs($('trInputLang'), c.inputLang)
   $('trMode').value = c.mode
@@ -524,6 +536,7 @@ async function loadTransCfg() {
   $('trSelect').checked = c.select
   $('trInput').checked = c.input
   $('trLazy').checked = c.lazy
+  $('trDomain').checked = c.domain
   $('trSkip').checked = c.skipTarget
   $('trAuto').value = c.auto.join('\n')
   $('trNever').value = c.never.join('\n')
@@ -542,6 +555,7 @@ $('saveTrans').onclick = async () => {
     select: $('trSelect').checked,
     input: $('trInput').checked,
     lazy: $('trLazy').checked,
+    domain: $('trDomain').checked,
     skipTarget: $('trSkip').checked,
     auto: ccTrans.hostList($('trAuto').value),
     never: ccTrans.hostList($('trNever').value),
@@ -750,12 +764,13 @@ async function init() {
   await loadSettings()
   refreshLaterBadge()
   show(location.hash === '#settings' || !c.port || !c.token ? 'settings' : 'main')
+  if (location.hash === '#audio') showTab('audio')
   renderSniffed()
   renderTakeover()
   refreshConn()
 }
 
-for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => showTab(b.dataset.tab)
+for (const b of document.querySelectorAll('#tabs button[data-tab]')) b.onclick = () => showTab(b.dataset.tab)
 
 $('dlToggleAll').onclick = async () => {
   try {
@@ -800,6 +815,13 @@ async function runOnPage(action) {
 }
 $('openOverview').onclick = () => runOnPage('overview')
 $('startPick').onclick = () => runOnPage('picker')
+$('batchLinks').onclick = async () => {
+  const tab = await currentTab()
+  if (!tab?.url?.startsWith('http')) return msg('当前页面不能使用这个功能', 'err')
+  const r = await api.runtime.sendMessage({ type: 'cc-run', action: 'batch-links', tabId: tab.id }).catch((e) => ({ ok: false, error: e.message }))
+  if (!r?.ok) return msg(r?.error || '没有完成', 'err')
+  msg(`已把 ${r.count} 条链接发到清影，请在电脑上选择要下载的`, 'ok')
+}
 $('startVsum').onclick = () => runOnPage('vsum')
 $('openSettings').onclick = () => show('settings')
 $('saveRules').onclick = saveRules
@@ -843,8 +865,9 @@ $('send').onclick = async () => {
   if (!tab?.url?.startsWith('http')) return msg('当前页面不能发送', 'err')
   msg('发送中…')
   try {
+    const synced = await firstTimeSync(tab.url)
     const r = await sendUrl(await tidyUrl(tab.url))
-    msg(r.state === 'pending_pair' ? '第一次使用：请在电脑上点“允许”完成配对' : '已发送，清影会开始解析下载', 'ok')
+    msg(r.state === 'pending_pair' ? '第一次使用：请在电脑上点“允许”完成配对' : (synced ? `已发送，并首次同步了 ${synced.count} 个 Cookie（${synced.site}）` : '已发送，清影会开始解析下载'), 'ok')
   } catch (e) {
     msg(e.message, 'err')
   }

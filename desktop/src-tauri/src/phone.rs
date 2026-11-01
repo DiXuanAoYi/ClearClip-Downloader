@@ -532,6 +532,9 @@ struct SendBody {
     /// 明确要存成文字便签（浏览器里摘录的文字，里面可能有链接，但不是要下载的）
     #[serde(default)]
     note: bool,
+    /// 浏览器里“本页所有视频链接”：电脑上打开批量添加面板，让人确认后再下载
+    #[serde(default)]
+    batch: bool,
 }
 
 fn clean_device(id: &str) -> String {
@@ -610,12 +613,29 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                     name: String::new(),
                     reveal: false,
                     note: false,
+                    batch: false,
                 })
             });
             let Ok(body) = body else { return };
             let device = clean_device(if body.device.is_empty() { req.headers.get("x-device").map(String::as_str).unwrap_or("") } else { &body.device });
             let device = if device.is_empty() { format!("ip-{}", peer.ip()) } else { device };
             let name: String = if body.name.trim().is_empty() { "手机".to_string() } else { body.name.trim().chars().take(40).collect() };
+            if body.batch {
+                let urls = crate::batch::extract(&body.text);
+                if urls.is_empty() {
+                    json(sock, "400 Bad Request", serde_json::json!({"error": "没有找到链接"})).await;
+                } else if !ensure_paired(&app, &device, &name, &peer) {
+                    json(sock, "403 Forbidden", serde_json::json!({"state": "pending_pair", "error": "请先在电脑上点“允许”完成配对"})).await;
+                } else {
+                    let truncated = urls.len() > crate::batch::MAX_LINKS;
+                    let urls: Vec<String> = urls.into_iter().take(crate::batch::MAX_LINKS).collect();
+                    let n = urls.len();
+                    tray::show_main(&app);
+                    let _ = app.emit(crate::batch::EVT_OPEN, serde_json::json!({"urls": urls, "source": format!("{name}（浏览器）"), "truncated": truncated}));
+                    json(sock, "200 OK", serde_json::json!({"state": "batch", "count": n})).await;
+                }
+                return;
+            }
             let text: String = body.text.trim().chars().take(4000).collect();
             if body.note || providers::extract_urls(&text).is_empty() {
                 // 没有链接（或明确是摘录）：作为文字便签保存在电脑的“收到的文件”里（需要先配对）
@@ -648,7 +668,9 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
         }
         ("GET", "/api/ping") => {
             let version = app.package_info().version.to_string();
-            json(sock, "200 OK", serde_json::json!({"app": "ClearClip", "version": version})).await;
+            // lang：清影界面语言（zh / en / ja），扩展用它决定语言下拉框的显示语言
+            let lang = state.settings().language;
+            json(sock, "200 OK", serde_json::json!({"app": "ClearClip", "version": version, "lang": lang})).await;
         }
         // 手机网页打开时调用：登记配对请求，返回是否已配对和上传上限
         ("GET", "/api/hello") => {

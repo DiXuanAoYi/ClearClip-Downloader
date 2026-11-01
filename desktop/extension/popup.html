@@ -17,7 +17,9 @@
       <button role="tab" data-tab="discover" class="on">发现</button>
       <button role="tab" data-tab="downloads">下载 <span id="dlBadge" class="num hidden"></span></button>
       <button role="tab" data-tab="later" id="tabLater" class="hidden">稍后看 <span id="laterBadge" class="num gray hidden"></span></button>
+      <button role="tab" data-tab="audio">音效</button>
       <button role="tab" data-tab="tools">工具</button>
+      <button role="tab" id="openSettings">设置</button>
     </nav>
 
     <section id="v-discover" class="view">
@@ -36,6 +38,7 @@
       <div id="pageTools" class="rowBtns">
         <button id="openOverview" class="sec">页面媒体总览</button>
         <button id="startPick" class="sec">批量选取</button>
+        <button id="batchLinks" class="sec" title="收集本页所有视频链接，在清影里打开批量添加面板">本页所有视频链接 → 批量下载</button>
       </div>
       <div id="vsumTools" class="rowBtns">
         <button id="startVsum" class="sec">视频摘要 / 总结（Alt+Shift+S）</button>
@@ -70,6 +73,35 @@
       <div id="laterEmpty" class="mute hidden">还没有待看的页面。同一链接会自动去重。</div>
     </section>
 
+    <section id="v-audio" class="view hidden">
+      <label class="row spread"><span><b>响度标准化</b><br /><span class="mute">统一不同视频的音量，默认开启</span></span><input id="auOn" type="checkbox" /></label>
+      <div id="auState" class="card"></div>
+      <div id="auMeter" class="card">
+        <div class="meterRow"><span class="mute">输入</span><div class="meterBar"><i id="auIn"></i></div><b id="auInV" class="mono"></b></div>
+        <div class="meterRow"><span class="mute">输出</span><div class="meterBar tg"><i id="auOut"></i><u id="auTg"></u></div><b id="auOutV" class="mono"></b></div>
+        <div class="meterRow"><span class="mute">增益</span><div class="meterBar"><i id="auGain"></i></div><b id="auGainV" class="mono"></b></div>
+        <div class="mute">单位 LUFS（短时响度）；竖线是目标响度。</div>
+      </div>
+      <label>预设</label>
+      <div id="auPresets" class="chips"></div>
+      <div id="auPresetNote" class="mute"></div>
+      <div id="auCustom">
+        <label>目标响度：<b id="auTargetV"></b></label><input id="auTarget" type="range" min="-30" max="-8" step="1" />
+        <label>压缩强度：<b id="auCompV"></b></label><input id="auComp" type="range" min="0" max="100" step="5" />
+        <label>最大增益：<b id="auMaxV"></b></label><input id="auMax" type="range" min="0" max="24" step="1" />
+        <label>响应速度</label>
+        <select id="auSpeed"><option value="slow">慢（3 秒）</option><option value="mid">中（1.5 秒）</option><option value="fast">快（0.6 秒）</option></select>
+        <label class="row"><input id="auLimiter" type="checkbox" /> 限幅器（拉高音量后防止爆音，峰值上限约 -1.5 dB）</label>
+      </div>
+      <label>混响（默认关）</label>
+      <div class="rowBtns"><select id="auRev"></select></div>
+      <label>混响混合：<b id="auMixV"></b></label><input id="auMix" type="range" min="-30" max="0" step="1" />
+      <label>均衡器（默认关）</label>
+      <select id="auEq"></select>
+      <div class="row spread" style="margin-top:12px"><span class="mute">对 <b id="auSite"></b> 启用</span><a id="auSiteOff" class="lnk" href="#">本站关闭</a></div>
+      <div class="row spread" style="margin-top:6px"><span class="mute" id="auTmpInfo"></span><a id="auTmp" class="lnk" href="#">临时关闭本页</a></div>
+    </section>
+
     <section id="v-tools" class="view hidden">
       <label>链接</label>
       <div class="card">
@@ -101,7 +133,6 @@
           <button id="clipText" class="sec">摘录选中文字</button>
         </div>
       </div>
-      <button id="openSettings" class="sec">设置</button>
     </section>
   </div>
 
@@ -147,7 +178,7 @@
     <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option></select>
     <div class="rowBtns">
       <div class="col"><label>目标语言</label><select id="trTarget2"></select></div>
-      <div class="col"><label>译文样式</label><select id="trStyle"><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>
+      <div class="col"><label>译文样式</label><select id="trStyle"><option value="card">底色块（醒目）</option><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>
     </div>
     <div class="rowBtns">
       <div class="col"><label>悬停翻译（单击此键）</label><select id="trHover"><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="off">关闭</option></select></div>
@@ -155,6 +186,7 @@
     </div>
     <label class="row"><input id="trSelect" type="checkbox" /> 选中文字后显示“译”按钮</label>
     <label class="row"><input id="trInput" type="checkbox" /> 输入框里连按三次空格，翻译成上面的语言</label>
+    <label class="row"><input id="trDomain" type="checkbox" /> 翻译前先判断网页领域，按领域选词（更准，多一次模型调用；只对“清影（大模型）”有效）</label>
     <label class="row"><input id="trLazy" type="checkbox" /> 只翻译看得见（和快要看见）的段落</label>
     <label class="row"><input id="trSkip" type="checkbox" /> 本来就是目标语言的段落 / 页面不翻译</label>
     <label>打开就自动翻译的网站（每行一个，含子域名）</label>
@@ -217,6 +249,8 @@
   <script src="later.js"></script>
   <script src="capture-plan.js"></script>
   <script src="content/video-logic.js"></script>
+  <script src="content/audio-logic.js"></script>
+  <script src="popup-audio.js"></script>
   <script src="vendor/qrcode.js"></script>
   <script src="qr.js"></script>
   <script src="popup.js"></script>

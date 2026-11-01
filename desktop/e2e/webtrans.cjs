@@ -104,6 +104,7 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     ok('只请求看得见的：很远的段落先不翻', !asked.some((t) => t.includes('far below the fold')))
     ok('分批发送（请求数少于段落数）', (await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-tr').length)) < asked.length, String(asked.length))
     ok('请求带目标语言', await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-tr').target === 'zh-CN'))
+    ok('请求带页面信息（供判断领域）', await page.evaluate(() => { const c = window.__calls.find((x) => x.type === 'cc-tr'); return !!c.page && c.page.host.length > 0 && c.page.sample.includes('quick') && c.page.title === 'News' }))
 
     // 滚到下面才翻
     await page.evaluate(() => document.getElementById('far').scrollIntoView())

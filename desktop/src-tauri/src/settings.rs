@@ -219,6 +219,16 @@ pub struct Settings {
     pub speed_limit_kbps: u64,
     /// 每个网站同时下载的任务数
     pub per_site_concurrency: usize,
+    /// 批量添加时先打开预览面板（关闭后直接按默认选项加入队列）
+    pub batch_preview: bool,
+    /// 一批链接达到这个数量时，默认放进以批次名命名的文件夹
+    pub batch_folder_min: usize,
+    /// 批量下载时同一网站相邻两条开始之间的随机间隔（秒）
+    pub batch_jitter_min: u32,
+    pub batch_jitter_max: u32,
+    /// 勾选“只在设定时段下载”的批次：时段内正常下载，时段外按 `limit_kbps` 限速（0 表示时段外暂停）
+    pub run_window_on: bool,
+    pub run_window: SpeedWindow,
     /// 解析时对同一网站两次请求的最小间隔（毫秒）
     pub site_request_interval_ms: u64,
     /// 临时文件目录，留空表示与保存位置相同
@@ -776,6 +786,12 @@ impl Default for Settings {
             segment_min_mb: 8,
             speed_limit_kbps: 0,
             per_site_concurrency: 2,
+            batch_preview: true,
+            batch_folder_min: 3,
+            batch_jitter_min: 2,
+            batch_jitter_max: 6,
+            run_window_on: false,
+            run_window: SpeedWindow { days: vec![], start: "23:00".into(), end: "07:00".into(), limit_kbps: 0 },
             site_request_interval_ms: 500,
             temp_dir: String::new(),
             conflict_policy: ConflictPolicy::Rename,
@@ -870,6 +886,9 @@ impl Settings {
         self.retry_delay_secs = self.retry_delay_secs.clamp(1, 60);
         self.segments = self.segments.clamp(1, 64);
         self.per_site_concurrency = self.per_site_concurrency.clamp(1, 8);
+        self.batch_folder_min = self.batch_folder_min.clamp(1, 500);
+        self.batch_jitter_max = self.batch_jitter_max.min(120);
+        self.batch_jitter_min = self.batch_jitter_min.min(self.batch_jitter_max);
         self.site_request_interval_ms = self.site_request_interval_ms.min(10_000);
         self.temp_dir = self.temp_dir.trim().to_string();
         for r in &mut self.network.rules {

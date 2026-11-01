@@ -11,7 +11,7 @@
     .hd { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #e3e6e3; }
     .hd .t { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .hd button, .tools button { padding: 3px 8px; }
-    .meta { padding: 6px 10px; font-size: 12px; color: #5d6862; border-bottom: 1px solid #e3e6e3; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .meta { padding: 0 10px 6px; font-size: 12px; color: #5d6862; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     .tabs { display: flex; border-bottom: 1px solid #e3e6e3; }
     .tabs button { flex: 1; background: transparent; color: #5d6862; border-radius: 0; border-bottom: 2px solid transparent; padding: 7px 0; font-weight: 400; }
     .tabs button.on { color: #b4561a; border-bottom-color: #b4561a; font-weight: 700; }
@@ -22,15 +22,16 @@
     .card { background: #fff; border: 1px solid #e3e6e3; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; white-space: pre-wrap; word-break: break-word; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; margin: 6px 0; }
     .chip { background: #d9762b1f; color: #8a3f0c; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
-    .ln { display: flex; gap: 8px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+    .ln { position: relative; display: grid; grid-template-columns: 48px 1fr; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; }
     .ln:hover { background: #d9762b14; }
-    .ln.cur { background: #d9762b2e; }
+    .ln.cur { background: #d9762b1f; }
+    .ln.cur .tm { background: #b4561a; color: #fff; border-radius: 6px; padding: 0 6px; }
     .ln.hit { background: #f3d06a30; }
     .ln.hit.now { outline: 2px solid #d9762b; }
     mark { background: #ffe066; color: #1b1f1d; border-radius: 2px; padding: 0 1px; }
-    .src { border-left: 3px solid #d9762b66; margin: 4px 0 0 2px; padding: 2px 8px; font-size: 12px; color: #5d6862; cursor: pointer; }
+    .src { border: 1px solid #e3e6e3; background: #fbfaf8; border-radius: 8px; margin: 4px 0 0; padding: 4px 8px; font-size: 12px; color: #5d6862; cursor: pointer; }
     .warn { color: #a4561a; font-size: 12px; margin-top: 4px; }
-    .ln .tm { color: #b4561a; font-variant-numeric: tabular-nums; flex: none; }
+    .ln .tm { color: #b4561a; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px; line-height: 20px; align-self: start; justify-self: start; }
     .ln .tr { color: #5d6862; display: block; }
     .mute { color: #5d6862; font-size: 12px; }
     .warn { background: #fff4e5; border: 1px solid #f0c98e; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
@@ -40,7 +41,7 @@
     .msg.u { text-align: right; }
     .msg .b { display: inline-block; text-align: left; max-width: 92%; padding: 6px 10px; border-radius: 10px; background: #fff; border: 1px solid #e3e6e3; white-space: pre-wrap; word-break: break-word; }
     .msg.u .b { background: #b4561a; color: #fff; border-color: #b4561a; }
-    .ts { background: transparent; color: #b4561a; padding: 0 2px; font-weight: 700; }
+    .ts { background: #fff; border: 1px solid #e3e6e3; color: #b4561a; padding: 0 6px; font-size: 12px; line-height: 20px; border-radius: 6px; font-weight: 700; font-variant-numeric: tabular-nums; }
     .ask { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid #e3e6e3; }
     .ask input { flex: 1; }
     .svgbox { overflow: auto; border: 1px solid #e3e6e3; border-radius: 8px; background: #fff; max-height: 55vh; }
@@ -52,7 +53,7 @@
     .mapview .stage.drag { cursor: grabbing; }
     .mapview .stage > svg { position: absolute; left: 0; top: 0; transform-origin: 0 0; max-width: none; }
     .mapview .hint { font-size: 12px; color: #5d6862; padding: 4px 10px; }
-    .ln .rec { visibility: hidden; background: transparent; color: #b4561a; padding: 0 3px; flex: none; }
+    .ln .rec { visibility: hidden; position: absolute; right: 4px; top: 3px; background: #fff; border: 1px solid #e3e6e3; color: #b4561a; padding: 0 7px; font-size: 12px; }
     .ln:hover .rec { visibility: visible; }
     .selbar { position: sticky; top: 0; z-index: 2; background: #fff; border: 1px solid #d9762b; border-radius: 8px; padding: 6px 8px; margin-bottom: 8px; box-shadow: 0 2px 8px #0002; }
     .note { background: #fff; border: 1px solid #e3e6e3; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; word-break: break-word; }
@@ -60,6 +61,65 @@
     .note .x { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
     .note .x button { padding: 1px 7px; font-size: 12px; }
     .pill { position: fixed; z-index: 2147483000; padding: 4px 10px; border-radius: 14px; background: #b4561acc; color: #fff; font-size: 12px; box-shadow: 0 2px 8px #0004; }
+    .sm { display: flex; flex-direction: column; gap: 12px; }
+    .sm .vid { display: grid; gap: 2px; }
+    .sm .vid b { font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .sm .vmeta { display: flex; flex-wrap: wrap; gap: 2px 10px; color: #5d6862; font-size: 12px; }
+    .sm .saved { color: #2f7a4d; }
+    .sm .ctrl { display: grid; gap: 8px; }
+    .sm .seg { display: flex; gap: 2px; padding: 2px; background: #fff; border: 1px solid #e3e6e3; border-radius: 8px; overflow-x: auto; scrollbar-width: none; }
+    .sm .seg button { flex: none; background: transparent; color: #5d6862; font-weight: 400; padding: 3px 10px; border-radius: 6px; white-space: nowrap; }
+    .sm .seg button.on { background: #b4561a; color: #fff; font-weight: 700; }
+    .sm .crow { display: flex; align-items: center; gap: 8px; }
+    .sm .crow select { min-width: 0; max-width: 150px; }
+    .sm .grow { flex: 1; }
+    .sm .lead { background: #d9762b1a; border-radius: 10px; padding: 10px 12px; }
+    .sm .lead .k { font-size: 11px; letter-spacing: .1em; color: #b4561a; font-weight: 700; margin-bottom: 2px; }
+    .sm .lead p { margin: 0; font-size: 1.15em; line-height: 1.55; font-weight: 600; }
+    .sm .sh { display: flex; align-items: baseline; gap: 4px; margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .08em; color: #5d6862; }
+    .sm .sh em { font-style: normal; font-weight: 400; letter-spacing: 0; }
+    .sm .sh .lnk { margin-left: auto; background: transparent; color: #b4561a; padding: 0; font-weight: 400; }
+    .sm .prose p { margin: 0 0 .65em; line-height: 1.8; }
+    .sm .prose p:last-child { margin: 0; }
+    .sm .kw { display: flex; flex-wrap: wrap; gap: 6px; }
+    .sm .kw span { border: 1px solid #e3e6e3; background: #fff; border-radius: 6px; padding: 0 8px; font-size: 12px; line-height: 22px; }
+    .sm .kw span::before { content: "#"; color: #b4561a; margin-right: 2px; }
+    .sm .pts { list-style: none; margin: 0; padding: 0; position: relative; display: grid; gap: 2px; }
+    .sm .pts::before { content: ""; position: absolute; left: 25px; top: 10px; bottom: 10px; border-left: 1px dashed #cfd5d1; }
+    .sm .pts li { position: relative; display: grid; grid-template-columns: 52px 1fr; gap: 8px; padding: 6px 4px; border-radius: 8px; }
+    .sm .pts li.go { cursor: pointer; }
+    .sm .pts li.go:hover { background: #d9762b14; }
+    .sm .pts .tm { align-self: start; justify-self: start; position: relative; background: #fff; border: 1px solid #e3e6e3; color: #b4561a; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px; line-height: 20px; padding: 0 6px; border-radius: 6px; }
+    .sm .pts b { display: block; line-height: 1.5; }
+    .sm .pts .d { color: #5d6862; }
+    .acts { position: sticky; bottom: -10px; display: flex; gap: 6px; padding: 8px 0 2px; background: #fbfaf8; }
+    .acts button:first-child { flex: 1; }
+    .stick { position: sticky; top: -10px; z-index: 2; display: grid; gap: 8px; background: #fbfaf8; margin: -10px -10px 8px; padding: 10px; border-bottom: 1px solid #e3e6e3; }
+    .stick .tools { margin: 0; }
+    .chs { display: grid; gap: 2px; position: relative; }
+    .chs::before { content: ""; position: absolute; left: 27px; top: 12px; bottom: 12px; border-left: 1px dashed #cfd5d1; }
+    .chs .ln { grid-template-columns: 52px 1fr; }
+    .chs .ln .tm { background: #fff; border: 1px solid #e3e6e3; border-radius: 6px; padding: 0 6px; position: relative; }
+    .chs .ln.cur .tm { background: #b4561a; color: #fff; border-color: #b4561a; }
+    .chs .gist { display: block; color: #5d6862; }
+    .quote { border-left: 3px solid #d9762b; padding: 2px 0 2px 10px; margin: 4px 0 0; color: #5d6862; font-size: 12px; }
+    .sugg { display: grid; gap: 6px; }
+    .sugg button { text-align: left; display: flex; justify-content: space-between; padding: 8px 12px; border-radius: 10px; font-weight: 400; }
+    .sugg button::after { content: "›"; color: #b4561a; }
+    .svgbox { position: relative; }
+    .svgbox .zoomhint { position: absolute; left: 10px; bottom: 6px; font-size: 11px; color: #5d6862; pointer-events: none; }
+    details.acc { border: 1px solid #e3e6e3; border-radius: 10px; background: #fff; }
+    details.acc summary { padding: 8px 10px; cursor: pointer; font-weight: 700; }
+    details.acc pre { margin: 0; padding: 0 10px 10px; font: 12px/1.7 ui-monospace, Menlo, Consolas, monospace; color: #5d6862; white-space: pre-wrap; }
+    .grp { background: #fff; border: 1px solid #e3e6e3; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+    .grp .gh { padding: 6px 12px; font-size: 12px; font-weight: 700; letter-spacing: .08em; color: #5d6862; background: #fbfaf8; border-bottom: 1px solid #e3e6e3; }
+    .grp .gb { padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+    .grp .gb .card { background: #fbfaf8; margin: 0; }
+    .note .x { opacity: .95; }
+    .sm .empty { display: grid; gap: 6px; justify-items: center; text-align: center; padding: 16px 8px; }
+    .sm .empty p { margin: 0; max-width: 30ch; }
+    .sm .warn { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0; }
+    .sm .warn span { flex: 1; min-width: 160px; }
     h4 { margin: 10px 0 4px; font-size: 13px; }
     ul { margin: 4px 0; padding-left: 18px; }
   `
@@ -69,11 +129,26 @@
       .mapview .stage { background: #1d2420; }
       .mapview .bar2 { border-color: #3a443e; }
       .hd, .meta, .tabs, .ask { border-color: #3a443e; }
-      .selbar, .note { background: #262f2a; border-color: #3a443e; }
+      .selbar, .note, .grp, details.acc, .ts, .ln .rec, .chs .ln .tm { background: #262f2a; border-color: #3a443e; }
+      .stick, .grp .gh, .src { background: #1d2420; border-color: #3a443e; }
+      .grp .gb .card { background: #1d2420; }
+      .ln .tm, .ts, .ln.cur .tm, .sugg button::after { color: #f0a064; }
+      .ln.cur .tm { background: #f0a064; color: #1d2420; }
+      .ln.cur { background: #e28a4524; }
+      .quote, .chs .gist, details.acc pre, .grp .gh { color: #a9b3ad; }
+      .chs::before { border-color: #3a443e; }
+      .chs .ln.cur .tm { background: #f0a064; color: #1d2420; border-color: #f0a064; }
       .card, .msg .b, select, input[type=text], textarea { background: #262f2a; border-color: #3a443e; color: #eef1ee; }
       button.sec { background: #262f2a; color: #eef1ee; border-color: #3a443e; }
       .ln .tr, .meta, .mute, .src { color: #a9b3ad; }
       .warn { background: #3a2f1e; border-color: #6b5530; }
+      .sm .seg, .sm .kw span, .sm .pts .tm { background: #262f2a; border-color: #3a443e; }
+      .sm .seg button, .sm .vmeta, .sm .sh, .sm .pts .d { color: #a9b3ad; }
+      .sm .seg button.on { background: #f0a064; color: #1d2420; }
+      .sm .lead .k, .sm .pts .tm, .sm .sh .lnk { color: #f0a064; }
+      .sm .saved { color: #6cc08a; }
+      .sm .acts { background: #1d2420; }
+      .sm .pts::before { border-color: #3a443e; }
   `
   const ui = mount(CSS)
   // 外观：主题（跟随系统 / 浅色 / 深色）和字号，改了马上生效
@@ -87,6 +162,7 @@
     fontStyle.textContent = `.panel { font-size: ${fs}px; }`
   }
   const S = {
+    appLang: '', // 清影界面语言（zh / en / ja），语言下拉框按它显示
     data: null, // 当前文稿：{ title, url, lines, chapters, tracks, ... }
     tab: 'summary',
     status: null, // 清影的状态：{ ready, model, lang, transcribe, maxChars }
@@ -133,7 +209,11 @@
   const TL = globalThis.ccTrans
   /** 写进请求的输出语言（提示词里的名字）；留空 = 清影设置里的目标语言（中文视频的翻译默认译成英文）。 */
   const outLang = () => (S.prefs.lang.trim() ? TL.promptName(S.prefs.lang) : S.status?.lang || '中文')
-  const outLabel = () => (S.prefs.lang.trim() ? TL.nameOf(TL.LANGS.find((l) => l.en === TL.promptName(S.prefs.lang))?.code || S.prefs.lang.trim()) : '')
+  const outLabel = () => {
+    if (!S.prefs.lang.trim()) return ''
+    const code = TL.LANGS.find((l) => l.code === S.prefs.lang.trim() || l.en === TL.promptName(S.prefs.lang))?.code
+    return code ? TL.label(code, S.appLang).split(' · ')[0] : S.prefs.lang.trim()
+  }
   const video = () => [...document.querySelectorAll('video')].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0] || null
   const isVideo = () => S.data && S.data.site !== 'article' && S.data.site !== 'manual'
 
@@ -158,6 +238,11 @@
     out.push(text.slice(last))
     return out
   }
+
+  /** 底部操作栏：第一个按钮占满宽度，滚到哪里都点得到。 */
+  const actsBar = (...kids) => h('div', { class: 'acts' }, ...kids)
+  /** “更多”页的分组卡片。 */
+  const grp = (title, ...kids) => h('div', { class: 'grp' }, h('div', { class: 'gh', text: title }), h('div', { class: 'gb' }, ...kids.filter(Boolean)))
 
   const tsBtn = (ms) => (isVideo() && ms >= 0 ? h('button', { class: 'ts', text: V.fmtClock(ms), onclick: () => seek(ms) }) : null)
 
@@ -187,7 +272,7 @@
   /** 输出 / 翻译语言下拉：自动 + 常用的几十种语言；以前手填的别的写法也保留成一项。 */
   function langSelect(title, after) {
     const known = TL.LANGS.some((l) => l.code === S.prefs.lang)
-    const opts = [['', `自动（${S.status?.lang || '中文'}；中文视频译成英文）`], ...TL.LANGS.map((l) => [l.code, l.name])]
+    const opts = [['', '跟随视频'], ...TL.LANGS.map((l) => [l.code, TL.label(l.code, S.appLang)])]
     if (S.prefs.lang && !known) opts.push([S.prefs.lang, S.prefs.lang])
     return sel(opts, S.prefs.lang, (v) => ((S.prefs.lang = v), savePrefs(), after?.()), title)
   }
@@ -603,27 +688,52 @@
 
   function tabSummary() {
     const r = S.res.summary
-    const box = h('div')
+    const box = h('div', { class: 'sm' })
+    const d = S.data
+    const sty = V.STYLES.find(([v]) => v === S.prefs.style)?.[1] || ''
     box.append(
-      h('div', { class: 'tools' },
-        sel(V.STYLES, S.prefs.style, (v) => ((S.prefs.style = v), savePrefs()), '摘要风格'),
-        langSelect('输出语言：摘要、导图、卡片、问答都用这个语言写', () => {}),
-        h('button', { text: r ? '重新生成' : '生成摘要', disabled: S.busy, onclick: () => task('summary', {}, (x) => (S.res.summary = x)) }),
-      ),
+      h('div', { class: 'vid' },
+        h('b', { text: d?.title || '' }),
+        h('div', { class: 'vmeta' },
+          d?.durationMs > 0 && h('span', { text: V.fmtClock(d.durationMs) }),
+          h('span', { text: `${sty} · ${outLabel() || '跟随视频'}` }),
+          r && S.restored ? h('span', { class: 'saved', text: `✓ ${ago(S.restored)}生成，已保存` }) : null)),
+      h('div', { class: 'ctrl' },
+        h('div', { class: 'seg', role: 'group', 'aria-label': '摘要风格' },
+          ...V.STYLES.map(([v, n]) => h('button', { class: v === S.prefs.style ? 'on' : '', 'aria-pressed': v === S.prefs.style, text: n, disabled: S.busy, onclick: () => ((S.prefs.style = v), savePrefs(), render()) }))),
+        h('div', { class: 'crow' },
+          h('span', { class: 'mute', text: '输出语言' }),
+          langSelect(`输出语言：摘要、导图、卡片、问答都用这个语言写。“跟随视频”＝用${S.status?.lang || '中文'}，中文视频译成英文`, () => render()),
+          h('span', { class: 'grow' }),
+          h('button', { class: r ? 'sec' : '', text: r ? '重新生成' : '生成摘要', disabled: S.busy, onclick: () => task('summary', {}, (x) => (S.res.summary = x)) }))),
     )
     if (!r) {
-      box.append(h('div', { class: 'mute', text: '读取字幕后，由清影用你设置的大模型生成：总结、要点、关键词和章节。长视频会自动分段处理。' }))
+      box.append(h('div', { class: 'empty' }, h('b', { text: '还没有摘要' }), h('p', { class: 'mute', text: '读取字幕后，由清影用你设置的大模型生成：总结、要点、关键词和章节。长视频会自动分段处理。' })))
       return box
     }
     if (r.failed?.length) {
-      box.append(h('div', { class: 'warn' }, `有 ${r.failed.length} 段没生成成功（从 ${r.failed.filter(Boolean).join('、') || '部分位置'} 起），摘要不完整。 `,
-        r.failedRanges?.length ? h('button', { class: 'sec', text: '只补这几段', disabled: S.busy, onclick: () => retryFailed() }) : null))
+      box.append(h('div', { class: 'warn' }, h('span', { text: `有 ${r.failed.length} 段没生成成功（从 ${r.failed.filter(Boolean).join('、') || '部分位置'} 起），摘要不完整。` }),
+        r.failedRanges?.length ? h('button', { text: '只补这几段', disabled: S.busy, onclick: () => retryFailed() }) : null))
     }
-    if (S.restored) box.append(h('div', { class: 'mute', text: `已保存的结果 · ${ago(S.restored)}生成，没有重新请求大模型` }))
-    box.append(h('h4', { text: '总结' }), h('div', { class: 'card', text: r.summary }))
-    if (r.keywords?.length) box.append(h('div', { class: 'chips' }, ...r.keywords.map((k) => h('span', { class: 'chip', text: k }))))
-    if (r.points?.length) box.append(h('h4', { text: '要点' }), h('ul', {}, ...r.points.map((p) => h('li', {}, ...linkify(p)))))
-    box.append(h('div', { class: 'tools' }, h('button', { class: 'sec', text: '复制 Markdown', onclick: () => copy(V.toMarkdown(exportData()), ' Markdown') })))
+    const { lead, paras } = V.splitSummary(r.summary)
+    if (lead) box.append(h('div', { class: 'lead' }, h('div', { class: 'k', text: '一句话看完' }), h('p', { text: lead })))
+    if (paras.length) box.append(h('div', {}, h('div', { class: 'sh', text: '总结' }), h('div', { class: 'prose' }, ...paras.map((p) => h('p', { text: p })))))
+    if (r.keywords?.length) box.append(h('div', { class: 'kw' }, ...r.keywords.map((k) => h('span', { text: k }))))
+    if (r.points?.length) {
+      box.append(h('div', {},
+        h('div', { class: 'sh' }, '要点', h('em', { text: ` ${r.points.length} 条${isVideo() ? '，点时间跳转' : ''}` }),
+          r.chapters?.length ? h('button', { class: 'lnk', text: '看章节 ›', onclick: () => ((S.tab = 'chapters'), render()) }) : null),
+        h('ul', { class: 'pts' }, ...r.points.map((p) => {
+          const x = V.parsePoint(p)
+          const ms = x.time ? V.parseClock(x.time) : -1
+          return h('li', { class: ms >= 0 && isVideo() ? 'go' : '', onclick: () => ms >= 0 && seek(ms) },
+            h('span', { class: 'tm', text: x.time || '·' }),
+            h('div', {}, x.title && h('b', { text: x.title }), x.detail && h('span', { class: x.title ? 'd' : '', text: x.detail })))
+        }))))
+    }
+    box.append(h('div', { class: 'acts' },
+      h('button', { text: '复制 Markdown', onclick: () => copy(V.toMarkdown(exportData()), ' Markdown') }),
+      h('button', { class: 'sec', text: '下载 .md', onclick: () => saveFile(V.fileName(d.title + ' 摘要', 'md'), V.toMarkdown(exportData()), 'text/markdown') })))
     return box
   }
 
@@ -636,17 +746,21 @@
     const { list, from } = chapterList()
     if (!list.length) return h('div', { class: 'mute', text: '这个视频的简介里没有章节。先在“摘要”里生成，会得到 AI 章节。' })
     const now = video() && isVideo() ? V.chapterAt(list, video().currentTime * 1000) : -1
-    return h('div', {},
-      h('div', { class: 'mute', text: `来源：${from}` }),
-      ...list.map((c, i) => {
+    const box = h('div', {},
+      h('div', { class: 'mute', style: 'margin-bottom:6px', text: `来源：${from}，共 ${list.length} 章` }),
+      h('div', { class: 'chs' }, ...list.map((c, i) => {
         const end = list[i + 1]?.startMs ?? Infinity
         const qs = (S.res.quotes || []).filter((q) => q.t >= (c.startMs ?? 0) && q.t < end)
-        return h('div', {},
-          h('div', { class: `ln${i === now ? ' cur' : ''}`, 'data-ch': i, onclick: () => seek(c.startMs) }, h('span', { class: 'tm', text: V.fmtClock(c.startMs) }), h('span', { text: c.title })),
-          ...qs.map((q) => h('div', { class: 'mute', style: 'margin:0 0 4px 52px' }, `“${q.text}” `, tsBtn(q.t))))
-      }),
+        return h('div', { class: `ln${i === now ? ' cur' : ''}`, 'data-ch': i, onclick: () => seek(c.startMs) },
+          h('span', { class: 'tm', text: V.fmtClock(c.startMs) }),
+          h('div', {}, h('b', { text: c.title }), ...qs.map((q) => h('div', { class: 'quote' }, `“${q.text}” `, tsBtn(q.t)))))
+      })),
       !S.res.quotes && h('div', { class: 'mute', style: 'margin-top:6px', text: '在“更多”里提取金句后，会按章节显示在这里。' }),
+      actsBar(
+        h('button', { text: '复制章节列表', onclick: () => copy(list.map((c) => `${V.fmtClock(c.startMs)} ${c.title}`).join('\n'), '章节') }),
+        h('button', { class: 'sec', text: '去“摘要”重新生成', onclick: () => ((S.tab = 'summary'), render()) })),
     )
+    return box
   }
 
   const getSel = () => String((ui.root.getSelection && ui.root.getSelection()) || getSelection() || '').trim()
@@ -668,7 +782,7 @@
         h('button', { class: 'rec', title: '把这句记成笔记', text: '＋', onclick: (e) => (e.stopPropagation(), addNote({ t: l.t, text: l.text })) })))
     })
     return h('div', {},
-      h('div', { class: 'tools' },
+      h('div', { class: 'stick' }, h('div', { class: 'tools' },
         h('input', { type: 'text', id: 'tsearch', placeholder: '搜索文稿（/）', value: S.query, style: 'flex:1', oninput: (e) => ((S.query = e.target.value), (S.hit = 0), (S.keepFocus = true), (S.jumpHit = true), render()), onkeydown: (e) => e.key === 'Enter' && !e.isComposing && (e.preventDefault(), stepHit(e.shiftKey ? -1 : 1)) }),
         found.length > 0 && h('span', { class: 'mute', text: `${S.hit + 1}/${found.length}` }),
         S.query.trim() && !found.length && h('span', { class: 'mute', text: '没有' }),
@@ -682,12 +796,13 @@
         h('button', { class: 'sec', text: tr ? '重新翻译' : outLabel() ? `翻译成${outLabel()}` : '翻译（自动方向）', disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
         tr && sel([['both', '双语'], ['orig', '只看原文'], ['tr', '只看译文']], mode, (v) => ((S.prefs.view = v), savePrefs(), render()), '显示'),
         h('button', { class: 'sec', text: d.raw ? '还原顺句前' : '顺句', title: d.raw ? '恢复识别出来的原样' : '给没有标点的字幕（自动识别）补标点、改同音错字，行数不变', disabled: S.busy, onclick: d.raw ? unpunctuate : punctuate }),
-        h('button', { class: 'sec', text: '复制', onclick: () => copy(V.toTxt(d.lines), '文稿') }),
-        isVideo() && h('button', { class: 'sec', text: '.srt', onclick: () => saveFile(V.fileName(d.title, 'srt'), V.toSrt(d.lines)) }),
-        h('button', { class: 'sec', text: '.txt', onclick: () => saveFile(V.fileName(d.title, 'txt'), V.toTxt(d.lines)) }),
-      ),
+      )),
       h('div', { class: 'mute', text: '选中一段文字可以解释、存为笔记；鼠标移到一行上点 ＋ 记笔记。' }),
       body,
+      actsBar(
+        h('button', { text: '复制文稿', onclick: () => copy(V.toTxt(d.lines), '文稿') }),
+        isVideo() && h('button', { class: 'sec', text: '.srt', onclick: () => saveFile(V.fileName(d.title, 'srt'), V.toSrt(d.lines)) }),
+        h('button', { class: 'sec', text: '.txt', onclick: () => saveFile(V.fileName(d.title, 'txt'), V.toTxt(d.lines)) })),
     )
   }
 
@@ -843,16 +958,17 @@
     const list = V.sortNotes(shownNotes())
     const mine = S.notes.filter((n) => n.key === localKey())
     return h('div', {},
-      h('div', { class: 'tools' },
+      h('div', { class: 'stick' }, h('div', { class: 'tools' },
         sel([['video', '本视频'], ['series', '本视频的所有分P'], ['all', '全部视频']], S.scope, (v) => ((S.scope = v), render()), '范围'),
         h('input', { type: 'text', placeholder: '搜索笔记（正文、标题、作者）', value: S.noteQuery, style: 'flex:1', oninput: (e) => ((S.noteQuery = e.target.value), (S.keepFocus = true), render()) }),
-        h('span', { class: 'mute', text: `${list.length} 条` })),
-      h('div', { class: 'tools' },
+        h('span', { class: 'mute', text: `${list.length} 条` }))),
+      !list.length && h('div', { class: 'mute', text: `还没有笔记。播放时按 n 键记下当前这句；在文稿里选中文字也能存。` }),
+      ...list.map(noteCard),
+      actsBar(
         isVideo() && h('button', { text: '记下当前这句', title: '快捷键 n', onclick: () => quickNote() || toast(ui, '页面上没有找到视频', true) }),
         h('button', { class: 'sec', text: '导出笔记 (.md)', disabled: !list.length, onclick: () => saveFile(V.fileName(S.scope !== 'all' ? S.data.title + ' 笔记' : '视频笔记', 'md'), V.notesToMarkdown(list, { title: S.scope === 'video' ? S.data.title : '视频笔记' }), 'text/markdown') }),
         h('button', { class: 'sec', text: '导出学习稿', disabled: !S.data.lines.length && !mine.length, title: '摘要 + 章节 + 金句 + 我的笔记，带 YAML 头，适合放进 Obsidian', onclick: () => saveFile(V.fileName(S.data.title + ' 学习稿', 'md'), V.studyDoc(exportData(false), mine), 'text/markdown') })),
-      !list.length && h('div', { class: 'mute', text: `还没有笔记。播放时按 n 键记下当前这句；在文稿里选中文字也能存。` }),
-      ...list.map(noteCard))
+    )
   }
 
     async function savePng(svg, name) {
@@ -987,28 +1103,29 @@
 
   function tabMindmap() {
     const o = S.res.outline
-    const box = h('div', {}, h('div', { class: 'tools' }, h('button', { text: o ? '重新生成' : '生成思维导图', disabled: S.busy, onclick: () => task('mindmap', {}, (x) => (S.res.outline = x.outline)) })))
-    if (!o) return (box.append(h('div', { class: 'mute', text: '生成层级大纲（最多 4 层，带具体细节），并画成可缩放、可导出的导图。' })), box)
+    const gen = h('button', { class: o ? 'sec' : '', text: o ? '重新生成' : '生成思维导图', disabled: S.busy, onclick: () => task('mindmap', {}, (x) => (S.res.outline = x.outline)) })
+    if (!o) return h('div', { class: 'sm' }, h('div', { class: 'empty' }, h('b', { text: '还没有思维导图' }), h('p', { class: 'mute', text: '生成层级大纲（最多 4 层，带具体细节），并画成可缩放、可导出的导图。' }), gen))
     const dark = isDark()
     const mk = (d) => V.mindmapSvg(V.layoutMindmap(V.outlineToTree(o, S.data.title)), d)
     const view = h('div', { class: 'svgbox', title: '点击全屏查看，可缩放、拖动', onclick: () => openMapViewer(mk(dark)) })
-    view.append(new DOMParser().parseFromString(mk(dark), 'image/svg+xml').documentElement)
-    box.append(view,
-      h('div', { class: 'tools', style: 'margin-top:8px' },
+    view.append(new DOMParser().parseFromString(mk(dark), 'image/svg+xml').documentElement, h('div', { class: 'zoomhint', text: '点击缩略图全屏查看' }))
+    return h('div', { class: 'sm' },
+      h('div', { class: 'crow' }, h('span', { class: 'mute', text: '思维导图' }), h('span', { class: 'grow' }), gen),
+      view,
+      h('details', { class: 'acc' }, h('summary', { text: '大纲文本' }), h('pre', { text: o })),
+      actsBar(
         h('button', { text: '全屏查看 / 缩放', onclick: () => openMapViewer(mk(dark)) }),
         h('button', { class: 'sec', text: '保存 SVG', onclick: () => saveFile(V.fileName(S.data.title, 'svg'), mk(false), 'image/svg+xml') }),
         h('button', { class: 'sec', text: '保存 PNG', onclick: () => savePng(mk(false), V.fileName(S.data.title, 'png')) }),
-        h('button', { class: 'sec', text: '复制大纲', onclick: () => copy(o, '大纲') }),
-      ),
-      h('pre', { class: 'card', text: o }))
-    return box
+        h('button', { class: 'sec', text: '复制大纲', onclick: () => copy(o, '大纲') })),
+    )
   }
 
   function tabAsk() {
     const box = h('div')
     if (!S.chat.length) {
       box.append(h('div', { class: 'mute', text: '针对这个视频提问。回答里的 [m:ss] 可以点，直接跳到那一刻。' }),
-        h('div', { class: 'chips' }, ...V.SUGGESTIONS.map((q) => h('button', { class: 'sec', text: q, onclick: () => ask(q) }))))
+        h('div', { class: 'sugg' }, ...V.SUGGESTIONS.map((q) => h('button', { class: 'sec', text: q, onclick: () => ask(q) }))))
     }
     for (const m of S.chat) {
       const cite = m.role === 'assistant' ? V.citations(m.text, S.data.lines) : null
@@ -1036,40 +1153,47 @@
     const cards = S.res.cards
     const quotes = S.res.quotes
     box.append(
-      h('h4', { text: '学习卡片（可导入 Anki）' }),
+      grp('学习卡片（可导入 Anki）',
       h('div', { class: 'tools' },
         h('button', { text: cards ? '重新生成' : '生成问答卡片', disabled: S.busy, onclick: () => task('cards', {}, (x) => (S.res.cards = x.cards)) }),
         cards && h('button', { class: 'sec', text: '导出 CSV', onclick: () => saveFile(V.fileName(S.data.title, 'tsv'), V.cardsToCsv(cards)) }),
       ),
       ...(cards || []).map((c) => h('div', { class: 'card' }, h('b', { text: c.q }), '\n', c.a, ' ', tsBtn(c.t))),
-      h('h4', { text: '金句' }),
+      ),
+      grp('金句',
       h('div', { class: 'tools' }, h('button', { text: quotes ? '重新生成' : '提取金句', disabled: S.busy, onclick: () => task('quotes', {}, (x) => (S.res.quotes = x.quotes)) })),
       ...(quotes || []).map((q) => h('div', { class: 'card' }, `“${q.text}” `, tsBtn(q.t))),
-      h('h4', { text: '改写成其他形式' }),
+      ),
+      grp('改写成其他形式',
       h('div', { class: 'tools' }, ...V.REWRITES.map(([f, n]) => h('button', { class: 'sec', text: n, disabled: S.busy || !S.res.summary, title: S.res.summary ? '' : '先在“摘要”里生成', onclick: () => task('rewrite', { format: f, text: V.toMarkdown(exportData()) }, (x) => (S.res.rewrite = { name: n, text: x.text }), false) }))),
       S.res.rewrite && h('div', {}, h('div', { class: 'card', text: S.res.rewrite.text }), h('button', { class: 'sec', text: `复制${S.res.rewrite.name}`, onclick: () => copy(S.res.rewrite.text, S.res.rewrite.name) })),
-      h('h4', { text: '导出' }),
+      ),
+      grp('导出',
       h('div', { class: 'tools' },
         h('button', { class: 'sec', text: '下载 Markdown', onclick: () => saveFile(V.fileName(S.data.title, 'md'), V.toMarkdown(exportData(true)), 'text/markdown') }),
         h('button', { class: 'sec', text: '复制到剪贴板（含文稿）', onclick: () => copy(V.toMarkdown(exportData(true)), ' Markdown') }),
         h('button', { class: 'sec', text: '存进清影的便签', onclick: saveNote }),
         h('button', { class: 'sec', text: '发到 Obsidian', onclick: toObsidian }),
       ),
-      h('h4', { text: '笔记与偏好' }),
+      ),
+      grp('笔记与偏好',
       h('div', { class: 'tools' },
         sel([['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']], S.prefs.theme, (v) => ((S.prefs.theme = v), savePrefs(), applyAppearance(), render()), '主题'),
         sel([[12, '小'], [13, '标准'], [15, '大'], [17, '特大']], String(S.prefs.fs), (v) => ((S.prefs.fs = Number(v)), savePrefs(), applyAppearance()), '字号')),
       h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.pill, onchange: (e) => ((S.prefs.pill = e.target.checked), savePrefs(), tick()) }), ' 在视频上显示“笔记”按钮（也可以按 n 键）'),
       h('label', { class: 'mute' }, '记笔记时往前提 ', h('input', { type: 'number', min: 0, max: 15, value: S.prefs.lead, style: 'width:56px', onchange: (e) => ((S.prefs.lead = Math.min(15, Math.max(0, Number(e.target.value) || 0))), savePrefs()) }), ' 秒'),
-      h('h4', { text: '提示词' }),
+      ),
+      grp('提示词',
       promptEditor(),
-      h('h4', { text: '数据' }),
+      ),
+      grp('数据',
       h('div', { class: 'tools' },
         h('button', { class: 'sec', text: '备份设置和笔记', title: '不包含任何密钥', onclick: backup }),
         h('button', { class: 'sec', text: '恢复备份', onclick: restore }),
         h('button', { class: 'sec', text: '清除摘要缓存（含各视频已生成的内容）', onclick: async () => (await store.set('vsumCache', {}), await store.set('vsumSessions', {}), await store.set('vsumJobs', {}), (S.restored = 0), toast(ui, '已清除')) }),
         h('button', { class: 'sec', text: '删除全部笔记', disabled: !S.notes.length, onclick: async () => confirm(`确定删除全部 ${S.notes.length} 条笔记？`) && ((S.notes = []), await store.set('vsumNotes', []), render()) })),
-      h('h4', { text: '没有字幕 / 想换文稿' }),
+      ),
+      grp('没有字幕 / 想换文稿',
       sourcePicker(!S.data.lines.length || !!S.wantSrc),
       h('div', { class: 'tools' },
         isVideo() && h('button', { class: 'sec', text: '用清影转写（语音识别）', onclick: transcribeNow }),
@@ -1089,6 +1213,7 @@
         setData(d)
         rememberLocal('粘贴的文字', d)
       } })),
+      ),
     )
     return box
   }
@@ -1202,7 +1327,7 @@
     const d = S.data
     const children = [
       h('div', { class: 'hd' },
-        h('span', { class: 't', title: d?.title || '', text: d ? `摘要 · ${d.title}` : '视频摘要' }),
+        h('span', { class: 't', title: d?.title || '', text: d ? d.title : '视频摘要' }),
         h('button', { class: 'sec', text: '重新读取', title: '重新读取当前页面的字幕（切换视频后用）', onclick: () => start() }),
         h('button', { class: 'sec', text: '✕', title: '关闭', 'aria-label': '关闭', onclick: stop }),
       ),
@@ -1351,6 +1476,21 @@
       setData({ title: document.title, url: location.href, site: 'html5', lines: [], chapters: [], tracks: [], note: `读取失败：${e.message}` })
     }
     ensureReady().catch(() => {}).finally(() => S.data && render())
+    refreshAppLang()
+  }
+
+  /** 语言下拉框按清影的界面语言显示：先用上次记下的，再问一下清影，变了就重画。 */
+  async function refreshAppLang() {
+    try {
+      S.appLang = (await api.storage.local.get('appLang')).appLang || ''
+    } catch {
+      // 读不到就用浏览器语言
+    }
+    const r = await send({ type: 'cc-app-lang' })
+    if (r?.ok && r.lang && r.lang !== S.appLang) {
+      S.appLang = r.lang
+      if (S.data) render()
+    }
   }
 
   function stop() {

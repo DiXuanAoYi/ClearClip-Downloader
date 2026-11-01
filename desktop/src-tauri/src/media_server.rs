@@ -382,7 +382,9 @@ fn reason(status: u16) -> &'static str {
 }
 
 async fn write_head(stream: &mut TcpStream, status: u16, headers: &[(&str, String)]) -> std::io::Result<()> {
-    let mut out = format!("HTTP/1.1 {status} {}\r\nConnection: close\r\n", reason(status));
+    // 界面（tauri://localhost 或 localhost:1420）和这个本机服务不同源。播放器要把声音接进 Web Audio 做响度标准化，
+    // 视频必须声明 CORS，否则接进去会变成没有声音；地址里的令牌是随机的，所以放开跨域读取不会泄露文件。
+    let mut out = format!("HTTP/1.1 {status} {}\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n", reason(status));
     for (k, v) in headers {
         out.push_str(&format!("{k}: {v}\r\n"));
     }
@@ -529,6 +531,8 @@ mod tests {
         assert_eq!(r.status(), 200);
         assert_eq!(r.headers()["content-type"], "video/webm");
         assert_eq!(r.headers()["accept-ranges"], "bytes");
+        // 播放器要把声音接进 Web Audio（响度标准化），视频必须能跨域读取
+        assert_eq!(r.headers()["access-control-allow-origin"], "*");
         assert_eq!(r.bytes().await.unwrap().as_ref(), data.as_slice());
 
         let r = c.get(&url).header("Range", "bytes=100-199").send().await.unwrap();

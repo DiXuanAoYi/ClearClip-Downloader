@@ -67,6 +67,13 @@ async function downloadNow() {
   failed.value = false
   window.clearTimeout(hideTimer)
   try {
+    const urls = link.value!.links.map((l) => l.url)
+    if (urls.length >= 2) {
+      const r = await api.batchQuick(urls, '剪贴板')
+      message.value = `已建立批次“${r.name}”：${r.queued + r.pending} 条`
+      scheduleHide(5000)
+      return
+    }
     const title = await api.resolveAndEnqueue(link.value!.text)
     message.value = `已加入下载：${title}`
     scheduleHide(5000)

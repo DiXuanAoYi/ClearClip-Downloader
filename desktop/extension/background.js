@@ -96,6 +96,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
       }
     } else if (info.menuItemId === 'cc-page') {
       shown = page
+      await firstTimeSync(page)
       r = await send(await tidyUrl(page))
     }
     if (!shown) return

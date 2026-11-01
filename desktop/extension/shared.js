@@ -63,12 +63,29 @@ async function syncCookies(pageUrl, label, auto = false) {
   return r
 }
 
+/**
+ * 第一次把某个网站的页面发给清影前，顺手同步一次这个网站的登录 Cookie（需要登录才能下载 / 读字幕的网站就不用再手动点）。
+ * 以前同步过的、没有 Cookie 的、同步失败的都安静跳过，不影响发送。存储里 autoFirstSync 设为 false 可关闭。
+ */
+async function firstTimeSync(pageUrl) {
+  try {
+    const u = new URL(pageUrl)
+    if (!/^https?:$/.test(u.protocol)) return null
+    const { autoFirstSync, lastSync = {} } = await api.storage.local.get(['autoFirstSync', 'lastSync'])
+    if (autoFirstSync === false || lastSync[registrable(u.hostname)]) return null
+    return await syncCookies(pageUrl)
+  } catch {
+    return null
+  }
+}
+
 /** 检查清影是否在运行、设置是否正确。返回 { ok, message } */
 async function checkConnection() {
   const c = await getConfig()
   if (!c.port || !c.token) return { ok: false, message: '还没有设置端口和访问令牌' }
   try {
     const r = await call('/api/ping')
+    if (r.lang) await api.storage.local.set({ appLang: r.lang })
     return { ok: true, message: `已连接清影 ${r.version}` }
   } catch (e) {
     return { ok: false, message: e.message }

@@ -57,12 +57,17 @@ pub struct HttpOptions {
     /// 要求保留的剩余磁盘空间
     pub disk_reserve: u64,
     pub net: Option<Arc<NetManager>>,
+    /// 批次自己的限速（批次内的任务共用一个额度）：限速器和 KB/s
+    pub batch_limit: Option<(Arc<crate::net::SpeedLimiter>, u64)>,
 }
 
 impl HttpOptions {
     pub(crate) async fn throttle(&self, bytes: usize) {
         if let Some(net) = &self.net {
             net.throttle(bytes, self.speed_limit_kbps).await;
+        }
+        if let Some((lim, kbps)) = &self.batch_limit {
+            lim.consume(bytes as u64, *kbps).await;
         }
     }
 }
