@@ -767,7 +767,7 @@ async function init() {
   refreshConn()
 }
 
-for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => showTab(b.dataset.tab)
+for (const b of document.querySelectorAll('#tabs button[data-tab]')) b.onclick = () => showTab(b.dataset.tab)
 
 $('dlToggleAll').onclick = async () => {
   try {
