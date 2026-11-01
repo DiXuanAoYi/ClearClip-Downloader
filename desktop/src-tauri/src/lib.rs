@@ -315,7 +315,10 @@ pub fn run() {
             let (media, media_listener) = media_server::MediaServer::bind().map_err(|e| format!("无法启动播放器的本机服务：{e}"))?;
             tauri::async_runtime::spawn(media.clone().serve(media_listener));
             app.manage(Arc::new(AppState {
-                settings: RwLock::new(settings.clone()),
+                settings: RwLock::new({
+                    providers::wechat::set_enabled(settings.wechat_on);
+                    settings.clone()
+                }),
                 settings_path,
                 db,
                 client: providers::build_client(),

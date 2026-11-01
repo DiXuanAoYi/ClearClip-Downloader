@@ -941,6 +941,7 @@ export interface Settings {
   componentMirrors: string[]
   ffmpegEdition: 'lite' | 'full'
   clipboardAllSites: boolean
+  wechatOn: boolean
   clipboardDomains: string[]
   phone: PhoneSettings
   embedMetadata: boolean

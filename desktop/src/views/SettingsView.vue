@@ -355,6 +355,13 @@ function insertVar(v: string) {
             </div>
           </section>
           <section class="group card">
+            <h3>可选组件</h3>
+            <div class="kv">
+              <span>微信公众号文章视频<small class="mute block">默认关闭。开启后可以解析 mp.weixin.qq.com 文章里的微信原生视频（各清晰度直链，下载自动带微信 Referer）。视频号暂不支持。请只下载你有权保存的内容。</small></span>
+              <el-switch v-model="form.wechatOn" />
+            </div>
+          </section>
+          <section class="group card">
             <h3>收到的链接</h3>
             <small class="mute">手机、浏览器扩展发来的链接和手动解析失败的链接会记录在“媒体库 → 收到的链接”，可以随时重试。</small>
             <div class="kv">

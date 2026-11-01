@@ -11,6 +11,7 @@ pub mod pixiv;
 pub mod protocols;
 pub mod remote;
 pub mod rss;
+pub mod wechat;
 pub mod weibo;
 pub mod xiaohongshu;
 pub mod ytdlp;
@@ -114,8 +115,14 @@ pub struct AccountStatus {
 }
 
 pub fn all() -> &'static [&'static dyn Provider] {
-    static ALL: [&dyn Provider; 6] = [&douyin::Douyin, &kuaishou::Kuaishou, &xiaohongshu::Xiaohongshu, &bilibili::Bilibili, &weibo::Weibo, &pixiv::Pixiv];
-    &ALL
+    static BASE: [&dyn Provider; 6] = [&douyin::Douyin, &kuaishou::Kuaishou, &xiaohongshu::Xiaohongshu, &bilibili::Bilibili, &weibo::Weibo, &pixiv::Pixiv];
+    // 可选组件：设置里开启后才加入（微信公众号 / 视频号）
+    static WITH_WECHAT: [&dyn Provider; 7] = [&douyin::Douyin, &kuaishou::Kuaishou, &xiaohongshu::Xiaohongshu, &bilibili::Bilibili, &weibo::Weibo, &pixiv::Pixiv, &wechat::Wechat];
+    if wechat::enabled() {
+        &WITH_WECHAT
+    } else {
+        &BASE
+    }
 }
 
 pub fn by_id(id: &str) -> Option<&'static dyn Provider> {

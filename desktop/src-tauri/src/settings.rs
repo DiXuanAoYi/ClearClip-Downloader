@@ -271,6 +271,8 @@ pub struct Settings {
     pub ffmpeg_edition: String,
     /// 剪贴板监听是否识别所有网址；关闭时只识别内置平台和 `clipboard_domains`
     pub clipboard_all_sites: bool,
+    /// 可选组件：微信公众号文章视频下载（默认关闭）
+    pub wechat_on: bool,
     /// 剪贴板监听额外识别的网站（域名后缀）
     pub clipboard_domains: Vec<String>,
     /// 手机发链接到电脑
@@ -885,6 +887,7 @@ impl Default for Settings {
             component_mirrors: vec![],
             ffmpeg_edition: "lite".into(),
             clipboard_all_sites: false,
+            wechat_on: false,
             clipboard_domains: DEFAULT_CLIPBOARD_DOMAINS.iter().map(|d| d.to_string()).collect(),
             phone: PhoneSettings::default(),
             embed_metadata: true,
