@@ -29,7 +29,7 @@ const take = (c, item) => X('shouldTake')(c, { url: 'https://example.com/a', ...
 // ---- 接管：设置整理
 {
   const d = plain(X('normalizeTakeover')(undefined))
-  assert.equal(d.enabled, false) // 默认关闭
+  assert.equal(d.enabled, true) // 默认开启
   assert.equal(d.mode, 'types')
   assert.ok(d.types.includes('zip') && d.types.includes('exe') && d.types.includes('mkv'))
   assert.equal(d.minSizeMB, 1)
@@ -40,13 +40,13 @@ const take = (c, item) => X('shouldTake')(c, { url: 'https://example.com/a', ...
   assert.deepEqual(c.allowSites, ['www.example.com', 'a.com'])
   assert.deepEqual(c.denySites, ['b.com'])
   assert.equal(plain(X('normalizeTakeover')({ types: [] })).types.length, X('TAKEOVER_TYPES').length)
-  assert.equal(plain(X('normalizeTakeover')({ enabled: 'yes' })).enabled, false) // 只有 true 才算开启
+  assert.equal(plain(X('normalizeTakeover')({ enabled: false })).enabled, false) // 只有明确关闭才算关闭
 }
 
 // ---- 接管：判断
 {
   const c = cfg()
-  assert.equal(take(X('normalizeTakeover')({}), { filename: 'a.zip' }).take, false) // 默认关闭
+  assert.equal(take(X('normalizeTakeover')({ enabled: false }), { filename: 'a.zip' }).take, false) // 关闭时不接管
   assert.equal(take(c, { filename: 'C:\\Users\\me\\Downloads\\Setup.EXE' }).take, true) // 路径和大小写
   assert.equal(take(c, { url: 'https://x.com/files/a.tar.gz?token=1' }).take, true) // 文件名未定时看地址
   assert.equal(take(c, { filename: 'notes.txt' }).take, false) // 类型不在列表

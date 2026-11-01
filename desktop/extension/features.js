@@ -4,7 +4,7 @@ const FEATURES = [
   // group：page = 页面工具，video = 播放增强，link = 与清影联动。tag：常驻 = 在打开的每个网页里运行
   { id: 'floatButton', group: 'page', name: '视频悬浮下载按钮', desc: '鼠标移到视频上显示；可选清晰度', tag: '常驻', def: false },
   { id: 'hoverZoom', group: 'page', name: '图片悬停放大 / 画廊', desc: '按“取原图”规则找大图；规则可以自己加', tag: '常驻', def: false },
-  { id: 'unlock', group: 'page', name: '解除复制 / 右键限制', desc: '只对你开启过的网站生效', tag: '常驻 · 主世界', def: false },
+  { id: 'unlock', group: 'page', name: '解除复制 / 右键限制', desc: '只对你开启过的网站生效', tag: '常驻 · 主世界', def: true },
   { id: 'webtrans', group: 'page', name: '网页翻译（双语对照 / 悬停 / 划词 / 输入框）', desc: '用清影里设置的大模型，或免费的谷歌翻译；快捷键 Alt+A。设了“自动翻译的网站”才会常驻', tag: '按需 · 自动翻译的网站常驻', def: true },
   { id: 'onDemand', group: 'page', name: '页面媒体总览 / 批量选取 / 截图 / 摘录', desc: '点了才注入，不常驻', tag: '按需', def: true },
   { id: 'vsum', group: 'video', name: '视频摘要 / 总结 / 问答 / 思维导图', desc: '读取字幕，交给清影调用你设置的大模型；点了才注入，不常驻（Alt+Shift+S）', tag: '按需', def: true },
@@ -67,7 +67,7 @@ const DEFAULT_SITE_RULES = {
   off: { floatButton: [], video: [], hoverZoom: [] },
   // 解除限制只对这些网站生效；unlockAll：所有网站
   unlockOn: [],
-  unlockAll: false,
+  unlockAll: true,
   // 取原图的自定义规则：每行 “匹配正则 => 替换”
   zoomRules: '',
   // 追踪参数的自定义名单（每行一个）
@@ -81,7 +81,7 @@ function normalizeSiteRules(raw) {
   return {
     off: { floatButton: hosts(off.floatButton), video: hosts(off.video), hoverZoom: hosts(off.hoverZoom) },
     unlockOn: hosts(r.unlockOn),
-    unlockAll: r.unlockAll === true,
+    unlockAll: r.unlockAll !== false,
     zoomRules: typeof r.zoomRules === 'string' ? r.zoomRules : '',
     extraParams: typeof r.extraParams === 'string' ? r.extraParams : '',
   }

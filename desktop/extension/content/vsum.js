@@ -15,7 +15,9 @@
     .tabs { display: flex; border-bottom: 1px solid #e3e6e3; }
     .tabs button { flex: 1; background: transparent; color: #5d6862; border-radius: 0; border-bottom: 2px solid transparent; padding: 7px 0; font-weight: 400; }
     .tabs button.on { color: #b4561a; border-bottom-color: #b4561a; font-weight: 700; }
-    .body { flex: 1; overflow: auto; padding: 10px; }
+    .body { flex: 1; overflow: auto; padding: 10px; display: flex; flex-direction: column; }
+    .body > :not(.selbar) { flex: 1 0 auto; display: flex; flex-direction: column; }
+    .body > .sm { gap: 12px; }
     .tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
     select, input[type=text], textarea { border: 1px solid #cfd5d1; border-radius: 6px; padding: 4px 6px; background: #fff; color: inherit; min-width: 0; }
     textarea { width: 100%; resize: vertical; }
@@ -67,6 +69,7 @@
     .sm .vmeta { display: flex; flex-wrap: wrap; gap: 2px 10px; color: #5d6862; font-size: 12px; }
     .sm .saved { color: #2f7a4d; }
     .sm .ctrl { display: grid; gap: 8px; }
+    .sm .ctrl.stuck { position: sticky; top: -10px; z-index: 3; background: #fbfaf8; margin: -10px -10px 0; padding: 10px; border-bottom: 1px solid #e3e6e3; }
     .sm .seg { display: flex; gap: 2px; padding: 2px; background: #fff; border: 1px solid #e3e6e3; border-radius: 8px; overflow-x: auto; scrollbar-width: none; }
     .sm .seg button { flex: none; background: transparent; color: #5d6862; font-weight: 400; padding: 3px 10px; border-radius: 6px; white-space: nowrap; }
     .sm .seg button.on { background: #b4561a; color: #fff; font-weight: 700; }
@@ -92,7 +95,7 @@
     .sm .pts .tm { align-self: start; justify-self: start; position: relative; background: #fff; border: 1px solid #e3e6e3; color: #b4561a; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px; line-height: 20px; padding: 0 6px; border-radius: 6px; }
     .sm .pts b { display: block; line-height: 1.5; }
     .sm .pts .d { color: #5d6862; }
-    .acts { position: sticky; bottom: -10px; display: flex; gap: 6px; padding: 8px 0 2px; background: #fbfaf8; }
+    .acts { position: sticky; bottom: -10px; z-index: 2; margin-top: auto; flex: none; display: flex; gap: 6px; padding: 8px 0 2px; background: #fbfaf8; }
     .acts button:first-child { flex: 1; }
     .stick { position: sticky; top: -10px; z-index: 2; display: grid; gap: 8px; background: #fbfaf8; margin: -10px -10px 8px; padding: 10px; border-bottom: 1px solid #e3e6e3; }
     .stick .tools { margin: 0; }
@@ -147,7 +150,7 @@
       .sm .seg button.on { background: #f0a064; color: #1d2420; }
       .sm .lead .k, .sm .pts .tm, .sm .sh .lnk { color: #f0a064; }
       .sm .saved { color: #6cc08a; }
-      .sm .acts { background: #1d2420; }
+      .acts, .sm .ctrl.stuck { background: #1d2420; border-color: #3a443e; }
       .sm .pts::before { border-color: #3a443e; }
   `
   const ui = mount(CSS)
@@ -698,7 +701,7 @@
           d?.durationMs > 0 && h('span', { text: V.fmtClock(d.durationMs) }),
           h('span', { text: `${sty} · ${outLabel() || '跟随视频'}` }),
           r && S.restored ? h('span', { class: 'saved', text: `✓ ${ago(S.restored)}生成，已保存` }) : null)),
-      h('div', { class: 'ctrl' },
+      h('div', { class: 'ctrl stuck' },
         h('div', { class: 'seg', role: 'group', 'aria-label': '摘要风格' },
           ...V.STYLES.map(([v, n]) => h('button', { class: v === S.prefs.style ? 'on' : '', 'aria-pressed': v === S.prefs.style, text: n, disabled: S.busy, onclick: () => ((S.prefs.style = v), savePrefs(), render()) }))),
         h('div', { class: 'crow' },
@@ -1112,7 +1115,7 @@
     return h('div', { class: 'sm' },
       h('div', { class: 'crow' }, h('span', { class: 'mute', text: '思维导图' }), h('span', { class: 'grow' }), gen),
       view,
-      h('details', { class: 'acc' }, h('summary', { text: '大纲文本' }), h('pre', { text: o })),
+      h('details', { class: 'acc', open: true }, h('summary', { text: '大纲文本' }), h('pre', { text: o })),
       actsBar(
         h('button', { text: '全屏查看 / 缩放', onclick: () => openMapViewer(mk(dark)) }),
         h('button', { class: 'sec', text: '保存 SVG', onclick: () => saveFile(V.fileName(S.data.title, 'svg'), mk(false), 'image/svg+xml') }),

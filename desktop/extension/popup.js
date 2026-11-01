@@ -52,7 +52,7 @@ async function renderSync() {
   $('autoSite').disabled = !site
   $('autoSync').checked = !!c.autoSync
   $('sites').innerHTML = ''
-  if (!c.syncSites.length) $('sites').textContent = '还没有自动同步的网站。在网站上打开扩展，勾选“登录状态变化时自动同步此网站”即可添加。'
+  if (!c.syncSites.length) $('sites').textContent = `自动同步${c.autoSync ? '已开启' : '未开启'}，但名单还是空的，所以暂时不会同步任何网站。到要同步的网站页面打开扩展，勾选“登录状态变化时自动同步此网站”，它就会出现在这里。`
   for (const s of c.syncSites) {
     const row = document.createElement('div')
     const name = document.createElement('span')
