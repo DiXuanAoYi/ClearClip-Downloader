@@ -29,6 +29,8 @@ pub enum Task {
     Chat,
     /// 剪辑相关（精彩片段、文稿剪辑）
     Edit,
+    /// 云端语音转文字（给没有字幕的视频生成字幕）
+    Stt,
 }
 
 impl Task {
@@ -38,6 +40,7 @@ impl Task {
             Task::Summary => "summary",
             Task::Chat => "chat",
             Task::Edit => "edit",
+            Task::Stt => "stt",
         }
     }
 }
@@ -198,6 +201,15 @@ pub const PRESETS: &[Preset] = &[
         tasks: &[],
     },
 ];
+
+/// 预设服务推荐的语音转文字模型（空 = 这家没有语音转文字接口）。
+pub fn stt_model_for(preset: &str) -> &'static str {
+    match preset {
+        "groq" => "whisper-large-v3-turbo",
+        "siliconflow" => "FunAudioLLM/SenseVoiceSmall",
+        _ => "",
+    }
+}
 
 pub fn preset(id: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|p| p.id == id)

@@ -217,3 +217,54 @@ async fn rules_mode_correction_needs_no_model() {
     assert_eq!(r.cues[0].lines, vec!["我们用 iPhone 拍"]);
     assert_eq!(r.changes.len(), 1);
 }
+
+#[test]
+fn ai_breaks_are_accepted_only_when_text_is_unchanged() {
+    let c = cue(0, 6000, "今天我们来聊聊人工智能的发展历史，以及它对普通人生活的影响");
+    let ok = split_by_breaks(&c, "今天我们来聊聊人工智能的发展历史，\n以及它对普通人生活的影响", SegOpts::default()).unwrap();
+    assert_eq!(ok.len(), 2);
+    assert_eq!(ok[0].start, 0);
+    assert_eq!(ok[1].end, 6000);
+    assert_eq!(ok[0].end, ok[1].start);
+    // 改了一个字 → 拒绝
+    assert!(split_by_breaks(&c, "今天我们来聊聊人工智能的发展历史，\n以及它对普通人生活的影响力", SegOpts::default()).is_none());
+    // 少了字 → 拒绝；没断开 → 拒绝
+    assert!(split_by_breaks(&c, "今天我们来聊聊人工智能\n以及它对普通人生活的影响", SegOpts::default()).is_none());
+    assert!(split_by_breaks(&c, "今天我们来聊聊人工智能的发展历史，以及它对普通人生活的影响", SegOpts::default()).is_none());
+    // 英文只比较去掉空白后的内容
+    let e = cue(0, 4000, "so what we are going to do today is look at how models are trained");
+    let v = split_by_breaks(&e, "so what we are going to do today\nis look at how models are trained", SegOpts::default()).unwrap();
+    assert_eq!(v.len(), 2);
+}
+
+#[test]
+fn reflect_guard_rejects_bad_rewrites() {
+    assert!(ai::guard_reflect("我们有 3 个方案", "我们一共有 3 个方案"));
+    assert!(!ai::guard_reflect("我们有 3 个方案", "我们有 4 个方案"));
+    assert!(!ai::guard_reflect("我们有 3 个方案", ""));
+    assert!(!ai::guard_reflect("短", "这是一段完全不相干而且长得多的回答内容内容内容内容"));
+}
+
+#[test]
+fn word_timing_snaps_split_boundaries_to_real_pauses() {
+    let json = r#"{"transcription":[{"tokens":[
+        {"text":"[_BEG_]","offsets":{"from":0,"to":0}},
+        {"text":" Hello","offsets":{"from":1000,"to":1400}},
+        {"text":" world","offsets":{"from":1450,"to":2000}},
+        {"text":" and","offsets":{"from":2900,"to":3100}},
+        {"text":" more","offsets":{"from":3150,"to":3600}},
+        {"text":"<|endoftext|>","offsets":{"from":3600,"to":3600}}]}]}"#;
+    let words = parse_whisper_words(json);
+    assert_eq!(words.len(), 4);
+    assert_eq!(words[0], Word { start: 1000, end: 1400 });
+    // 按字数比例拆出的分界在 2500；真实停顿在 world(2000) 和 and(2900) 之间，中点 2450
+    let cues = vec![cue(1000, 2500, "Hello world"), cue(2500, 3600, "and more")];
+    let out = snap_to_words(&cues, &words);
+    assert_eq!((out[0].end, out[1].start), (2450, 2450));
+    assert_eq!((out[0].start, out[1].end), (1000, 3600));
+    // 不是首尾相接的两条（本来就有间隔）不动；词太少不动
+    let apart = vec![cue(1000, 2000, "a"), cue(2900, 3600, "b")];
+    assert_eq!(snap_to_words(&apart, &words), apart);
+    assert_eq!(snap_to_words(&cues, &words[..1]), cues);
+    assert!(parse_whisper_words("not json").is_empty());
+}

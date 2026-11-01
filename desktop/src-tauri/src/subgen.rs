@@ -400,6 +400,148 @@ fn split_text(s: &str, o: SegOpts, out: &mut Vec<String>) {
     }
 }
 
+/// 逐词（token）时间，毫秒。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Word {
+    pub start: u64,
+    pub end: u64,
+}
+
+/// 从 whisper.cpp 的完整 JSON（`-ojf`）里取出每个词 / 字的时间；特殊标记（`[_BEG_]`、`<|...|>`）和空白去掉。
+pub fn parse_whisper_words(json: &str) -> Vec<Word> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return vec![] };
+    let mut out = vec![];
+    for seg in v.get("transcription").and_then(|t| t.as_array()).into_iter().flatten() {
+        for tok in seg.get("tokens").and_then(|t| t.as_array()).into_iter().flatten() {
+            let text = tok.get("text").and_then(|t| t.as_str()).unwrap_or("").trim();
+            if text.is_empty() || text.starts_with("[_") || text.starts_with("<|") {
+                continue;
+            }
+            let (Some(a), Some(b)) = (tok.pointer("/offsets/from").and_then(|x| x.as_u64()), tok.pointer("/offsets/to").and_then(|x| x.as_u64())) else {
+                continue;
+            };
+            if b >= a {
+                out.push(Word { start: a, end: b });
+            }
+        }
+    }
+    out.sort_by_key(|w| w.start);
+    out
+}
+
+/// 把“按字数比例拆开”产生的分界（相邻两条首尾相接）挪到最近的真实词间停顿上（±1.5 秒内），
+/// 这样拆开的字幕不会在词的中间切换。不动文字，也不动整体起止。
+pub fn snap_to_words(cues: &[Cue], words: &[Word]) -> Vec<Cue> {
+    let mut out = cues.to_vec();
+    if words.len() < 2 {
+        return out;
+    }
+    for i in 0..out.len().saturating_sub(1) {
+        let b = out[i].end;
+        if b != out[i + 1].start {
+            continue;
+        }
+        // 候选分界：相邻两个词之间的空档中点
+        let best = words
+            .windows(2)
+            .map(|w| (w[0].end + w[1].start.max(w[0].end)) / 2)
+            .filter(|m| m.abs_diff(b) <= 1500 && *m > out[i].start && *m < out[i + 1].end)
+            .min_by_key(|m| m.abs_diff(b));
+        if let Some(m) = best {
+            out[i].end = m;
+            out[i + 1].start = m;
+        }
+    }
+    out
+}
+
+/// 把一条字幕的时间按字数比例分给拆出来的几段。
+fn spread(c: &Cue, pieces: &[String], out: &mut Vec<Cue>) {
+    let total: usize = pieces.iter().map(|p| weight(p)).sum();
+    let span = c.end.saturating_sub(c.start).max(pieces.len() as u64);
+    let mut acc = 0usize;
+    for (i, p) in pieces.iter().enumerate() {
+        let a = c.start + span * acc as u64 / total as u64;
+        acc += weight(p);
+        let b = if i + 1 == pieces.len() { c.start + span } else { c.start + span * acc as u64 / total as u64 };
+        out.push(cue_of(a, b, p));
+    }
+}
+
+fn squash(s: &str) -> String {
+    s.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+fn needs_split(c: &Cue, o: SegOpts) -> bool {
+    let t = flat(c);
+    t.chars().count() > limit_for(&t, o) || c.lines.len() > 2
+}
+
+pub fn segment_system() -> String {
+    "You split subtitle lines at natural semantic breaks. The user sends a JSON array of subtitle texts. For each text, return the SAME text \
+     with a line break (\\n) inserted at every natural break point: between clauses, before conjunctions, between a subject phrase and its verb \
+     phrase. Each resulting piece should be short enough for one subtitle (about 15-22 Chinese characters or 35-48 Latin characters) and must \
+     never cut a word, name, number or fixed phrase. NEVER add, remove, reorder or change any character, word or punctuation - only insert \\n. \
+     Reply with ONE JSON array of the same length, no commentary and no code fences."
+        .into()
+}
+
+/// 采用 AI 给的断点：去掉空白后必须和原文一模一样（一个字都不能变），否则返回 None。
+/// 断出来仍然过长的片段再用规则继续拆。
+pub fn split_by_breaks(c: &Cue, reply: &str, o: SegOpts) -> Option<Vec<Cue>> {
+    let pieces: Vec<String> = reply.split('\n').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect();
+    if pieces.len() <= 1 || squash(&pieces.join("")) != squash(&flat(c)) {
+        return None;
+    }
+    let mut fine = vec![];
+    for p in &pieces {
+        if p.chars().count() > limit_for(p, o) {
+            split_text(p, o, &mut fine);
+        } else {
+            fine.push(p.clone());
+        }
+    }
+    let mut out = vec![];
+    spread(c, &fine, &mut out);
+    Some(out)
+}
+
+/// 语义断句：只有过长的字幕才请 AI 断；AI 改了字、数量不对、请求失败的，退回规则断句。
+/// 返回 (结果, 被拒绝或失败而退回规则的条数)。
+pub async fn resegment_ai(
+    ep: &Endpoint,
+    model: &str,
+    cues: &[Cue],
+    o: SegOpts,
+    batch: usize,
+    prog: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
+) -> AppResult<(Vec<Cue>, usize)> {
+    let idx: Vec<usize> = (0..cues.len()).filter(|&i| needs_split(&cues[i], o)).collect();
+    if idx.is_empty() {
+        return Ok((cues.to_vec(), 0));
+    }
+    let subset: Vec<Cue> = idx.iter().map(|&i| cues[i].clone()).collect();
+    let got = ai::map_cues_g(ep, model, &segment_system(), &subset, batch, &[], prog).await?;
+    let mut replace: std::collections::HashMap<usize, Vec<Cue>> = std::collections::HashMap::new();
+    let mut fallback = 0usize;
+    for (k, &i) in idx.iter().enumerate() {
+        match got.texts.get(k).and_then(|t| t.as_deref()).and_then(|t| split_by_breaks(&cues[i], t, o)) {
+            Some(v) => {
+                replace.insert(i, v);
+            }
+            None => fallback += 1,
+        }
+    }
+    let mut out = Vec::with_capacity(cues.len());
+    for (i, c) in cues.iter().enumerate() {
+        match replace.remove(&i) {
+            Some(v) => out.extend(v),
+            None => out.extend(resegment(std::slice::from_ref(c), o)),
+        }
+    }
+    Ok((out, fallback))
+}
+
 /// 重新断句：过长的字幕按标点 / 空格拆开，时间按字数比例分配；不会跨条合并，也不会改字。
 /// 已经够短的字幕原样保留。
 pub fn resegment(cues: &[Cue], o: SegOpts) -> Vec<Cue> {
@@ -416,15 +558,7 @@ pub fn resegment(cues: &[Cue], o: SegOpts) -> Vec<Cue> {
             out.push(c.clone());
             continue;
         }
-        let total: usize = pieces.iter().map(|p| weight(p)).sum();
-        let span = c.end.saturating_sub(c.start).max(pieces.len() as u64);
-        let mut acc = 0usize;
-        for (i, p) in pieces.iter().enumerate() {
-            let a = c.start + span * acc as u64 / total as u64;
-            acc += weight(p);
-            let b = if i + 1 == pieces.len() { c.start + span } else { c.start + span * acc as u64 / total as u64 };
-            out.push(cue_of(a, b, p));
-        }
+        spread(c, &pieces, &mut out);
     }
     out
 }
@@ -735,6 +869,12 @@ pub struct GenOpts {
     pub correct: Option<String>,
     /// 是否重新断句（默认是）
     pub resegment: Option<bool>,
+    /// 语义断句：过长的字幕请 AI 在语义停顿处断开（默认关）。一个字都不能改，改了就退回规则断句
+    pub semantic: Option<bool>,
+    /// 逐词时间：拆开的字幕对到真实的词间停顿上（仅本机 whisper.cpp；默认关）
+    pub word_timing: Option<bool>,
+    /// 反思翻译：翻完再让 AI 对照原文检查并润色一遍（默认关；多一倍请求）
+    pub reflect: Option<bool>,
     /// 要翻译成的语言（如“简体中文”），可以多个
     pub targets: Vec<String>,
     /// `orig` / `trans` / `orig-top` / `trans-top`，决定主输出文件
@@ -799,7 +939,11 @@ pub async fn run_subgen(ctx: &JobCtx, input: &Path, opts: GenOpts) -> AppResult<
     let result = async {
         // 1) 识别
         ctx.note("正在识别语音…");
-        let raw = ai::transcribe_cues(ctx, &settings, &ffmpeg, input, &lang, &work).await?;
+        let (raw, words_json) = ai::transcribe_cues_words(ctx, &settings, &ffmpeg, input, &lang, &work, opts.word_timing.unwrap_or(false)).await?;
+        let words = words_json.as_deref().map(parse_whisper_words).unwrap_or_default();
+        if opts.word_timing.unwrap_or(false) && words.is_empty() {
+            ctx.note("没有拿到逐词时间（只有本机 whisper.cpp 支持），断句位置按字数比例估算。");
+        }
         ctx.check()?;
         // 2) 过滤幻觉
         let (cues, removed) = filter_cues(raw);
@@ -830,7 +974,25 @@ pub async fn run_subgen(ctx: &JobCtx, input: &Path, opts: GenOpts) -> AppResult<
         // 4) 断句
         let mut cues = fixed.cues;
         if opts.resegment.unwrap_or(true) {
-            cues = resegment(&cues, SegOpts::default());
+            let so = SegOpts::default();
+            cues = match (opts.semantic.unwrap_or(false), mode != Mode::Rules) {
+                (true, true) => match ai::chat_endpoint_for(&ctx.st, &settings, Task::Edit) {
+                    Ok(sep) => {
+                        ctx.note("正在用 AI 按语义断句…");
+                        let prog = progress_fn(ctx, 70.0, 74.0);
+                        let (v, fb) = resegment_ai(&sep, &settings.ai.model, &cues, so, settings.ai.batch_size, &prog).await?;
+                        if fb > 0 {
+                            ctx.note(format!("有 {fb} 条 AI 断句结果不可用（改了字或没有结果），改用规则断句。"));
+                        }
+                        v
+                    }
+                    Err(_) => resegment(&cues, so),
+                },
+                _ => resegment(&cues, so),
+            };
+        }
+        if !words.is_empty() {
+            cues = snap_to_words(&cues, &words);
         }
         let display = Display::parse(opts.display.as_deref().unwrap_or("orig-top"));
         let mut primary = write_track(ctx, input, &base, &lang_tag, &cues, &if opts.targets.is_empty() { opts.formats.clone() } else { vec![] })?;
@@ -851,6 +1013,13 @@ pub async fn run_subgen(ctx: &JobCtx, input: &Path, opts: GenOpts) -> AppResult<
                 let t = ai::translate_cues_g(&ep, &settings.ai.model, target, &cues, settings.ai.batch_size, &tt, &prog).await?;
                 if t.failed > 0 {
                     ctx.note(format!("有 {} 条没有翻译成功，保留了原文。", t.failed));
+                }
+                let mut t = t;
+                if opts.reflect.unwrap_or(false) {
+                    ctx.note(format!("正在对照原文检查并润色{target}译文…"));
+                    let r = ai::reflect_translations(&ep, &settings.ai.model, target, &cues, &t.texts, settings.ai.batch_size, &tt, &prog).await?;
+                    ctx.note(format!("反思翻译：润色了 {} 条，{} 条保持不变。", r.changed, r.kept));
+                    t.texts = r.texts;
                 }
                 let only = compose(&cues, &t.texts, Display::Trans);
                 let both = compose(&cues, &t.texts, if display.is_bilingual() { display } else { Display::OrigTop });

@@ -759,6 +759,7 @@ async function init() {
   const f = await getFeatures()
   $('pageTools').classList.toggle('hidden', !f.onDemand)
   $('vsumTools').classList.toggle('hidden', !f.vsum)
+  $('subLayerTools').classList.toggle('hidden', !f.subLayer)
   $('transTools').classList.toggle('hidden', !f.webtrans)
   $('tabLater').classList.toggle('hidden', !(f.readLater && typeof renderLater === 'function'))
   await loadSettings()
@@ -823,6 +824,7 @@ $('batchLinks').onclick = async () => {
   msg(`已把 ${r.count} 条链接发到清影，请在电脑上选择要下载的`, 'ok')
 }
 $('startVsum').onclick = () => runOnPage('vsum')
+$('startSubLayer').onclick = () => runOnPage('sublayer')
 $('openSettings').onclick = () => show('settings')
 $('saveRules').onclick = saveRules
 $('notifyDone').onchange = () => api.storage.local.set({ notifyDone: $('notifyDone').checked })

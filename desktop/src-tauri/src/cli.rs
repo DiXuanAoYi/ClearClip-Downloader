@@ -25,7 +25,7 @@ pub const HELP: &str = "清影 ClearClip 命令行
   clearclip remove <编号>      从列表移除任务
   clearclip search <关键词>    搜索媒体库
   clearclip subtitle generate <文件> [--lang 语言] [--translate zh,en] [--display orig|trans|orig-top|trans-top]
-                               [--format srt,vtt,ass,lrc,txt,json] [--correct auto|conservative|aggressive|rules|off] [--no-resegment]
+                               [--format srt,vtt,ass,lrc,txt,json] [--correct auto|conservative|aggressive|rules|off] [--no-resegment] [--semantic] [--reflect] [--word-timing]
                                给没有字幕的视频 / 音频生成字幕（识别 → 纠错 → 断句 → 翻译 → 导出）
   clearclip subtitle correct <字幕或视频文件> [--mode conservative|aggressive|rules]
                                对已有字幕做 AI 纠错（补标点、改同音错字），另存为新文件
@@ -198,6 +198,15 @@ fn parse_subtitle(args: &[String]) -> Result<(&'static str, String), String> {
             "--no-resegment" => {
                 body.insert("resegment".into(), Value::Bool(false));
             }
+            "--semantic" => {
+                body.insert("semantic".into(), Value::Bool(true));
+            }
+            "--word-timing" => {
+                body.insert("wordTiming".into(), Value::Bool(true));
+            }
+            "--reflect" => {
+                body.insert("reflect".into(), Value::Bool(true));
+            }
             f if f.starts_with("--") => return Err(format!("不认识的选项“{f}”")),
             f => file = Some(f.to_string()),
         }
@@ -361,13 +370,15 @@ mod tests {
         let f = std::env::temp_dir().join("cli-sub-test.mp4");
         std::fs::write(&f, b"x").unwrap();
         let fs = f.to_string_lossy().to_string();
-        match parse(&a(&["subtitle", "generate", &fs, "--translate", "zh,en", "--format", "vtt", "--no-resegment"])) {
+        match parse(&a(&["subtitle", "generate", &fs, "--translate", "zh,en", "--format", "vtt", "--no-resegment", "--semantic", "--reflect"])) {
             Some(Ok(Cmd::Subtitle(p, b))) => {
                 assert_eq!(p, "/api/v1/subtitle/generate");
                 let v: Value = serde_json::from_str(&b).unwrap();
                 assert_eq!(v["targets"], serde_json::json!(["zh", "en"]));
                 assert_eq!(v["formats"], serde_json::json!(["vtt"]));
                 assert_eq!(v["resegment"], false);
+                assert_eq!(v["semantic"], true);
+                assert_eq!(v["reflect"], true);
                 assert!(v["path"].as_str().unwrap().ends_with("cli-sub-test.mp4"));
             }
             o => panic!("{o:?}"),

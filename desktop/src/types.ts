@@ -653,6 +653,7 @@ export interface PoolEntry {
   name: string
   baseUrl: string
   model: string
+  sttModel: string
   enabled: boolean
   tasks: string[]
   priority: number
@@ -713,6 +714,12 @@ export interface SubgenOpts {
   /** off / rules / conservative / aggressive；不填 = 识别结果没标点时按设置里的力度纠错 */
   correct?: string
   resegment?: boolean
+  /** 语义断句（AI），默认关 */
+  semantic?: boolean
+  /** 逐词时间：拆开的字幕对到真实词间停顿（仅本机 whisper.cpp），默认关 */
+  wordTiming?: boolean
+  /** 反思翻译（译完再检查润色），默认关 */
+  reflect?: boolean
   targets: string[]
   display?: 'orig' | 'trans' | 'orig-top' | 'trans-top'
   formats: string[]

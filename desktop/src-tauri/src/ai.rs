@@ -142,6 +142,98 @@ pub fn stt_endpoint(st: &AppState, settings: &Settings) -> AppResult<Endpoint> {
     endpoint(st, settings, base, key_name)
 }
 
+/// 云端语音转文字：从模型池里挑出“适用任务”勾了 stt 且填了语音模型的服务，按优先级 / 今日用量排队，
+/// 失败（额度、冷却、网络）自动换下一家。没有这样的服务返回 None，沿用原来的单一接口。
+pub fn stt_pool_endpoint(st: &AppState, settings: &Settings) -> Option<Endpoint> {
+    let mut cands: Vec<ai_pool::Cand> = Vec::new();
+    let mut rows: Vec<Candidate> = Vec::new();
+    for e in &settings.ai.pool {
+        if e.stt_model.is_empty() || !e.tasks.iter().any(|t| t == "stt") || e.base_url.is_empty() {
+            continue;
+        }
+        let key = st.vault.get(&ai_pool::key_name(&e.id)).filter(|k| !k.is_empty());
+        let usable = key.is_some() || is_local_url(&e.base_url);
+        let Ok(clients) = st.net.clients_for(&settings.network, &e.base_url) else { continue };
+        cands.push(ai_pool::from_entry(e, usable));
+        rows.push(Candidate {
+            id: e.id.clone(),
+            name: if e.name.is_empty() { e.id.clone() } else { e.name.clone() },
+            base: e.base_url.clone(),
+            key,
+            model: e.stt_model.clone(),
+            client: clients.download,
+        });
+    }
+    if cands.is_empty() {
+        return None;
+    }
+    let now = crate::db::now();
+    let rt = st.ai_pool.snapshot(now);
+    let order = ai_pool::rank(&cands, &rt, Task::Stt, now);
+    let mut out: Vec<Candidate> = Vec::new();
+    for i in order {
+        let r = &rows[i];
+        out.push(Candidate {
+            id: r.id.clone(),
+            name: r.name.clone(),
+            base: r.base.clone(),
+            key: r.key.clone(),
+            model: r.model.clone(),
+            client: r.client.clone(),
+        });
+    }
+    let first = out.first()?;
+    Some(Endpoint {
+        base: first.base.clone(),
+        key: first.key.clone(),
+        client: first.client.clone(),
+        retry_ms: 2000,
+        attempts: 1,
+        cands: out,
+        pool: Some(st.ai_pool.clone()),
+    })
+}
+
+/// 转写一段音频；有候选服务时依次尝试并记录成功 / 失败（决定冷却），否则用 `model` 直接调接口。
+pub async fn transcribe_rotating(ep: &Endpoint, model: &str, language: &str, file: &Path) -> AppResult<String> {
+    if ep.cands.is_empty() {
+        return transcribe_chunk(ep, model, language, file).await;
+    }
+    let mut tried: Vec<String> = Vec::new();
+    let mut last: Option<AppError> = None;
+    for c in &ep.cands {
+        let one = Endpoint {
+            base: c.base.clone(),
+            key: c.key.clone(),
+            client: c.client.clone(),
+            retry_ms: ep.retry_ms,
+            attempts: ep.attempts,
+            cands: vec![],
+            pool: None,
+        };
+        match transcribe_chunk(&one, &c.model, language, file).await {
+            Ok(t) => {
+                if let Some(p) = &ep.pool {
+                    p.record_ok(&c.id, crate::db::now());
+                }
+                return Ok(t);
+            }
+            Err(e) => {
+                if let Some(p) = &ep.pool {
+                    p.record_fail(&c.id, &e, crate::db::now());
+                }
+                tried.push(format!("{}：{}", c.name, e.message));
+                last = Some(e);
+            }
+        }
+    }
+    let last = last.unwrap_or_else(|| AppError::msg("没有可用的语音转文字服务"));
+    if tried.len() == 1 {
+        return Err(last);
+    }
+    Err(AppError::new(last.kind, format!("{} 个语音转文字服务都失败了：{}", tried.len(), tried.join("；"))))
+}
+
 fn api_error(status: u16, body: &str) -> AppError {
     let msg = serde_json::from_str::<Value>(body)
         .ok()
@@ -295,6 +387,93 @@ pub fn parse_array(resp: &str, n: usize) -> Option<Vec<String>> {
         })
         .collect();
     (out.len() == n).then_some(out)
+}
+
+pub fn reflect_system(lang: &str) -> String {
+    format!(
+        "You review subtitle translations into {lang}. The user sends a JSON array; each item has the form \"SOURCE: <original>\\nDRAFT: <current translation>\". \
+         For each item return the best final translation: fix mistranslations, omissions, wrong terms, awkward or unnatural phrasing, and keep it concise \
+         enough for a subtitle. If the draft is already good return it unchanged. Keep every number, name and proper noun consistent with SOURCE. \
+         Reply with ONE JSON array of strings only (the final translations, without the SOURCE/DRAFT labels), the same length and order, no commentary, no code fences."
+    )
+}
+
+/// 反思翻译的结果能不能采用：不能为空、数字要和草稿一致、长度不能差太多。
+pub fn guard_reflect(draft: &str, improved: &str) -> bool {
+    let (d, i) = (draft.trim(), improved.trim());
+    if i.is_empty() {
+        return false;
+    }
+    let digits = |s: &str| {
+        let mut v: Vec<char> = s.chars().filter(char::is_ascii_digit).collect();
+        v.sort_unstable();
+        v
+    };
+    if digits(d) != digits(i) {
+        return false;
+    }
+    let (a, b) = (d.chars().count().max(1) as f64, i.chars().count() as f64);
+    (0.4..=2.5).contains(&(b / a))
+}
+
+pub struct Reflected {
+    pub texts: Vec<Option<String>>,
+    pub changed: usize,
+    pub kept: usize,
+}
+
+fn strip_label(s: &str) -> &str {
+    let t = s.trim();
+    for p in ["DRAFT:", "FINAL:", "IMPROVED:"] {
+        if let Some(r) = t.strip_prefix(p) {
+            return r.trim();
+        }
+    }
+    t
+}
+
+/// 反思翻译：把原文和第一遍译文一起交给模型，让它检查、润色；不合格的结果（空、数字变了、长度悬殊、请求失败）保留第一遍译文。
+#[allow(clippy::too_many_arguments)]
+pub async fn reflect_translations(
+    ep: &Endpoint,
+    model: &str,
+    lang: &str,
+    cues: &[Cue],
+    drafts: &[Option<String>],
+    batch: usize,
+    terms: &[crate::glossary::Term],
+    ctx: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
+) -> AppResult<Reflected> {
+    let idx: Vec<usize> = (0..cues.len()).filter(|&i| drafts.get(i).is_some_and(|d| d.as_deref().is_some_and(|t| !t.trim().is_empty()))).collect();
+    let items: Vec<Cue> = idx
+        .iter()
+        .map(|&i| Cue {
+            start: cues[i].start,
+            end: cues[i].end,
+            lines: vec![format!("SOURCE: {}\nDRAFT: {}", cues[i].lines.join(" "), drafts[i].as_deref().unwrap_or(""))],
+        })
+        .collect();
+    let mut texts: Vec<Option<String>> = drafts.to_vec();
+    if items.is_empty() {
+        return Ok(Reflected { texts, changed: 0, kept: 0 });
+    }
+    let got = map_cues_g(ep, model, &reflect_system(lang), &items, batch, terms, ctx).await?;
+    let (mut changed, mut kept) = (0usize, 0usize);
+    for (k, &i) in idx.iter().enumerate() {
+        let draft = drafts[i].as_deref().unwrap_or("");
+        match got.texts.get(k).and_then(|t| t.as_deref()).map(strip_label) {
+            Some(imp) if guard_reflect(draft, imp) => {
+                if imp != draft.trim() {
+                    changed += 1;
+                } else {
+                    kept += 1;
+                }
+                texts[i] = Some(imp.to_string());
+            }
+            _ => kept += 1,
+        }
+    }
+    Ok(Reflected { texts, changed, kept })
 }
 
 pub struct Translated {
@@ -735,7 +914,15 @@ pub fn whisper_available(settings: &Settings) -> bool {
     find_whisper_bin(settings).is_some()
 }
 
-async fn run_whisper_local(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, input: &Path, language: &str, work: &Path) -> AppResult<String> {
+async fn run_whisper_local(
+    ctx: &JobCtx,
+    settings: &Settings,
+    ffmpeg: &Path,
+    input: &Path,
+    language: &str,
+    work: &Path,
+    want_words: bool,
+) -> AppResult<(String, Option<String>)> {
     use tokio::io::{AsyncBufReadExt, BufReader};
     let bin = find_whisper_bin(settings)
         .ok_or_else(|| AppError::invalid("找不到 whisper.cpp（whisper-cli）。请在“设置 → AI”里指定它的位置，或把它放进系统 PATH。"))?;
@@ -764,6 +951,10 @@ async fn run_whisper_local(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, inp
     let prefix = work.join("out");
     let mut cmd = tokio::process::Command::new(&bin);
     let mut args = whisper_args(model, &wav, &prefix, language);
+    if want_words {
+        // 同时输出带逐词（token）时间的完整 JSON，用来把断句位置对到真实的词间停顿上
+        args.push("-ojf".into());
+    }
     let vad = settings.ai.whisper_vad_model.trim();
     if !vad.is_empty() && Path::new(vad).is_file() {
         if whisper_has_vad(&bin).await {
@@ -813,8 +1004,9 @@ async fn run_whisper_local(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, inp
             } else {
                 std::fs::read_dir(work).ok().and_then(|d| d.flatten().map(|e| e.path()).find(|p| p.extension().is_some_and(|x| x == "srt")))
             };
+            let words_json = if want_words { std::fs::read_to_string(prefix.with_extension("json")).ok() } else { None };
             match found.and_then(|p| std::fs::read_to_string(p).ok()) {
-                Some(t) => Ok(t),
+                Some(t) => Ok((t, words_json)),
                 None => Err(AppError::msg(format!(
                     "whisper.cpp 没有生成字幕文件（可能是模型文件不对或音频里没有可识别的语音）。程序输出：{}",
                     if tail.is_empty() { "（无）" } else { tail.as_str() }
@@ -1004,7 +1196,7 @@ pub fn use_local_stt(st: &AppState, settings: &Settings) -> bool {
     if settings.ai.stt_engine == "local" {
         return true;
     }
-    let own_api = !settings.ai.stt_base_url.trim().is_empty() || st.vault.has(KEY_STT);
+    let own_api = !settings.ai.stt_base_url.trim().is_empty() || st.vault.has(KEY_STT) || stt_pool_endpoint(st, settings).is_some();
     let model = settings.ai.whisper_model.trim();
     !own_api && !model.is_empty() && Path::new(model).is_file() && find_whisper_bin(settings).is_some()
 }
@@ -1031,6 +1223,9 @@ pub fn stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
         }
         return Ok(());
     }
+    if stt_pool_endpoint(st, settings).is_some() {
+        return Ok(());
+    }
     stt_endpoint(st, settings)?;
     if settings.ai.stt_model.is_empty() {
         return Err(AppError::invalid("请先在“设置 → AI”里填写语音转文字的模型名称（OpenAI 是 whisper-1）。"));
@@ -1040,14 +1235,35 @@ pub fn stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
 
 /// 把一个音视频文件转成带时间戳的文字（按设置用本机 whisper.cpp 或云端接口）。`work` 是调用方管理的临时目录。
 pub async fn transcribe_cues(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, input: &Path, lang: &str, work: &Path) -> AppResult<Vec<Cue>> {
+    Ok(transcribe_cues_words(ctx, settings, ffmpeg, input, lang, work, false).await?.0)
+}
+
+/// 同 `transcribe_cues`；`want_words` 为真且用本机 whisper.cpp 时，另外返回逐词时间的 JSON（云端接口没有）。
+pub async fn transcribe_cues_words(
+    ctx: &JobCtx,
+    settings: &Settings,
+    ffmpeg: &Path,
+    input: &Path,
+    lang: &str,
+    work: &Path,
+    want_words: bool,
+) -> AppResult<(Vec<Cue>, Option<String>)> {
+    let mut words_json = None;
     let cues = if use_local_stt(&ctx.st, settings) {
-        let srt = run_whisper_local(ctx, settings, ffmpeg, input, lang, work).await?;
+        let (srt, wj) = run_whisper_local(ctx, settings, ffmpeg, input, lang, work, want_words).await?;
+        words_json = wj;
         subtitle::parse_srt(&srt)
     } else {
-        let ep = stt_endpoint(&ctx.st, settings)?;
-        if settings.ai.stt_model.is_empty() {
-            return Err(AppError::invalid("请先在“设置 → AI”里填写语音转文字的模型名称（OpenAI 是 whisper-1）。"));
-        }
+        let ep = match stt_pool_endpoint(&ctx.st, settings) {
+            Some(ep) => ep,
+            None => {
+                let ep = stt_endpoint(&ctx.st, settings)?;
+                if settings.ai.stt_model.is_empty() {
+                    return Err(AppError::invalid("请先在“设置 → AI”里填写语音转文字的模型名称（OpenAI 是 whisper-1）。"));
+                }
+                ep
+            }
+        };
         ctx.note("正在提取并切分音频…");
         let parts = split_audio(ffmpeg, input, work, 600).await?;
         let mut texts = vec![];
@@ -1055,14 +1271,14 @@ pub async fn transcribe_cues(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, i
             ctx.check()?;
             ctx.note(format!("正在转写第 {} / {} 段…", i + 1, parts.len()));
             ctx.percent(i as f64 / parts.len() as f64 * 100.0);
-            texts.push((transcribe_chunk(&ep, &settings.ai.stt_model, lang, file).await.map_err(stt_api_hint)?, *offset));
+            texts.push((transcribe_rotating(&ep, &settings.ai.stt_model, lang, file).await.map_err(stt_api_hint)?, *offset));
         }
         merge_srt_parts(texts)
     };
     if cues.is_empty() {
         return Err(AppError::msg("没有识别出任何语音。"));
     }
-    Ok(cues)
+    Ok((cues, words_json))
 }
 
 pub async fn run_transcribe(ctx: &JobCtx, input: &Path, language: Option<String>) -> AppResult<PathBuf> {

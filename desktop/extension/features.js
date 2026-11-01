@@ -8,6 +8,7 @@ const FEATURES = [
   { id: 'webtrans', group: 'page', name: '网页翻译（双语对照 / 悬停 / 划词 / 输入框）', desc: '用清影里设置的大模型，或免费的谷歌翻译；快捷键 Alt+A。设了“自动翻译的网站”才会常驻', tag: '按需 · 自动翻译的网站常驻', def: true },
   { id: 'onDemand', group: 'page', name: '页面媒体总览 / 批量选取 / 截图 / 摘录', desc: '点了才注入，不常驻', tag: '按需', def: true },
   { id: 'vsum', group: 'video', name: '视频摘要 / 总结 / 问答 / 思维导图', desc: '读取字幕，交给清影调用你设置的大模型；点了才注入，不常驻（Alt+Shift+S）', tag: '按需', def: true },
+  { id: 'subLayer', group: 'video', name: '页面字幕层（双语字幕 / 调字号位置 / 延迟 / 导出 SRT）', desc: '在任意网页的视频上叠字幕：读取站内字幕或让清影转写，用你设置的大模型翻译；点了才注入，不常驻', tag: '按需', def: true },
   { id: 'speed', group: 'video', name: '倍速控制与快捷键', desc: '0.1×–16×；网站把倍速改回去时自动恢复', tag: '常驻', def: true },
   { id: 'speedMemory', group: 'video', name: '记住每个网站的倍速', desc: '新视频沿用上次的倍速', tag: '同上', def: true },
   { id: 'seek', group: 'video', name: '快进快退 ±10 秒', desc: '', tag: '同上', def: true },

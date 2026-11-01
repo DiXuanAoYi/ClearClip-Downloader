@@ -18,6 +18,9 @@ const language = ref('')
 // 生成字幕 / 纠错的选项
 const correct = ref<'auto' | 'conservative' | 'aggressive' | 'rules' | 'off'>('auto')
 const resegment = ref(true)
+const semantic = ref(false)
+const reflect = ref(false)
+const wordTiming = ref(false)
 const targets = ref<string[]>([])
 const display = ref<'orig' | 'trans' | 'orig-top' | 'trans-top'>('orig-top')
 const formats = ref<string[]>([])
@@ -69,6 +72,9 @@ async function go() {
         language: language.value || undefined,
         correct: correct.value === 'auto' ? undefined : correct.value,
         resegment: resegment.value,
+        semantic: semantic.value || undefined,
+        reflect: reflect.value || undefined,
+        wordTiming: wordTiming.value || undefined,
         targets: targets.value,
         display: display.value,
         formats: formats.value,
@@ -149,6 +155,9 @@ async function writeChapters() {
           </el-select>
         </label>
         <label class="row"><span>断句</span><el-switch v-model="resegment" active-text="过长的字幕按标点自动拆开" /></label>
+        <label v-if="resegment" class="row"><span>语义断句</span><el-switch v-model="semantic" active-text="让 AI 在语义停顿处断开（不改一个字，不行就退回规则）" /></label>
+        <label v-if="resegment" class="row"><span>逐词时间</span><el-switch v-model="wordTiming" active-text="拆开的字幕对到真实的词间停顿（仅本机 whisper.cpp）" /></label>
+        <label v-if="targets.length" class="row"><span>反思翻译</span><el-switch v-model="reflect" active-text="译完再让 AI 对照原文检查润色（更准，请求量约翻倍）" /></label>
         <label class="row">
           <span>翻译成</span>
           <el-select v-model="targets" multiple size="small" class="wide" placeholder="不翻译（可多选）" collapse-tags collapse-tags-tooltip>

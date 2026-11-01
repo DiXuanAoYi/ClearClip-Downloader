@@ -18,7 +18,10 @@ const TASKS = [
   { v: 'summary', l: '摘要与章节' },
   { v: 'chat', l: '问答' },
   { v: 'edit', l: '剪辑文稿' },
+  { v: 'stt', l: '语音转字幕（云端）' },
 ]
+// 提供语音转文字接口的预设及推荐模型（与后端 ai_pool::stt_model_for 一致）
+const STT_MODELS: Record<string, string> = { groq: 'whisper-large-v3-turbo', siliconflow: 'FunAudioLLM/SenseVoiceSmall' }
 const REASON: Record<string, string> = { quota: '额度用完', rate: '请求太频繁', bad_key: '密钥无效', network: '网络不通', error: '出错' }
 
 const addable = computed(() => presets.value.filter((p) => !ai.value.pool.some((e) => e.preset === p.id)))
@@ -42,10 +45,10 @@ function nextId(base: string) {
   return id
 }
 function addPreset(p: PoolPreset) {
-  ai.value.pool.push({ id: nextId(p.id), preset: p.id, name: p.name, baseUrl: p.baseUrl, model: p.model, enabled: true, tasks: [...p.tasks], priority: 10, dailyLimit: 0 })
+  ai.value.pool.push({ id: nextId(p.id), preset: p.id, name: p.name, baseUrl: p.baseUrl, model: p.model, sttModel: STT_MODELS[p.id] || '', enabled: true, tasks: [...p.tasks], priority: 10, dailyLimit: 0 })
 }
 function addCustom() {
-  ai.value.pool.push({ id: nextId('custom'), preset: 'custom', name: '自定义服务', baseUrl: '', model: '', enabled: true, tasks: [], priority: 20, dailyLimit: 0 })
+  ai.value.pool.push({ id: nextId('custom'), preset: 'custom', name: '自定义服务', baseUrl: '', model: '', sttModel: '', enabled: true, tasks: [], priority: 20, dailyLimit: 0 })
 }
 function remove(e: PoolEntry) {
   api.secretSet(`ai.pool.${e.id}`, '').catch(() => {})
@@ -145,6 +148,10 @@ function state(e: PoolEntry): { text: string; cls: string } {
         <div class="field">
           <label>适用任务（不选 = 全部）</label>
           <el-select v-model="e.tasks" multiple size="small" collapse-tags placeholder="全部任务"><el-option v-for="t in TASKS" :key="t.v" :value="t.v" :label="t.l" /></el-select>
+        </div>
+        <div v-if="e.tasks.includes('stt')" class="field">
+          <label>语音转文字模型（云端字幕识别用）</label>
+          <el-input v-model="e.sttModel" size="small" placeholder="如 whisper-large-v3-turbo" />
         </div>
         <div class="field two">
           <div><label>优先级</label><el-input-number v-model="e.priority" size="small" :min="0" :max="999" controls-position="right" /></div>

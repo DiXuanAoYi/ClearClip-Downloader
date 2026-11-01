@@ -1168,7 +1168,21 @@ pub fn status(st: &crate::AppState) -> Value {
         "transcribe": ai::stt_ready(st, &s).is_ok(),
         "subtitles": s.use_ytdlp && crate::tools::resolve(st, crate::tools::Tool::YtDlp).is_some(),
         "maxChars": MAX_CHARS,
+        // 影响译文的设置（模型、专家、已启用的术语库）变了它就会变，扩展据此让旧的翻译缓存失效
+        "promptVersion": prompt_version(st),
     })
+}
+
+/// 模型、AI 专家（含内容）、已启用术语库的指纹，8 位十六进制。
+pub fn prompt_version(st: &crate::AppState) -> String {
+    use sha2::{Digest, Sha256};
+    let s = st.settings();
+    let glossaries: Vec<_> = st.glossary.snapshot().glossaries.into_iter().filter(|g| g.enabled).collect();
+    let material = serde_json::json!({
+        "model": s.ai.model, "expert": s.ai.expert, "auto": s.ai.expert_auto, "glossaryOn": s.ai.glossary_on,
+        "experts": st.experts.all(), "glossaries": glossaries,
+    });
+    hex::encode(&Sha256::digest(material.to_string().as_bytes())[..4])
 }
 
 #[cfg(test)]

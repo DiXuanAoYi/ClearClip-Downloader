@@ -56,7 +56,7 @@ pub fn ai_status(state: St<'_>) -> AiStatus {
         stt_ready: if ai::use_local_stt(&state, &s) {
             !s.ai.whisper_model.is_empty()
         } else {
-            !s.ai.stt_url().is_empty() && !s.ai.stt_model.is_empty() && stt_key
+            (!s.ai.stt_url().is_empty() && !s.ai.stt_model.is_empty() && stt_key) || ai::stt_pool_endpoint(&state, &s).is_some()
         },
         stt_key,
         whisper_found: ai::whisper_available(&s),

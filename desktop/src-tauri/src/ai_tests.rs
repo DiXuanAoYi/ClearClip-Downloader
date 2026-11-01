@@ -334,6 +334,68 @@ async fn audio_is_split_and_transcribed_with_offsets() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[tokio::test]
+async fn cloud_stt_rotates_to_next_service_when_one_fails() {
+    let dir = std::env::temp_dir().join(format!("clearclip-stt-rot-{}-{}", std::process::id(), crate::db::now()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("a.m4a");
+    std::fs::write(&file, b"fake audio").unwrap();
+    let limited = mock(Arc::new(|_, _, _| (429, r#"{"error":{"message":"quota"}}"#.into()))).await;
+    let good = mock(Arc::new(|_, body, _| {
+        let t = String::from_utf8_lossy(body).into_owned();
+        // 用的是第二家自己的语音模型，不是第一家的
+        assert!(t.contains("name=\"model\"\r\n\r\nmodel-b"), "{t}");
+        (200, "1\n00:00:01,000 --> 00:00:02,000\n好\n\n".into())
+    }))
+    .await;
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let cand = |id: &str, base: &str, model: &str| Candidate {
+        id: id.into(),
+        name: id.into(),
+        base: base.into(),
+        key: Some("k".into()),
+        model: model.into(),
+        client: client.clone(),
+    };
+    let pool = Arc::new(crate::ai_pool::AiPool::default());
+    let mut e = ep(&limited);
+    e.attempts = 1;
+    e.cands = vec![cand("a", &limited, "model-a"), cand("b", &good, "model-b")];
+    e.pool = Some(pool.clone());
+    let out = transcribe_rotating(&e, "ignored", "zh", &file).await.unwrap();
+    assert!(out.contains("-->"));
+    // 第一家被记下冷却，下次排队时会被跳过
+    assert!(pool.snapshot(crate::db::now()).get("a").is_some_and(|r| r.cool_until > crate::db::now()));
+    // 都失败时报出每一家
+    let mut e2 = ep(&limited);
+    e2.attempts = 1;
+    e2.cands = vec![cand("a", &limited, "m"), cand("c", &limited, "m")];
+    let err = transcribe_rotating(&e2, "x", "", &file).await.unwrap_err();
+    assert!(err.message.contains("2 个语音转文字服务都失败"), "{}", err.message);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn reflection_improves_good_drafts_and_keeps_bad_ones() {
+    let base = mock(Arc::new(|path, body, _| {
+        assert_eq!(path, "/chat/completions");
+        let req: Value = serde_json::from_slice(body).unwrap();
+        let user = req["messages"][1]["content"].as_str().unwrap();
+        assert!(user.contains("SOURCE: ") && user.contains("DRAFT: "), "{user}");
+        // 第 1 条润色；第 2 条把数字改了（应被拒绝）；第 3 条原样返回
+        (200, reply(r#"["你好，世界！","我们有 9 个方案","DRAFT: 再见"]"#))
+    }))
+    .await;
+    let cues = vec![cue(0, "hello world"), cue(1000, "we have 3 plans"), cue(2000, "bye")];
+    let drafts = vec![Some("你好 世界".to_string()), Some("我们有 3 个方案".to_string()), Some("再见".to_string())];
+    let noop = |_: usize, _: usize| Ok(());
+    let r = reflect_translations(&ep(&base), "m", "简体中文", &cues, &drafts, 10, &[], &noop).await.unwrap();
+    assert_eq!(r.texts[0].as_deref(), Some("你好，世界！"));
+    assert_eq!(r.texts[1].as_deref(), Some("我们有 3 个方案"));
+    assert_eq!(r.texts[2].as_deref(), Some("再见"));
+    assert_eq!((r.changed, r.kept), (1, 2));
+}
+
 #[test]
 fn settings_are_normalized() {
     let mut s = crate::settings::AiSettings {

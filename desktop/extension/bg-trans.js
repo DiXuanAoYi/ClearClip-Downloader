@@ -151,11 +151,25 @@ function pageDomain(page) {
   return trDomains.get(key)
 }
 
+// 模型 / AI 专家 / 术语库变了，应用端的 promptVersion 会变，旧译文不再命中缓存（60 秒内不重复问）
+let pvMemo = { v: '', t: 0 }
+async function promptVersion() {
+  if (Date.now() - pvMemo.t < 60_000) return pvMemo.v
+  try {
+    const s = await call('/api/v1/ai/status')
+    pvMemo = { v: String(s.promptVersion || ''), t: Date.now() }
+  } catch {
+    pvMemo = { v: pvMemo.v, t: Date.now() - 50_000 }
+  }
+  return pvMemo.v
+}
+
 /** 翻译一批文字。先查缓存，剩下的交给引擎，返回和输入一一对应的译文。 */
 async function translateTexts(texts, { target, engine, page = null, domain = false }) {
   const dom = engine === 'clearclip' && domain ? await pageDomain(page) : null
   const ctx = dom ? [dom.domain && `Domain: ${dom.domain}.`, dom.note].filter(Boolean).join(' ') : ''
-  const keyEngine = dom?.domain ? `${engine}:${dom.domain.toLowerCase().slice(0, 40)}` : engine
+  const pv = engine === 'clearclip' ? await promptVersion() : ''
+  const keyEngine = (dom?.domain ? `${engine}:${dom.domain.toLowerCase().slice(0, 40)}` : engine) + (pv ? `@${pv}` : '')
   const cache = await trCacheMap()
   const out = texts.map((t) => cache[ccTrans.cacheKey(keyEngine, target, t)]?.[0] ?? null)
   const todo = out.map((v, i) => (v == null ? i : -1)).filter((i) => i >= 0)

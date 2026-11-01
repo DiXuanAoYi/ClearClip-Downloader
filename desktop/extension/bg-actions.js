@@ -156,6 +156,12 @@ async function startVsum(tab) {
   await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsum.js'])
 }
 
+/** 在当前页面的视频上叠字幕层（再次注入 = 关闭）。 */
+async function startSubLayer(tab) {
+  if (!isWebPage(tab)) throw new Error('当前页面不能使用字幕层')
+  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'sublayer-logic.js', 'content/vsum-source.js', 'content/sublayer.js'])
+}
+
 // ---------- 以图搜图 ----------
 
 async function searchImage(imageUrl, which) {
@@ -188,6 +194,7 @@ const HANDLERS = {
     if (m.action === 'overview') await openOverview(tab)
     else if (m.action === 'picker') await startPicker(tab)
     else if (m.action === 'vsum') await startVsum(tab)
+    else if (m.action === 'sublayer') await startSubLayer(tab)
     else if (m.action === 'batch-links') return await sendPageVideoLinks(tab)
     else if (m.action === 'webtrans') await webTransDo(tab, String(m.mode || 'toggle'))
     else throw new Error('未知操作')
@@ -289,6 +296,7 @@ async function buildMenus() {
     add({ id: 'cc-vsum', title: '视频摘要 / 总结…', contexts: ['page', 'video'] })
     add({ id: 'cc-vsum-sel', title: '总结选中的文字…', contexts: ['selection'] })
   }
+  if (f.subLayer) add({ id: 'cc-sublayer', title: '给视频加字幕层（双语 / 转写）…', contexts: ['page', 'video'] })
   if (f.webtrans) {
     add({ id: 'cc-wt', title: '翻译此页面 / 还原（Alt+A）', contexts: ['page'] })
     add({ id: 'cc-wt-sel', title: '翻译选中的文字', contexts: ['selection'] })
@@ -333,6 +341,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
     if (id === 'cc-overview') await openOverview(tab)
     else if (id === 'cc-vsum' || id === 'cc-vsum-sel') await startVsum(tab)
+    else if (id === 'cc-sublayer') await startSubLayer(tab)
     else if (id === 'cc-wt') await webTransDo(tab, 'toggle')
     else if (id === 'cc-wt-sel') await webTransDo(tab, 'selection', { text: info.selectionText || '' })
     else if (id === 'cc-later' || id === 'cc-later-link') {

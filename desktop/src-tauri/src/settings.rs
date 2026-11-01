@@ -562,8 +562,10 @@ pub struct PoolEntry {
     pub name: String,
     pub base_url: String,
     pub model: String,
+    /// 语音转文字模型；填了并且“适用任务”里勾了 stt，才会参与云端字幕识别的轮换
+    pub stt_model: String,
     pub enabled: bool,
-    /// 只用于这些任务（translate / summary / chat / edit）；空 = 全部
+    /// 只用于这些任务（translate / summary / chat / edit / stt）；空 = 全部（stt 除外，要明确勾选）
     pub tasks: Vec<String>,
     /// 数字越小越先用；相同时今天用得少的先用
     pub priority: u32,
@@ -579,6 +581,7 @@ impl Default for PoolEntry {
             name: String::new(),
             base_url: String::new(),
             model: String::new(),
+            stt_model: String::new(),
             enabled: true,
             tasks: vec![],
             priority: 10,
@@ -715,7 +718,8 @@ impl AiSettings {
             e.model = e.model.trim().to_string();
             e.name = e.name.trim().chars().filter(|c| !c.is_control()).take(40).collect();
             e.preset = e.preset.trim().to_string();
-            e.tasks.retain(|t| matches!(t.as_str(), "translate" | "summary" | "chat" | "edit"));
+            e.tasks.retain(|t| matches!(t.as_str(), "translate" | "summary" | "chat" | "edit" | "stt"));
+            e.stt_model = e.stt_model.trim().to_string();
             e.tasks.dedup();
             e.priority = e.priority.min(999);
             e.daily_limit = e.daily_limit.min(1_000_000);
