@@ -17,6 +17,7 @@ import DisclaimerDialog from './components/DisclaimerDialog.vue'
 import OnboardingDialog from './components/OnboardingDialog.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PlayerDialog from './components/PlayerDialog.vue'
+import BatchAddDialog from './components/BatchAddDialog.vue'
 import elEn from 'element-plus/es/locale/lang/en'
 import elZh from 'element-plus/es/locale/lang/zh-cn'
 import { useLanguage } from './i18n/useLanguage'
@@ -35,12 +36,15 @@ let countdownTimer: number | undefined
 
 async function importText(text: string) {
   if (!text.trim()) return
+  const urls = await api.batchExtract(text).catch(() => [] as string[])
+  if (urls.length > 1) {
+    app.openBatch(urls, '导入文件')
+    return
+  }
   app.view = 'parse'
   parse.text = text
-  // 多条链接时由解析页显示“全部解析并下载”；单条直接解析
-  const urls = text.match(/https?:\/\/\S+/g) ?? []
   if (urls.length === 1) parse.parse(text)
-  else ElMessage.success(`已导入 ${urls.length} 条链接`)
+  else ElMessage.info('没有找到可识别的链接')
 }
 
 // 锁定时关闭播放器，免得声音继续、画面露出来
@@ -132,11 +136,26 @@ onMounted(async () => {
   ready.value = true
 
   // 主窗口在前台时复制到链接：直接填入并解析
-  await events.onClipboardLink((p) => {
+  await events.onClipboardLink(async (p) => {
     if (app.settings?.autoDownload) return
+    if (p.links.length >= 2) {
+      try {
+        await ElMessageBox.confirm(`剪贴板里有 ${p.links.length} 条链接。要批量添加吗？`, '检测到多条链接', {
+          confirmButtonText: '批量添加…',
+          cancelButtonText: '只解析第一条',
+          distinguishCancelAndClose: true,
+          type: 'info',
+        })
+        app.openBatch(p.links.map((l) => l.url), '剪贴板')
+        return
+      } catch (e) {
+        if (e === 'close') return
+      }
+    }
     app.view = 'parse'
     parse.parse(p.text)
   })
+  await events.onBatchOpen((p) => app.openBatch(p.urls, p.source, p.truncated))
   await events.onAutoResult((r) => {
     if (r.ok) ElMessage.success(r.message)
     else ElMessage.error(r.message)
@@ -280,6 +299,7 @@ onMounted(async () => {
     <OnboardingDialog />
     <CommandPalette />
     <PlayerDialog />
+    <BatchAddDialog />
     <div v-if="dragging" class="dropzone">松开以导入链接（支持链接文本和 .txt 文件）</div>
     <el-dialog :model-value="!!countdown" :title="countdown?.action === 'shutdown' ? '即将关机' : '即将睡眠'" width="360px" :close-on-click-modal="false" :show-close="false">
       <p>全部下载已完成，将在 <b class="mono">{{ countdown?.left }}</b> 秒后{{ countdown?.action === 'shutdown' ? '关机' : '睡眠' }}。</p>

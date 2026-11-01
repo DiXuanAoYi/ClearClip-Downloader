@@ -85,6 +85,46 @@ async function sendBatch(items, tab) {
   return { sent, failed, pairing, error }
 }
 
+/** 收集页面里看起来是视频页面的链接（去重，最多 500 条）。函数会被注入到页面里执行，必须自成一体。 */
+function pageVideoLinks() {
+  const PATTERNS = [
+    /youtube\.com\/(watch\?|shorts\/|live\/)/i, /youtu\.be\//i, /bilibili\.com\/(video\/|bangumi\/play\/|medialist\/)/i, /b23\.tv\//i,
+    /douyin\.com\/(video|note)\//i, /v\.douyin\.com\//i, /tiktok\.com\/@[^/]+\/video\//i, /ixigua\.com\/\d+/i, /kuaishou\.com\/(short-video|f)\//i,
+    /xiaohongshu\.com\/(explore|discovery\/item)\//i, /weibo\.(com|cn)\/(tv|\d+)\//i, /vimeo\.com\/\d+/i, /twitter\.com\/[^/]+\/status\//i, /x\.com\/[^/]+\/status\//i,
+    /\.(mp4|m3u8|webm|mkv|mov|flv)(\?|$)/i, /\/(video|videos|watch|play|v)\/[\w-]{4,}/i,
+  ]
+  const seen = new Set()
+  const out = []
+  for (const a of document.querySelectorAll('a[href]')) {
+    let u
+    try {
+      u = new URL(a.href, location.href)
+    } catch {
+      continue
+    }
+    if (!/^https?:$/.test(u.protocol) || !PATTERNS.some((r) => r.test(u.href))) continue
+    u.hash = ''
+    const k = u.href
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(k)
+    if (out.length >= 500) break
+  }
+  return out
+}
+
+/** 本页所有视频链接：收集后交给清影，在电脑上打开批量添加面板。 */
+async function sendPageVideoLinks(tab) {
+  if (!isWebPage(tab)) throw new Error('当前页面不能使用这个功能')
+  const [res] = await api.scripting.executeScript({ target: { tabId: tab.id }, func: pageVideoLinks })
+  const urls = (res && res.result) || []
+  if (!urls.length) throw new Error('这个页面上没有找到视频链接')
+  const c = await getConfig()
+  const r = await call('/api/send', { text: urls.join('\n'), device: c.device, name: browserName(), batch: true })
+  if (r.state === 'pending_pair') throw new Error('第一次使用：请在电脑上点“允许”完成配对，然后再试一次')
+  return { count: r.count || urls.length }
+}
+
 /** 打开页面媒体总览：收集页面里的媒体，放进会话存储，再打开总览页。 */
 async function openOverview(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用总览')
@@ -148,6 +188,7 @@ const HANDLERS = {
     if (m.action === 'overview') await openOverview(tab)
     else if (m.action === 'picker') await startPicker(tab)
     else if (m.action === 'vsum') await startVsum(tab)
+    else if (m.action === 'batch-links') return await sendPageVideoLinks(tab)
     else if (m.action === 'webtrans') await webTransDo(tab, String(m.mode || 'toggle'))
     else throw new Error('未知操作')
     return {}

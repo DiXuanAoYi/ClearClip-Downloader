@@ -812,6 +812,13 @@ async function runOnPage(action) {
 }
 $('openOverview').onclick = () => runOnPage('overview')
 $('startPick').onclick = () => runOnPage('picker')
+$('batchLinks').onclick = async () => {
+  const tab = await currentTab()
+  if (!tab?.url?.startsWith('http')) return msg('当前页面不能使用这个功能', 'err')
+  const r = await api.runtime.sendMessage({ type: 'cc-run', action: 'batch-links', tabId: tab.id }).catch((e) => ({ ok: false, error: e.message }))
+  if (!r?.ok) return msg(r?.error || '没有完成', 'err')
+  msg(`已把 ${r.count} 条链接发到清影，请在电脑上选择要下载的`, 'ok')
+}
 $('startVsum').onclick = () => runOnPage('vsum')
 $('openSettings').onclick = () => show('settings')
 $('saveRules').onclick = saveRules

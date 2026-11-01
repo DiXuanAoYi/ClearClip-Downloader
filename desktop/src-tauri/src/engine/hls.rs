@@ -187,6 +187,7 @@ pub struct HlsOptions {
     pub speed_limit_kbps: u64,
     pub disk_reserve: u64,
     pub net: Option<Arc<NetManager>>,
+    pub batch_limit: Option<(Arc<crate::net::SpeedLimiter>, u64)>,
 }
 
 pub struct HlsResult {
@@ -329,6 +330,9 @@ pub async fn download(
             };
             if let Some(net) = &opts.net {
                 net.throttle(data.len(), opts.speed_limit_kbps).await;
+            }
+            if let Some((lim, kbps)) = &opts.batch_limit {
+                lim.consume(data.len() as u64, *kbps).await;
             }
             let tmp = out.with_extension("tmp");
             tokio::fs::write(&tmp, &data).await.map_err(|e| DlError::Io(format!("写入分片失败：{e}")))?;

@@ -130,6 +130,8 @@ export interface TaskSnapshot {
   startAt: number | null
   createdAt: number
   finishedAt: number | null
+  batchId?: string | null
+  batchSeq?: number | null
 }
 
 export interface HistoryItem {
@@ -875,6 +877,12 @@ export interface Settings {
   upload: UploadSettings
   rules: AutoRule[]
   speedSchedule: SpeedWindow[]
+  batchPreview: boolean
+  batchFolderMin: number
+  batchJitterMin: number
+  batchJitterMax: number
+  runWindowOn: boolean
+  runWindow: SpeedWindow
   meteredMode: boolean
   security: SecuritySettings
   onboarded: boolean
@@ -1734,4 +1742,87 @@ export interface VocalsResult {
   vocals: string
   instrumental: string
   durationMs: number
+}
+
+// ---------- 批量下载 ----------
+
+export interface BatchOpts {
+  name: string
+  dir: string
+  folder: boolean
+  /** '' 用设置里的 / best / 1080 / 720 / audio */
+  quality: string
+  concurrency: number
+  jitterMin: number
+  jitterMax: number
+  speedLimitKbps: number
+  /** none / notify / open / sleep / shutdown */
+  afterDone: string
+  useWindow: boolean
+  startPaused: boolean
+  template: string
+}
+
+export type PreviewStatus = 'ok' | 'queued' | 'done' | 'dup' | 'login' | 'bad' | 'file' | 'playlist'
+
+export interface PreviewItem {
+  key: string
+  index: number
+  url: string
+  status: PreviewStatus
+  title: string
+  platform: string
+  platformName: string
+  site: string
+  durationMs: number | null
+  sizeEst: number | null
+  quality: string
+  error: string | null
+  media: MediaInfo | null
+  entries: PlaylistEntry[]
+}
+
+export interface BatchItem {
+  url: string
+  title: string
+  media: MediaInfo | null
+}
+
+export interface BatchResult {
+  id: string
+  name: string
+  queued: number
+  alreadyDownloaded: number
+  alreadyQueued: number
+  pending: number
+}
+
+export interface FailedLink {
+  url: string
+  title: string
+  error: string
+}
+
+export interface BatchView {
+  id: string
+  name: string
+  source: string
+  createdAt: number
+  opts: BatchOpts
+  total: number
+  queued: number
+  running: number
+  paused: number
+  done: number
+  failed: number
+  pending: number
+  failedLinks: FailedLink[]
+  baseDir: string
+}
+
+/** 打开“批量添加”面板的请求 */
+export interface BatchRequest {
+  urls: string[]
+  source: string
+  truncated?: boolean
 }

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { api, errorKind, errorText, events } from '../api'
-import type { AppInfo, ErrorKind, HistoryItem, LockStatus, MediaInfo, Settings, TaskSnapshot } from '../types'
+import type { AppInfo, BatchRequest, ErrorKind, HistoryItem, LockStatus, MediaInfo, Settings, TaskSnapshot } from '../types'
 
 export type ViewName = 'parse' | 'queue' | 'subs' | 'live' | 'library' | 'tools' | 'safebox' | 'settings'
 export type LibraryTab = 'files' | 'inbox' | 'transfer' | 'history'
@@ -30,6 +30,12 @@ export const useAppStore = defineStore('app', () => {
   const pendingParse = ref<string | null>(null)
   /** 请求工具箱打开并预选文件（媒体库里的“用工具箱处理”）；处理后清空 */
   const toolboxRequest = ref<{ paths: string[]; tool?: string; tab?: ToolboxTab; aiMode?: 'transcribe' | 'translate' | 'summarize'; hint?: string; lut?: string } | null>(null)
+
+  /** 请求打开“批量添加”面板（链接已提取好）；面板打开后清空 */
+  const batchRequest = ref<BatchRequest | null>(null)
+  function openBatch(urls: string[], source: string, truncated = false) {
+    batchRequest.value = { urls, source, truncated }
+  }
 
   function goSettings(tab: SettingsTab) {
     settingsTab.value = tab
@@ -99,7 +105,7 @@ export const useAppStore = defineStore('app', () => {
   }
   media.addEventListener('change', applyTheme)
 
-  return { settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme }
+  return { settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme }
 })
 
 /** 下载队列，监听后端事件保持同步。 */

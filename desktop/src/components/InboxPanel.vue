@@ -18,6 +18,29 @@ const loading = ref(false)
 const fSource = ref<InboxSource | ''>('')
 const fStatus = ref<NonNullable<InboxFilter['status']>>('all')
 const expanded = ref<number | null>(null)
+/** 勾选的记录（用来批量添加） */
+const checked = ref<Set<number>>(new Set())
+function toggleCheck(id: number, on: boolean) {
+  if (on) checked.value.add(id)
+  else checked.value.delete(id)
+  checked.value = new Set(checked.value)
+}
+function checkAllShown() {
+  checked.value = checked.value.size >= items.value.length ? new Set() : new Set(items.value.map((i) => i.id))
+}
+async function addChecked() {
+  const text = items.value
+    .filter((i) => checked.value.has(i.id))
+    .map((i) => i.url || i.text)
+    .join('\n')
+  const urls = await api.batchExtract(text)
+  if (urls.length < 1) {
+    ElMessage.info('勾选的记录里没有可识别的链接')
+    return
+  }
+  app.openBatch(urls, '收到的链接')
+  checked.value = new Set()
+}
 
 const SOURCE: Record<InboxSource, string> = { clipboard: '剪贴板', phone: '手机', extension: '浏览器扩展', manual: '手动粘贴', api: '接口', cli: '命令行' }
 const STATUS: Record<InboxStatus, string> = {
@@ -148,6 +171,8 @@ async function clearAll() {
         <el-radio-button value="ignored">已忽略</el-radio-button>
       </el-radio-group>
       <span class="spacer" />
+      <el-button size="small" @click="checkAllShown">{{ checked.size >= items.length && items.length ? '取消全选' : '全选' }}</el-button>
+      <el-button v-if="checked.size" size="small" type="primary" @click="addChecked">批量添加所选 {{ checked.size }} 条…</el-button>
       <el-button v-if="failedCount" size="small" type="primary" plain @click="retryFailed">重试全部失败的</el-button>
       <el-dropdown trigger="click" size="small">
         <el-button size="small">清理</el-button>
@@ -171,6 +196,7 @@ async function clearAll() {
       <div v-for="i in items" :key="i.id" class="item card" :class="{ dim: i.status === 'ignored' }">
         <div class="main" @click="expanded = expanded === i.id ? null : i.id">
           <div class="line1">
+            <el-checkbox :model-value="checked.has(i.id)" @click.stop @update:model-value="(v: unknown) => toggleCheck(i.id, !!v)" />
             <span class="chip src">{{ SOURCE[i.source] ?? i.source }}</span>
             <span class="title ellipsis" :title="displayTitle(i)">{{ displayTitle(i) }}</span>
             <span class="chip st" :class="STATUS_CLASS[i.status]">{{ STATUS[i.status] ?? i.status }}</span>

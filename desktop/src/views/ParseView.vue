@@ -16,8 +16,6 @@ const parse = useParseStore()
 
 const selected = ref<Set<string>>(new Set())
 const links = ref<DetectedLink[]>([])
-const batchRunning = ref(false)
-const batchDone = ref(0)
 const preview = ref(false)
 const enqueuing = ref(false)
 const audioOnly = ref(false)
@@ -363,25 +361,6 @@ async function copyLinks() {
   }
 }
 
-async function batch() {
-  batchRunning.value = true
-  batchDone.value = 0
-  let failed = 0
-  for (const l of links.value) {
-    try {
-      await api.resolveAndEnqueue(l.url)
-    } catch {
-      failed++
-    }
-    batchDone.value++
-  }
-  batchRunning.value = false
-  await parse.loadRecent()
-  if (failed) ElMessage.warning(`已加入 ${links.value.length - failed} 条，${failed} 条解析失败`)
-  else ElMessage.success(`${links.value.length} 条链接已全部加入下载队列`)
-  app.view = 'queue'
-}
-
 async function clearRecent() {
   try {
     await ElMessageBox.confirm('清空“最近解析”？这些记录同时在“媒体库 → 历史”里，会一起清掉；已下载的文件不受影响。', '清空最近解析', { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' })
@@ -448,10 +427,8 @@ function sizeText(a: Asset) {
 
     <div v-if="links.length > 1" class="batch card">
       <span>检测到 <b>{{ links.length }}</b> 条链接</span>
-      <span class="mute">批量模式会按默认选项（视频 / 全部图片）直接加入下载队列。</span>
-      <el-button type="primary" plain :loading="batchRunning" @click="batch">
-        {{ batchRunning ? `处理中 ${batchDone}/${links.length}` : '全部解析并下载' }}
-      </el-button>
+      <span class="mute">先预览（去重、标出已下载过的），再整批加入队列。</span>
+      <el-button type="primary" plain @click="app.openBatch(links.map((l) => l.url), '粘贴')">批量添加…</el-button>
     </div>
 
     <ErrorAlert v-if="parse.error" :message="parse.error" :kind="parse.errorKind" :site="parse.errorSite" />

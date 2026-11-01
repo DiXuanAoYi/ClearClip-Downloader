@@ -1338,3 +1338,70 @@ mod tests {
         assert_eq!(login_label("youtube.com"), "login-youtube-com");
     }
 }
+
+// ---------- 批量下载 ----------
+
+#[tauri::command]
+pub fn batch_extract(text: String) -> Vec<String> {
+    crate::batch::extract(&text)
+}
+
+#[tauri::command]
+pub async fn batch_read_file(path: String) -> AppResult<(Vec<String>, bool)> {
+    tokio::task::spawn_blocking(move || crate::batch::read_links_file(&path)).await.map_err(|e| AppError::invalid(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn batch_preview(app: AppHandle, key: String, urls: Vec<String>, quality: String) -> AppResult<()> {
+    if urls.len() > crate::batch::MAX_LINKS {
+        return Err(AppError::invalid(format!("一次最多 {} 条，请分批添加。", crate::batch::MAX_LINKS)));
+    }
+    tauri::async_runtime::spawn(crate::batch::preview(app, key, urls, quality));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn batch_preview_cancel(app: AppHandle, key: String) {
+    crate::batch::cancel_preview(&app, &key);
+}
+
+#[tauri::command]
+pub fn batch_enqueue(
+    app: AppHandle,
+    items: Vec<crate::batch::BatchItem>,
+    opts: crate::batch::BatchOpts,
+    source: String,
+) -> AppResult<crate::batch::BatchResult> {
+    crate::batch::enqueue(&app, items, opts, source)
+}
+
+#[tauri::command]
+pub fn batch_list(app: AppHandle) -> Vec<crate::batch::BatchView> {
+    crate::batch::list(&app)
+}
+
+#[tauri::command]
+pub fn batch_action(app: AppHandle, id: String, what: String) -> AppResult<()> {
+    crate::batch::action(&app, &id, &what)
+}
+
+#[tauri::command]
+pub fn batch_update(app: AppHandle, id: String, opts: crate::batch::BatchOpts) -> AppResult<()> {
+    crate::batch::update(&app, &id, opts)
+}
+
+#[tauri::command]
+pub fn batch_export_failed(app: AppHandle, id: String) -> AppResult<String> {
+    crate::batch::export_failed(&app, &id)
+}
+
+#[tauri::command]
+pub fn batch_save_text(path: String, text: String) -> AppResult<()> {
+    std::fs::write(path, text)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn batch_quick(app: AppHandle, urls: Vec<String>, source: String) -> AppResult<crate::batch::BatchResult> {
+    crate::batch::enqueue_quick(&app, urls, &source)
+}
