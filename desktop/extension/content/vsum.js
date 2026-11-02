@@ -16,8 +16,10 @@
     .tabs button { flex: 1; background: transparent; color: #5d6862; border-radius: 0; border-bottom: 2px solid transparent; padding: 7px 0; font-weight: 400; }
     .tabs button.on { color: #b4561a; border-bottom-color: #b4561a; font-weight: 700; }
     .body { flex: 1; overflow: auto; padding: 10px; display: flex; flex-direction: column; }
-    .body > :not(.selbar) { flex: 1 0 auto; display: flex; flex-direction: column; }
+    .body > :not(.selbar):not(#prog) { flex: 1 0 auto; display: flex; flex-direction: column; }
     .body > .sm { gap: 12px; }
+    .body > #prog { flex: 0 0 auto; display: block }
+    .body > #prog:empty { display: none }
     .tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
     select, input[type=text], textarea { border: 1px solid #cfd5d1; border-radius: 6px; padding: 4px 6px; background: #fff; color: inherit; min-width: 0; }
     textarea { width: 100%; resize: vertical; }

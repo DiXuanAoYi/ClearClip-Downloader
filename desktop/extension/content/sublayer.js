@@ -30,13 +30,23 @@
 
   const CSS = `
     .cap { position: fixed; pointer-events: none; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px }
-    .cap span { display: inline-block; max-width: 92%; background: #000a; color: #fff; padding: 2px 10px; border-radius: 4px; white-space: pre-wrap; text-shadow: 0 1px 2px #000; line-height: 1.35 }
+    .cap span { font-size: inherit; display: inline-block; max-width: 92%; background: #000a; color: #fff; padding: 2px 10px; border-radius: 4px; white-space: pre-wrap; text-shadow: 0 1px 2px #000; line-height: 1.35 }
     .cap span.second { color: #ffe9a8 }
     .bar { position: fixed; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; background: #1d2420e6; color: #fff; padding: 5px 8px; border-radius: 8px; font-size: 12px; max-width: 96vw }
     .bar button { padding: 3px 8px; font-weight: 400; background: #ffffff1f; color: #fff }
     .bar button:hover { background: #ffffff38 }
     .bar .st { color: #cfd5d1; max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
     .bar select { font-size: 12px; padding: 2px; border-radius: 4px }
+    .bar .gear.on { background: #d9762b }
+    .pop { position: fixed; display: none; flex-direction: column; gap: 8px; width: 260px; background: #1d2420f2; color: #fff; padding: 10px 12px; border-radius: 10px; font-size: 12px; box-shadow: 0 6px 20px #0006 }
+    .pop.open { display: flex }
+    .pop .row { display: flex; align-items: center; gap: 8px }
+    .pop .row > b { width: 3.2em; font-weight: 400; color: #cfd5d1; flex: none }
+    .pop .row input[type=range] { flex: 1; min-width: 0; accent-color: #d9762b }
+    .pop .row .v { width: 3.6em; text-align: right; flex: none }
+    .pop button { padding: 3px 8px; font-weight: 400; background: #ffffff1f; color: #fff }
+    .pop button:hover { background: #ffffff38 }
+    .pop .acts { display: flex; gap: 6px; flex-wrap: wrap }
   `
   const ui = mount(CSS)
   const S = {
@@ -66,33 +76,42 @@
   const cap = h('div', { class: 'cap' })
   const stEl = h('span', { class: 'st' })
   const modeBtn = h('button', { onclick: () => update({ mode: L.nextMode(S.prefs.mode) }) })
-  const sizeEl = h('span')
-  const delayEl = h('span')
+  const sizeEl = h('span', { class: 'v' })
+  const delayEl = h('span', { class: 'v' })
+  const posEl = h('span', { class: 'v' })
   const langSel = h(
     'select',
     { onchange: (e) => update({ target: e.target.value }, true) },
     ...['简体中文', '繁體中文', 'English', '日本語', '한국어', 'Français', 'Deutsch', 'Español', 'Русский'].map((l) => h('option', { value: l, text: l })),
   )
-  const bar = h(
+  const sizeIn = h('input', { type: 'range', min: '50', max: '300', step: '10', oninput: (e) => update({ size: Number(e.target.value) }) })
+  const posIn = h('input', { type: 'range', min: '0', max: '60', step: '1', oninput: (e) => update({ bottom: Number(e.target.value) }) })
+  const delayIn = h('input', { type: 'range', min: '-10000', max: '10000', step: '100', oninput: (e) => update({ delay: Number(e.target.value) }) })
+  const gearBtn = h('button', { class: 'gear', text: '⚙', title: '字幕设置（字号、位置、延迟、导出）', onclick: () => togglePop() })
+  const pop = h(
     'div',
-    { class: 'bar' },
-    modeBtn,
-    langSel,
-    h('button', { text: 'A−', title: '字号减小', onclick: () => update({ size: S.prefs.size - 10 }) }),
-    sizeEl,
-    h('button', { text: 'A+', title: '字号增大', onclick: () => update({ size: S.prefs.size + 10 }) }),
-    h('button', { text: '↑', title: '字幕上移', onclick: () => update({ bottom: S.prefs.bottom + 2 }) }),
-    h('button', { text: '↓', title: '字幕下移', onclick: () => update({ bottom: S.prefs.bottom - 2 }) }),
-    h('button', { text: '−0.5s', title: '字幕提前 0.5 秒', onclick: () => update({ delay: S.prefs.delay - 500 }) }),
-    delayEl,
-    h('button', { text: '+0.5s', title: '字幕延后 0.5 秒', onclick: () => update({ delay: S.prefs.delay + 500 }) }),
-    h('button', { text: '导出 SRT', onclick: exportSrt }),
-    h('button', { text: '用清影转写', title: '这个视频没有字幕时，让清影把音频转成文字', onclick: transcribe }),
-    stEl,
-    h('button', { text: '×', title: '关闭字幕层', onclick: () => api_destroy() }),
+    { class: 'pop' },
+    h('div', { class: 'row' }, h('b', { text: '字号' }), sizeIn, sizeEl),
+    h('div', { class: 'row' }, h('b', { text: '位置' }), posIn, posEl),
+    h('div', { class: 'row' }, h('b', { text: '延迟' }), delayIn, delayEl),
+    h(
+      'div',
+      { class: 'acts' },
+      h('button', { text: '重置', onclick: () => update({ size: L.DEFAULTS.size, bottom: L.DEFAULTS.bottom, delay: L.DEFAULTS.delay }) }),
+      h('button', { text: '导出 SRT', onclick: exportSrt }),
+      h('button', { text: '用清影转写', title: '这个视频没有字幕时，让清影把音频转成文字', onclick: transcribe }),
+    ),
   )
+  const bar = h('div', { class: 'bar' }, modeBtn, langSel, gearBtn, stEl, h('button', { text: '×', title: '关闭字幕层', onclick: () => api_destroy() }))
+  function togglePop(open) {
+    const on = open ?? !pop.classList.contains('open')
+    pop.classList.toggle('open', on)
+    gearBtn.classList.toggle('on', on)
+    layout()
+  }
   ui.add(cap)
   ui.add(bar)
+  ui.add(pop)
 
   const setStatus = (t) => {
     S.status = t
@@ -106,11 +125,15 @@
     if (!r || r.width < 10) {
       cap.style.display = 'none'
       bar.style.display = 'none'
+      pop.style.display = 'none'
       return
     }
     bar.style.display = ''
+    pop.style.display = ''
     bar.style.left = `${Math.max(4, r.left + 8)}px`
     bar.style.top = `${Math.max(4, r.top + 8)}px`
+    pop.style.left = bar.style.left
+    pop.style.top = `${Math.max(4, r.top + 8) + (bar.offsetHeight || 30) + 6}px`
     const fs = Math.max(12, Math.round((r.height / 22) * (S.prefs.size / 100)))
     cap.style.cssText = `left:${r.left}px;width:${r.width}px;bottom:${Math.max(0, window.innerHeight - r.bottom) + (r.height * S.prefs.bottom) / 100}px;font-size:${fs}px`
   }
@@ -129,7 +152,11 @@
   function renderBar() {
     modeBtn.textContent = L.MODE_NAMES[S.prefs.mode]
     sizeEl.textContent = `${S.prefs.size}%`
+    sizeIn.value = String(S.prefs.size)
+    posEl.textContent = `${S.prefs.bottom}%`
+    posIn.value = String(S.prefs.bottom)
     delayEl.textContent = `${S.prefs.delay >= 0 ? '+' : ''}${(S.prefs.delay / 1000).toFixed(1)}s`
+    delayIn.value = String(S.prefs.delay)
     langSel.value = S.target
   }
 
