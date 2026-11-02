@@ -13,8 +13,9 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 pub const LABEL: &str = "write";
-const W: f64 = 440.0;
-const H: f64 = 560.0;
+/// 窗口比卡片大一圈透明边距（放阴影和缩放把手），卡片本身约 440×560
+const W: f64 = 464.0;
+const H: f64 = 584.0;
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -175,11 +176,13 @@ fn show_window(app: &AppHandle) {
     let mut b = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html#write".into()))
         .title("清影写作")
         .inner_size(W, H)
-        .min_inner_size(360.0, 360.0)
+        .min_inner_size(384.0, 400.0)
         .decorations(false)
         // 不用系统阴影：Windows 对无边框窗口会在四周补一圈浅色的 1 像素系统边框，深色下像多出一层白边；
         // 窗口自己已经有一圈和主题同色的边线
         .shadow(false)
+        // 透明窗口：页面里只有一张圆角卡片，窗口四周不再有系统/网页的底色容器
+        .transparent(true)
         .resizable(true)
         .always_on_top(cfg.pin)
         .skip_taskbar(true)

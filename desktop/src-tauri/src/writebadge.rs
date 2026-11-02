@@ -367,6 +367,7 @@ mod win {
             .resizable(false)
             .decorations(false)
             .shadow(false)
+            .transparent(true)
             .always_on_top(true)
             .skip_taskbar(true)
             .focused(false)
