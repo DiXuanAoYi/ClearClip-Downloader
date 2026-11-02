@@ -90,9 +90,9 @@ pub fn check_opts(kind: &str, text: &str, o: &Opts) -> AppResult<()> {
             return Err(AppError::invalid("请先检索并勾选要加入的数据。"));
         }
     }
-    for s in [&o.custom_format, &o.custom_tone, &o.extra] {
-        if s.chars().count() > 200 {
-            return Err(AppError::invalid("自定义要求太长（上限 200 字）。"));
+    for (s, max) in [(&o.custom_format, 200), (&o.custom_tone, 200), (&o.extra, 900)] {
+        if s.chars().count() > max {
+            return Err(AppError::invalid(format!("自定义要求太长（上限 {max} 字）。")));
         }
     }
     Ok(())

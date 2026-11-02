@@ -8,8 +8,9 @@ import './styles/theme.css'
 import App from './App.vue'
 import MiniApp from './MiniApp.vue'
 import FloatApp from './FloatApp.vue'
+import WriteApp from './WriteApp.vue'
 
 // 迷你窗、悬浮拖拽窗与主窗口共用同一份前端，按 hash 区分。
-const root = location.hash === '#mini' ? MiniApp : location.hash === '#float' ? FloatApp : App
+const root = location.hash === '#mini' ? MiniApp : location.hash === '#float' ? FloatApp : location.hash === '#write' ? WriteApp : App
 
 createApp(root).use(createPinia()).use(ElementPlus, { locale: zhCn }).mount('#app')

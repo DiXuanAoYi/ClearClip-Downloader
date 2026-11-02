@@ -16,6 +16,7 @@ import NotifyPanel from '../components/NotifyPanel.vue'
 import UploadPanel from '../components/UploadPanel.vue'
 import RulesPanel from '../components/RulesPanel.vue'
 import SecurityPanel from '../components/SecurityPanel.vue'
+import WritingPanel from '../components/WritingPanel.vue'
 import ProtocolsPanel from '../components/ProtocolsPanel.vue'
 import type { HealthResult } from '../types'
 import { copyDiagnostics } from '../composables/diagnostics'
@@ -536,6 +537,10 @@ function insertVar(v: string) {
 
       <el-tab-pane label="AI" name="ai">
         <AiPanel v-model="form.ai" />
+      </el-tab-pane>
+
+      <el-tab-pane label="写作" name="writing">
+        <WritingPanel v-model="form.writing" />
       </el-tab-pane>
 
       <el-tab-pane label="安全与隐私" name="security">
