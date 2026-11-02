@@ -64,7 +64,7 @@
     .note .q { border-left: 3px solid #d9762b; padding-left: 8px; white-space: pre-wrap; }
     .note .x { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
     .note .x button { padding: 1px 7px; font-size: 12px; }
-    .pill { position: fixed; z-index: 2147483000; padding: 4px 10px; border-radius: 14px; background: #b4561acc; color: #fff; font-size: 12px; box-shadow: 0 2px 8px #0004; }
+    .pill { transition: opacity .25s; position: fixed; z-index: 2147483000; padding: 4px 10px; border-radius: 14px; background: #b4561acc; color: #fff; font-size: 12px; box-shadow: 0 2px 8px #0004; }
     .sm { display: flex; flex-direction: column; gap: 12px; }
     .sm .vid { display: grid; gap: 2px; }
     .sm .vid b { font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1408,11 +1408,21 @@
 
   const pill = h('button', { class: 'pill', text: '笔记 (n)', title: '记下当前这句话', style: 'display:none', onclick: () => quickNote() })
   ui.add(pill)
+  let pillSeen = 0
+  document.addEventListener('mousemove', (e) => (globalThis.__ccPtr = { x: e.clientX, y: e.clientY, t: Date.now() }), { capture: true, passive: true })
   function placePill(v) {
     const r = v?.getBoundingClientRect()
     const ok = r && S.prefs.pill && S.data && isVideo() && r.width > 200 && r.height > 120 && r.bottom > 0 && r.top < innerHeight
     pill.style.display = ok ? '' : 'none'
     if (ok) {
+      // 鼠标移出视频区域后淡出隐藏（离开 1.5 秒后）；刚出现时先显示 2.5 秒
+      const m = globalThis.__ccPtr || { x: -1, y: -1, t: 0 }
+      const inside = m.x >= r.left && m.x <= r.right && m.y >= r.top && m.y <= r.bottom
+      if (inside) pillSeen = Date.now()
+      if (!pillSeen) pillSeen = Date.now() + 1000
+      const show = Date.now() - pillSeen < 1500
+      pill.style.opacity = show ? '1' : '0'
+      pill.style.pointerEvents = show ? '' : 'none'
       pill.style.left = `${Math.max(4, r.left + 8)}px`
       pill.style.top = `${Math.max(4, r.top + 8)}px`
     }

@@ -32,7 +32,7 @@
     .cap { position: fixed; pointer-events: none; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px }
     .cap span { font-size: inherit; display: inline-block; max-width: 92%; background: #000a; color: #fff; padding: 2px 10px; border-radius: 4px; white-space: pre-wrap; text-shadow: 0 1px 2px #000; line-height: 1.35 }
     .cap span.second { color: #ffe9a8 }
-    .pill { position: fixed; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 4px 0 9px; border-radius: 15px; background: #1d2420d9; color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 2px 8px #0005; user-select: none }
+    .pill { transition: opacity .25s; position: fixed; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 4px 0 9px; border-radius: 15px; background: #1d2420d9; color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 2px 8px #0005; user-select: none }
     .pill .mk { width: 16px; height: 16px; border-radius: 5px; background: #f08a3c; color: #14181a; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none }
     .pill .lb { cursor: pointer; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
     .pill .sw { width: 30px; height: 18px; border-radius: 9px; background: #ffffff59; position: relative; cursor: pointer; padding: 0; border: 0; flex: none }
@@ -76,6 +76,7 @@
     timer: 0,
     drag: false,
     on: true,
+    seen: Date.now() + 1000,
   }
 
   // ---------- 找视频 ----------
@@ -180,6 +181,13 @@
     const ph = pill.offsetHeight || 30
     const pl = Math.min(window.innerWidth - pw - 4, Math.max(4, r.right - pw - 12))
     const pt = Math.min(window.innerHeight - ph - 4, Math.max(4, r.bottom - ph - 62))
+    // 鼠标移出视频（含胶囊、菜单）1.5 秒后自动隐藏；菜单打开时一直显示
+    const m = globalThis.__ccPtr || { x: -1, y: -1 }
+    const inBox = (b) => m.x >= b.left && m.x <= b.right && m.y >= b.top && m.y <= b.bottom
+    if (inBox(r) || pop.classList.contains('open') || inBox(pill.getBoundingClientRect())) S.seen = Date.now()
+    const show = Date.now() - S.seen < 1500
+    pill.style.opacity = show ? '1' : '0'
+    pill.style.pointerEvents = show ? '' : 'none'
     pill.style.left = `${pl}px`
     pill.style.top = `${pt}px`
     pop.style.display = ''
@@ -365,6 +373,7 @@
     renderBar()
     layout()
     window.addEventListener('resize', layout)
+    document.addEventListener('mousemove', (e) => (globalThis.__ccPtr = { x: e.clientX, y: e.clientY }), { capture: true, passive: true })
     S.timer = setInterval(() => {
       if (!S.video?.isConnected) S.video = pickVideo()
       layout()
