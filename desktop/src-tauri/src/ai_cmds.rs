@@ -42,6 +42,9 @@ pub struct AiStatus {
     pub stt_ready: bool,
     pub stt_key: bool,
     pub whisper_found: bool,
+    /// 实际会用的 whisper-cli 和模型（设置里没填或失效时自动找到的）
+    pub whisper_path: Option<String>,
+    pub whisper_model_path: Option<String>,
 }
 
 #[tauri::command]
@@ -54,12 +57,14 @@ pub fn ai_status(state: St<'_>) -> AiStatus {
             || s.ai.pool.iter().any(|e| e.enabled && !e.base_url.is_empty() && !e.model.is_empty() && state.vault.has(&ai_pool::key_name(&e.id))),
         chat_key,
         stt_ready: if ai::use_local_stt(&state, &s) {
-            !s.ai.whisper_model.is_empty()
+            ai::find_whisper_model(&s).is_some()
         } else {
             (!s.ai.stt_url().is_empty() && !s.ai.stt_model.is_empty() && stt_key) || ai::stt_pool_endpoint(&state, &s).is_some()
         },
         stt_key,
         whisper_found: ai::whisper_available(&s),
+        whisper_path: ai::find_whisper_bin(&s).map(|p| p.to_string_lossy().into_owned()),
+        whisper_model_path: ai::find_whisper_model(&s).map(|p| p.to_string_lossy().into_owned()),
     }
 }
 

@@ -766,6 +766,8 @@ export interface AiStatus {
   sttReady: boolean
   sttKey: boolean
   whisperFound: boolean
+  whisperPath?: string | null
+  whisperModelPath?: string | null
 }
 
 export interface LibrarySettings {

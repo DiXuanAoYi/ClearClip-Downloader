@@ -349,12 +349,13 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
-/* 窗口是透明的：圆角外面不再露出白底 */
-html, body, #app { background: transparent !important; }
+/* 窗口不透明、内容铺满：底色和卡片同色，四周不会露出别的颜色 */
+html, body, #app { background: #fff !important; overflow: hidden; }
+@media (prefers-color-scheme: dark) { html, body, #app { background: #22292c !important; } }
 </style>
 
 <style scoped>
-.wa { --acc: #d9762b; --accd: #b4561a; --soft: #fbeadb; --line: #d9dedb; --bg: #f4f5f4; --card: #fff; --mut: #5d6862; --err: #c2453b; --ok: #2f8a57; position: relative; margin: 6px; height: calc(100vh - 12px); box-shadow: 0 4px 18px rgba(0,0,0,.28); display: flex; flex-direction: column; background: var(--card); color: #1d2420; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-sizing: border-box; }
+.wa { --acc: #d9762b; --accd: #b4561a; --soft: #fbeadb; --line: #d9dedb; --bg: #f4f5f4; --card: #fff; --mut: #5d6862; --err: #c2453b; --ok: #2f8a57; position: relative; height: 100vh; display: flex; flex-direction: column; background: var(--card); color: #1d2420; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; border: 1px solid var(--line); border-radius: 0; overflow: hidden; box-sizing: border-box; }
 @media (prefers-color-scheme: dark) { .wa { --acc: #f08a3c; --accd: #c8641f; --soft: #3a2a1d; --line: #2f383c; --bg: #14181a; --card: #22292c; --mut: #9aa6a2; --err: #ec7a70; --ok: #5cc28a; color: #e7ecea; } }
 .bar { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; border-bottom: 1px solid var(--line); background: var(--bg); cursor: grab; user-select: none; }
 .bar:active { cursor: grabbing; }
@@ -402,10 +403,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .foot a { color: var(--accd); }
 .foot .sp { margin-left: auto; }
 .rz { position: absolute; z-index: 5; }
-.rz-r { right: -4px; top: 10px; bottom: 10px; width: 8px; cursor: ew-resize; }
-.rz-l { left: -4px; top: 10px; bottom: 10px; width: 8px; cursor: ew-resize; }
-.rz-b { bottom: -4px; left: 10px; right: 10px; height: 8px; cursor: ns-resize; }
-.rz-t { top: -4px; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
-.rz-br { right: -4px; bottom: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
-.rz-bl { left: -4px; bottom: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
+.rz-r { right: 0; top: 8px; bottom: 8px; width: 5px; cursor: ew-resize; }
+.rz-l { left: 0; top: 8px; bottom: 8px; width: 5px; cursor: ew-resize; }
+.rz-b { bottom: 0; left: 8px; right: 8px; height: 5px; cursor: ns-resize; }
+.rz-t { top: 0; left: 8px; right: 8px; height: 4px; cursor: ns-resize; }
+.rz-br { right: 0; bottom: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+.rz-bl { left: 0; bottom: 0; width: 12px; height: 12px; cursor: nesw-resize; }
 </style>

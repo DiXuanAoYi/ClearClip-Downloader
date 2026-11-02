@@ -220,6 +220,48 @@ pub fn key_name(id: &str) -> String {
     format!("ai.pool.{id}")
 }
 
+/// 旧版的“默认服务”并进模型池：以后只有模型池一处配置。
+/// 密钥读不到（比如应用锁没解开）就先不动，下次启动再试。
+pub fn migrate_default(st: &crate::AppState) {
+    let mut s = st.settings_raw();
+    if s.ai.base_url.trim().is_empty() || s.ai.model.trim().is_empty() {
+        return;
+    }
+    let key = st.vault.get(crate::ai::KEY_CHAT).filter(|k| !k.is_empty());
+    if key.is_none() && !crate::ai::is_local_url(&s.ai.base_url) {
+        return;
+    }
+    // 转写接口原来可以“留空与默认相同”，搬走之前把地址固定下来
+    if s.ai.stt_base_url.trim().is_empty() {
+        s.ai.stt_base_url = s.ai.base_url.clone();
+    }
+    let mut id = "default".to_string();
+    let mut n = 1;
+    while s.ai.pool.iter().any(|e| e.id == id) {
+        n += 1;
+        id = format!("default-{n}");
+    }
+    if let Some(k) = &key {
+        if st.vault.set(&key_name(&id), k).is_err() {
+            return;
+        }
+    }
+    s.ai.pool.push(crate::settings::PoolEntry {
+        id,
+        name: "默认服务".into(),
+        base_url: s.ai.base_url.clone(),
+        model: s.ai.model.clone(),
+        priority: 10,
+        ..Default::default()
+    });
+    s.ai.base_url.clear();
+    s.ai.model.clear();
+    if s.save(&st.settings_path).is_ok() {
+        *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+        log::info!("已把旧的默认 AI 服务并进模型池");
+    }
+}
+
 pub const KEY_SUPADATA: &str = "ai.supadata";
 
 // ---------- 运行状态 ----------

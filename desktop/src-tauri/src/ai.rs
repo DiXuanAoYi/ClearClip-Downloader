@@ -909,11 +909,47 @@ pub fn whisper_progress(line: &str) -> Option<f64> {
     rest.trim().trim_end_matches('%').trim().parse::<f64>().ok()
 }
 
+/// 本机 whisper.cpp 的模型文件：设置里填的优先；没填或文件不在了（比如便携版搬了家），
+/// 就在数据目录里找已下载的模型（`models/whisper_*.bin`，优先大的），再找 `whisper-cpp/` 下的 `ggml-*.bin`。
+pub(crate) fn find_whisper_model(settings: &Settings) -> Option<PathBuf> {
+    let configured = settings.ai.whisper_model.trim();
+    if !configured.is_empty() && Path::new(configured).is_file() {
+        return Some(PathBuf::from(configured));
+    }
+    let data = crate::ml::DATA_DIR.get()?;
+    for id in ["whisper_small", "whisper_base", "whisper_tiny"] {
+        let p = crate::ml::store::path_of(data, id);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let mut found: Vec<PathBuf> = [data.join("models"), data.join("whisper-cpp")]
+        .iter()
+        .filter_map(|d| std::fs::read_dir(d).ok())
+        .flat_map(|r| r.flatten().map(|e| e.path()))
+        .filter(|p| {
+            let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+            n.starts_with("ggml-") && n.ends_with(".bin") && !n.contains("silero") && p.is_file()
+        })
+        .collect();
+    found.sort_by_key(|p| std::cmp::Reverse(p.metadata().map_or(0, |m| m.len())));
+    found.into_iter().next()
+}
+
 pub(crate) fn find_whisper_bin(settings: &Settings) -> Option<PathBuf> {
     let configured = settings.ai.whisper_bin.trim();
     if !configured.is_empty() {
         let p = PathBuf::from(configured);
-        return p.is_file().then_some(p);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    // 清影自己装的那份（便携版搬家后，设置里的旧路径会失效）
+    if let Some(data) = crate::ml::DATA_DIR.get() {
+        let p = crate::ml::whisper_cli::dir_of(data).join(crate::ml::whisper_cli::bin_name());
+        if p.is_file() {
+            return Some(p);
+        }
     }
     let exts: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
     let path = std::env::var_os("PATH")?;
@@ -948,10 +984,10 @@ async fn run_whisper_local(
     use tokio::io::{AsyncBufReadExt, BufReader};
     let bin = find_whisper_bin(settings)
         .ok_or_else(|| AppError::invalid("找不到 whisper.cpp（whisper-cli）。请在“设置 → AI”里指定它的位置，或把它放进系统 PATH。"))?;
-    let model = settings.ai.whisper_model.trim();
-    if model.is_empty() || !Path::new(model).is_file() {
-        return Err(AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin）。"));
-    }
+    let model_path = find_whisper_model(settings)
+        .ok_or_else(|| AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin），或在“设置 → 组件”下载一个。"))?;
+    let model = model_path.to_string_lossy().into_owned();
+    let model = model.as_str();
     ctx.note("正在提取音频…");
     let wav = work.join("audio.wav");
     let mut a = base_args();
@@ -1097,7 +1133,7 @@ pub fn auto_transcribe(app: &tauri::AppHandle, st: &Arc<AppState>, item: &crate:
         return;
     }
     let ready = if s.ai.stt_engine == "local" {
-        !s.ai.whisper_model.is_empty()
+        find_whisper_model(&s).is_some()
     } else {
         st.vault.get(KEY_STT).or_else(|| st.vault.get(KEY_CHAT)).is_some() || is_local_url(s.ai.stt_url())
     };
@@ -1219,8 +1255,7 @@ pub fn use_local_stt(st: &AppState, settings: &Settings) -> bool {
         return true;
     }
     let own_api = !settings.ai.stt_base_url.trim().is_empty() || st.vault.has(KEY_STT) || stt_pool_endpoint(st, settings).is_some();
-    let model = settings.ai.whisper_model.trim();
-    !own_api && !model.is_empty() && Path::new(model).is_file() && find_whisper_bin(settings).is_some()
+    !own_api && find_whisper_model(settings).is_some() && find_whisper_bin(settings).is_some()
 }
 
 fn stt_api_hint(e: AppError) -> AppError {
@@ -1239,9 +1274,8 @@ pub fn stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
         if find_whisper_bin(settings).is_none() {
             return Err(AppError::invalid("找不到 whisper.cpp（whisper-cli）。请在“设置 → AI”里指定它的位置，或把它放进系统 PATH。"));
         }
-        let model = settings.ai.whisper_model.trim();
-        if model.is_empty() || !Path::new(model).is_file() {
-            return Err(AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin）。"));
+        if find_whisper_model(settings).is_none() {
+            return Err(AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin），或在“设置 → 组件”下载一个。"));
         }
         return Ok(());
     }

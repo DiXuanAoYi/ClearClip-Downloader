@@ -281,6 +281,7 @@ pub fn run() {
                 log::info!("restored a backup");
             }
             let mut settings = Settings::load(&settings_path, &default_dl);
+            let _ = ml::DATA_DIR.set(data_dir.clone());
             bt::init(data_dir.clone());
             engine::hostmem::init(data_dir.clone());
             let db = Db::open(&data_dir.join("clearclip.db")).map_err(|e| e.to_string())?;
@@ -366,6 +367,7 @@ pub fn run() {
             let previews = data_dir.join("previews");
             let _ = std::fs::create_dir_all(&previews);
             let _ = app.asset_protocol_scope().allow_directory(&previews, false);
+            ai_pool::migrate_default(&app.state::<Arc<AppState>>());
             download::restore(&handle);
             batch::restore(&handle);
             if let Ok(n) = app.state::<Arc<AppState>>().db.inbox_prune(settings.inbox.keep_days, settings.inbox.max_items) {

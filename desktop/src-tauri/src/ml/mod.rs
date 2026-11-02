@@ -6,3 +6,6 @@ pub mod onnx;
 pub mod store;
 pub mod vocals;
 pub mod whisper_cli;
+
+/// 数据目录（便携版会随文件夹搬家）；设置里存的是绝对路径，搬家后失效，所以要在这里重新找。
+pub static DATA_DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
