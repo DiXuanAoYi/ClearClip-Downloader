@@ -54,7 +54,8 @@ pub struct Fact {
     pub url: String,
 }
 
-pub const ACTIONS: [&str; 18] = [
+pub const ACTIONS: [&str; 19] = [
+    "reply",
     "rewrite",
     "translate",
     "summarize",
@@ -123,6 +124,7 @@ fn action_line(o: &Opts) -> String {
         "apologetic" => "Make the text sincerely apologetic and take responsibility without excess.".into(),
         "sincere" => "Make the text more sincere and genuine.".into(),
         "concise" => "Make the text concise: cut filler and repetition, keep every important point.".into(),
+        "reply" => "The text is a message the user RECEIVED. Write the user's reply to it, following the user's intent given in the extra request (if none is given, write a sensible, polite reply). Reply in the same language as the received message unless asked otherwise. Output ONLY the reply, without quoting the received message.".into(),
         _ => "Rewrite the text so it reads better while keeping the meaning.".into(),
     }
 }
@@ -253,7 +255,7 @@ pub struct Guard {
 
 /// 动作本来就会删减内容时，“缺东西”不算问题。
 fn may_drop(action: &str) -> bool {
-    matches!(action, "summarize" | "shorten" | "concise" | "continue" | "translate")
+    matches!(action, "summarize" | "shorten" | "concise" | "continue" | "translate" | "reply")
 }
 
 pub fn guard(action: &str, src: &str, out: &str) -> Guard {
@@ -262,6 +264,8 @@ pub fn guard(action: &str, src: &str, out: &str) -> Guard {
     let missing: Vec<String> = if may_drop(action) { vec![] } else { protected_tokens(src).into_iter().filter(|t| !out.contains(t.as_str())).collect() };
     let off = match action {
         "summarize" | "shorten" | "concise" | "continue" | "translate" => ratio > 4.0,
+        // 回复的长短和收到的消息没有关系
+        "reply" => false,
         _ => !(0.25..=4.0).contains(&ratio),
     };
     Guard { warn: !missing.is_empty() || off, missing, ratio }
@@ -285,6 +289,22 @@ pub fn clean_output(s: &str) -> String {
         }
     }
     t.trim().to_string()
+}
+
+// ---------- 个人风格 ----------
+
+/// 从用户自己写的几段文字里总结写作风格，结果可直接当作“我的写作风格”使用。
+pub fn style_system() -> String {
+    "Read the user's own writing samples and describe the author's writing style as a short instruction another writer could follow: \
+typical sentence length, tone, formality, vocabulary habits, punctuation and emoji habits, how they open and close. \
+Write the description in Chinese, at most 120 characters, in imperative form (for example: 口语化，短句为主，少用感叹号，结尾常带一句关心). \
+Reply with ONLY the description, no quotes or labels."
+        .into()
+}
+
+/// 整理模型给的风格描述：去掉包装、截到 300 字。
+pub fn clean_style(s: &str) -> String {
+    clean_output(s).trim().chars().take(300).collect()
 }
 
 // ---------- 语法检查 ----------
@@ -798,5 +818,27 @@ mod tests {
         }];
         let m = user_message(&o, "原文");
         assert!(m.contains("PROVIDED FACTS") && m.contains("4.67") && m.ends_with("原文"));
+    }
+
+    #[test]
+    fn reply_answers_the_received_message() {
+        let mut o = opts("reply");
+        o.extra = "我想表达：周五可以，但要改到下午".into();
+        let p = system_prompt(&o);
+        assert!(p.contains("RECEIVED") && p.contains("reply") && p.contains("周五可以"), "用户的意图要进提示词");
+        assert!(user_message(&o, "王经理：周五的评审能参加吗？").contains("王经理"));
+        assert!(check_opts("write", "收到的消息", &o).is_ok());
+        // 回复不要求带回原消息里的数字、网址，也允许比原消息长得多
+        let g = guard("reply", "会议 3 号楼 502 室，见 https://a.b/c", "好的，我准时到。");
+        assert!(g.missing.is_empty() && !g.warn);
+        assert!(!guard("reply", "好", &"字".repeat(20)).warn);
+    }
+
+    #[test]
+    fn style_description_is_cleaned() {
+        assert_eq!(clean_style("```\n口语化，短句为主\n```"), "口语化，短句为主");
+        assert_eq!(clean_style("“口语化”").as_str(), "口语化");
+        assert!(clean_style(&"风".repeat(500)).chars().count() <= 300);
+        assert!(style_system().contains("120"));
     }
 }

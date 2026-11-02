@@ -146,8 +146,12 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
         _ => crate::ai_pool::Task::Chat,
     };
     let mut ep = ai::chat_endpoint_for(&st, &settings, task)?;
-    if matches!(req.kind.as_str(), "write" | "grammar" | "stats") {
+    if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
         ep = crate::writing::route(ep, &req.write.route)?;
+    }
+    if matches!(req.kind.as_str(), "write" | "stats") {
+        // 个人风格：设置里的一两句话，并进每次的额外要求
+        req.write.extra = crate::writeassist::with_style(&req.write.extra, &settings.writing.style);
     }
     let model = settings.ai.model.clone();
     let default_lang = settings.ai.target_lang.clone();
@@ -350,6 +354,43 @@ async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str
     result
 }
 
+/// 听写：把写作窗里录的一段话交给现有的语音转文字（本机 whisper.cpp 或云端接口），结果 `{"text": …}` 用任务编号轮询。
+pub fn start_dictation(app: &tauri::AppHandle, bytes: Vec<u8>, ext: &str) -> AppResult<u64> {
+    use tauri::Manager;
+    const MAX_BYTES: usize = 40 * 1024 * 1024;
+    if bytes.is_empty() {
+        return Err(AppError::invalid("没有录到声音。"));
+    }
+    if bytes.len() > MAX_BYTES {
+        return Err(AppError::invalid("录音太长了，请分几次说。"));
+    }
+    let st = app.state::<Arc<crate::AppState>>().inner().clone();
+    let settings = st.settings();
+    ai::stt_ready(&st, &settings)?;
+    let ffmpeg = crate::postprocess::find_ffmpeg(&st).ok_or_else(crate::postprocess::ffmpeg_missing)?;
+    let ext: String = ext.chars().filter(char::is_ascii_alphanumeric).take(5).collect();
+    let ext = if ext.is_empty() { "webm".to_string() } else { ext };
+    let (id, _cancel) = new_job();
+    let work = st.data_dir.join("dictation").join(id.to_string());
+    std::fs::create_dir_all(&work)?;
+    let input = work.join(format!("input.{ext}"));
+    std::fs::write(&input, &bytes)?;
+    let lang = settings.ai.stt_language.clone();
+    crate::media_tools::spawn_job(app, "听写".into(), "听写", move |ctx| async move {
+        let out = ai::transcribe_cues(&ctx, &settings, &ffmpeg, &input, &lang, &work).await;
+        let _ = std::fs::remove_dir_all(&work);
+        with_job(id, |j| match &out {
+            Ok(cues) => {
+                let text = cues.iter().flat_map(|c| c.lines.iter()).map(|l| l.trim()).filter(|l| !l.is_empty()).collect::<Vec<_>>().join("");
+                j.result = Some(json!({"text": text}));
+            }
+            Err(e) => j.error = Some(e.message.clone()),
+        });
+        out.map(|_| std::path::PathBuf::new())
+    });
+    Ok(id)
+}
+
 // ---------- 在线字幕 / 转写结果的磁盘缓存（同一个视频不再请求网站） ----------
 
 const SUB_CACHE_DAYS: u64 = 60;
@@ -501,8 +542,9 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 20] = [
+    const KINDS: [&str; 21] = [
         "write",
+        "style",
         "grammar",
         "stats",
         "summary",
@@ -543,7 +585,7 @@ pub fn check(req: &Req) -> AppResult<()> {
     if req.system.chars().count() > MAX_SYSTEM {
         return Err(AppError::invalid("自定义提示词太长（上限 2 万字）。"));
     }
-    if matches!(req.kind.as_str(), "write" | "grammar" | "stats") {
+    if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
         crate::writing::check_opts(&req.kind, &req.text, &req.write)?;
     }
     if matches!(req.kind.as_str(), "explain" | "note" | "refine" | "domain") && req.text.trim().is_empty() {
@@ -1188,6 +1230,16 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             progress(n, n)?;
             let cands: Vec<Value> = outs.iter().map(|t| json!({"text": t, "guard": crate::writing::guard(&o.action, &req.text, t)})).collect();
             Ok(json!({"candidates": cands}))
+        }
+        "style" => {
+            progress(0, 1)?;
+            let resp = chat(ep, model, &crate::writing::style_system(), req.text.trim()).await?;
+            progress(1, 1)?;
+            let style = crate::writing::clean_style(&resp);
+            if style.is_empty() {
+                return Err(AppError::invalid("没有总结出风格，请多给几段你自己写的文字。"));
+            }
+            Ok(json!({"style": style}))
         }
         "grammar" => {
             progress(0, 1)?;

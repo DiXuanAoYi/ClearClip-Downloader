@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
 import type { WritingSettings } from '../types'
 
@@ -10,6 +11,34 @@ const offText = computed({
   get: () => form.value.offApps.join('\n'),
   set: (v: string) => (form.value.offApps = v.split(/[\n,，;；]/).map((s) => s.trim()).filter(Boolean)),
 })
+const samples = ref('')
+const learning = ref(false)
+const learnMsg = ref('')
+
+/** 把用户自己写的几段文字交给模型，总结成一两句话的“写作风格”。 */
+async function learn() {
+  if (!samples.value.trim() || learning.value) return
+  learning.value = true
+  learnMsg.value = '正在分析…'
+  try {
+    const id = await api.writeRun({ kind: 'style', text: samples.value, write: { action: 'rewrite', route: form.value.route } })
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 500))
+      const j = await api.writeJob(id)
+      if (!j) throw new Error('任务已过期')
+      if (j.state === 'error') throw new Error(j.error ?? '分析失败')
+      if (j.state === 'done') {
+        form.value.style = j.result?.style ?? form.value.style
+        learnMsg.value = '已填入上面的“我的写作风格”，可以再改；记得点保存'
+        break
+      }
+    }
+  } catch (e) {
+    learnMsg.value = errorText(e)
+  } finally {
+    learning.value = false
+  }
+}
 const paused = computed(() => form.value.pausedUntil * 1000 > Date.now())
 </script>
 
@@ -53,6 +82,14 @@ const paused = computed(() => form.value.pausedUntil * 1000 > Date.now())
       <div class="kv stack">
         <span>我的写作风格<small class="mute block">一两句话，会附在每次改写的要求里。例如：口语化，短句，少用感叹号。仅保存在本机。</small></span>
         <el-input v-model="form.style" type="textarea" :rows="3" maxlength="300" show-word-limit />
+      </div>
+      <div class="kv stack">
+        <span>让清影学你的风格<small class="mute block">粘贴 1 到 3 段你自己写过的文字（聊天、邮件、帖子都行），模型总结出你的写作习惯。文字只发给你选的模型，不保存。</small></span>
+        <el-input v-model="samples" type="textarea" :rows="4" placeholder="粘贴你自己写的文字" />
+        <div class="kv">
+          <el-button size="small" :loading="learning" :disabled="!samples.trim()" @click="learn">分析我的风格</el-button>
+          <small class="mute">{{ learnMsg }}</small>
+        </div>
       </div>
     </section>
   </div>

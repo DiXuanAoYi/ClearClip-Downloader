@@ -8,6 +8,7 @@ export interface WriteAction {
 
 export const ACTIONS: WriteAction[] = [
   { id: 'rewrite', name: '改写' },
+  { id: 'reply', name: '回复' },
   { id: 'grammar', name: '语法检查', grammar: true },
   { id: 'optimize', name: '润色' },
   { id: 'concise', name: '更简洁' },

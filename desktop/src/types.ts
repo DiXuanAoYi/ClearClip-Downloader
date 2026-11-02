@@ -2021,6 +2021,6 @@ export interface WriteJob {
   done: number
   total: number
   note: string
-  result: { candidates?: { text: string; guard?: string | null }[]; corrected?: string; issues?: { from: string; to: string; reason: string }[] } | null
+  result: { text?: string; style?: string; candidates?: { text: string; guard?: string | null }[]; corrected?: string; issues?: { from: string; to: string; reason: string }[] } | null
   error: string | null
 }

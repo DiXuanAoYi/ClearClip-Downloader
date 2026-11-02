@@ -692,6 +692,7 @@ pub fn run() {
             writeassist::write_settings,
             writeassist::write_run,
             writeassist::write_job,
+            writeassist::write_dictate,
             writeassist::write_cancel,
             writeassist::write_apply,
             writeassist::write_close,

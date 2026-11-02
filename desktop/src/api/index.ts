@@ -364,6 +364,7 @@ export const api = {
   writeTake: () => invoke<WritePending | null>('write_take'),
   writeSettings: () => invoke<WritingSettings>('write_settings'),
   writeRun: (req: Record<string, unknown>) => invoke<number>('write_run', { req }),
+  writeDictate: (audio: number[], ext: string) => invoke<number>('write_dictate', { audio, ext }),
   writeJob: (id: number) => invoke<WriteJob | null>('write_job', { id }),
   writeCancel: (id: number) => invoke<boolean>('write_cancel', { id }),
   writeApply: (text: string, replace: boolean) => invoke<string>('write_apply', { text, replace }),

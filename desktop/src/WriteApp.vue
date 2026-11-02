@@ -22,7 +22,11 @@ const outs = ref<{ text: string; guard?: string | null }[]>([])
 const picked = ref(0)
 const issues = ref<{ from: string; to: string; reason: string }[]>([])
 const done = ref('')
+const recording = ref(false)
+const isReply = computed(() => action.value.id === 'reply')
 let jobId = 0
+let rec: MediaRecorder | null = null
+let chunks: Blob[] = []
 let unlisten: UnlistenFn | undefined
 
 const out = computed(() => outs.value[picked.value]?.text ?? '')
@@ -74,6 +78,53 @@ async function run() {
   }
 }
 
+/** 听写：录一段话，交给清影里设置好的语音转文字（本机 whisper.cpp 或云端接口），文字追加到上面的输入框。 */
+async function dictate() {
+  if (recording.value) {
+    rec?.stop()
+    return
+  }
+  error.value = ''
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    chunks = []
+    rec = new MediaRecorder(stream)
+    rec.ondataavailable = (e) => chunks.push(e.data)
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop())
+      recording.value = false
+      const blob = new Blob(chunks, { type: rec?.mimeType || 'audio/webm' })
+      busy.value = true
+      progress.value = '正在转成文字…'
+      try {
+        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()))
+        const id = await api.writeDictate(bytes, blob.type.includes('ogg') ? 'ogg' : 'webm')
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 500))
+          const j = await api.writeJob(id)
+          if (!j) throw new Error('任务已过期')
+          if (j.state === 'error') throw new Error(j.error ?? '听写失败')
+          if (j.state === 'done') {
+            const t = j.result?.text ?? ''
+            if (!t) throw new Error('没有听清，请再说一次')
+            text.value = (text.value ? text.value + '\n' : '') + t
+            break
+          }
+        }
+      } catch (e) {
+        error.value = errorText(e)
+      } finally {
+        busy.value = false
+        progress.value = ''
+      }
+    }
+    rec.start()
+    recording.value = true
+  } catch (e) {
+    error.value = '无法使用麦克风：' + errorText(e)
+  }
+}
+
 async function stop() {
   if (jobId) await api.writeCancel(jobId)
 }
@@ -111,7 +162,10 @@ onBeforeUnmount(() => {
       <button class="x" title="关闭 (Esc)" @click="api.writeClose()">×</button>
     </header>
     <main>
-      <textarea v-model="text" class="src" rows="5" placeholder="选中文字后按快捷键，或在这里粘贴要处理的文字" />
+      <textarea v-model="text" class="src" rows="5" :placeholder="isReply ? '收到的消息（选中后按快捷键，或粘贴在这里）' : '选中文字后按快捷键，或在这里粘贴要处理的文字'" />
+      <div class="row">
+        <button class="ghost" :class="{ rec: recording }" :disabled="busy && !recording" @click="dictate">{{ recording ? '■ 停止并转成文字' : '🎤 听写' }}</button>
+      </div>
       <small v-if="note" class="hint">{{ note }}</small>
       <div class="chips">
         <button v-for="a in ACTIONS" :key="a.id" class="chip" :class="{ on: action.id === a.id }" @click="action = a">{{ a.name }}</button>
@@ -122,7 +176,7 @@ onBeforeUnmount(() => {
           <option v-for="p in PRESETS" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
         <input v-if="action.id === 'translate'" v-model="target" placeholder="目标语言" />
-        <input v-model="extra" placeholder="额外要求（可选）" maxlength="200" />
+        <input v-model="extra" :placeholder="isReply ? '我想表达的意思（例如：周五可以，改到下午）' : '额外要求（可选）'" maxlength="200" />
       </div>
       <div class="row">
         <button v-if="!busy" class="go" :disabled="!canRun" @click="run">{{ action.name }}（Ctrl+Enter）</button>
@@ -166,6 +220,7 @@ main { flex: 1; overflow: auto; padding: 10px; display: flex; flex-direction: co
 .go { background: #0f766e; color: #fff; border: 0; border-radius: 6px; padding: 5px 14px; cursor: pointer; font: inherit; }
 .go:disabled { opacity: 0.5; cursor: default; }
 .go.stop { background: #b45309; }
+.ghost.rec { border-color: #b91c1c; color: #b91c1c; }
 .ghost { border: 1px solid var(--el-border-color, #cbd5dc); background: transparent; color: inherit; border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; }
 .hint { color: var(--el-text-color-secondary, #6b7b88); }
 .err { color: #b91c1c; margin: 0; }

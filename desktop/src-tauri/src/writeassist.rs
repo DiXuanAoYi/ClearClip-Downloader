@@ -269,7 +269,6 @@ pub fn write_run(app: AppHandle, state: tauri::State<'_, Arc<AppState>>, req: se
     if r.write.candidates == 0 {
         r.write.candidates = cfg.candidates;
     }
-    r.write.extra = with_style(&r.write.extra, &cfg.style);
     crate::vsum::start(&app, r).map_err(|e| e.message)
 }
 
@@ -281,6 +280,11 @@ pub fn with_style(extra: &str, style: &str) -> String {
         (true, false) => format!("我的写作风格：{s}"),
         (false, false) => format!("{e}\n我的写作风格：{s}"),
     }
+}
+
+#[tauri::command]
+pub fn write_dictate(app: AppHandle, audio: Vec<u8>, ext: String) -> Result<u64, String> {
+    crate::vsum::start_dictation(&app, audio, &ext).map_err(|e| e.message)
 }
 
 #[tauri::command]
