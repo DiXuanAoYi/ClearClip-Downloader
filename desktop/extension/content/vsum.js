@@ -38,6 +38,18 @@
     .ln .tm { color: #b4561a; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px; line-height: 20px; align-self: start; justify-self: start; }
     .ln .tr { color: #5d6862; display: block; }
     .mute { color: #5d6862; font-size: 12px; }
+    .cmbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; margin: 6px 0; }
+    .cmbar i { display: block; }
+    .cmbar .p { background: #2f7d57; } .cmbar .u { background: #8a948f; } .cmbar .n { background: #b8472f; }
+    .cmleg { display: flex; gap: 12px; font-size: 12px; color: #5d6862; flex-wrap: wrap; }
+    .cmth { padding: 8px 0; border-top: 1px solid #e3e6e3; } .cmth:first-of-type { border-top: 0; padding-top: 2px; }
+    .cmb { height: 6px; border-radius: 3px; background: #e3e6e3; margin: 4px 0; } .cmb i { display: block; height: 6px; border-radius: 3px; background: #d9762b; }
+    .cq { background: #f4f5f4; border-radius: 6px; padding: 6px 8px; font-size: 12px; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+    .cq .m { display: flex; justify-content: space-between; align-items: center; color: #5d6862; margin-top: 2px; font-size: 11.5px; }
+    .cq .m button { padding: 0 6px; font-size: 11.5px; }
+    .tg { font-size: 11px; padding: 0 6px; border-radius: 4px; background: #d9762b1f; color: #8a3f0c; margin-right: 6px; white-space: nowrap; }
+    .tg.ok { background: #2f7d5722; color: #1f6a45; } .tg.no { background: #b8472f22; color: #9a3320; }
+    .cmq { display: flex; align-items: flex-start; gap: 4px; margin: 4px 0; }
     .warn { background: #fff4e5; border: 1px solid #f0c98e; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
     .bar { height: 4px; background: #e3e6e3; border-radius: 2px; overflow: hidden; margin: 6px 0; }
     .bar i { display: block; height: 100%; background: #d9762b; transition: width .3s; }
@@ -147,6 +159,8 @@
       button.sec { background: #262f2a; color: #eef1ee; border-color: #3a443e; }
       .ln .tr, .meta, .mute, .src { color: #a9b3ad; }
       .warn { background: #3a2f1e; border-color: #6b5530; }
+      .cq { background: #262f2a; } .cmb, .cmth { background: #3a443e; border-color: #3a443e; } .cmth { background: none; } .cmleg, .cq .m { color: #a9b3ad; }
+      .tg { color: #f0a064; } .tg.ok { color: #6cc08a; } .tg.no { color: #ee917b; }
       .sm .seg, .sm .kw span, .sm .pts .tm { background: #262f2a; border-color: #3a443e; }
       .sm .seg button, .sm .vmeta, .sm .sh, .sm .pts .d { color: #a9b3ad; }
       .sm .seg button.on { background: #f0a064; color: #1d2420; }
@@ -959,6 +973,199 @@
         h('button', { class: 'sec', text: '删除', onclick: async () => ((S.notes = S.notes.filter((x) => x.id !== n.id)), await store.set('vsumNotes', S.notes), render()) })))
   }
 
+
+  // ---------- 评论分析 ----------
+
+  const CM_KEEP = 6
+
+  async function cmLoadSaved() {
+    const k = localKey()
+    if (S.cmLoading) return
+    S.cmLoading = true
+    try {
+      const all = await store.get('vsumComments', {})
+      const old = S.cm
+      S.cm = { key: k, list: all[k]?.list || [], res: all[k]?.res || null, sort: old?.sort || 'hot', count: old?.count || 300, loading: false, n: 0, err: '', ask: [], stop: false, asking: false }
+    } finally {
+      S.cmLoading = false
+    }
+    render()
+  }
+
+  async function cmSave() {
+    const c = S.cm
+    const all = await store.get('vsumComments', {})
+    delete all[c.key]
+    all[c.key] = { list: c.list, res: c.res, ts: Date.now() }
+    const keys = Object.keys(all)
+    for (const k of keys.slice(0, Math.max(0, keys.length - CM_KEEP))) delete all[k]
+    await store.set('vsumComments', all)
+  }
+
+  const CM_GAP = 90 * 1000 // 同站点两次读取至少隔 90 秒
+  const CM_COOL = 15 * 60 * 1000 // 被限流后冷却 15 分钟
+  const cmSite = () => V.videoIdOf(S.data?.url || location.href)?.site || ''
+
+  /** 返回还需等待的毫秒数（0 = 可以读）。 */
+  async function cmWait() {
+    const m = (await store.get('vsumCmGate', {}))[cmSite()] || {}
+    return Math.max(0, (m.until || 0) - Date.now(), (m.last || 0) + CM_GAP - Date.now())
+  }
+
+  async function cmGate(patch) {
+    const all = await store.get('vsumCmGate', {})
+    all[cmSite()] = { ...(all[cmSite()] || {}), ...patch }
+    await store.set('vsumCmGate', all)
+  }
+
+  async function cmRead() {
+    const c = S.cm
+    const wait = await cmWait()
+    if (wait > 0) {
+      c.err = `读取太频繁，为避免被站点限制，请 ${Math.ceil(wait / 1000) >= 120 ? `${Math.ceil(wait / 60000)} 分钟` : `${Math.ceil(wait / 1000)} 秒`}后再试。已读取的评论可以直接分析。`
+      render()
+      return
+    }
+    await cmGate({ last: Date.now() })
+    c.loading = true
+    c.err = ''
+    c.n = 0
+    c.stop = false
+    render()
+    try {
+      c.list = await globalThis.ccVsumSource.loadComments({ count: c.count, sort: c.sort }, (n) => ((c.n = n), !S.closed && S.tab === 'comments' && cmProgress()), () => c.stop || S.closed)
+      c.res = null
+      c.ask = []
+      await cmSave()
+    } catch (e) {
+      c.err = e.block ? `${e.message}。已暂停 15 分钟，已读取的评论仍可分析。` : e.message
+      if (e.block) await cmGate({ until: Date.now() + CM_COOL })
+    } finally {
+      c.loading = false
+      if (!S.closed) render()
+    }
+  }
+
+  function cmProgress() {
+    const el = ui.root.getElementById('cmprog')
+    if (el) el.textContent = `已读 ${S.cm.n} / ${S.cm.count}`
+  }
+
+  async function cmAnalyze() {
+    const c = S.cm
+    if (S.busy || !c.list.length) return
+    S.busy = true
+    render()
+    try {
+      await ensureReady()
+      const comments = c.list.map((x) => ({ author: x.author, text: x.text, likes: x.likes, t: x.t, replies: x.replies }))
+      c.res = await submit({ kind: 'comments', title: S.data?.title || document.title, lang: outLang(), comments }, 'comments')
+      await cmSave()
+    } catch (e) {
+      if (!S.closed) toast(ui, e.message, true, 5200)
+    } finally {
+      S.busy = false
+      if (!S.closed) render()
+    }
+  }
+
+  async function cmAsk(q) {
+    const c = S.cm
+    q = String(q || '').trim()
+    if (!q || S.busy || !c.list.length) return
+    S.busy = true
+    c.ask.push({ q, a: '' })
+    render()
+    try {
+      await ensureReady()
+      const comments = c.list.map((x) => ({ author: x.author, text: x.text, likes: x.likes, t: x.t, replies: x.replies }))
+      const r = await submit({ kind: 'askcomments', title: S.data?.title || document.title, lang: outLang(), question: q, comments }, '')
+      c.ask[c.ask.length - 1].a = r.answer
+    } catch (e) {
+      c.ask.pop()
+      if (!S.closed) toast(ui, e.message, true, 5200)
+    } finally {
+      S.busy = false
+      if (!S.closed) render()
+    }
+  }
+
+  const cmQuote = (q) =>
+    q &&
+    h('div', { class: 'cq' }, q.text,
+      h('div', { class: 'm' },
+        h('span', { text: [q.author && `@${q.author}`, q.likes ? `赞 ${q.likes}` : ''].filter(Boolean).join(' · ') }),
+        q.t >= 0 && h('button', { class: 'sec', text: V.fmtClock(q.t), title: '跳到视频里的这个时间', onclick: () => seek(q.t) })))
+
+  function tabComments() {
+    if (S.cm?.key !== localKey()) {
+      cmLoadSaved()
+      return h('div', { class: 'mute', text: '…' })
+    }
+    const c = S.cm
+    const r = c.res
+    const supported = ['youtube', 'bilibili'].includes(V.videoIdOf(S.data?.url || location.href)?.site)
+    const head = h('div', { class: 'card' },
+      h('div', { class: 'tools' },
+        h('b', { text: c.list.length ? `已读取 ${c.list.length} 条评论` : '读取评论' }),
+        h('span', { class: 'mute', style: 'flex:1' }),
+        sel([['100', '100 条'], ['300', '300 条'], ['500', '500 条'], ['1000', '1000 条']], String(c.count), (v) => ((c.count = Number(v)), savePrefs()), '读取多少条'),
+        sel([['hot', '热门'], ['new', '最新']], c.sort, (v) => (c.sort = v), '排序')),
+      !c.list.length && h('div', { class: 'mute', text: supported ? '读取这个视频的评论后，可以分析整体情绪、主要观点、观众提问和纠错补充。评论只在本机的清影里处理，不会上传到别处。' : '这个站点暂不支持直接读取评论（目前支持 YouTube 和哔哩哔哩）。' }),
+      c.err && h('div', { class: 'warn', text: c.err }),
+      c.loading
+        ? h('div', { class: 'tools' }, h('span', { class: 'mute', id: 'cmprog', text: `已读 ${c.n} / ${c.count}` }), h('button', { class: 'sec', text: '停止', onclick: () => (c.stop = true) }))
+        : h('div', { class: 'tools' },
+            ...(!c.list.length
+              ? [h('button', { text: '读取并分析', disabled: !supported || S.busy, onclick: async () => (await cmRead(), S.cm.list.length && cmAnalyze()) }), h('button', { class: 'sec', text: '只读取', disabled: !supported || S.busy, onclick: cmRead })]
+              : [h('button', { text: r ? '重新分析' : '开始分析', disabled: S.busy, onclick: cmAnalyze }), h('button', { class: 'sec', text: '重新读取', disabled: !supported || S.busy, onclick: cmRead })])))
+    const out = [head]
+    if (r) {
+      const sm = r.sentiment
+      out.push(
+        h('div', { class: 'card' },
+          h('div', { class: 'tools' }, h('b', { text: '整体情绪' }), h('span', { class: 'mute', text: `基于 ${r.count} 条评论` })),
+          h('div', { class: 'cmbar' }, h('i', { class: 'p', style: `width:${sm.pos}%` }), h('i', { class: 'u', style: `width:${sm.neu}%` }), h('i', { class: 'n', style: `width:${sm.neg}%` })),
+          h('div', { class: 'cmleg' }, h('span', { text: `正面 ${sm.pos}%` }), h('span', { text: `中性 ${sm.neu}%` }), h('span', { text: `负面 ${sm.neg}%` })),
+          r.verdict && h('div', { style: 'margin-top:6px', text: r.verdict })))
+      if (r.themes?.length) {
+        const max = Math.max(1, ...r.themes.map((t) => t.count))
+        out.push(h('div', { class: 'card' }, h('b', { text: '主要观点' }),
+          ...r.themes.map((t) => h('div', { class: 'cmth' },
+            h('div', { class: 'tools' }, h('b', { text: t.name, style: 'flex:1' }), h('span', { class: 'mute', text: `${t.count} 人` })),
+            h('div', { class: 'cmb' }, h('i', { style: `width:${Math.round((t.count / max) * 100)}%` })),
+            ...(t.quotes || []).map(cmQuote)))))
+      }
+      if (r.disputes?.length) {
+        out.push(h('div', { class: 'card' }, h('b', { text: '争议点' }),
+          ...r.disputes.map((d) => h('div', { class: 'cmth' }, h('div', {}, h('span', { class: 'tg no', text: '分歧' }), d.topic, h('span', { class: 'mute', text: `  支持 ${d.pro} · 质疑 ${d.con}` })), ...(d.quotes || []).map(cmQuote)))))
+      }
+      if (r.questions?.length) {
+        const open = r.questions.filter((x) => !x.answered).length
+        out.push(h('div', { class: 'card' }, h('div', { class: 'tools' }, h('b', { text: '观众提问' }), h('span', { class: 'mute', text: `${r.questions.length} 个 · ${open} 个未解答` })),
+          ...r.questions.map((x) => h('div', { class: 'cmq' }, h('span', { class: `tg ${x.answered ? 'ok' : 'no'}`, text: x.answered ? '已回答' : '未解答' }), h('span', { text: x.q })))))
+      }
+      if (r.corrections?.length) {
+        out.push(h('div', { class: 'card' }, h('b', { text: '纠错与补充' }),
+          ...r.corrections.map((x) => h('div', { class: 'cmth' }, h('div', { text: x.text }), cmQuote(x.quote)))))
+      }
+      if (r.keywords?.length) out.push(h('div', { class: 'card' }, h('b', { text: '热词' }), h('div', { class: 'chips' }, ...r.keywords.map((k) => h('span', { class: 'chip', text: k })))))
+    }
+    if (c.list.length) {
+      const inp = h('input', { type: 'text', placeholder: '问评论：例如“大家最希望作者下期讲什么？”', style: 'flex:1', onkeydown: (e) => e.key === 'Enter' && !e.isComposing && (cmAsk(inp.value), (inp.value = '')) })
+      out.push(h('div', { class: 'card' }, h('b', { text: '问评论' }),
+        ...c.ask.map((m) => h('div', { class: 'cmth' }, h('div', { class: 'mute', text: m.q }), h('div', { text: m.a || '正在想…' }))),
+        h('div', { class: 'tools', style: 'margin-top:6px' }, inp, h('button', { text: '发送', disabled: S.busy, onclick: () => (cmAsk(inp.value), (inp.value = '')) }))))
+    }
+    if (r) {
+      out.push(actsBar(
+        h('button', { class: 'sec', text: '导出 Markdown', onclick: () => saveFile(V.fileName(`${S.data.title} 评论分析`, 'md'), V.commentsToMarkdown(S.data.title, r), 'text/markdown') }),
+        h('button', { class: 'sec', text: '存为笔记', onclick: () => addNote({ t: -1, text: `评论分析：${r.verdict || ''}\n${(r.themes || []).map((t) => `- ${t.name}（${t.count} 人）`).join('\n')}`.trim(), kind: 'note' }) }),
+        h('button', { class: 'sec', text: '复制', onclick: () => copy(V.commentsToMarkdown(S.data.title, r), '评论分析') })))
+    }
+    return h('div', {}, ...out)
+  }
+
   function tabNotes() {
     const list = V.sortNotes(shownNotes())
     const mine = S.notes.filter((n) => n.key === localKey())
@@ -1195,7 +1402,7 @@
       h('div', { class: 'tools' },
         h('button', { class: 'sec', text: '备份设置和笔记', title: '不包含任何密钥', onclick: backup }),
         h('button', { class: 'sec', text: '恢复备份', onclick: restore }),
-        h('button', { class: 'sec', text: '清除摘要缓存（含各视频已生成的内容）', onclick: async () => (await store.set('vsumCache', {}), await store.set('vsumSessions', {}), await store.set('vsumJobs', {}), (S.restored = 0), toast(ui, '已清除')) }),
+        h('button', { class: 'sec', text: '清除摘要缓存（含各视频已生成的内容）', onclick: async () => (await store.set('vsumCache', {}), await store.set('vsumSessions', {}), await store.set('vsumJobs', {}), await store.set('vsumComments', {}), (S.cm = null), (S.restored = 0), toast(ui, '已清除')) }),
         h('button', { class: 'sec', text: '删除全部笔记', disabled: !S.notes.length, onclick: async () => confirm(`确定删除全部 ${S.notes.length} 条笔记？`) && ((S.notes = []), await store.set('vsumNotes', []), render()) })),
       ),
       grp('没有字幕 / 想换文稿',
@@ -1313,7 +1520,7 @@
 
   // ---------- 框架 ----------
 
-  const TABS = [['summary', '摘要'], ['chapters', '章节'], ['transcript', '文稿'], ['mindmap', '导图'], ['ask', '问答'], ['notes', '笔记'], ['more', '更多']]
+  const TABS = [['summary', '摘要'], ['chapters', '章节'], ['transcript', '文稿'], ['mindmap', '导图'], ['ask', '问答'], ['notes', '笔记'], ['comments', '评论'], ['more', '更多']]
 
   function renderProgress() {
     const el = ui.root.getElementById('prog')
@@ -1348,9 +1555,9 @@
     const body = h('div', { class: 'body' }, h('div', { id: 'prog' }))
     if (!d) body.append(h('div', { class: 'mute', text: '正在读取字幕…' }))
     else {
-      if (!d.lines.length && S.tab !== 'more' && S.tab !== 'notes') body.append(noData())
+      if (!d.lines.length && S.tab !== 'more' && S.tab !== 'notes' && S.tab !== 'comments') body.append(noData())
       else {
-        const fn = { summary: tabSummary, chapters: tabChapters, transcript: tabTranscript, mindmap: tabMindmap, ask: tabAsk, notes: tabNotes, more: tabMore }[S.tab]
+        const fn = { summary: tabSummary, chapters: tabChapters, transcript: tabTranscript, mindmap: tabMindmap, ask: tabAsk, notes: tabNotes, comments: tabComments, more: tabMore }[S.tab]
         body.append(fn())
       }
     }

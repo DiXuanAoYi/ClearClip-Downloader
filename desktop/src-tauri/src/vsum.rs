@@ -33,6 +33,19 @@ pub struct Line {
     pub text: String,
 }
 
+/// 一条评论（kind=comments / askcomments）。
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct Cmt {
+    pub author: String,
+    pub text: String,
+    pub likes: u64,
+    /// 评论里提到的视频时间（毫秒），没有为 -1
+    pub t: i64,
+    /// 回复数
+    pub replies: u32,
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Turn {
     #[serde(default)]
@@ -74,6 +87,8 @@ pub struct Req {
     pub guide: String,
     /// write / grammar / stats：写作助手的选项
     pub write: crate::writing::Opts,
+    /// comments / askcomments：评论
+    pub comments: Vec<Cmt>,
 }
 
 /// 自定义提示词的长度上限。
@@ -142,7 +157,7 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
     let settings = st.settings();
     let task = match req.kind.as_str() {
         "translate" | "punctuate" | "webtrans" | "domain" => crate::ai_pool::Task::Translate,
-        "summary" | "article" | "mindmap" | "cards" | "quotes" | "rewrite" => crate::ai_pool::Task::Summary,
+        "summary" | "article" | "mindmap" | "cards" | "quotes" | "rewrite" | "comments" => crate::ai_pool::Task::Summary,
         _ => crate::ai_pool::Task::Chat,
     };
     let mut ep = ai::chat_endpoint_for(&st, &settings, task)?;
@@ -542,7 +557,7 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 21] = [
+    const KINDS: [&str; 23] = [
         "write",
         "style",
         "grammar",
@@ -564,11 +579,15 @@ pub fn check(req: &Req) -> AppResult<()> {
         "refine",
         "webtrans",
         "domain",
+        "comments",
+        "askcomments",
     ];
     if !KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::invalid("不支持的类型"));
     }
-    let size: usize = req.lines.iter().map(|l| l.text.chars().count() + 8).sum::<usize>() + req.text.chars().count();
+    let size: usize = req.lines.iter().map(|l| l.text.chars().count() + 8).sum::<usize>()
+        + req.text.chars().count()
+        + req.comments.iter().map(|c| c.text.chars().count() + 8).sum::<usize>();
     if size > MAX_CHARS {
         return Err(AppError::invalid("内容太长，超过了一次能处理的上限。"));
     }
@@ -591,7 +610,10 @@ pub fn check(req: &Req) -> AppResult<()> {
     if matches!(req.kind.as_str(), "explain" | "note" | "refine" | "domain") && req.text.trim().is_empty() {
         return Err(AppError::invalid("没有可处理的文字。"));
     }
-    if req.kind == "ask" && req.question.trim().is_empty() {
+    if matches!(req.kind.as_str(), "comments" | "askcomments") && req.comments.iter().all(|c| c.text.trim().is_empty()) {
+        return Err(AppError::invalid("没有可分析的评论。"));
+    }
+    if matches!(req.kind.as_str(), "ask" | "askcomments") && req.question.trim().is_empty() {
         return Err(AppError::invalid("请输入问题。"));
     }
     if req.kind == "rewrite" && rewrite_brief(&req.format).is_none() {
@@ -983,6 +1005,132 @@ fn chunk_start_label(chunk: &str) -> String {
         .unwrap_or_default()
 }
 
+fn comment_digest(cs: &[Cmt]) -> Vec<String> {
+    cs.iter()
+        .enumerate()
+        .filter(|(_, c)| !c.text.trim().is_empty())
+        .map(|(i, c)| format!("#{i}|{}|{}", c.likes, c.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(300).collect::<String>()))
+        .collect()
+}
+
+fn comments_system(lang: &str) -> String {
+    format!(
+        "You analyse the comment section of a video. Each input line is `#number|likes|text`. Reply with ONE JSON object only, no markdown, all text fields in {lang}: \
+         {{\"sentiment\":{{\"pos\":int,\"neu\":int,\"neg\":int}} (percentages of these comments, summing to 100),\
+         \"themes\":[{{\"name\":short label,\"count\":number of comments sharing it,\"ids\":[1-2 comment numbers that best represent it]}}] (3-6 main viewpoints, most common first),\
+         \"disputes\":[{{\"topic\":what people disagree on,\"pro\":int,\"con\":int,\"ids\":[numbers]}}] (only real disagreements, may be empty),\
+         \"questions\":[{{\"q\":the viewer's question rephrased,\"answered\":true if another comment answers it,\"id\":number}}] (up to 8, may be empty),\
+         \"corrections\":[{{\"text\":what the comment says is wrong or adds,\"id\":number}}] (errors in the video pointed out or useful additions, may be empty),\
+         \"keywords\":[up to 8 frequent topics or terms]}}. Use only comment numbers that appear in the input. Ignore spam and pure emoji. Do not invent anything."
+    )
+}
+
+fn parse_json_obj(s: &str) -> Value {
+    serde_json::from_str::<Value>(ai::strip_fences(s)).ok().filter(Value::is_object).unwrap_or_else(|| json!({}))
+}
+
+async fn process_comments(ep: &Endpoint, model: &str, lang: &str, req: &Req, progress: Progress<'_>) -> AppResult<Value> {
+    let digest = comment_digest(&req.comments);
+    let chunks = chunk_lines(&digest, CHUNK_CHARS);
+    if chunks.is_empty() {
+        return Err(AppError::invalid("没有可分析的评论。"));
+    }
+    let n = chunks.len() + usize::from(chunks.len() > 1);
+    let system = pick_system(req, comments_system(lang));
+    let mut parts: Vec<(Value, usize)> = vec![];
+    for (i, c) in chunks.iter().enumerate() {
+        progress(i, n)?;
+        let resp = chat(ep, model, &system, c).await?;
+        let v = parse_json_obj(&resp);
+        if v.as_object().is_some_and(|o| !o.is_empty()) {
+            parts.push((v, c.lines().count()));
+        }
+    }
+    if parts.is_empty() {
+        return Err(model_err());
+    }
+    // 情绪按各段评论条数加权平均；其余由模型合并
+    let total: usize = parts.iter().map(|(_, k)| *k).sum::<usize>().max(1);
+    let avg = |key: &str| -> u64 {
+        let s: f64 = parts.iter().map(|(v, k)| v["sentiment"][key].as_f64().unwrap_or(0.0) * *k as f64).sum();
+        (s / total as f64).round().max(0.0) as u64
+    };
+    let (pos, neu, neg) = (avg("pos"), avg("neu"), avg("neg"));
+    let merged = if parts.len() == 1 {
+        parts.remove(0).0
+    } else {
+        progress(chunks.len(), n)?;
+        let joined = parts.iter().map(|(v, _)| v.to_string()).collect::<Vec<_>>().join("\n");
+        let sys = format!(
+            "{} The input is several partial analyses (JSON, one per line) of different batches of the same comment section; merge them into ONE object of the same shape: \
+             combine similar themes and add their counts, keep the best 1-2 ids per item, drop duplicates.",
+            comments_system(lang)
+        );
+        let v = parse_json_obj(&chat(ep, model, &sys, &joined).await?);
+        if v.as_object().is_some_and(|o| !o.is_empty()) {
+            v
+        } else {
+            parts.remove(0).0
+        }
+    };
+    // 一句话结论
+    progress(n.saturating_sub(1), n)?;
+    let verdict_in = format!(
+        "{}\nSentiment: positive {pos}%, neutral {neu}%, negative {neg}%.",
+        ["themes", "disputes", "corrections"].iter().map(|k| format!("{k}: {}", merged[*k])).collect::<Vec<_>>().join("\n")
+    );
+    let verdict = chat(
+        ep,
+        model,
+        &format!("In {lang}, write a 1-2 sentence overall verdict about how viewers react to the video, based on this analysis of its comments. Plain text only, no preamble."),
+        &verdict_in,
+    )
+    .await
+    .map(|s| s.trim().to_string())
+    .unwrap_or_default();
+    progress(n, n)?;
+
+    let quote = |id: &Value| -> Option<Value> {
+        let c = req.comments.get(usize::try_from(id.as_u64()?).ok()?)?;
+        let text: String = c.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(200).collect();
+        Some(json!({"text": text, "author": c.author, "likes": c.likes, "t": c.t}))
+    };
+    let quotes = |v: &Value| -> Vec<Value> { v["ids"].as_array().map(|a| a.iter().filter_map(&quote).take(2).collect()).unwrap_or_default() };
+    let strs = |v: &Value, k: &str| v[k].as_str().unwrap_or("").trim().chars().take(200).collect::<String>();
+    let list = |k: &str| merged[k].as_array().cloned().unwrap_or_default();
+    let themes: Vec<Value> = list("themes")
+        .iter()
+        .take(8)
+        .map(|t| json!({"name": strs(t, "name"), "count": t["count"].as_u64().unwrap_or(0), "quotes": quotes(t)}))
+        .filter(|t| !t["name"].as_str().unwrap_or("").is_empty())
+        .collect();
+    let disputes: Vec<Value> = list("disputes")
+        .iter()
+        .take(5)
+        .map(|d| json!({"topic": strs(d, "topic"), "pro": d["pro"].as_u64().unwrap_or(0), "con": d["con"].as_u64().unwrap_or(0), "quotes": quotes(d)}))
+        .filter(|d| !d["topic"].as_str().unwrap_or("").is_empty())
+        .collect();
+    let questions: Vec<Value> = list("questions")
+        .iter()
+        .take(10)
+        .map(|q| json!({"q": strs(q, "q"), "answered": q["answered"].as_bool().unwrap_or(false), "quote": quote(&q["id"])}))
+        .filter(|q| !q["q"].as_str().unwrap_or("").is_empty())
+        .collect();
+    let corrections: Vec<Value> = list("corrections")
+        .iter()
+        .take(8)
+        .map(|c| json!({"text": strs(c, "text"), "quote": quote(&c["id"])}))
+        .filter(|c| !c["text"].as_str().unwrap_or("").is_empty())
+        .collect();
+    let keywords: Vec<String> = list("keywords").iter().filter_map(|k| k.as_str().map(|s| s.trim().to_string())).filter(|s| !s.is_empty()).take(10).collect();
+    Ok(json!({
+        "count": req.comments.len(),
+        "sentiment": {"pos": pos, "neu": neu, "neg": neg},
+        "verdict": verdict,
+        "themes": themes, "disputes": disputes, "questions": questions, "corrections": corrections, "keywords": keywords,
+    }))
+}
+
 /// 按类型处理，返回给扩展的 JSON。
 pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usize, req: &Req, progress: Progress<'_>) -> AppResult<Value> {
     let lang = if req.lang.trim().is_empty() { default_lang } else { req.lang.trim() };
@@ -1113,6 +1261,20 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             progress(1, 1)?;
             let answer = answer.trim().to_string();
             Ok(json!({"refs": extract_refs(&answer), "answer": answer}))
+        }
+        "comments" => process_comments(ep, model, lang, req, progress).await,
+        "askcomments" => {
+            progress(0, 1)?;
+            let digest = comment_digest(&req.comments);
+            let excerpt = relevant_excerpt(&digest, &req.question, ASK_CHARS);
+            let user = format!("Comments (format: #number|likes|text):\n{excerpt}\n\nQuestion: {}", req.question.trim());
+            let system = format!(
+                "You answer questions about the comment section of a video, using ONLY the comments given. Answer in {lang}, concisely. \
+                 Mention how many comments or how popular a view seems when you can tell. If the comments do not contain the answer, say so. Do not invent comments."
+            );
+            let answer = chat(ep, model, &pick_system(req, system), &user).await?;
+            progress(1, 1)?;
+            Ok(json!({"answer": answer.trim()}))
         }
         "translate" => {
             let cues: Vec<Cue> = req

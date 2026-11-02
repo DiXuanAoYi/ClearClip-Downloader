@@ -294,3 +294,33 @@ console.log('extension-vsum: ok')
   assert.deepEqual(plain(V.parsePoint('旧格式的要点 [1:02:03]')), { title: '', detail: '旧格式的要点', time: '1:02:03' })
   assert.deepEqual(plain(V.parsePoint('文章要点')), { title: '', detail: '文章要点', time: '' })
 }
+
+// ---- 评论
+assert.equal(V.parseCount('1.2万'), 12000)
+assert.equal(V.parseCount('3.4K'), 3400)
+assert.equal(V.parseCount('1,234'), 1234)
+assert.equal(V.parseCount(''), 0)
+assert.equal(V.commentTime('看 05:21 这里'), 321_000)
+assert.equal(V.commentTime('1:02:03 开始'), 3_723_000)
+assert.equal(V.commentTime('比例是 3:2 不是时间'), -1)
+{
+  const b = V.parseBiliComments({ data: { cursor: { next: 5, is_end: false }, top_replies: [], replies: [{ member: { uname: '甲' }, content: { message: ' 好 评 ' }, like: 7, rcount: 2 }] } })
+  assert.equal(b.items.length, 1)
+  assert.equal(b.items[0].text, '好 评')
+  assert.equal(b.next, 5)
+  assert.equal(b.end, false)
+  const y = V.parseYtComments({
+    onResponseReceivedEndpoints: [
+      { reloadContinuationItemsCommand: { continuationItems: [
+        { commentThreadRenderer: { comment: { commentRenderer: { authorText: { simpleText: '@乙' }, contentText: { runs: [{ text: '讲得好 ' }, { text: '12:30' }] }, voteCount: { simpleText: '1.2万' } } } } },
+        { continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token: 'NEXT' } } } },
+      ] } },
+    ],
+  })
+  assert.equal(y.items[0].likes, 12000)
+  assert.equal(y.items[0].t, 750_000)
+  assert.equal(y.next, 'NEXT')
+  const c = plain(V.cleanComments([{ text: 'a b', likes: 1 }, { text: 'a b', likes: 9 }, { text: 'x', likes: 5 }, { text: '好看', likes: 3 }]))
+  assert.deepEqual(c.map((x) => x.text), ['a b', '好看'])
+  assert.ok(V.commentsToMarkdown('T', { count: 2, sentiment: { pos: 1, neu: 1, neg: 1 }, verdict: 'v', themes: [{ name: '甲', count: 2, quotes: [] }] }).includes('## 主要观点'))
+}

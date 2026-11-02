@@ -711,8 +711,112 @@
   ]
   const SUGGESTIONS = ['这个视频的核心观点是什么？', '有哪些可以直接照做的建议？', '作者提到了哪些数据或例子？', '有哪些我可能不同意的地方？']
 
+
+  // ---------- 评论 ----------
+
+  /** “1.2万”“3.4K”“1,234”“2M”这类点赞数写法转成整数；读不出来是 0。 */
+  function parseCount(v) {
+    if (typeof v === 'number') return Math.max(0, Math.round(v))
+    const m = String(v ?? '').replace(/[,\s]/g, '').match(/^([\d.]+)(万|亿|[kKmMbB])?/)
+    if (!m) return 0
+    const n = parseFloat(m[1])
+    if (!Number.isFinite(n)) return 0
+    const mul = { 万: 1e4, 亿: 1e8, k: 1e3, m: 1e6, b: 1e9 }[(m[2] || '').toLowerCase()] || 1
+    return Math.round(n * mul)
+  }
+
+  /** 评论里写的视频时间（如 05:21、1:02:03），取第一个，返回毫秒；没有是 -1。 */
+  function commentTime(text) {
+    const m = String(text || '').match(/(?:^|[^\d:])((?:\d{1,2}:)?\d{1,2}:\d{2})(?![\d:])/)
+    const t = m ? parseClock(m[1]) : null
+    return t == null ? -1 : t
+  }
+
+  const cmt = (author, text, likes, replies) => {
+    const t = String(text || '').replace(/\s+/g, ' ').trim()
+    return { author: String(author || '').replace(/^@/, '').slice(0, 40), text: t.slice(0, 600), likes: parseCount(likes), replies: parseCount(replies), t: commentTime(t) }
+  }
+
+  /**
+   * 解析 YouTube `youtubei/v1/next` 的响应：
+   * { items: [{author,text,likes,replies,t}], next: 下一页令牌, sorts: [{title, token}] }
+   * 新旧两种返回格式都认（commentThreadRenderer / commentEntityPayload）。
+   */
+  function parseYtComments(json) {
+    const out = { items: [], next: '', sorts: [] }
+    const acts = [...(json?.onResponseReceivedEndpoints || []), ...(json?.onResponseReceivedActions || [])]
+    const entities = {}
+    for (const m of json?.frameworkUpdates?.entityBatchUpdate?.mutations || []) {
+      const p = m?.payload?.commentEntityPayload
+      if (p?.key || m?.entityKey) entities[p?.key || m.entityKey] = p
+    }
+    const text = (c) => (c?.runs ? c.runs.map((r) => r.text).join('') : c?.simpleText || '')
+    for (const a of acts) {
+      const list = a?.reloadContinuationItemsCommand?.continuationItems || a?.appendContinuationItemsAction?.continuationItems || []
+      if (a?.reloadContinuationItemsCommand?.slot === 'RELOAD_CONTINUATION_SLOT_HEADER') {
+        for (const it of list[0]?.commentsHeaderRenderer?.sortMenu?.sortFilterSubMenuRenderer?.subMenuItems || []) {
+          const token = it?.serviceEndpoint?.continuationCommand?.token
+          if (token) out.sorts.push({ title: it.title || '', token })
+        }
+      }
+      for (const it of list) {
+        const tok = it?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token
+        if (tok) out.next = tok
+        const th = it?.commentThreadRenderer
+        if (!th) continue
+        const old = th.comment?.commentRenderer
+        if (old) {
+          out.items.push(cmt(text(old.authorText), text(old.contentText), old.voteCount?.simpleText || old.likeCount, th.replies?.commentRepliesRenderer?.moreText ? text(th.replies.commentRepliesRenderer.moreText).replace(/\D/g, '') : old.replyCount))
+          continue
+        }
+        const vm = th.commentViewModel?.commentViewModel || th.commentViewModel
+        const p = entities[vm?.commentKey]
+        if (p) out.items.push(cmt(p.author?.displayName, p.properties?.content?.content, p.toolbar?.likeCountNotliked ?? p.toolbar?.likeCountA11y, p.toolbar?.replyCount))
+      }
+    }
+    return out
+  }
+
+  /** 解析 B 站 `x/v2/reply/main` 的响应：{ items, next, end }。 */
+  function parseBiliComments(json) {
+    const d = json?.data || {}
+    const all = [...(d.top_replies || []), ...(d.replies || [])]
+    return {
+      items: all.map((r) => cmt(r?.member?.uname, r?.content?.message, r?.like, r?.rcount)),
+      next: d.cursor?.next ?? 0,
+      end: !!d.cursor?.is_end || !all.length,
+    }
+  }
+
+  /** 去掉重复和过短的评论，按点赞数从高到低。 */
+  function cleanComments(list) {
+    const seen = new Set()
+    return [...(list || [])]
+      .sort((a, b) => b.likes - a.likes)
+      .filter((c) => {
+        const k = c.text
+        if (!k || k.length < 2 || seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
+  }
+
+  /** 评论分析结果转成 Markdown。 */
+  function commentsToMarkdown(title, r) {
+    const q = (x) => (x ? `\n  > ${x.text}${x.author ? `（@${x.author}${x.likes ? ` · 赞 ${x.likes}` : ''}）` : ''}` : '')
+    const L = [`# ${title || '视频'} · 评论分析`, '', `共分析 ${r.count} 条评论。`, '', '## 整体情绪', `正面 ${r.sentiment.pos}% · 中性 ${r.sentiment.neu}% · 负面 ${r.sentiment.neg}%`, '']
+    if (r.verdict) L.push(r.verdict, '')
+    if (r.themes?.length) L.push('## 主要观点', ...r.themes.map((t) => `- **${t.name}**（${t.count} 人）${(t.quotes || []).map(q).join('')}`), '')
+    if (r.disputes?.length) L.push('## 争议点', ...r.disputes.map((d) => `- ${d.topic}（支持 ${d.pro} · 质疑 ${d.con}）`), '')
+    if (r.questions?.length) L.push('## 观众提问', ...r.questions.map((x) => `- [${x.answered ? '已回答' : '未解答'}] ${x.q}`), '')
+    if (r.corrections?.length) L.push('## 纠错与补充', ...r.corrections.map((x) => `- ${x.text}${q(x.quote)}`), '')
+    if (r.keywords?.length) L.push('## 热词', r.keywords.join('、'), '')
+    return L.join('\n')
+  }
+
   globalThis.ccVsum = {
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
+    parseCount, commentTime, parseYtComments, parseBiliComments, cleanComments, commentsToMarkdown,
     videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
     searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, splitSummary, parsePoint, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
   }
