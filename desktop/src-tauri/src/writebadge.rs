@@ -148,8 +148,8 @@ pub fn decide(f: &Focus, cfg: &WritingSettings, now: i64) -> Result<(i32, i32), 
         return Err(Skip::ReadOnly);
     }
     let (l, t, r, b) = f.rect;
-    // 太小的输入框（单行的小框）不出，和扩展的规则一致：宽至少 200、高至少 28
-    if r - l < 200 || b - t < 28 {
+    // 太小的输入框（单行的小框）不出，和扩展的规则一致：宽至少 120、高至少 22
+    if r - l < 120 || b - t < 22 {
         return Err(Skip::Small);
     }
     Ok((r, b))
@@ -185,8 +185,8 @@ mod win {
     use windows::Win32::Foundation::{HWND, RECT};
     use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
     use windows::Win32::UI::Accessibility::{
-        CUIAutomation, IUIAutomation, IUIAutomationValuePattern, SetWinEventHook, UIA_DocumentControlTypeId, UIA_EditControlTypeId, UIA_ValuePatternId,
-        UnhookWinEvent, HWINEVENTHOOK,
+        CUIAutomation, IUIAutomation, IUIAutomationValuePattern, SetWinEventHook, UIA_DocumentControlTypeId, UIA_EditControlTypeId, UIA_TextPatternId,
+        UIA_ValuePatternId, UnhookWinEvent, HWINEVENTHOOK,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         DispatchMessageW, GetMessageW, GetWindowRect, TranslateMessage, EVENT_OBJECT_FOCUS, MSG, WINEVENT_OUTOFCONTEXT,
@@ -265,6 +265,12 @@ mod win {
                     if shown_at.is_some_and(|t| t.elapsed() > SHOW_FOR) {
                         hide(&app);
                         shown_at = None;
+                    } else if shown_at.is_none() && app.try_state::<Arc<AppState>>().is_some() {
+                        // 有些程序不发焦点事件（或首次查询时还没开放无障碍），每秒补查一次
+                        if let Some(pos) = probe(&app, &auto) {
+                            show(&app, pos);
+                            shown_at = Some(Instant::now());
+                        }
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,
@@ -285,7 +291,7 @@ mod win {
         let own = exe == own_exe() || crate::writeassist::is_own_window(hwnd);
         let el = unsafe { auto.GetFocusedElement() }.ok()?;
         let ct = unsafe { el.CurrentControlType() }.ok()?;
-        let kind = if ct == UIA_EditControlTypeId {
+        let mut kind = if ct == UIA_EditControlTypeId {
             Kind::Edit
         } else if ct == UIA_DocumentControlTypeId {
             Kind::Document
@@ -293,13 +299,19 @@ mod win {
             Kind::Other
         };
         let (mut has_value, mut read_only) = (false, false);
-        if kind != Kind::Other {
-            if let Ok(p) = unsafe { el.GetCurrentPattern(UIA_ValuePatternId) } {
-                if let Ok(v) = p.cast::<IUIAutomationValuePattern>() {
-                    has_value = true;
-                    read_only = unsafe { v.CurrentIsReadOnly() }.map(|b| b.as_bool()).unwrap_or(false);
-                }
+        if let Ok(p) = unsafe { el.GetCurrentPattern(UIA_ValuePatternId) } {
+            if let Ok(v) = p.cast::<IUIAutomationValuePattern>() {
+                has_value = true;
+                read_only = unsafe { v.CurrentIsReadOnly() }.map(|b| b.as_bool()).unwrap_or(false);
             }
+        }
+        // 富文本框（Word、记事本、很多聊天框）只有文本接口没有值接口：按可写处理，写回时再试
+        if !has_value && kind == Kind::Document && unsafe { el.GetCurrentPattern(UIA_TextPatternId) }.is_ok() {
+            has_value = true;
+        }
+        // 控件类型是别的，但有可写的值接口（网页里的自绘输入框等）：当作输入框
+        if kind == Kind::Other && has_value && !read_only {
+            kind = Kind::Edit;
         }
         let password = unsafe { el.CurrentIsPassword() }.map(|b| b.as_bool()).unwrap_or(false);
         let name = unsafe { el.CurrentName() }.map(|s| s.to_string()).unwrap_or_default();
@@ -425,7 +437,7 @@ mod tests {
         f.read_only = true;
         assert_eq!(decide(&f, &c, 1), Err(Skip::ReadOnly));
         f = focus();
-        f.rect = (0, 0, 150, 30);
+        f.rect = (0, 0, 100, 20);
         assert_eq!(decide(&f, &c, 1), Err(Skip::Small));
         f = focus();
         f.fullscreen = true;

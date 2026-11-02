@@ -1,11 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口、迷你窗和悬浮拖拽窗可用的权限。平台登录窗口不在此列，无法调用任何命令。",
+  "description": "主窗口、迷你窗、悬浮拖拽窗、写作窗和写作浮标可用的权限。平台登录窗口不在此列，无法调用任何命令。",
   "windows": [
     "main",
     "mini",
-    "float"
+    "float",
+    "write",
+    "wbadge"
   ],
   "permissions": [
     "core:default",

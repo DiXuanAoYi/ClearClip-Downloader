@@ -8,7 +8,7 @@ function click() {
 </script>
 
 <template>
-  <button class="b" title="清影写作" @mousedown.prevent @click="click">写</button>
+  <button class="b" title="清影写作" aria-label="清影写作" @mousedown.prevent @click="click">写</button>
 </template>
 
 <style>
@@ -17,6 +17,6 @@ html, body { margin: 0; background: transparent !important; overflow: hidden; }
 </style>
 
 <style scoped>
-.b { width: 100%; height: 100%; border: 0; border-radius: 50%; background: #0f766e; color: #fff; font: 600 13px system-ui, 'Noto Sans SC', sans-serif; cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35); padding: 0; }
-.b:hover { background: #115e59; }
+.b { width: 100%; height: 100%; border: 0; border-radius: 50%; background: #b4561a; color: #fff; font: 700 13px/1 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; cursor: pointer; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 2px 6px rgba(180, 86, 26, 0.55); padding: 0; transition: background 0.12s; }
+.b:hover { background: #d9762b; }
 </style>

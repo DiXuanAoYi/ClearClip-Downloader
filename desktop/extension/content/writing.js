@@ -7,30 +7,40 @@
   const W = globalThis.ccWrite
 
   const CSS = `
-    :host { --bg:#fff; --fg:#14202b; --mut:#5a6b78; --line:#d5dde3; --acc:#0f766e; --acc2:#e6f3f1; --del-bg:#fce4e1; --del-fg:#8a1c12; --add-bg:#d6f0e9; --add-fg:#085247; --warn:#b45309; --err:#b42318 }
-    @media (prefers-color-scheme: dark) { :host { --bg:#1b252d; --fg:#e8eef2; --mut:#9db0bd; --line:#35444f; --acc:#2bb3a5; --acc2:#16312f; --del-bg:#4a2320; --del-fg:#ffb4aa; --add-bg:#143d36; --add-fg:#9fe3d4; --warn:#f0a35a; --err:#ff8a80 } }
-    button { background: var(--acc); color: #fff; font-weight: 600; }
-    button.sec { background: var(--bg); color: var(--fg); border: 1px solid var(--line); font-weight: 400; }
+    :host { --bg:#f4f5f4; --card:#fff; --fg:#1d2420; --mut:#5d6862; --line:#d9dedb; --acc:#d9762b; --accd:#b4561a; --acc2:#fbeadb; --del-bg:#fbe3e0; --del-fg:#c2453b; --add-bg:#dff1e6; --add-fg:#2f8a57; --warn:#b4701a; --err:#c2453b }
+    @media (prefers-color-scheme: dark) { :host { --bg:#14181a; --card:#22292c; --fg:#e7ecea; --mut:#9aa6a2; --line:#2f383c; --acc:#f08a3c; --accd:#c8641f; --acc2:#3a2a1d; --del-bg:#4a2724; --del-fg:#ec7a70; --add-bg:#1f3a2c; --add-fg:#5cc28a; --warn:#e0a24a; --err:#ec7a70 } }
+    button { background: var(--accd); color: #fff; font-weight: 600; border-radius: 8px; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px }
+    button.sec { background: transparent; color: var(--fg); border: 1px solid var(--line); font-weight: 400; }
     button:disabled { opacity: .5; cursor: default; }
-    .badge { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 9px; border-radius: 15px; box-shadow: 0 3px 12px #0005; font-size: 12px; user-select: none; }
+    .badge { display: flex; align-items: center; gap: 0; height: 28px; padding: 0 8px; border-radius: 14px; box-shadow: 0 2px 8px rgba(180,86,26,.45), 0 0 0 3px color-mix(in srgb, var(--card) 85%, transparent); font-size: 12px; user-select: none; overflow: hidden }
+    .badge span { max-width: 0; opacity: 0; white-space: nowrap; transition: max-width .18s, opacity .18s, margin .18s }
+    .badge:hover, .badge:focus-visible { background: var(--acc) }
+    .badge:hover span, .badge:focus-visible span { max-width: 90px; opacity: 1; margin-left: 5px }
+    @media (prefers-reduced-motion: reduce) { .badge span { transition: none } }
     .badge svg { width: 16px; height: 16px; flex: none }
-    .panel { width: 520px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 34px #0004; font-size: 13px; }
-    .hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 1 }
+    .panel { width: 480px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(20,30,25,.28), 0 1px 3px rgba(20,30,25,.16); font-size: 13px; }
+    .hd { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 1; cursor: grab; user-select: none; touch-action: none }
+    .hd.drag { cursor: grabbing }
+    .logo { width: 20px; height: 20px; border-radius: 6px; background: var(--acc); color: #fff; display: grid; place-items: center; font: 700 11px/1 inherit; flex: none }
+    .grip { display: grid; grid-template-columns: repeat(3, 3px); gap: 3px; opacity: .55 }
+    .grip i { width: 3px; height: 3px; border-radius: 50%; background: var(--mut) }
     .hd b { font-size: 13px }
     .mut { color: var(--mut); font-size: 11px }
     .bd { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px }
     .sec-t { font-size: 11px; color: var(--mut); letter-spacing: .08em; margin-bottom: 4px }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0 }
-    .chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-weight: 400; font-size: 12px; white-space: nowrap }
-    .chip.on { background: var(--acc); border-color: var(--acc); color: #fff }
+    .chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--fg); font-weight: 400; font-size: 12px; white-space: nowrap }
+    .chip.on { background: var(--acc2); border-color: var(--acc); color: var(--accd); font-weight: 600 }
+    @media (prefers-color-scheme: dark) { .chip.on { color: var(--acc) } }
     .chip.dash { border-style: dashed }
     .chip.x { height: 22px; padding: 0 8px }
     .row { display: flex; gap: 8px; align-items: flex-start }
     .lbl { width: 52px; flex: none; font-size: 11px; color: var(--mut); padding-top: 5px }
     .sep { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px }
-    input[type=text], select { border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; height: 32px; background: var(--bg); color: var(--fg); min-width: 0 }
+    input[type=text], select { border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; height: 32px; background: var(--card); color: var(--fg); min-width: 0 }
     .grow { flex: 1; min-width: 0 }
-    .box { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; line-height: 1.9; font-size: 14px; white-space: pre-wrap; word-break: break-word; background: color-mix(in srgb, var(--bg) 94%, var(--fg)) }
+    .box { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; line-height: 1.9; font-size: 14px; white-space: pre-wrap; word-break: break-word; background: var(--bg) }
     .del { background: var(--del-bg); color: var(--del-fg); text-decoration: line-through; border-radius: 3px; padding: 0 1px }
     .add { background: var(--add-bg); color: var(--add-fg); border-radius: 3px; padding: 0 1px }
     .hk { cursor: pointer }
@@ -44,7 +54,7 @@
     .warn { border: 1px solid var(--warn); color: var(--warn); border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.6 }
     .err { color: var(--err) }
     .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
-    a { color: #1d5fa8 }
+    a { color: var(--accd) }
     .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; display: inline-block; animation: sp .8s linear infinite }
     @keyframes sp { to { transform: rotate(360deg) } }
   `
@@ -188,6 +198,7 @@
       ui.add(badge)
     }
     badge.replaceChildren(penIcon(), h('span', { text: badgeLabel() }))
+    badge.setAttribute('aria-label', '清影写作')
     placeBadge()
   }
 
@@ -307,6 +318,7 @@
       facts: null,
       history: null,
     }
+    dragPos = null
     panel = h('div', { class: 'layer panel' })
     ui.add(panel)
     send({ type: 'cc-ai-status' }).then((s) => {
@@ -334,7 +346,46 @@
     }
   }
 
+  let dragPos = null // 用户拖过的位置，重新打开时清掉
+  function clampPos(left, top) {
+    const w = panel.offsetWidth || 480
+    const hh = panel.offsetHeight || 420
+    return [Math.max(4 - w + 80, Math.min(left, innerWidth - 80)), Math.max(0, Math.min(top, innerHeight - 36))].map(Math.round)
+  }
+  function onHdDown(e) {
+    if (!panel || e.button > 0 || e.target.closest?.('button, input, select, a')) return
+    const hd = e.currentTarget
+    const r = panel.getBoundingClientRect()
+    const dx = e.clientX - r.left
+    const dy = e.clientY - r.top
+    hd.setPointerCapture?.(e.pointerId)
+    hd.classList.add('drag')
+    const move = (ev) => {
+      if (!panel) return
+      const [l, t] = clampPos(ev.clientX - dx, ev.clientY - dy)
+      dragPos = { left: l, top: t }
+      panel.style.left = `${l}px`
+      panel.style.top = `${t}px`
+    }
+    const up = () => {
+      hd.classList.remove('drag')
+      hd.removeEventListener('pointermove', move)
+      hd.removeEventListener('pointerup', up)
+      hd.removeEventListener('pointercancel', up)
+    }
+    hd.addEventListener('pointermove', move)
+    hd.addEventListener('pointerup', up)
+    hd.addEventListener('pointercancel', up)
+    e.preventDefault()
+  }
+
   function placePanel() {
+    if (panel && dragPos) {
+      const [l, t] = clampPos(dragPos.left, dragPos.top)
+      panel.style.left = `${l}px`
+      panel.style.top = `${t}px`
+      return
+    }
     if (!panel || !target) {
       if (panel) {
         panel.style.left = `${Math.max(8, (innerWidth - 520) / 2)}px`
@@ -358,11 +409,13 @@
   function header(title, extra) {
     return h(
       'div',
-      { class: 'hd' },
+      { class: 'hd', onpointerdown: onHdDown },
+      h('span', { class: 'logo', text: '写' }),
       h('b', { text: title }),
       extra || null,
       h('span', { class: 'mut', style: 'margin-left:auto', text: modelLabel() }),
-      h('button', { class: 'sec chip x', text: '关闭', onclick: closePanel }),
+      h('span', { class: 'grip' }, ...Array.from({ length: 6 }, () => h('i'))),
+      h('button', { class: 'sec chip x', text: '×', title: '关闭 (Esc)', onclick: closePanel }),
     )
   }
 
