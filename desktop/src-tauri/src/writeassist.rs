@@ -177,7 +177,9 @@ fn show_window(app: &AppHandle) {
         .inner_size(W, H)
         .min_inner_size(360.0, 360.0)
         .decorations(false)
-        .shadow(true)
+        // 不用系统阴影：Windows 对无边框窗口会在四周补一圈浅色的 1 像素系统边框，深色下像多出一层白边；
+        // 窗口自己已经有一圈和主题同色的边线
+        .shadow(false)
         .resizable(true)
         .always_on_top(cfg.pin)
         .skip_taskbar(true)
