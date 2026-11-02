@@ -165,6 +165,10 @@
       const t = e.composedPath()[0]
       if (!(t instanceof HTMLElement) || !t.matches('input, select, textarea, a')) e.preventDefault()
     })
+    // 面板里的输入框：键盘、输入法、点击事件都不要冒泡到网页（很多网站的快捷键、编辑器、点击空白处收起逻辑会抢焦点或吞字）
+    for (const ev of ['keydown', 'keyup', 'keypress', 'beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend', 'paste', 'cut', 'copy', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'dblclick', 'contextmenu', 'focusin', 'focusout']) {
+      ui.root.addEventListener(ev, (e) => e.stopPropagation())
+    }
   }
 
   function penIcon() {
@@ -471,7 +475,8 @@
 
     const extra = h('input', { type: 'text', class: 'grow', placeholder: '还有特别要求？例如“对方是客户，别太生硬”', value: s.extra || '', maxlength: '200', oninput: (e) => (s.extra = e.target.value) })
     extra.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') run()
+      // 输入法选字时按回车是“确认拼音”，不能当成运行
+      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) run()
       e.stopPropagation()
     })
     const cand = h('select', { title: '一次生成几个候选', onchange: (e) => ((cfg.candidates = Number(e.target.value)), saveCfg()) })
@@ -515,6 +520,7 @@
           }
           input.addEventListener('keydown', (e) => {
             e.stopPropagation()
+            if (e.isComposing || e.keyCode === 229) return
             if (e.key === 'Enter') ok()
             if (e.key === 'Escape') render()
           })

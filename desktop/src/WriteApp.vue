@@ -140,7 +140,7 @@ async function apply(replace: boolean) {
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') void api.writeClose()
-  else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void run()
+  else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) void run()
 }
 
 onMounted(async () => {
