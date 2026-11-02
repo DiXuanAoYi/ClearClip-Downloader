@@ -367,6 +367,7 @@ export const api = {
   writeJob: (id: number) => invoke<WriteJob | null>('write_job', { id }),
   writeCancel: (id: number) => invoke<boolean>('write_cancel', { id }),
   writeApply: (text: string, replace: boolean) => invoke<string>('write_apply', { text, replace }),
+  writeBadgeClick: () => invoke<void>('write_badge_click'),
   writeClose: () => invoke<void>('write_close'),
   writePause: (minutes: number) => invoke<void>('write_pause', { minutes }),
   openLogin: (site: string, url?: string, label?: string) => invoke<void>('open_login', { site, url, label }),

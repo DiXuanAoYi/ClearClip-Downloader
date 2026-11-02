@@ -73,6 +73,7 @@ pub mod vidnorm;
 pub mod vsum;
 mod winframe;
 pub mod writeassist;
+pub mod writebadge;
 pub mod writing;
 
 use std::path::PathBuf;
@@ -407,6 +408,7 @@ pub fn run() {
             spawn_account_reminders(handle.clone());
 
             tray::create(&handle)?;
+            writebadge::start(&handle);
             tray::spawn_speed_ticker(&handle);
             commands::apply_shortcut(&handle, &settings.shortcut);
             clipboard::start_watcher(handle.clone());
@@ -685,6 +687,8 @@ pub fn run() {
             commands::hide_mini,
             commands::mini_ready,
             writeassist::write_take,
+            writeassist::write_badge_click,
+            writeassist::write_off_this_app,
             writeassist::write_settings,
             writeassist::write_run,
             writeassist::write_job,

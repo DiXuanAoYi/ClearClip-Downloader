@@ -70,6 +70,31 @@ unsafe extern "system" fn guard_proc(hwnd: windows_sys::Win32::Foundation::HWND,
     DefSubclassProc(hwnd, msg, wparam, lparam)
 }
 
+/// 不抢焦点地显示小窗，并让它不出现在 Alt+Tab 里（`WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`）。
+#[cfg(windows)]
+pub fn show_no_activate(w: &tauri::WebviewWindow) {
+    let Ok(hwnd) = w.hwnd() else { return };
+    let raw = hwnd.0 as isize;
+    let _ = w.run_on_main_thread(move || {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongW, SetWindowLongW, ShowWindow, GWL_EXSTYLE, SW_SHOWNOACTIVATE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        };
+        let h = raw as windows_sys::Win32::Foundation::HWND;
+        // SAFETY: 句柄是本进程刚创建的窗口，在它所属的界面线程上操作。
+        unsafe {
+            let ex = GetWindowLongW(h, GWL_EXSTYLE) as u32;
+            SetWindowLongW(h, GWL_EXSTYLE, (ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) as i32);
+            ShowWindow(h, SW_SHOWNOACTIVATE);
+        }
+    });
+}
+
+#[cfg(not(windows))]
+#[allow(dead_code)]
+pub fn show_no_activate(w: &tauri::WebviewWindow) {
+    let _ = w.show();
+}
+
 #[cfg(not(windows))]
 pub fn guard(_: &tauri::WebviewWindow) {}
 

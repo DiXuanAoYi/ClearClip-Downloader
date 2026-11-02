@@ -41,6 +41,18 @@ struct Target {
 
 static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
 static TARGET: Mutex<Option<Target>> = Mutex::new(None);
+/// 浮标出现时记下的目标窗口：点浮标时前台万一被浮标抢走，用它切回去。
+static BADGE_TARGET: Mutex<isize> = Mutex::new(0);
+
+pub fn foreground() -> (isize, String) {
+    sys::foreground()
+}
+pub fn remember_target(hwnd: isize) {
+    *lock(&BADGE_TARGET) = hwnd;
+}
+pub fn is_own_window(hwnd: isize) -> bool {
+    sys::is_own_window(hwnd)
+}
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -78,20 +90,36 @@ fn settings(app: &AppHandle) -> WritingSettings {
 
 /// 快捷键按下：取词并弹窗。
 pub fn hotkey(app: &AppHandle) {
+    open(app, false);
+}
+
+/// 点浮标：和快捷键同一条路，只是目标窗口以浮标出现时记下的为准。
+pub fn badge_click(app: &AppHandle) {
+    crate::writebadge::hide(app);
+    open(app, true);
+}
+
+fn open(app: &AppHandle, from_badge: bool) {
     if app.try_state::<Arc<AppState>>().is_some_and(|st| crate::security::status(&st).locked) {
         return;
     }
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let pending = capture(&app);
+        let pending = capture(&app, from_badge);
         *lock(&PENDING) = Some(pending);
         show_window(&app);
     });
 }
 
-fn capture(app: &AppHandle) -> Pending {
+fn capture(app: &AppHandle, from_badge: bool) -> Pending {
     let cfg = settings(app);
-    let (hwnd, exe) = sys::foreground();
+    let (mut hwnd, mut exe) = sys::foreground();
+    if from_badge {
+        let hint = *lock(&BADGE_TARGET);
+        if hint != 0 && (hwnd == 0 || sys::is_own_window(hwnd)) && sys::activate(hint) {
+            (hwnd, exe) = sys::foreground();
+        }
+    }
     if cfg.app_off(&exe) {
         return Pending { note: "这个程序已在“不在这些程序里出现”列表里".into(), ..Default::default() };
     }
@@ -201,6 +229,25 @@ pub fn apply(app: &AppHandle, text: &str, replace: bool) -> Result<String, Strin
 }
 
 // ---------- 命令 ----------
+
+#[tauri::command]
+pub fn write_badge_click(app: AppHandle) {
+    badge_click(&app);
+}
+
+#[tauri::command]
+pub fn write_off_this_app(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
+    let exe = crate::writebadge::last_app();
+    if exe.is_empty() {
+        return Err("还没有在任何程序里出现过浮标".into());
+    }
+    let mut s = state.settings_raw();
+    s.writing.off_apps.push(exe.clone());
+    s.writing.sanitize();
+    s.save(&state.settings_path).map_err(|e| e.message)?;
+    *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+    Ok(exe)
+}
 
 #[tauri::command]
 pub fn write_take() -> Option<Pending> {
@@ -411,6 +458,26 @@ mod sys {
         }
     }
 
+    pub fn is_own_window(hwnd: isize) -> bool {
+        unsafe {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd as HWND, &mut pid);
+            pid == std::process::id()
+        }
+    }
+
+    pub fn activate(hwnd: isize) -> bool {
+        unsafe {
+            let h = hwnd as HWND;
+            if IsWindow(h) == 0 {
+                return false;
+            }
+            SetForegroundWindow(h);
+        }
+        std::thread::sleep(Duration::from_millis(120));
+        true
+    }
+
     /// 切回原窗口并粘贴；窗口没了返回 false。
     pub fn paste_into(hwnd: isize) -> bool {
         unsafe {
@@ -438,6 +505,12 @@ mod sys {
         Copied::Unsupported
     }
     pub fn paste_into(_hwnd: isize) -> bool {
+        false
+    }
+    pub fn is_own_window(_hwnd: isize) -> bool {
+        false
+    }
+    pub fn activate(_hwnd: isize) -> bool {
         false
     }
 }
