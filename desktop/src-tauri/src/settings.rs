@@ -336,6 +336,8 @@ pub struct Settings {
     pub metered_mode: bool,
     /// 安全与隐私
     pub security: SecuritySettings,
+    /// 写作浮窗（桌面端入口）
+    pub writing: WritingSettings,
     /// 已完成首次使用引导（升级前就在使用的用户不再弹出）
     pub onboarded: bool,
     /// 界面语言：zh / en / ja
@@ -512,6 +514,61 @@ impl Default for SecuritySettings {
             panic_shortcut: String::new(),
             safebox_auto_lock_minutes: 15,
         }
+    }
+}
+
+/// 写作浮窗在桌面端的设置：全局快捷键、自动浮标、不在哪些程序里出现、模型路线。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WritingSettings {
+    /// 全局快捷键；留空表示不启用
+    pub hotkey: String,
+    /// 在其他程序里点进输入框时自动出现小浮标
+    pub badge: bool,
+    /// 暂停到这个时间（Unix 秒），0 表示没暂停
+    pub paused_until: i64,
+    /// 不在这些程序里出现（进程名，小写，如 `code.exe`）
+    pub off_apps: Vec<String>,
+    /// local_first / local_only / cloud_only
+    pub route: String,
+    /// 一次给几个版本（1–3）
+    pub candidates: u8,
+    /// 个人风格：一两句话，会附在每次改写的要求里；空表示不用
+    pub style: String,
+}
+
+impl Default for WritingSettings {
+    fn default() -> Self {
+        WritingSettings {
+            hotkey: "Ctrl+Alt+J".into(),
+            badge: true,
+            paused_until: 0,
+            off_apps: vec![],
+            route: "local_first".into(),
+            candidates: 1,
+            style: String::new(),
+        }
+    }
+}
+
+impl WritingSettings {
+    pub fn sanitize(&mut self) {
+        self.hotkey = self.hotkey.trim().to_string();
+        if !["local_first", "local_only", "cloud_only"].contains(&self.route.as_str()) {
+            self.route = "local_first".into();
+        }
+        self.candidates = self.candidates.clamp(1, 3);
+        let mut seen = std::collections::HashSet::new();
+        self.off_apps = self.off_apps.iter().map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty() && seen.insert(a.clone())).take(100).collect();
+        self.style = self.style.trim().chars().take(300).collect();
+    }
+    /// 现在是否被暂停。
+    pub fn paused(&self, now: i64) -> bool {
+        self.paused_until > now
+    }
+    pub fn app_off(&self, exe: &str) -> bool {
+        let e = exe.trim().to_lowercase();
+        !e.is_empty() && self.off_apps.contains(&e)
     }
 }
 
@@ -948,6 +1005,7 @@ impl Default for Settings {
             speed_schedule: vec![],
             metered_mode: false,
             security: SecuritySettings::default(),
+            writing: WritingSettings::default(),
             onboarded: false,
             language: "zh".into(),
             float_ball: false,
@@ -1091,6 +1149,7 @@ impl Settings {
         self.security.auto_lock_minutes = self.security.auto_lock_minutes.min(24 * 60);
         self.security.safebox_auto_lock_minutes = self.security.safebox_auto_lock_minutes.min(24 * 60);
         self.security.panic_shortcut = self.security.panic_shortcut.trim().to_string();
+        self.writing.sanitize();
         self.max_size_mb = self.max_size_mb.min(1_000_000);
         self.library.trash_keep_days = self.library.trash_keep_days.min(3650);
         self.library.reorganize_template = self.library.reorganize_template.trim().to_string();

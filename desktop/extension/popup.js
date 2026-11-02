@@ -494,6 +494,7 @@ async function loadSettings() {
   renderSync()
   renderVideoCfg()
   loadTransCfg()
+  loadWriteCfg()
 }
 
 // ---------- 网页翻译 ----------
@@ -569,6 +570,39 @@ $('clearTrCache').onclick = async (e) => {
   e.preventDefault()
   await api.runtime.sendMessage({ type: 'cc-tr-clear' }).catch(() => {})
   msg('已清除翻译缓存', 'ok')
+}
+
+// ---------- 写作浮窗 ----------
+async function loadWriteCfg() {
+  const { writeCfg } = await api.storage.local.get('writeCfg')
+  const c = ccWrite.normalizeCfg(writeCfg)
+  $('wrTrigger').value = c.trigger
+  $('wrRoute').value = c.route
+  $('wrCands').value = String(c.candidates)
+  $('wrEmpty').checked = c.showEmpty
+  $('wrClick').checked = c.runOnClick
+  $('wrOff').value = c.offHosts.join('\n')
+}
+$('saveWrite').onclick = async () => {
+  const { writeCfg } = await api.storage.local.get('writeCfg')
+  const cur = ccWrite.normalizeCfg(writeCfg)
+  const next = ccWrite.normalizeCfg({
+    ...cur,
+    trigger: $('wrTrigger').value,
+    route: $('wrRoute').value,
+    candidates: Number($('wrCands').value),
+    showEmpty: $('wrEmpty').checked,
+    runOnClick: $('wrClick').checked,
+    offHosts: $('wrOff').value.split(/\s+/),
+  })
+  await api.storage.local.set({ writeCfg: next })
+  await loadWriteCfg()
+  msg('写作浮窗设置已保存', 'ok')
+}
+$('clearWrHist').onclick = async (e) => {
+  e.preventDefault()
+  await api.storage.local.remove('writeHistory')
+  msg('已清除写作历史', 'ok')
 }
 
 let videoCfgDraft = ccVideo.normalizeCfg()

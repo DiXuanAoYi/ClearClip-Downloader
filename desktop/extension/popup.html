@@ -201,6 +201,21 @@
     <button id="saveTrans">保存网页翻译设置</button>
     <a id="clearTrCache" class="lnk" href="#">清除翻译缓存</a>
 
+    <h2>写作浮窗</h2>
+    <p class="mute">点进输入框时在右下角出现小浮标，点开选择“改写 / 语法检查 / 翻译 / 加入统计数据”等动作和语气，先看差异再采用。文字只发给清影里设置的大模型；“本地优先”时有本地模型就不会出本机。密码、支付、验证码输入框不会出现。快捷键 Alt+J。</p>
+    <div class="rowBtns">
+      <div class="col"><label>出现方式</label><select id="wrTrigger"><option value="badge">小浮标（默认）</option><option value="hotkey">只用快捷键 Alt+J</option></select></div>
+      <div class="col"><label>用哪个模型</label><select id="wrRoute"><option value="local_first">本地优先，没有再用云端</option><option value="local_only">只用本地模型</option><option value="cloud_only">只用云端模型</option></select></div>
+    </div>
+    <label>一次生成几个候选</label>
+    <select id="wrCands"><option value="1">1 个</option><option value="2">2 个</option><option value="3">3 个</option></select>
+    <label class="row"><input id="wrEmpty" type="checkbox" /> 输入框是空的也显示浮标</label>
+    <label class="row"><input id="wrClick" type="checkbox" /> 点一下动作就直接生成（不再点“生成”）</label>
+    <label>不显示浮标的网站（每行一个，含子域名）</label>
+    <textarea id="wrOff" placeholder="example.com"></textarea>
+    <button id="saveWrite">保存写作浮窗设置</button>
+    <a id="clearWrHist" class="lnk" href="#">清除写作历史</a>
+
     <h2>播放增强快捷键</h2>
     <p class="mute">鼠标指着的视频优先，其次是正在播放的。在输入框里打字时不会触发。点输入框后按一个键即可修改。</p>
     <div id="videoKeys"></div>
@@ -246,6 +261,7 @@
   <script src="shared.js"></script>
   <script src="features.js"></script>
   <script src="trans-logic.js"></script>
+  <script src="writing-logic.js"></script>
   <script src="clean-link.js"></script>
   <script src="progress.js"></script>
   <script src="takeover.js"></script>

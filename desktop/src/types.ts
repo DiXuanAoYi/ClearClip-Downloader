@@ -1035,9 +1035,30 @@ export interface Settings {
   runWindow: SpeedWindow
   meteredMode: boolean
   security: SecuritySettings
+  writing: WritingSettings
   onboarded: boolean
   language: 'zh' | 'en' | 'ja'
   floatBall: boolean
+}
+
+/** 写作浮窗（桌面端入口）的设置 */
+export interface WritingSettings {
+  hotkey: string
+  badge: boolean
+  pausedUntil: number
+  offApps: string[]
+  route: 'local_first' | 'local_only' | 'cloud_only'
+  candidates: number
+  style: string
+}
+
+/** 快捷键取到的内容 */
+export interface WritePending {
+  text: string
+  fromSelection: boolean
+  app: string
+  canReplace: boolean
+  note: string
 }
 
 export interface SecuritySettings {
@@ -1992,4 +2013,14 @@ export interface ExpertsState {
   selected: string
   auto: boolean
   communityPage: string
+}
+
+/** 写作任务的轮询结果 */
+export interface WriteJob {
+  state: 'running' | 'done' | 'error'
+  done: number
+  total: number
+  note: string
+  result: { text?: string; style?: string; candidates?: { text: string; guard?: string | null }[]; corrected?: string; issues?: { from: string; to: string; reason: string }[] } | null
+  error: string | null
 }

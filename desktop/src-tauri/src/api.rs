@@ -162,7 +162,13 @@ pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply
             }
         }
         // 视频摘要（浏览器扩展用）：提交 → 轮询
-        ("GET", "/api/v1/ai/status") => ok(crate::vsum::status(&state)),
+        ("GET", "/api/v1/ai/status") => {
+            // 浏览器扩展顺带报到：桌面端据此在对应浏览器的窗口里不再弹写作浮标
+            if let Some(f) = req.query.get("ext") {
+                crate::writebadge::mark_ext(f, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0));
+            }
+            ok(crate::vsum::status(&state))
+        }
         ("POST", "/api/v1/ai/run") => match serde_json::from_slice::<crate::vsum::Req>(&req.body) {
             Ok(r) => match crate::vsum::start(app, r) {
                 Ok(id) => ok(json!({"id": id})),

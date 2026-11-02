@@ -370,6 +370,17 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 })
 
 api.commands?.onCommand.addListener(async (cmd) => {
+  if (cmd === 'toggle-writing') {
+    try {
+      if (!(await getFeatures()).writing) return
+      const [tab] = await api.tabs.query({ active: true, currentWindow: true })
+      // 常驻脚本在每个框架里都有一份，只有有焦点的那个会响应
+      if (tab?.id != null) await api.tabs.sendMessage(tab.id, { type: 'cc-write-open' })
+    } catch (e) {
+      notify('写作浮窗没有打开', '这个页面不支持（浏览器内置页面或刚装好的扩展需要刷新页面）')
+    }
+    return
+  }
   if (cmd === 'toggle-webtrans') {
     try {
       if (!(await getFeatures()).webtrans) return

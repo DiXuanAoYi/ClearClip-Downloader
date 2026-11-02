@@ -72,6 +72,8 @@ pub struct Req {
     /// 翻译专家（AI 专家）追加的策略说明（由应用按设置和网址填入，扩展不用传）
     #[serde(skip_deserializing)]
     pub guide: String,
+    /// write / grammar / stats：写作助手的选项
+    pub write: crate::writing::Opts,
 }
 
 /// 自定义提示词的长度上限。
@@ -143,7 +145,14 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
         "summary" | "article" | "mindmap" | "cards" | "quotes" | "rewrite" => crate::ai_pool::Task::Summary,
         _ => crate::ai_pool::Task::Chat,
     };
-    let ep = ai::chat_endpoint_for(&st, &settings, task)?;
+    let mut ep = ai::chat_endpoint_for(&st, &settings, task)?;
+    if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
+        ep = crate::writing::route(ep, &req.write.route)?;
+    }
+    if matches!(req.kind.as_str(), "write" | "stats") {
+        // 个人风格：设置里的一两句话，并进每次的额外要求
+        req.write.extra = crate::writeassist::with_style(&req.write.extra, &settings.writing.style);
+    }
     let model = settings.ai.model.clone();
     let default_lang = settings.ai.target_lang.clone();
     let batch = settings.ai.batch_size;
@@ -345,6 +354,43 @@ async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str
     result
 }
 
+/// 听写：把写作窗里录的一段话交给现有的语音转文字（本机 whisper.cpp 或云端接口），结果 `{"text": …}` 用任务编号轮询。
+pub fn start_dictation(app: &tauri::AppHandle, bytes: Vec<u8>, ext: &str) -> AppResult<u64> {
+    use tauri::Manager;
+    const MAX_BYTES: usize = 40 * 1024 * 1024;
+    if bytes.is_empty() {
+        return Err(AppError::invalid("没有录到声音。"));
+    }
+    if bytes.len() > MAX_BYTES {
+        return Err(AppError::invalid("录音太长了，请分几次说。"));
+    }
+    let st = app.state::<Arc<crate::AppState>>().inner().clone();
+    let settings = st.settings();
+    ai::stt_ready(&st, &settings)?;
+    let ffmpeg = crate::postprocess::find_ffmpeg(&st).ok_or_else(crate::postprocess::ffmpeg_missing)?;
+    let ext: String = ext.chars().filter(char::is_ascii_alphanumeric).take(5).collect();
+    let ext = if ext.is_empty() { "webm".to_string() } else { ext };
+    let (id, _cancel) = new_job();
+    let work = st.data_dir.join("dictation").join(id.to_string());
+    std::fs::create_dir_all(&work)?;
+    let input = work.join(format!("input.{ext}"));
+    std::fs::write(&input, &bytes)?;
+    let lang = settings.ai.stt_language.clone();
+    crate::media_tools::spawn_job(app, "听写".into(), "听写", move |ctx| async move {
+        let out = ai::transcribe_cues(&ctx, &settings, &ffmpeg, &input, &lang, &work).await;
+        let _ = std::fs::remove_dir_all(&work);
+        with_job(id, |j| match &out {
+            Ok(cues) => {
+                let text = cues.iter().flat_map(|c| c.lines.iter()).map(|l| l.trim()).filter(|l| !l.is_empty()).collect::<Vec<_>>().join("");
+                j.result = Some(json!({"text": text}));
+            }
+            Err(e) => j.error = Some(e.message.clone()),
+        });
+        out.map(|_| std::path::PathBuf::new())
+    });
+    Ok(id)
+}
+
 // ---------- 在线字幕 / 转写结果的磁盘缓存（同一个视频不再请求网站） ----------
 
 const SUB_CACHE_DAYS: u64 = 60;
@@ -496,7 +542,11 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 17] = [
+    const KINDS: [&str; 21] = [
+        "write",
+        "style",
+        "grammar",
+        "stats",
         "summary",
         "mindmap",
         "cards",
@@ -534,6 +584,9 @@ pub fn check(req: &Req) -> AppResult<()> {
     }
     if req.system.chars().count() > MAX_SYSTEM {
         return Err(AppError::invalid("自定义提示词太长（上限 2 万字）。"));
+    }
+    if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
+        crate::writing::check_opts(&req.kind, &req.text, &req.write)?;
     }
     if matches!(req.kind.as_str(), "explain" | "note" | "refine" | "domain") && req.text.trim().is_empty() {
         return Err(AppError::invalid("没有可处理的文字。"));
@@ -1153,6 +1206,100 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             progress(1, 1)?;
             Ok(json!({"text": text.trim()}))
         }
+        "write" => {
+            let o = &req.write;
+            let n = o.candidates.clamp(1, 3) as usize;
+            let system = crate::writing::system_prompt(o);
+            let user = crate::writing::user_message(o, &req.text);
+            let mut outs: Vec<String> = Vec::new();
+            for k in 0..n {
+                progress(k, n)?;
+                let sys = if k == 0 {
+                    system.clone()
+                } else {
+                    format!("{system}\nGive a clearly different version from these earlier ones:\n{}", outs.join("\n---\n"))
+                };
+                let t = crate::writing::clean_output(&chat(ep, model, &sys, &user).await?);
+                if t.is_empty() {
+                    return Err(model_err());
+                }
+                if !outs.contains(&t) {
+                    outs.push(t);
+                }
+            }
+            progress(n, n)?;
+            let cands: Vec<Value> = outs.iter().map(|t| json!({"text": t, "guard": crate::writing::guard(&o.action, &req.text, t)})).collect();
+            Ok(json!({"candidates": cands}))
+        }
+        "style" => {
+            progress(0, 1)?;
+            let resp = chat(ep, model, &crate::writing::style_system(), req.text.trim()).await?;
+            progress(1, 1)?;
+            let style = crate::writing::clean_style(&resp);
+            if style.is_empty() {
+                return Err(AppError::invalid("没有总结出风格，请多给几段你自己写的文字。"));
+            }
+            Ok(json!({"style": style}))
+        }
+        "grammar" => {
+            progress(0, 1)?;
+            let quick = crate::writing::quick_issues(&req.text);
+            let resp = chat(ep, model, &crate::writing::grammar_system(), req.text.trim()).await;
+            // 模型不可用时，规则发现的问题照样给出
+            let found = match resp {
+                Ok(r) => crate::writing::parse_issues(&r, &req.text),
+                Err(e) if quick.is_empty() => return Err(e),
+                Err(_) => vec![],
+            };
+            let issues = crate::writing::merge_issues(quick, found);
+            progress(1, 1)?;
+            Ok(json!({"issues": issues, "corrected": crate::writing::apply_issues(&req.text, &issues)}))
+        }
+        "stats" => {
+            progress(0, 3)?;
+            let plan_resp = chat(ep, model, &crate::writing::stats_plan_system(), req.text.trim()).await?;
+            let plan = crate::writing::parse_plan(&plan_resp);
+            if plan.is_empty() {
+                progress(3, 3)?;
+                return Ok(json!({"facts": [], "note": "没有找到和这段文字相关、又能从开放数据库查证的统计数据。"}));
+            }
+            let mut facts = Vec::new();
+            let mut failed = 0usize;
+            // 一个国家一次请求：模型编造的国家码只会让它自己查不到，不会拖垮同批的有效国家
+            let plan: Vec<crate::writing::Query> = plan
+                .into_iter()
+                .flat_map(|q| {
+                    q.countries
+                        .iter()
+                        .map(|c| crate::writing::Query { code: q.code.clone(), countries: vec![c.clone()], why: q.why.clone() })
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            for (i, q) in plan.iter().enumerate() {
+                progress(i + 1, plan.len() + 1)?;
+                let got = ep.client.get(crate::writing::wb_url(q)).timeout(Duration::from_secs(25)).send().await;
+                let body = match got {
+                    Ok(r) if r.status().is_success() => r.text().await.ok(),
+                    _ => None,
+                };
+                match body {
+                    Some(b) => {
+                        let mut f = crate::writing::parse_wb(&b, q);
+                        facts.append(&mut f);
+                    }
+                    None => failed += 1,
+                }
+            }
+            progress(plan.len() + 1, plan.len() + 1)?;
+            let note = if facts.is_empty() && failed > 0 {
+                "连不上开放数据库（世界银行开放数据），请检查网络或代理后重试。"
+            } else if facts.is_empty() {
+                "开放数据库里没有这些指标的最新数据。"
+            } else {
+                ""
+            };
+            Ok(json!({"facts": crate::writing::facts_json(&facts), "note": note, "failed": failed}))
+        }
         _ => Err(AppError::invalid("不支持的类型")),
     }
 }
@@ -1168,6 +1315,8 @@ pub fn status(st: &crate::AppState) -> Value {
         "transcribe": ai::stt_ready(st, &s).is_ok(),
         "subtitles": s.use_ytdlp && crate::tools::resolve(st, crate::tools::Tool::YtDlp).is_some(),
         "maxChars": MAX_CHARS,
+        "writing": true,
+        "localModel": ai::is_local_url(&s.ai.base_url) || s.ai.pool.iter().any(|e| ai::is_local_url(&e.base_url)),
         // 影响译文的设置（模型、专家、已启用的术语库）变了它就会变，扩展据此让旧的翻译缓存失效
         "promptVersion": prompt_version(st),
     })

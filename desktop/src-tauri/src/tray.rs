@@ -48,6 +48,11 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let lock = MenuItem::with_id(app, "lock", "锁定", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出清影", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &parse, &watch, &lock, &PredefinedMenuItem::separator(app)?, &quit])?;
+    if cfg!(windows) {
+        // 写作浮标的临时控制：暂停一小时、在上一个出现过浮标的程序里不再出现
+        menu.insert(&MenuItem::with_id(app, "wpause", "写作浮标：暂停 1 小时", true, None::<&str>)?, 4)?;
+        menu.insert(&MenuItem::with_id(app, "woff", "写作浮标：不在上一个程序里出现", true, None::<&str>)?, 5)?;
+    }
     app.manage(TrayWatchItem(watch));
     app.manage(TrayLabels { show: show.clone(), parse: parse.clone(), lock: lock.clone(), quit: quit.clone() });
 
@@ -71,6 +76,21 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.hide();
                     }
+                }
+            }
+            "wpause" => {
+                let st = app.state::<Arc<AppState>>();
+                let mut s = st.settings_raw();
+                s.writing.paused_until = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) + 3600;
+                if s.save(&st.settings_path).is_ok() {
+                    *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+                    crate::writebadge::hide(app);
+                }
+            }
+            "woff" => {
+                let st = app.state::<Arc<AppState>>();
+                if crate::writeassist::write_off_this_app(st).is_ok() {
+                    crate::writebadge::hide(app);
                 }
             }
             "quit" => app.exit(0),

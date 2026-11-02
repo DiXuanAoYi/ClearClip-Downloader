@@ -37,6 +37,24 @@ async function ensureAlarm() {
   }
 }
 
+/** 当前浏览器系列，写作浮窗向清影报到时用：清影据此在这个浏览器的窗口里不再重复弹桌面浮标。 */
+function browserFamily() {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || ''
+  if (/Edg\//.test(ua)) return 'edge'
+  if (/Firefox\//.test(ua)) return 'firefox'
+  if (/OPR\//.test(ua)) return 'opera'
+  return 'chrome'
+}
+
+/** 写作浮窗开着时每次轮询报一次到（让清影知道这个浏览器里扩展在负责输入框）。 */
+async function pingWriting() {
+  try {
+    await call('/api/v1/ai/status?ext=' + browserFamily())
+  } catch {
+    // 清影没有运行：下次再报
+  }
+}
+
 async function pollOnce() {
   if (polling) return
   polling = true
@@ -44,6 +62,7 @@ async function pollOnce() {
     const cfg = await getConfig()
     if (!cfg.port || !cfg.token) return
     const f = await getFeatures()
+    if (f.writing) await pingWriting()
     if (f.progress) await pollProgress()
     if (f.loginAsk) await pollLogin(cfg)
   } finally {

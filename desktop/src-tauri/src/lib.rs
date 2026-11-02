@@ -72,6 +72,9 @@ pub mod vidcaps;
 pub mod vidnorm;
 pub mod vsum;
 mod winframe;
+pub mod writeassist;
+pub mod writebadge;
+pub mod writing;
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -251,8 +254,13 @@ pub fn run() {
                         let panic = app
                             .try_state::<Arc<AppState>>()
                             .and_then(|st| st.settings_raw().security.panic_shortcut.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok());
+                        let write = app
+                            .try_state::<Arc<AppState>>()
+                            .and_then(|st| st.settings_raw().writing.hotkey.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok());
                         if panic.as_ref() == Some(shortcut) {
                             security::panic(app);
+                        } else if write.as_ref() == Some(shortcut) {
+                            writeassist::hotkey(app);
                         } else {
                             clipboard::parse_clipboard_now(app);
                         }
@@ -400,6 +408,7 @@ pub fn run() {
             spawn_account_reminders(handle.clone());
 
             tray::create(&handle)?;
+            writebadge::start(&handle);
             tray::spawn_speed_ticker(&handle);
             commands::apply_shortcut(&handle, &settings.shortcut);
             clipboard::start_watcher(handle.clone());
@@ -677,6 +686,17 @@ pub fn run() {
             commands::show_main,
             commands::hide_mini,
             commands::mini_ready,
+            writeassist::write_take,
+            writeassist::write_badge_click,
+            writeassist::write_off_this_app,
+            writeassist::write_settings,
+            writeassist::write_run,
+            writeassist::write_job,
+            writeassist::write_dictate,
+            writeassist::write_cancel,
+            writeassist::write_apply,
+            writeassist::write_close,
+            writeassist::write_pause,
             commands::open_login,
             commands::save_login_cookies,
             commands::check_update,
