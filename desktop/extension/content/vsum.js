@@ -159,7 +159,7 @@
       button.sec { background: #262f2a; color: #eef1ee; border-color: #3a443e; }
       .ln .tr, .meta, .mute, .src { color: #a9b3ad; }
       .warn { background: #3a2f1e; border-color: #6b5530; }
-      .cq { background: #262f2a; } .cmb, .cmth { background: #3a443e; border-color: #3a443e; } .cmth { background: none; } .cmleg, .cq .m { color: #a9b3ad; }
+      .cq { background: #1d2420; } .chip { color: #f0a064; background: #e28a4529; } .cmb, .cmth { background: #3a443e; border-color: #3a443e; } .cmth { background: none; } .cmleg, .cq .m { color: #a9b3ad; }
       .tg { color: #f0a064; } .tg.ok { color: #6cc08a; } .tg.no { color: #ee917b; }
       .sm .seg, .sm .kw span, .sm .pts .tm { background: #262f2a; border-color: #3a443e; }
       .sm .seg button, .sm .vmeta, .sm .sh, .sm .pts .d { color: #a9b3ad; }
