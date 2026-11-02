@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText } from './api'
 import { useLanguage } from './i18n/useLanguage'
-import type { WritePending } from './types'
+import type { WritePending, WritingSettings } from './types'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ACTIONS, PRESETS, buildWriteRequest, presetById, type WriteAction } from './writePresets'
 
 /** 写作窗（桌面端）：快捷键取到文字后弹出，选动作、看结果、替换回原来的程序。 */
@@ -18,7 +19,18 @@ const target = ref('English')
 const busy = ref(false)
 const progress = ref('')
 const error = ref('')
-const outs = ref<{ text: string; guard?: string | null }[]>([])
+type Guard = { missing: string[]; ratio: number; warn: boolean }
+const outs = ref<{ text: string; guard?: Guard | null }[]>([])
+const cfg = ref<WritingSettings | null>(null)
+const pin = ref(true)
+const autoClose = ref(false)
+const extras = ref<string[]>([])
+const showMore = ref(false)
+const compare = ref(false)
+const favs = ref<Set<string>>(new Set())
+const canUndo = ref(false)
+let undoTimer: ReturnType<typeof setTimeout> | undefined
+const MAIN_IDS = ['rewrite', 'reply', 'grammar', 'optimize', 'concise']
 const picked = ref(0)
 const issues = ref<{ from: string; to: string; reason: string }[]>([])
 const done = ref('')
@@ -30,21 +42,47 @@ let chunks: Blob[] = []
 let unlisten: UnlistenFn | undefined
 
 const out = computed(() => outs.value[picked.value]?.text ?? '')
+const mainActions = computed(() => ACTIONS.filter((a) => MAIN_IDS.includes(a.id) || a.id === action.value.id))
+const moreActions = computed(() => ACTIONS.filter((a) => !mainActions.value.includes(a)))
+const hotkey = computed(() => cfg.value?.hotkey || '')
+/** 把检查结果说成人话；续写、回复不提示长度。 */
+const guardText = computed(() => {
+  const g = outs.value[picked.value]?.guard
+  if (!g?.warn) return ''
+  const parts: string[] = []
+  if (g.missing?.length) parts.push(`原文里的「${g.missing.slice(0, 4).join('」「')}」在结果里不见了，替换前请核对`)
+  else if (!['continue', 'reply'].includes(action.value.id)) parts.push(g.ratio < 1 ? '结果比原文短了很多，可能漏掉内容' : '结果比原文长了很多，可能多出内容')
+  return parts.join('；')
+})
+const faved = computed(() => favs.value.has(out.value))
+const hasText = computed(() => !!text.value.trim())
+const errHint = computed(() => /模型|key|密钥|未配置|没有可用|设置|api/i.test(error.value))
 const canRun = computed(() => !!text.value.trim() && !busy.value)
 
 async function load() {
   const p = await api.writeTake()
   src.value = p
   text.value = p?.text ?? ''
-  note.value = p?.note ?? ''
+  // 取到文字就不再显示“没取到”的提示
+  note.value = p?.text?.trim() ? '' : (p?.note ?? '')
+  compare.value = false
+  canUndo.value = false
+  clearTimeout(undoTimer)
   outs.value = []
   issues.value = []
   error.value = ''
   done.value = ''
 }
 
+function saveExtra() {
+  const e = extra.value.trim()
+  if (e) extras.value = [e, ...extras.value.filter((x) => x !== e)].slice(0, 8)
+  void api.writePrefs(action.value.id, extras.value, autoClose.value).catch(() => {})
+}
+
 async function run() {
   if (!canRun.value) return
+  saveExtra()
   busy.value = true
   error.value = ''
   outs.value = []
@@ -133,18 +171,85 @@ async function apply(replace: boolean) {
   if (!out.value) return
   try {
     done.value = await api.writeApply(out.value, replace)
+    if (replace && done.value === '已替换') {
+      canUndo.value = true
+      clearTimeout(undoTimer)
+      undoTimer = setTimeout(() => {
+        canUndo.value = false
+        if (autoClose.value) void api.writeClose()
+      }, 6000)
+    }
   } catch (e) {
     error.value = errorText(e)
   }
 }
 
+async function undo() {
+  clearTimeout(undoTimer)
+  canUndo.value = false
+  done.value = (await api.writeUndo().catch(() => false)) ? '已撤销' : '无法撤销，请在原程序里按 Ctrl+Z'
+}
+
+function toggleFav() {
+  const n = new Set(favs.value)
+  if (n.has(out.value)) n.delete(out.value)
+  else n.add(out.value)
+  favs.value = n
+  try {
+    localStorage.setItem('wa.favs', JSON.stringify([...n].slice(-30)))
+  } catch {
+    /* 存不了就算了 */
+  }
+}
+
+function setPin() {
+  pin.value = !pin.value
+  void api.writePin(pin.value)
+}
+
+function toggleAuto() {
+  autoClose.value = !autoClose.value
+  void api.writePrefs(action.value.id, extras.value, autoClose.value)
+}
+
+function pickAction(a: WriteAction) {
+  action.value = a
+  void api.writePrefs(a.id, extras.value, autoClose.value).catch(() => {})
+}
+
+/** 拖边缘缩放（无边框窗口没有系统边框可拖）。 */
+function resize(dir: string) {
+  void (getCurrentWindow() as unknown as { startResizeDragging: (d: string) => Promise<void> }).startResizeDragging(dir)
+}
+
+function openSettings() {
+  void api.writeOpenSettings()
+}
+
 function onKey(e: KeyboardEvent) {
+  if (e.isComposing) return
   if (e.key === 'Escape') void api.writeClose()
-  else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) void run()
+  else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void run()
+  else if (e.altKey && ['1', '2', '3'].includes(e.key) && outs.value.length >= Number(e.key)) {
+    picked.value = Number(e.key) - 1
+    e.preventDefault()
+  }
 }
 
 onMounted(async () => {
   window.addEventListener('keydown', onKey)
+  try {
+    favs.value = new Set(JSON.parse(localStorage.getItem('wa.favs') || '[]'))
+  } catch {
+    /* 没有收藏 */
+  }
+  cfg.value = await api.writeSettings().catch(() => null)
+  if (cfg.value) {
+    pin.value = cfg.value.pin
+    autoClose.value = cfg.value.autoClose
+    extras.value = cfg.value.extras ?? []
+    action.value = ACTIONS.find((a) => a.id === cfg.value?.lastAction) ?? ACTIONS[0]
+  }
   unlisten = await listen('write://new', () => void load())
   await load()
 })
@@ -161,6 +266,7 @@ onBeforeUnmount(() => {
       <b data-tauri-drag-region>清影写作</b>
       <span class="from" data-tauri-drag-region>{{ src?.app || '' }}</span>
       <span class="grip" data-tauri-drag-region><i /><i /><i /><i /><i /><i /></span>
+      <button class="x pinb" :class="{ on: pin }" :title="pin ? '已固定在最前，点击取消' : '固定在最前'" @click="setPin">📌</button>
       <button class="x" title="关闭 (Esc)" @click="api.writeClose()">×</button>
     </header>
     <main>
@@ -168,9 +274,13 @@ onBeforeUnmount(() => {
       <div class="row">
         <button class="ghost" :class="{ rec: recording }" :disabled="busy && !recording" @click="dictate">{{ recording ? '■ 停止并转成文字' : '🎤 听写' }}</button>
       </div>
-      <small v-if="note" class="hint">{{ note }}</small>
+      <small v-if="note && !hasText" class="hint">{{ note }}</small>
       <div class="chips">
-        <button v-for="a in ACTIONS" :key="a.id" class="chip" :class="{ on: action.id === a.id }" @click="action = a">{{ a.name }}</button>
+        <button v-for="a in mainActions" :key="a.id" class="chip" :class="{ on: action.id === a.id }" @click="pickAction(a)">{{ a.name }}</button>
+        <button v-if="moreActions.length" class="chip more" :aria-expanded="showMore" @click="showMore = !showMore">{{ showMore ? '收起' : '更多 ▾' }}</button>
+      </div>
+      <div v-if="showMore" class="chips">
+        <button v-for="a in moreActions" :key="a.id" class="chip" @click="pickAction(a)">{{ a.name }}</button>
       </div>
       <div class="row">
         <select v-model="presetId" aria-label="场景">
@@ -180,18 +290,32 @@ onBeforeUnmount(() => {
         <input v-if="action.id === 'translate'" v-model="target" placeholder="目标语言" />
         <input v-model="extra" :placeholder="isReply ? '我想表达的意思（例如：周五可以，改到下午）' : '额外要求（可选）'" maxlength="200" />
       </div>
+      <div v-if="extras.length" class="chips recent">
+        <button v-for="e in extras.slice(0, 5)" :key="e" class="chip" :title="e" @click="extra = e">{{ e.length > 12 ? e.slice(0, 12) + '…' : e }}</button>
+      </div>
       <div class="row">
         <button v-if="!busy" class="go" :disabled="!canRun" @click="run">{{ action.name }}（Ctrl+Enter）</button>
         <button v-else class="go stop" @click="stop">取消</button>
         <span v-if="busy" class="hint">{{ progress }}</span>
       </div>
-      <p v-if="error" class="err">{{ error }}</p>
+      <div v-if="error" class="errbox">
+        <p class="err">{{ error }}</p>
+        <div class="row">
+          <button class="ghost" @click="run">重试</button>
+          <button class="ghost" @click="openSettings">{{ errHint ? '去设置模型' : '打开设置' }}</button>
+        </div>
+      </div>
       <section v-if="outs.length" class="res">
         <div v-if="outs.length > 1" class="chips">
-          <button v-for="(_o, i) in outs" :key="i" class="chip" :class="{ on: picked === i }" @click="picked = i">版本 {{ i + 1 }}</button>
+          <button v-for="(_o, i) in outs" :key="i" class="chip" :class="{ on: picked === i }" :title="`Alt+${i + 1}`" @click="picked = i">版本 {{ i + 1 }}</button>
+        </div>
+        <div v-if="compare" class="cmp">
+          <small class="hint">原文</small>
+          <div class="out orig">{{ text }}</div>
+          <small class="hint">结果</small>
         </div>
         <div class="out">{{ out }}</div>
-        <small v-if="outs[picked]?.guard" class="warn">{{ outs[picked].guard }}</small>
+        <small v-if="guardText" class="warn">⚠ {{ guardText }}</small>
         <ul v-if="issues.length" class="issues">
           <li v-for="(it, i) in issues" :key="i"><s>{{ it.from }}</s> → <b>{{ it.to }}</b> <small>{{ it.reason }}</small></li>
         </ul>
@@ -200,15 +324,37 @@ onBeforeUnmount(() => {
           <button v-if="src?.canReplace" class="go" @click="apply(true)">替换原文</button>
           <button class="ghost" @click="apply(false)">复制</button>
           <button class="ghost" @click="run">重试</button>
+          <button class="ghost" :class="{ on: compare }" @click="compare = !compare">对比</button>
+          <button class="ghost" :class="{ on: faved }" :title="faved ? '取消收藏' : '收藏这个版本'" @click="toggleFav">{{ faved ? '★' : '☆' }}</button>
+        </div>
+        <div class="row">
           <span v-if="done" class="ok">{{ done }}</span>
+          <button v-if="canUndo" class="ghost" @click="undo">撤销</button>
+          <label v-if="src?.canReplace" class="auto"><input type="checkbox" :checked="autoClose" @change="toggleAuto" /> 写回后自动关闭</label>
         </div>
       </section>
+      <footer class="foot">
+        <span>快捷键 {{ hotkey || '未设置' }}</span>
+        <a href="#" @click.prevent="openSettings">修改</a>
+        <span class="sp">Esc 关闭 · Ctrl+Enter 运行 · Alt+1/2/3 切换版本</span>
+      </footer>
     </main>
+    <i class="rz rz-r" @mousedown.prevent="resize('East')" />
+    <i class="rz rz-b" @mousedown.prevent="resize('South')" />
+    <i class="rz rz-l" @mousedown.prevent="resize('West')" />
+    <i class="rz rz-t" @mousedown.prevent="resize('North')" />
+    <i class="rz rz-br" @mousedown.prevent="resize('SouthEast')" />
+    <i class="rz rz-bl" @mousedown.prevent="resize('SouthWest')" />
   </div>
 </template>
 
+<style>
+/* 窗口是透明的：圆角外面不再露出白底 */
+html, body, #app { background: transparent !important; }
+</style>
+
 <style scoped>
-.wa { --acc: #d9762b; --accd: #b4561a; --soft: #fbeadb; --line: #d9dedb; --bg: #f4f5f4; --card: #fff; --mut: #5d6862; --err: #c2453b; --ok: #2f8a57; height: 100vh; display: flex; flex-direction: column; background: var(--card); color: #1d2420; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-sizing: border-box; }
+.wa { --acc: #d9762b; --accd: #b4561a; --soft: #fbeadb; --line: #d9dedb; --bg: #f4f5f4; --card: #fff; --mut: #5d6862; --err: #c2453b; --ok: #2f8a57; position: relative; margin: 6px; height: calc(100vh - 12px); box-shadow: 0 4px 18px rgba(0,0,0,.28); display: flex; flex-direction: column; background: var(--card); color: #1d2420; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-sizing: border-box; }
 @media (prefers-color-scheme: dark) { .wa { --acc: #f08a3c; --accd: #c8641f; --soft: #3a2a1d; --line: #2f383c; --bg: #14181a; --card: #22292c; --mut: #9aa6a2; --err: #ec7a70; --ok: #5cc28a; color: #e7ecea; } }
 .bar { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; border-bottom: 1px solid var(--line); background: var(--bg); cursor: grab; user-select: none; }
 .bar:active { cursor: grabbing; }
@@ -243,4 +389,23 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .issues { margin: 0; padding-left: 18px; font-size: 12px; }
 .issues s { background: color-mix(in srgb, var(--err) 16%, transparent); color: var(--err); border-radius: 4px; padding: 0 4px; }
 .issues b { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); border-radius: 4px; padding: 0 4px; }
+.x.pinb { filter: grayscale(1); opacity: .5; font-size: 13px; }
+.x.pinb.on { filter: none; opacity: 1; }
+.chip.more { border-style: dashed; color: var(--mut); }
+.recent .chip { color: var(--mut); }
+.errbox { display: flex; flex-direction: column; gap: 6px; }
+.ghost.on { background: var(--soft); border-color: var(--acc); color: var(--accd); }
+.orig { background: var(--bg); border-color: var(--line); color: var(--mut); }
+.cmp { display: flex; flex-direction: column; gap: 4px; }
+.auto { margin-left: auto; font-size: 12px; color: var(--mut); display: flex; gap: 4px; align-items: center; }
+.foot { display: flex; gap: 8px; font-size: 11px; color: var(--mut); border-top: 1px dashed var(--line); padding-top: 8px; flex-wrap: wrap; }
+.foot a { color: var(--accd); }
+.foot .sp { margin-left: auto; }
+.rz { position: absolute; z-index: 5; }
+.rz-r { right: -4px; top: 10px; bottom: 10px; width: 8px; cursor: ew-resize; }
+.rz-l { left: -4px; top: 10px; bottom: 10px; width: 8px; cursor: ew-resize; }
+.rz-b { bottom: -4px; left: 10px; right: 10px; height: 8px; cursor: ns-resize; }
+.rz-t { top: -4px; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+.rz-br { right: -4px; bottom: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+.rz-bl { left: -4px; bottom: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
 </style>

@@ -13,6 +13,7 @@
     "core:default",
     "core:window:allow-start-dragging",
     "dialog:allow-open",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "core:window:allow-start-resize-dragging"
   ]
 }

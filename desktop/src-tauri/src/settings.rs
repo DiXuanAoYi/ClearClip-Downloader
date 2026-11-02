@@ -535,6 +535,16 @@ pub struct WritingSettings {
     pub candidates: u8,
     /// 个人风格：一两句话，会附在每次改写的要求里；空表示不用
     pub style: String,
+    /// 写作窗固定在最前
+    pub pin: bool,
+    /// 写回后自动关闭写作窗
+    pub auto_close: bool,
+    /// 写作窗上次的位置和大小（物理像素）；宽为 0 表示没记过
+    pub win: [i32; 4],
+    /// 上次用的动作
+    pub last_action: String,
+    /// 最近用过的“额外要求”
+    pub extras: Vec<String>,
 }
 
 impl Default for WritingSettings {
@@ -547,6 +557,11 @@ impl Default for WritingSettings {
             route: "local_first".into(),
             candidates: 1,
             style: String::new(),
+            pin: true,
+            auto_close: false,
+            win: [0; 4],
+            last_action: String::new(),
+            extras: vec![],
         }
     }
 }
@@ -561,6 +576,13 @@ impl WritingSettings {
         let mut seen = std::collections::HashSet::new();
         self.off_apps = self.off_apps.iter().map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty() && seen.insert(a.clone())).take(100).collect();
         self.style = self.style.trim().chars().take(300).collect();
+        self.last_action = self.last_action.trim().chars().take(24).collect();
+        let mut seen = std::collections::HashSet::new();
+        self.extras =
+            self.extras.iter().map(|e| e.trim().chars().take(200).collect::<String>()).filter(|e| !e.is_empty() && seen.insert(e.clone())).take(8).collect();
+        if self.win[2] < 300 || self.win[3] < 300 {
+            self.win = [0; 4];
+        }
     }
     /// 现在是否被暂停。
     pub fn paused(&self, now: i64) -> bool {

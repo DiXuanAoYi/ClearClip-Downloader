@@ -1050,6 +1050,11 @@ export interface WritingSettings {
   route: 'local_first' | 'local_only' | 'cloud_only'
   candidates: number
   style: string
+  pin: boolean
+  autoClose: boolean
+  win: number[]
+  lastAction: string
+  extras: string[]
 }
 
 /** 快捷键取到的内容 */
@@ -2021,6 +2026,6 @@ export interface WriteJob {
   done: number
   total: number
   note: string
-  result: { text?: string; style?: string; candidates?: { text: string; guard?: string | null }[]; corrected?: string; issues?: { from: string; to: string; reason: string }[] } | null
+  result: { text?: string; style?: string; candidates?: { text: string; guard?: { missing: string[]; ratio: number; warn: boolean } | null }[]; corrected?: string; issues?: { from: string; to: string; reason: string }[] } | null
   error: string | null
 }

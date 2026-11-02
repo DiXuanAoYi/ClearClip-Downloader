@@ -19,7 +19,7 @@
     .badge:hover span, .badge:focus-visible span { max-width: 90px; opacity: 1; margin-left: 5px }
     @media (prefers-reduced-motion: reduce) { .badge span { transition: none } }
     .badge svg { width: 16px; height: 16px; flex: none }
-    .panel { width: 480px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(20,30,25,.28), 0 1px 3px rgba(20,30,25,.16); font-size: 13px; }
+    .panel { resize: horizontal; min-width: 360px; width: 480px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(20,30,25,.28), 0 1px 3px rgba(20,30,25,.16); font-size: 13px; }
     .hd { display: flex; align-items: center; gap: 8px; padding: 9px 10px 9px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 1; cursor: grab; user-select: none; touch-action: none }
     .hd.drag { cursor: grabbing }
     .logo { width: 20px; height: 20px; border-radius: 6px; background: var(--acc); color: #fff; display: grid; place-items: center; font: 700 11px/1 inherit; flex: none }
@@ -85,6 +85,13 @@
   } catch {
     // 扩展已失效
   }
+  // 界面偏好：面板位置/宽度、浮标位置、最近的额外要求
+  let pref = { geom: null, w: 0, badge: null, extras: [] }
+  api.storage.local.get('writeUi').then((r) => {
+    const p = r?.writeUi
+    if (p && typeof p === 'object') pref = { geom: p.geom || null, w: Number(p.w) || 0, badge: p.badge || null, extras: Array.isArray(p.extras) ? p.extras.slice(0, 8) : [] }
+  }).catch(() => {})
+  const savePref = () => api.storage.local.set({ writeUi: pref }).catch(() => {})
   const saveCfg = () => api.storage.local.set({ writeCfg: cfg }).catch(() => {})
 
   const usable = () => !W.hostOffNow(cfg, location.hostname)
@@ -198,12 +205,41 @@
     if (!cfg.showEmpty && !readAll(target).trim()) return hideBadge()
     ensureUi()
     if (!badge) {
-      badge = h('button', { class: 'layer badge', title: '清影写作（Alt+J）', onclick: () => openPanel() })
+      badge = h('button', { class: 'layer badge', title: '清影写作（Alt+J）· 可拖动位置', onclick: () => (badgeMoved ? (badgeMoved = false) : openPanel()), onpointerdown: onBadgeDown })
       ui.add(badge)
     }
     badge.replaceChildren(penIcon(), h('span', { text: badgeLabel() }))
     badge.setAttribute('aria-label', '清影写作')
     placeBadge()
+  }
+
+  let badgeMoved = false
+  function onBadgeDown(e) {
+    if (e.button > 0) return
+    const x0 = e.clientX
+    const y0 = e.clientY
+    const o0 = pref.badge || { dx: 0, dy: 0 }
+    const el = e.currentTarget
+    el.setPointerCapture?.(e.pointerId)
+    badgeMoved = false
+    const move = (ev) => {
+      const dx = ev.clientX - x0
+      const dy = ev.clientY - y0
+      if (!badgeMoved && Math.hypot(dx, dy) < 5) return
+      badgeMoved = true
+      pref.badge = { dx: Math.round(o0.dx + dx), dy: Math.round(o0.dy + dy) }
+      placeBadge()
+    }
+    const up = () => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      el.removeEventListener('pointercancel', up)
+      if (badgeMoved) savePref()
+      setTimeout(() => (badgeMoved = false), 0)
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+    el.addEventListener('pointercancel', up)
   }
 
   function placeBadge() {
@@ -215,8 +251,9 @@
     }
     badge.style.display = ''
     const w = badge.offsetWidth || 90
-    const left = Math.max(4, Math.min(r.right - w - 8, innerWidth - w - 4))
-    const top = Math.max(4, Math.min(r.bottom - 38, innerHeight - 38))
+    const o = pref.badge || { dx: 0, dy: 0 }
+    const left = Math.max(4, Math.min(r.right - w - 8 + o.dx, innerWidth - w - 4))
+    const top = Math.max(4, Math.min(r.bottom - 38 + o.dy, innerHeight - 38))
     badge.style.left = `${left}px`
     badge.style.top = `${top}px`
   }
@@ -280,7 +317,17 @@
   addEventListener('scroll', schedulePlace, { capture: true, passive: true })
   addEventListener('resize', schedulePlace)
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && panel) closePanel()
+    if (!panel || !st) return
+    if (e.key === 'Escape') closePanel()
+    else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing && st.view === 'options') {
+      e.preventDefault()
+      run()
+    } else if (e.altKey && ['1', '2', '3'].includes(e.key) && st.view === 'result' && st.res.cands.length >= Number(e.key)) {
+      e.preventDefault()
+      st.res.idx = Number(e.key) - 1
+      buildParts()
+      render()
+    }
   }, true)
 
   // 快捷键（后台转发）：对有焦点的那个框架生效
@@ -322,9 +369,28 @@
       facts: null,
       history: null,
     }
-    dragPos = null
+    dragPos = pref.geom ? { left: pref.geom.left, top: pref.geom.top } : null
     panel = h('div', { class: 'layer panel' })
+    if (pref.w) panel.style.width = `${Math.max(360, Math.min(pref.w, innerWidth - 16))}px`
     ui.add(panel)
+    let rzT = 0
+    let first = true
+    try {
+      new ResizeObserver(() => {
+        if (first) return void (first = false)
+        clearTimeout(rzT)
+        rzT = setTimeout(() => {
+          if (!panel) return
+          const w = Math.round(panel.offsetWidth)
+          if (w >= 360 && w !== pref.w) {
+            pref.w = w
+            savePref()
+          }
+        }, 400)
+      }).observe(panel)
+    } catch {
+      // 不支持就不记宽度
+    }
     send({ type: 'cc-ai-status' }).then((s) => {
       if (st) {
         st.info = s
@@ -372,6 +438,10 @@
       panel.style.top = `${t}px`
     }
     const up = () => {
+      if (dragPos) {
+        pref.geom = { ...dragPos }
+        savePref()
+      }
       hd.classList.remove('drag')
       hd.removeEventListener('pointermove', move)
       hd.removeEventListener('pointerup', up)
@@ -451,7 +521,10 @@
     const bd = h('div', { class: 'bd' })
     if (st.info && !st.info.ok) bd.append(h('div', { class: 'warn', text: `连不上清影桌面应用：${st.info.error || '请确认清影正在运行，并在扩展设置里填好访问令牌。'}` }))
     else if (st.info && !st.info.ready) bd.append(h('div', { class: 'warn', text: '清影里还没有配置 AI 模型：请在清影的“设置 → AI”里填写，或安装本地模型。' }))
-    if (st.note) bd.append(h('div', { class: 'warn', text: st.note }))
+    if (st.note) {
+      bd.append(h('div', { class: 'warn', text: st.note }))
+      if (st.noteErr) bd.append(h('div', { class: 'acts' }, h('button', { class: 'sec', text: '重试', onclick: () => run() })))
+    }
 
     const pickAction = (key) => {
       s.action = key
@@ -479,6 +552,9 @@
       if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) run()
       e.stopPropagation()
     })
+    const recent = pref.extras.length
+      ? h('div', { class: 'chips' }, ...pref.extras.slice(0, 5).map((t) => chip(t.length > 12 ? t.slice(0, 12) + '…' : t, false, () => ((s.extra = t), (extra.value = t)), 'mut')))
+      : null
     const cand = h('select', { title: '一次生成几个候选', onchange: (e) => ((cfg.candidates = Number(e.target.value)), saveCfg()) })
     for (const n of [1, 2, 3]) cand.append(h('option', { value: String(n), text: `${n} 个候选`, selected: cfg.candidates === n }))
     bd.append(
@@ -489,7 +565,8 @@
         a?.kind === 'grammar' || a?.kind === 'stats' ? null : cand,
         h('button', { text: a?.kind === 'stats' ? '查找数据' : a?.kind === 'grammar' ? '检查' : '生成', onclick: run, disabled: !scopeText().trim() }),
       ),
-      h('div', { class: 'acts mut' }, h('a', { href: '#', text: '历史记录', onclick: (e) => (e.preventDefault(), showHistory()) })),
+      recent,
+      h('div', { class: 'acts mut' }, h('span', { text: 'Ctrl+Enter 生成 · Esc 关闭' }), h('a', { href: '#', text: '历史记录', onclick: (e) => (e.preventDefault(), showHistory()) })),
     )
     kids.push(bd)
     return kids
@@ -565,6 +642,11 @@
     const s = st.sel
     Object.assign(cfg.last, { action: s.action, length: s.length, formality: s.formality, format: s.format, tone: s.tone, target: s.target, customFormat: s.customFormat || '', customTone: s.customTone || '' })
     saveCfg()
+    const ex = (s.extra || '').trim()
+    if (ex) {
+      pref.extras = [ex, ...pref.extras.filter((x) => x !== ex)].slice(0, 8)
+      savePref()
+    }
     const req = W.buildRequest(s, text, { candidates: cfg.candidates, route: cfg.route, page: `${document.title} ${location.hostname}`, ...extraOpts })
     st.view = 'running'
     st.reqKind = req.kind
@@ -589,6 +671,7 @@
       if (!st) return
       st.view = 'options'
       st.note = e.message === '已取消' ? '' : e.message
+      st.noteErr = !!st.note
     }
     render()
   }
@@ -638,22 +721,25 @@
     }
     if (!isCont) {
       const modes = h('span', { class: 'acts', style: 'margin-left:auto' })
-      modes.append(chip('差异', r.mode === 'diff', () => ((r.mode = 'diff'), render())), chip('只看新文', r.mode === 'new', () => ((r.mode = 'new'), render())))
+      modes.append(chip('差异', r.mode === 'diff', () => ((r.mode = 'diff'), render())), chip('只看新文', r.mode === 'new', () => ((r.mode = 'new'), render())), chip('对比原文', r.mode === 'cmp', () => ((r.mode = 'cmp'), render())))
       bar.append(modes)
     }
     bd.append(bar)
     if (c.guard?.warn) {
       const bits = []
       if (c.guard.missing?.length) bits.push(`原文里的 ${c.guard.missing.slice(0, 6).join('、')} 在结果里不见了，请核对。`)
-      const shrinks = ['summarize', 'shorten', 'concise', 'continue', 'translate'].includes(st.sel.action)
-      if (c.guard.ratio > 4 || (!shrinks && c.guard.ratio < 0.25)) bits.push(`结果长度是原文的 ${c.guard.ratio} 倍，差得比较多。`)
-      bd.append(h('div', { class: 'warn', text: bits.join(' ') }))
+      const free = ['continue', 'reply'].includes(st.sel.action) // 续写、回复的长短和原文无关
+      const shrinks = ['summarize', 'shorten', 'concise', 'translate'].includes(st.sel.action)
+      if (!free && (c.guard.ratio > 4 || (!shrinks && c.guard.ratio < 0.25))) bits.push(c.guard.ratio > 1 ? '结果比原文长了很多，可能多出内容。' : '结果比原文短了很多，可能漏掉内容。')
+      if (bits.length) bd.append(h('div', { class: 'warn', text: '⚠ ' + bits.join(' ') }))
     }
     const box = h('div', { class: 'box' })
     if (isCont) {
       box.append(h('span', { class: 'add', text: c.text }))
     } else if (r.mode === 'new') {
       box.textContent = c.text
+    } else if (r.mode === 'cmp') {
+      box.append(h('div', { class: 'mut', text: '原文' }), h('div', { text: r.src, style: 'opacity:.75;white-space:pre-wrap;margin-bottom:8px' }), h('div', { class: 'mut', text: '结果' }), h('div', { text: c.text, style: 'white-space:pre-wrap' }))
     } else {
       for (const p of r.parts) {
         if (p.eq != null) box.append(p.eq)

@@ -42,6 +42,7 @@ struct Target {
 static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
 static TARGET: Mutex<Option<Target>> = Mutex::new(None);
 /// 浮标出现时记下的目标窗口：点浮标时前台万一被浮标抢走，用它切回去。
+static APPLIED: Mutex<isize> = Mutex::new(0);
 static BADGE_TARGET: Mutex<isize> = Mutex::new(0);
 
 pub fn foreground() -> (isize, String) {
@@ -144,7 +145,7 @@ fn capture(app: &AppHandle, from_badge: bool) -> Pending {
             p.note = "没有选中文字".into();
         }
         Copied::Skipped => {
-            p.note = "剪贴板里是图片或文件，为避免覆盖没有自动取词；请先选中文字再复制，或直接在下面粘贴".into();
+            p.note = "剪贴板里是图片或文件，为避免覆盖没有自动取词。下一步：先选中文字再按快捷键，或直接粘贴在下面".into();
             target.old_text = None;
         }
         Copied::Unsupported => {
@@ -169,29 +170,47 @@ fn show_window(app: &AppHandle) {
     }
     let cursor = app.cursor_position().ok();
     let monitor = cursor.and_then(|c| app.monitor_from_point(c.x, c.y).ok().flatten()).or_else(|| app.primary_monitor().ok().flatten());
+    let cfg = settings(app);
     let protected = app.try_state::<Arc<AppState>>().is_some_and(|st| st.settings_raw().security.content_protection);
     let mut b = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html#write".into()))
         .title("清影写作")
         .inner_size(W, H)
         .min_inner_size(360.0, 360.0)
         .decorations(false)
-        .shadow(true)
-        .always_on_top(true)
+        .transparent(true)
+        .shadow(false)
+        .resizable(true)
+        .always_on_top(cfg.pin)
         .skip_taskbar(true)
         .focused(true)
         .content_protected(protected);
     let mut phys = None;
-    if let (Some(c), Some(m)) = (cursor, monitor) {
+    if let (Some(c), Some(m)) = (cursor, monitor.as_ref()) {
         let s = m.scale_factor();
         let a = m.work_area();
         let pos = place((c.x as i32, c.y as i32), ((W * s) as i32, (H * s) as i32), (a.position.x, a.position.y, a.size.width as i32, a.size.height as i32));
         b = b.position(f64::from(pos.0) / s, f64::from(pos.1) / s);
         phys = Some(pos);
     }
+    // 上次的位置和大小（还在某个屏幕里才用）
+    let saved = cfg.win;
+    let mut restored = None;
+    if saved[2] > 0 {
+        let inside = app.monitor_from_point(f64::from(saved[0] + 40), f64::from(saved[1] + 20)).ok().flatten().is_some();
+        if inside {
+            restored = Some(saved);
+        }
+    }
+    if let Some(r) = restored {
+        let s = monitor.as_ref().map_or(1.0, |m| m.scale_factor());
+        b = b.inner_size(f64::from(r[2]) / s, f64::from(r[3]) / s).position(f64::from(r[0]) / s, f64::from(r[1]) / s);
+    }
     match b.build() {
         Ok(w) => {
             crate::winframe::guard(&w);
-            if let Some((x, y)) = phys {
+            if let Some(r) = restored {
+                let _ = w.set_position(PhysicalPosition::new(r[0], r[1]));
+            } else if let Some((x, y)) = phys {
                 let _ = w.set_position(PhysicalPosition::new(x, y));
             }
             let _ = w.set_focus();
@@ -202,7 +221,26 @@ fn show_window(app: &AppHandle) {
 
 pub fn close(app: &AppHandle) {
     if let Some(w) = app.get_webview_window(LABEL) {
+        save_geometry(app, &w);
         let _ = w.destroy();
+    }
+}
+
+/// 记住窗口的位置和大小，下次在同一处打开。
+fn save_geometry(app: &AppHandle, w: &tauri::WebviewWindow) {
+    let (Ok(p), Ok(sz)) = (w.outer_position(), w.inner_size()) else { return };
+    if sz.width < 300 || sz.height < 300 {
+        return;
+    }
+    let Some(st) = app.try_state::<Arc<AppState>>() else { return };
+    let mut s = st.settings_raw();
+    let win = [p.x, p.y, sz.width as i32, sz.height as i32];
+    if s.writing.win == win {
+        return;
+    }
+    s.writing.win = win;
+    if s.save(&st.settings_path).is_ok() {
+        *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
     }
 }
 
@@ -211,10 +249,12 @@ pub fn apply(app: &AppHandle, text: &str, replace: bool) -> Result<String, Strin
     let target = lock(&TARGET).take().unwrap_or_default();
     let cb = app.clipboard();
     cb.write_text(text.to_string()).map_err(|e| format!("写剪贴板失败：{e}"))?;
-    close(app);
     if !replace || target.hwnd == 0 || !sys::SUPPORTED {
+        close(app);
         return Ok("已复制到剪贴板".into());
     }
+    // 写回后窗口留着，给用户几秒“撤销”；界面自己决定什么时候关
+    *lock(&APPLIED) = target.hwnd;
     let app = app.clone();
     let old = target.old_text.clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -306,6 +346,47 @@ pub fn write_apply(app: AppHandle, text: String, replace: bool) -> Result<String
 pub fn write_close(app: AppHandle) {
     *lock(&TARGET) = None;
     close(&app);
+}
+
+/// 撤销刚才的写回：切回原窗口按 Ctrl+Z。
+#[tauri::command]
+pub fn write_undo() -> bool {
+    let h = std::mem::take(&mut *lock(&APPLIED));
+    h != 0 && sys::undo(h)
+}
+
+/// 窗口固定在最前 / 取消；顺便记住。
+#[tauri::command]
+pub fn write_pin(app: AppHandle, state: tauri::State<'_, Arc<AppState>>, on: bool) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window(LABEL) {
+        let _ = w.set_always_on_top(on);
+    }
+    save_prefs(&state, |c| c.pin = on)
+}
+
+/// 记住界面偏好：上次动作、最近的额外要求、写回后自动关闭。
+#[tauri::command]
+pub fn write_prefs(state: tauri::State<'_, Arc<AppState>>, last_action: String, extras: Vec<String>, auto_close: bool) -> Result<(), String> {
+    save_prefs(&state, |c| {
+        c.last_action = last_action;
+        c.extras = extras;
+        c.auto_close = auto_close;
+    })
+}
+
+fn save_prefs(state: &AppState, f: impl FnOnce(&mut WritingSettings)) -> Result<(), String> {
+    let mut s = state.settings_raw();
+    f(&mut s.writing);
+    s.writing.sanitize();
+    s.save(&state.settings_path).map_err(|e| e.message)?;
+    *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+    Ok(())
+}
+
+/// 打开清影主窗口（去改快捷键等设置）。
+#[tauri::command]
+pub fn write_open_settings(app: AppHandle) {
+    crate::tray::show_main(&app);
 }
 
 #[tauri::command]
@@ -482,6 +563,21 @@ mod sys {
         true
     }
 
+    /// 切回原窗口按 Ctrl+Z。
+    pub fn undo(hwnd: isize) -> bool {
+        unsafe {
+            let h = hwnd as HWND;
+            if IsWindow(h) == 0 {
+                return false;
+            }
+            SetForegroundWindow(h);
+        }
+        std::thread::sleep(Duration::from_millis(150));
+        wait_modifiers_up();
+        ctrl_combo(b'Z' as u16);
+        true
+    }
+
     /// 切回原窗口并粘贴；窗口没了返回 false。
     pub fn paste_into(hwnd: isize) -> bool {
         unsafe {
@@ -509,6 +605,9 @@ mod sys {
         Copied::Unsupported
     }
     pub fn paste_into(_hwnd: isize) -> bool {
+        false
+    }
+    pub fn undo(_hwnd: isize) -> bool {
         false
     }
     pub fn is_own_window(_hwnd: isize) -> bool {
