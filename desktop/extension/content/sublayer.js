@@ -32,21 +32,34 @@
     .cap { position: fixed; pointer-events: none; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px }
     .cap span { font-size: inherit; display: inline-block; max-width: 92%; background: #000a; color: #fff; padding: 2px 10px; border-radius: 4px; white-space: pre-wrap; text-shadow: 0 1px 2px #000; line-height: 1.35 }
     .cap span.second { color: #ffe9a8 }
-    .bar { position: fixed; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; background: #1d2420e6; color: #fff; padding: 5px 8px; border-radius: 8px; font-size: 12px; max-width: 96vw }
-    .bar button { padding: 3px 8px; font-weight: 400; background: #ffffff1f; color: #fff }
-    .bar button:hover { background: #ffffff38 }
-    .bar .st { color: #cfd5d1; max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-    .bar select { font-size: 12px; padding: 2px; border-radius: 4px }
-    .bar .gear.on { background: #d9762b }
-    .pop { position: fixed; display: none; flex-direction: column; gap: 8px; width: 260px; background: #1d2420f2; color: #fff; padding: 10px 12px; border-radius: 10px; font-size: 12px; box-shadow: 0 6px 20px #0006 }
-    .pop.open { display: flex }
-    .pop .row { display: flex; align-items: center; gap: 8px }
-    .pop .row > b { width: 3.2em; font-weight: 400; color: #cfd5d1; flex: none }
-    .pop .row input[type=range] { flex: 1; min-width: 0; accent-color: #d9762b }
-    .pop .row .v { width: 3.6em; text-align: right; flex: none }
-    .pop button { padding: 3px 8px; font-weight: 400; background: #ffffff1f; color: #fff }
-    .pop button:hover { background: #ffffff38 }
-    .pop .acts { display: flex; gap: 6px; flex-wrap: wrap }
+    .pill { position: fixed; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 4px 0 9px; border-radius: 15px; background: #1d2420d9; color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 2px 8px #0005; user-select: none }
+    .pill .mk { width: 16px; height: 16px; border-radius: 5px; background: #f08a3c; color: #14181a; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none }
+    .pill .lb { cursor: pointer; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+    .pill .sw { width: 30px; height: 18px; border-radius: 9px; background: #ffffff59; position: relative; cursor: pointer; padding: 0; border: 0; flex: none }
+    .pill .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s }
+    .pill .sw.on { background: #f08a3c }
+    .pill .sw.on::after { left: 14px }
+    .pill .vd { width: 1px; height: 16px; background: #ffffff4d; flex: none }
+    .pill .dots { width: 26px; height: 26px; border-radius: 13px; padding: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer }
+    .pill .dots:hover, .pill .dots.on { background: #ffffff38 }
+    .pill .dots svg { width: 16px; height: 16px; fill: #fff }
+    .menu { position: fixed; display: none; flex-direction: column; gap: 12px; width: 288px; box-sizing: border-box; padding: 14px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; font-size: 13px; box-shadow: 0 10px 30px #0006 }
+    .menu.open { display: flex }
+    .menu .row { display: flex; flex-direction: column; gap: 6px }
+    .menu .lab { display: flex; justify-content: space-between; color: #9aa6a2; font-size: 12px }
+    .menu .lab b { color: #e7ecea; font-weight: 600 }
+    .menu select { height: 30px; border: 1px solid #2f383c; border-radius: 8px; background: #14181a; color: #e7ecea; padding: 0 8px; font-size: 13px }
+    .menu .seg { display: flex; background: #14181a; border: 1px solid #2f383c; border-radius: 8px; padding: 2px; gap: 2px }
+    .menu .seg button { flex: 1; padding: 5px 0; border-radius: 6px; font-size: 12px; font-weight: 400; background: transparent; color: #9aa6a2 }
+    .menu .seg button.on { background: #f08a3c; color: #14181a; font-weight: 600 }
+    .menu input[type=range] { width: 100%; margin: 4px 0; accent-color: #f08a3c }
+    .menu .sep { height: 1px; background: #2f383c }
+    .menu .foot { display: flex; gap: 8px }
+    .menu .foot button { flex: 1; height: 30px; border-radius: 8px; border: 1px solid #2f383c; background: #14181a; color: #e7ecea; font-weight: 400 }
+    .menu .foot button.p { background: #f08a3c; border-color: #f08a3c; color: #14181a; font-weight: 600 }
+    .menu .tail { display: flex; justify-content: space-between; color: #9aa6a2; font-size: 12px }
+    .menu .tail button { background: none; border: 0; padding: 0; color: #9aa6a2; font-weight: 400; cursor: pointer; text-decoration: underline }
+    .menu .st { color: #9aa6a2; font-size: 12px; line-height: 1.4; word-break: break-all }
   `
   const ui = mount(CSS)
   const S = {
@@ -62,6 +75,7 @@
     pv: '',
     timer: 0,
     drag: false,
+    on: true,
   }
 
   // ---------- 找视频 ----------
@@ -74,11 +88,13 @@
   // ---------- 界面 ----------
 
   const cap = h('div', { class: 'cap' })
-  const stEl = h('span', { class: 'st' })
-  const modeBtn = h('button', { onclick: () => update({ mode: L.nextMode(S.prefs.mode) }) })
-  const sizeEl = h('span', { class: 'v' })
-  const delayEl = h('span', { class: 'v' })
-  const posEl = h('span', { class: 'v' })
+  const stEl = h('div', { class: 'st' })
+  const sizeEl = h('b')
+  const delayEl = h('b')
+  const posEl = h('b')
+  const modeBtns = L.MODES.map((m) =>
+    h('button', { text: { 'orig-top': '原文在上', 'trans-top': '译文在上', orig: '仅原文', trans: '仅译文' }[m], onclick: () => update({ mode: m }) }),
+  )
   const langSel = h(
     'select',
     { onchange: (e) => update({ target: e.target.value }, true) },
@@ -87,30 +103,60 @@
   const sizeIn = h('input', { type: 'range', min: '50', max: '300', step: '10', oninput: (e) => update({ size: Number(e.target.value) }) })
   const posIn = h('input', { type: 'range', min: '0', max: '60', step: '1', oninput: (e) => update({ bottom: Number(e.target.value) }) })
   const delayIn = h('input', { type: 'range', min: '-10000', max: '10000', step: '100', oninput: (e) => update({ delay: Number(e.target.value) }) })
-  const gearBtn = h('button', { class: 'gear', text: '⚙', title: '字幕设置（字号、位置、延迟、导出）', onclick: () => togglePop() })
+  const svgNs = 'http://www.w3.org/2000/svg'
+  const dotsIcon = document.createElementNS(svgNs, 'svg')
+  dotsIcon.setAttribute('viewBox', '0 0 16 16')
+  for (const y of [3, 8, 13]) {
+    const c = document.createElementNS(svgNs, 'circle')
+    c.setAttribute('cx', '8')
+    c.setAttribute('cy', String(y))
+    c.setAttribute('r', '1.5')
+    dotsIcon.append(c)
+  }
+  const lbEl = h('span', { class: 'lb', title: '开/关双语字幕', onclick: () => toggleOn() })
+  const swEl = h('button', { class: 'sw', title: '开/关双语字幕', 'aria-label': '开/关双语字幕', onclick: () => toggleOn() })
+  const dotsBtn = h('button', { class: 'dots', title: '字幕设置', 'aria-label': '字幕设置', onclick: () => togglePop() }, dotsIcon)
+  const pill = h('div', { class: 'pill' }, h('span', { class: 'mk', text: '清' }), lbEl, swEl, h('span', { class: 'vd' }), dotsBtn)
   const pop = h(
     'div',
-    { class: 'pop' },
-    h('div', { class: 'row' }, h('b', { text: '字号' }), sizeIn, sizeEl),
-    h('div', { class: 'row' }, h('b', { text: '位置' }), posIn, posEl),
-    h('div', { class: 'row' }, h('b', { text: '延迟' }), delayIn, delayEl),
+    { class: 'menu' },
+    h('div', { class: 'row' }, h('div', { class: 'lab' }, h('span', { text: '翻译成' })), langSel),
+    h('div', { class: 'row' }, h('div', { class: 'lab' }, h('span', { text: '显示' })), h('div', { class: 'seg' }, ...modeBtns)),
+    h('div', { class: 'sep' }),
+    h('div', { class: 'row' }, h('div', { class: 'lab' }, h('span', { text: '字号' }), sizeEl), sizeIn),
+    h('div', { class: 'row' }, h('div', { class: 'lab' }, h('span', { text: '位置（距底）' }), posEl), posIn),
+    h('div', { class: 'row' }, h('div', { class: 'lab' }, h('span', { text: '字幕延迟' }), delayEl), delayIn),
+    h('div', { class: 'sep' }),
     h(
       'div',
-      { class: 'acts' },
-      h('button', { text: '重置', onclick: () => update({ size: L.DEFAULTS.size, bottom: L.DEFAULTS.bottom, delay: L.DEFAULTS.delay }) }),
+      { class: 'foot' },
       h('button', { text: '导出 SRT', onclick: exportSrt }),
-      h('button', { text: '用清影转写', title: '这个视频没有字幕时，让清影把音频转成文字', onclick: transcribe }),
+      h('button', { class: 'p', text: '用清影转写', title: '这个视频没有字幕时，让清影把音频转成文字', onclick: transcribe }),
     ),
+    h(
+      'div',
+      { class: 'tail' },
+      h('button', { text: '恢复默认', onclick: () => update({ size: L.DEFAULTS.size, bottom: L.DEFAULTS.bottom, delay: L.DEFAULTS.delay }) }),
+      h('button', { text: '关闭字幕层', onclick: () => api_destroy() }),
+    ),
+    stEl,
   )
-  const bar = h('div', { class: 'bar' }, modeBtn, langSel, gearBtn, stEl, h('button', { text: '×', title: '关闭字幕层', onclick: () => api_destroy() }))
   function togglePop(open) {
     const on = open ?? !pop.classList.contains('open')
     pop.classList.toggle('open', on)
-    gearBtn.classList.toggle('on', on)
+    dotsBtn.classList.toggle('on', on)
     layout()
   }
+  async function toggleOn() {
+    S.on = !S.on
+    await store.set('subLayerOn', S.on)
+    cap.dataset.k = ''
+    renderBar()
+    layout()
+    paint()
+  }
   ui.add(cap)
-  ui.add(bar)
+  ui.add(pill)
   ui.add(pop)
 
   const setStatus = (t) => {
@@ -124,23 +170,34 @@
     const r = v && v.isConnected ? v.getBoundingClientRect() : null
     if (!r || r.width < 10) {
       cap.style.display = 'none'
-      bar.style.display = 'none'
+      pill.style.display = 'none'
       pop.style.display = 'none'
       return
     }
-    bar.style.display = ''
+    pill.style.display = ''
+    // 胶囊放在视频右下角、控制栏上方；菜单在胶囊上方
+    const pw = pill.offsetWidth || 150
+    const ph = pill.offsetHeight || 30
+    const pl = Math.min(window.innerWidth - pw - 4, Math.max(4, r.right - pw - 12))
+    const pt = Math.min(window.innerHeight - ph - 4, Math.max(4, r.bottom - ph - 62))
+    pill.style.left = `${pl}px`
+    pill.style.top = `${pt}px`
     pop.style.display = ''
-    bar.style.left = `${Math.max(4, r.left + 8)}px`
-    bar.style.top = `${Math.max(4, r.top + 8)}px`
-    pop.style.left = bar.style.left
-    pop.style.top = `${Math.max(4, r.top + 8) + (bar.offsetHeight || 30) + 6}px`
+    pop.style.left = `${Math.max(4, Math.min(window.innerWidth - 292, pl + pw - 288))}px`
+    pop.style.top = 'auto'
+    pop.style.bottom = `${window.innerHeight - pt + 8}px`
+    pop.style.maxHeight = `${Math.max(120, pt - 16)}px`
+    pop.style.overflowY = 'auto'
     const fs = Math.max(12, Math.round((r.height / 22) * (S.prefs.size / 100)))
     cap.style.cssText = `left:${r.left}px;width:${r.width}px;bottom:${Math.max(0, window.innerHeight - r.bottom) + (r.height * S.prefs.bottom) / 100}px;font-size:${fs}px`
   }
 
   function paint() {
     const v = S.video
-    if (!v || !S.lines.length) return cap.replaceChildren()
+    if (!v || !S.lines.length || !S.on) {
+      cap.dataset.k = ''
+      return cap.replaceChildren()
+    }
     const i = L.indexAt(S.lines, v.currentTime * 1000, S.prefs.delay)
     const rows = i < 0 ? [] : L.compose(S.lines[i].text, S.trans[i], S.prefs.mode)
     const key = `${i}|${S.prefs.mode}|${S.trans[i] || ''}`
@@ -150,7 +207,8 @@
   }
 
   function renderBar() {
-    modeBtn.textContent = L.MODE_NAMES[S.prefs.mode]
+    swEl.classList.toggle('on', S.on)
+    L.MODES.forEach((m, i) => modeBtns[i].classList.toggle('on', m === S.prefs.mode))
     sizeEl.textContent = `${S.prefs.size}%`
     sizeIn.value = String(S.prefs.size)
     posEl.textContent = `${S.prefs.bottom}%`
@@ -294,6 +352,7 @@
 
   ;(async () => {
     S.prefs = L.clampPrefs(await store.get('subLayerPrefs', null))
+    S.on = (await store.get('subLayerOn', true)) !== false
     const st = await send({ type: 'cc-ai-status' })
     S.pv = st.ok ? String(st.promptVersion || '') : ''
     S.target = S.prefs.target || (st.ok && st.lang) || '简体中文'
@@ -310,6 +369,8 @@
       if (!S.video?.isConnected) S.video = pickVideo()
       layout()
       paint()
+      const lb = S.busy && S.status ? S.status.replace(/^正在/, '').slice(0, 10) : '双语'
+      if (lbEl.textContent !== lb) lbEl.textContent = lb
     }, 150)
     if (await loadLines().catch((e) => (setStatus(e.message), false))) translateAll()
   })()
