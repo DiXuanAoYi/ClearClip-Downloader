@@ -1052,7 +1052,7 @@ pub fn merge_srt_parts(parts: Vec<(String, u64)>) -> Vec<Cue> {
 
 // ---------- 下载后自动处理 ----------
 
-fn is_local_url(url: &str) -> bool {
+pub(crate) fn is_local_url(url: &str) -> bool {
     url::Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "[::1]")).unwrap_or(false)
 }
 

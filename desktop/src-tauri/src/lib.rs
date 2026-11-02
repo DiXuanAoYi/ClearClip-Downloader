@@ -72,6 +72,7 @@ pub mod vidcaps;
 pub mod vidnorm;
 pub mod vsum;
 mod winframe;
+pub mod writing;
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;

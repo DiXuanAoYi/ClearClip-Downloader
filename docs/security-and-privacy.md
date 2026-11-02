@@ -73,6 +73,7 @@
 
 ## 浏览器扩展
 
+- 写作浮窗：只在你点开浮标或按 Alt+J 后读取输入框里要处理的文字，经 `/api/v1/ai/run`（`write` / `grammar` / `stats`）交给本机清影；密码、支付、验证码输入框不读取。“加入统计数据”只向世界银行发指标代码和国家代码，不含原文。详见 [writing-assistant.md](writing-assistant.md)。
 - 视频摘要（扩展 1.10）：字幕只发给本机清影，由清影调用你配置的模型；`/api/v1/ai/*` 和其他接口一样需要访问令牌，请求体上限放宽到 2 MiB（普通接口 64 KB）。详见 [video-summary.md](video-summary.md)。
 
 浏览器扩展（Chrome / Edge / Firefox）只和本机的清影通信（`127.0.0.1`），需要端口和访问令牌，新设备要在电脑上确认配对。要点：

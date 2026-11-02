@@ -12,6 +12,7 @@
     "tauri": "tauri",
     "test:unit": "node --experimental-strip-types --no-warnings --test \"e2e/unit/*.test.mjs\"",
     "test:e2e": "node e2e/run.mjs",
+    "test:ext": "node e2e/ext/writing-smoke.mjs",
     "test": "npm run test:unit && npm run test:e2e"
   },
   "dependencies": {
