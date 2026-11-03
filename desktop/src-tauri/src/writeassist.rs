@@ -49,6 +49,10 @@ static BADGE_TARGET: Mutex<isize> = Mutex::new(0);
 pub fn foreground() -> (isize, String) {
     sys::foreground()
 }
+/// 某个窗口所属程序的文件名（小写）；取不到是空串。
+pub fn exe_of_hwnd(hwnd: isize) -> String {
+    sys::exe_of_hwnd(hwnd)
+}
 pub fn remember_target(hwnd: isize) {
     *lock(&BADGE_TARGET) = hwnd;
 }
@@ -443,6 +447,11 @@ mod sys {
         }
     }
 
+    pub fn exe_of_hwnd(hwnd: isize) -> String {
+        // SAFETY: 只读查询，句柄失效时返回空串。
+        unsafe { exe_of(hwnd as HWND) }
+    }
+
     unsafe fn exe_of(h: HWND) -> String {
         let mut pid = 0u32;
         GetWindowThreadProcessId(h, &mut pid);
@@ -607,6 +616,9 @@ mod sys {
     pub const SUPPORTED: bool = false;
     pub fn foreground() -> (isize, String) {
         (0, String::new())
+    }
+    pub fn exe_of_hwnd(_hwnd: isize) -> String {
+        String::new()
     }
     pub fn copy_selection() -> Copied {
         Copied::Unsupported

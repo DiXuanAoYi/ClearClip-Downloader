@@ -58,6 +58,8 @@ pub mod secret;
 pub mod security;
 pub mod security_cmds;
 pub mod settings;
+pub mod livecore;
+pub mod ocr_paddle;
 pub mod shotwin;
 pub mod subedit;
 pub mod subgen;

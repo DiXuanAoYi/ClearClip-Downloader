@@ -29,11 +29,39 @@ fn declared_of(m: &InferenceModel) -> AppResult<Vec<Option<usize>>> {
     Ok(fact.shape.dims().map(|d| Factoid::concretize(d).and_then(|v| v.to_i64().ok().and_then(|x| usize::try_from(x).ok()))).collect())
 }
 
+/// 把第一个输入的形状写成具体数值，并清掉输出的形状声明（由 tract 自己推）。
+fn pin_shapes(proto: &mut tract_onnx::pb::ModelProto, shape: &[usize]) {
+    use tract_onnx::pb::tensor_shape_proto::{dimension::Value, Dimension};
+    let Some(g) = proto.graph.as_mut() else { return };
+    let init: std::collections::HashSet<String> = g.initializer.iter().map(|t| t.name.clone()).collect();
+    if let Some(inp) = g.input.iter_mut().find(|i| !init.contains(&i.name)) {
+        if let Some(tract_onnx::pb::type_proto::Value::TensorType(t)) = inp.r#type.as_mut().and_then(|t| t.value.as_mut()) {
+            if let Some(sh) = t.shape.as_mut() {
+                sh.dim = shape.iter().map(|d| Dimension { value: Some(Value::DimValue(*d as i64)), denotation: String::new() }).collect();
+            }
+        }
+    }
+    for o in g.output.iter_mut() {
+        if let Some(tract_onnx::pb::type_proto::Value::TensorType(t)) = o.r#type.as_mut().and_then(|t| t.value.as_mut()) {
+            t.shape = None;
+        }
+    }
+    g.value_info.clear();
+}
+
 impl Net {
     /// 从文件读取，并把第一个输入固定成 `shape`（f32）。
     pub fn load(path: &Path, shape: &[usize]) -> AppResult<Net> {
-        let m = tract_onnx::onnx().model_for_path(path).map_err(|e| err("读不了模型文件", e))?;
-        Net::from_model(m, shape)
+        match tract_onnx::onnx().model_for_path(path) {
+            Ok(m) => Net::from_model(m, shape),
+            // 有的模型（PaddleOCR 转出来的）把动态维度写成字符串名字，tract 读不了：把输入形状改成具体数值、清掉输出形状再读
+            Err(first) => {
+                let mut proto = tract_onnx::onnx().proto_model_for_path(path).map_err(|_| err("读不了模型文件", &first))?;
+                pin_shapes(&mut proto, shape);
+                let m = tract_onnx::onnx().model_for_proto_model(&proto).map_err(|e| err("读不了模型文件", e))?;
+                Net::from_model(m, shape)
+            }
+        }
     }
 
     pub fn from_model(m: InferenceModel, shape: &[usize]) -> AppResult<Net> {
