@@ -58,7 +58,12 @@ pub mod secret;
 pub mod security;
 pub mod security_cmds;
 pub mod settings;
+pub mod liveaudio;
 pub mod livecore;
+pub mod livetr;
+pub mod livetx;
+pub mod livewin;
+pub mod ocr;
 pub mod ocr_paddle;
 pub mod shotwin;
 pub mod subedit;
@@ -258,21 +263,27 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
                     if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        let panic = app
-                            .try_state::<Arc<AppState>>()
-                            .and_then(|st| st.settings_raw().security.panic_shortcut.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok());
-                        let write = app
-                            .try_state::<Arc<AppState>>()
-                            .and_then(|st| st.settings_raw().writing.hotkey.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok());
-                        let shot = app
-                            .try_state::<Arc<AppState>>()
-                            .and_then(|st| st.settings_raw().shot_hotkey.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok());
-                        if panic.as_ref() == Some(shortcut) {
+                        let st = app.try_state::<Arc<AppState>>().map(|s| s.settings_raw());
+                        let parse = |s: &str| s.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok();
+                        let panic = st.as_ref().and_then(|s| parse(&s.security.panic_shortcut));
+                        let write = st.as_ref().and_then(|s| parse(&s.writing.hotkey));
+                        let shot = st.as_ref().and_then(|s| parse(&s.shot_hotkey));
+                        let live = |pick: fn(&settings::LiveSettings) -> &str| st.as_ref().and_then(|s| parse(pick(&s.live)));
+                        let sc = Some(shortcut.clone());
+                        if panic == sc {
                             security::panic(app);
-                        } else if shot.as_ref() == Some(shortcut) {
+                        } else if shot == sc {
                             shotwin::hotkey(app);
-                        } else if write.as_ref() == Some(shortcut) {
+                        } else if write == sc {
                             writeassist::hotkey(app);
+                        } else if live(|l| &l.hotkey) == sc {
+                            livetr::hotkey(app, "toggle");
+                        } else if live(|l| &l.hotkey_pick) == sc {
+                            livetr::hotkey(app, "pick");
+                        } else if live(|l| &l.hotkey_hide) == sc {
+                            livetr::hotkey(app, "hide");
+                        } else if live(|l| &l.hotkey_mode) == sc {
+                            livetr::hotkey(app, "mode");
                         } else {
                             clipboard::parse_clipboard_now(app);
                         }
@@ -419,6 +430,7 @@ pub fn run() {
             security::spawn_idle_watch(&handle);
             security::apply_window_protection(&handle, settings.security.content_protection);
             tray::apply_float(&handle, settings.float_ball && !locked);
+            livetr::ensure_bar(&handle, settings.live.float_button && !locked);
             spawn_account_reminders(handle.clone());
 
             tray::create(&handle)?;
@@ -713,6 +725,30 @@ pub fn run() {
             shotwin::shot_take,
             shotwin::shot_run,
             shotwin::shot_close,
+            livetr::sc_status,
+            livetr::sc_start,
+            livetr::sc_stop,
+            livetr::sc_toggle,
+            livetr::sc_pick,
+            livetr::sc_pick_take,
+            livetr::sc_pick_done,
+            livetr::sc_pick_cancel,
+            livetr::sc_set_mode,
+            livetr::sc_hide,
+            livetr::sc_windows,
+            livetr::sc_ocr_langs,
+            livetr::sc_overlay_state,
+            livetr::sc_ack_manga,
+            livetr::sc_bar,
+            livetr::sc_bar_expand,
+            livetr::sc_try,
+            livetr::sc_history,
+            livetr::sc_history_clear,
+            livetr::sc_cache_clear,
+            ocr_paddle::ocr_status,
+            ocr_paddle::ocr_install,
+            ocr_paddle::ocr_import,
+            ocr_paddle::ocr_remove,
             writeassist::write_take,
             writeassist::write_badge_click,
             writeassist::write_off_this_app,

@@ -529,6 +529,46 @@ pub fn text_key(groups: &[Group]) -> String {
     groups.iter().map(|g| norm(&g.text).into_iter().collect::<String>()).collect::<Vec<_>>().join("|")
 }
 
+/// 一段文字的比较用键（去标点和大小写）。
+pub fn text_key_of(s: &str) -> String {
+    norm(s).into_iter().collect()
+}
+
+/// 漫画：视觉模型给的框只是个大概。在框向外扩 `grow` 倍的范围里找和底色差别大的点（字），返回它们的外接框；
+/// 找到的点太少（框里其实没字）或外接框比原框大太多，就返回 None，沿用模型的框。
+pub fn ink_bbox(bgra: &[u8], w: usize, h: usize, x: f32, y: f32, rw: f32, rh: f32, bg: [u8; 3], grow: f32) -> Option<[f32; 4]> {
+    if w == 0 || h == 0 || bgra.len() < w * h * 4 || rw < 4.0 || rh < 4.0 {
+        return None;
+    }
+    let (gx, gy) = (rw * grow, rh * grow);
+    let x0 = (x - gx).floor().max(0.0) as usize;
+    let y0 = (y - gy).floor().max(0.0) as usize;
+    let x1 = ((x + rw + gx).ceil() as usize).min(w);
+    let y1 = ((y + rh + gy).ceil() as usize).min(h);
+    let (mut bx0, mut by0, mut bx1, mut by1, mut n) = (usize::MAX, usize::MAX, 0usize, 0usize, 0usize);
+    for yy in y0..y1 {
+        for xx in x0..x1 {
+            let i = (yy * w + xx) * 4;
+            if dist([bgra[i + 2], bgra[i + 1], bgra[i]], bg) > 150 {
+                bx0 = bx0.min(xx);
+                by0 = by0.min(yy);
+                bx1 = bx1.max(xx + 1);
+                by1 = by1.max(yy + 1);
+                n += 1;
+            }
+        }
+    }
+    if n < 8 || bx1 <= bx0 || by1 <= by0 {
+        return None;
+    }
+    let (ow, oh) = ((bx1 - bx0) as f32, (by1 - by0) as f32);
+    // 外接框不该比模型的框大出一倍以上（多半把气泡的描边也算进去了）
+    if ow > rw * (1.0 + 2.0 * grow) * 1.05 || oh > rh * (1.0 + 2.0 * grow) * 1.05 || ow < rw * 0.3 || oh < rh * 0.3 {
+        return None;
+    }
+    Some([bx0 as f32, by0 as f32, ow, oh])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -685,5 +725,24 @@ mod tests {
         let a = vec![Group { text: "Hello, World!".into(), ..Default::default() }];
         let b = vec![Group { text: "hello world".into(), ..Default::default() }];
         assert_eq!(text_key(&a), text_key(&b));
+    }
+
+    #[test]
+    fn ink_box_tightens_to_text() {
+        let (w, h) = (100, 60);
+        let mut img = vec![255u8; w * h * 4];
+        for y in 20..30 {
+            for x in 30..60 {
+                let i = (y * w + x) * 4;
+                img[i] = 10;
+                img[i + 1] = 10;
+                img[i + 2] = 10;
+            }
+        }
+        // 模型的框偏大一点
+        let b = ink_bbox(&img, w, h, 25.0, 15.0, 40.0, 20.0, [255, 255, 255], 0.1).unwrap();
+        assert_eq!(b, [30.0, 20.0, 30.0, 10.0]);
+        // 框里没有字
+        assert!(ink_bbox(&img, w, h, 0.0, 40.0, 20.0, 15.0, [255, 255, 255], 0.1).is_none());
     }
 }

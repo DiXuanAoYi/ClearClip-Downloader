@@ -8,7 +8,11 @@
     "float",
     "write",
     "wbadge",
-    "shot"
+    "shot",
+    "live-overlay",
+    "live-bar",
+    "live-subbar",
+    "live-pick"
   ],
   "permissions": [
     "core:default",

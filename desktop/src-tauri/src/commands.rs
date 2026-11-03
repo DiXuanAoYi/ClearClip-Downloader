@@ -127,6 +127,10 @@ pub async fn save_settings(app: AppHandle, state: St<'_>, settings: Settings) ->
         || old.security.panic_shortcut != s.security.panic_shortcut
         || old.writing.hotkey != s.writing.hotkey
         || old.shot_hotkey != s.shot_hotkey
+        || old.live.hotkey != s.live.hotkey
+        || old.live.hotkey_pick != s.live.hotkey_pick
+        || old.live.hotkey_hide != s.live.hotkey_hide
+        || old.live.hotkey_mode != s.live.hotkey_mode
     {
         apply_shortcut(&app, &s.shortcut);
     }
@@ -165,10 +169,20 @@ pub async fn save_settings(app: AppHandle, state: St<'_>, settings: Settings) ->
 pub fn apply_shortcut(app: &AppHandle, shortcut: &str) {
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
-    let (panic, write, shot) =
-        app.try_state::<Arc<AppState>>().map(|st| st.settings_raw()).map(|s| (s.security.panic_shortcut, s.writing.hotkey, s.shot_hotkey)).unwrap_or_default();
+    let s = app.try_state::<Arc<AppState>>().map(|st| st.settings_raw());
+    let (panic, write, shot) = s.as_ref().map(|s| (s.security.panic_shortcut.clone(), s.writing.hotkey.clone(), s.shot_hotkey.clone())).unwrap_or_default();
+    let lv = s.as_ref().map(|s| s.live.clone()).unwrap_or_default();
     let mut errors = vec![];
-    for (what, sc) in [("快捷键", shortcut.trim()), ("老板键", panic.trim()), ("写作快捷键", write.trim()), ("截图翻译快捷键", shot.trim())] {
+    for (what, sc) in [
+        ("快捷键", shortcut.trim()),
+        ("老板键", panic.trim()),
+        ("写作快捷键", write.trim()),
+        ("截图翻译快捷键", shot.trim()),
+        ("屏幕翻译 开始/停止 快捷键", lv.hotkey.as_str()),
+        ("屏幕翻译 重新框选 快捷键", lv.hotkey_pick.as_str()),
+        ("屏幕翻译 显示/隐藏译文 快捷键", lv.hotkey_hide.as_str()),
+        ("屏幕翻译 切换模式 快捷键", lv.hotkey_mode.as_str()),
+    ] {
         if sc.is_empty() {
             continue;
         }
