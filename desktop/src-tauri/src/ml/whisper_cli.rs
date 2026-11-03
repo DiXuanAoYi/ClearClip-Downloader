@@ -24,7 +24,7 @@ const FALLBACK_URL: &str = "https://github.com/ggml-org/whisper.cpp/releases/dow
 /// 进度事件沿用模型下载的通道，用这个 id 区分。
 pub const ID: &str = "whisper-cli";
 
-fn bin_name() -> &'static str {
+pub fn bin_name() -> &'static str {
     if cfg!(windows) {
         "whisper-cli.exe"
     } else {

@@ -165,11 +165,11 @@ async function promptVersion() {
 }
 
 /** 翻译一批文字。先查缓存，剩下的交给引擎，返回和输入一一对应的译文。 */
-async function translateTexts(texts, { target, engine, page = null, domain = false }) {
+async function translateTexts(texts, { target, engine, page = null, domain = false, extra = '' }) {
   const dom = engine === 'clearclip' && domain ? await pageDomain(page) : null
-  const ctx = dom ? [dom.domain && `Domain: ${dom.domain}.`, dom.note].filter(Boolean).join(' ') : ''
+  const ctx = [dom ? [dom.domain && `Domain: ${dom.domain}.`, dom.note].filter(Boolean).join(' ') : '', engine === 'clearclip' && extra ? `Additional requirement from the user: ${extra}` : ''].filter(Boolean).join(' ')
   const pv = engine === 'clearclip' ? await promptVersion() : ''
-  const keyEngine = (dom?.domain ? `${engine}:${dom.domain.toLowerCase().slice(0, 40)}` : engine) + (pv ? `@${pv}` : '')
+  const keyEngine = (dom?.domain ? `${engine}:${dom.domain.toLowerCase().slice(0, 40)}` : engine) + (pv ? `@${pv}` : '') + (engine === 'clearclip' && extra ? `#${[...extra].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7).toString(36)}` : '')
   const cache = await trCacheMap()
   const out = texts.map((t) => cache[ccTrans.cacheKey(keyEngine, target, t)]?.[0] ?? null)
   const todo = out.map((v, i) => (v == null ? i : -1)).filter((i) => i >= 0)

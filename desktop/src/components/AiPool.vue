@@ -115,7 +115,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
       可以放多个服务：每次请求按“适用任务 → 优先级（数字小的先用）→ 今天用得少的先用”自动挑一个；某个服务额度用完、被限流或出错时自动冷却并换下一个，不用你手动切换。免费额度用完的服务会在次日零点（北京时间）自动恢复。密钥加密保存在本机，不进设置文件和备份。
     </small>
 
-    <div v-if="!ai.pool.length" class="empty mute">模型池是空的，现在只使用下面“默认服务”。从下面的“添加服务”选一个有免费额度的开始。</div>
+    <div v-if="!ai.pool.length" class="empty mute">模型池是空的：从下面的“添加服务”选一个有免费额度的开始。</div>
 
     <div v-for="e in ai.pool" :key="e.id" class="svc" :class="{ off: !e.enabled }">
       <div class="head">

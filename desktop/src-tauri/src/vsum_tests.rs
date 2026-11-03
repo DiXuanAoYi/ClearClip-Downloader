@@ -447,3 +447,34 @@ async fn web_translation_gets_page_domain_and_passes_it_to_the_prompt() {
     run(&base, &r).await.unwrap();
     assert!(with_domain("S".into(), "").eq("S"));
 }
+
+#[tokio::test]
+async fn comments_are_analysed_and_quotes_attached() {
+    let base = mock(Arc::new(|p| {
+        if p.contains("analyse the comment section") {
+            r#"{"sentiment":{"pos":60,"neu":30,"neg":10},"themes":[{"name":"讲得清楚","count":2,"ids":[0,9]}],"disputes":[],"questions":[{"q":"怎么选参数","answered":false,"id":1}],"corrections":[{"text":"年份写错了","id":0}],"keywords":["入门"]}"#.into()
+        } else if p.contains("verdict") {
+            "整体口碑不错。".into()
+        } else {
+            "答案".into()
+        }
+    }))
+    .await;
+    let cs = vec![
+        Cmt { author: "甲".into(), text: "05:21 讲得很清楚".into(), likes: 12, t: 321_000, replies: 0 },
+        Cmt { author: "乙".into(), text: "怎么选参数？".into(), likes: 3, t: -1, replies: 1 },
+    ];
+    let r = Req { kind: "comments".into(), comments: cs.clone(), ..Default::default() };
+    let v = run(&base, &r).await.unwrap();
+    assert_eq!(v["count"], 2);
+    assert_eq!(v["sentiment"]["pos"], 60);
+    assert_eq!(v["verdict"], "整体口碑不错。");
+    // 越界的编号被丢掉，有效编号带上原评论
+    assert_eq!(v["themes"][0]["quotes"].as_array().unwrap().len(), 1);
+    assert_eq!(v["themes"][0]["quotes"][0]["t"], 321_000);
+    assert_eq!(v["questions"][0]["answered"], false);
+    assert_eq!(v["corrections"][0]["quote"]["author"], "甲");
+    let a = Req { kind: "askcomments".into(), comments: cs, question: "大家怎么看".into(), ..Default::default() };
+    assert_eq!(run(&base, &a).await.unwrap()["answer"], "答案");
+    assert!(check(&Req { kind: "comments".into(), ..Default::default() }).is_err());
+}

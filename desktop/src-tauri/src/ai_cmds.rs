@@ -42,6 +42,9 @@ pub struct AiStatus {
     pub stt_ready: bool,
     pub stt_key: bool,
     pub whisper_found: bool,
+    /// 实际会用的 whisper-cli 和模型（设置里没填或失效时自动找到的）
+    pub whisper_path: Option<String>,
+    pub whisper_model_path: Option<String>,
 }
 
 #[tauri::command]
@@ -54,12 +57,14 @@ pub fn ai_status(state: St<'_>) -> AiStatus {
             || s.ai.pool.iter().any(|e| e.enabled && !e.base_url.is_empty() && !e.model.is_empty() && state.vault.has(&ai_pool::key_name(&e.id))),
         chat_key,
         stt_ready: if ai::use_local_stt(&state, &s) {
-            !s.ai.whisper_model.is_empty()
+            ai::local_stt_ready(&s)
         } else {
             (!s.ai.stt_url().is_empty() && !s.ai.stt_model.is_empty() && stt_key) || ai::stt_pool_endpoint(&state, &s).is_some()
         },
         stt_key,
         whisper_found: ai::whisper_available(&s),
+        whisper_path: ai::find_whisper_bin(&s).map(|p| p.to_string_lossy().into_owned()),
+        whisper_model_path: ai::find_whisper_model(&s).map(|p| p.to_string_lossy().into_owned()),
     }
 }
 
@@ -183,6 +188,16 @@ pub fn subgen_start(app: AppHandle, path: String, opts: crate::subgen::GenOpts) 
 pub fn subgen_correct(app: AppHandle, path: String, mode: Option<String>) -> AppResult<u64> {
     let p = existing_file(&path)?;
     Ok(media_tools::spawn_job(&app, title_of(&p), "字幕纠错", move |ctx| async move { crate::subgen::run_correct(&ctx, &p, mode).await }))
+}
+
+/// 文件翻译：TXT / Markdown / 字幕 / Word / EPUB 整份翻译，按原格式输出双语或仅译文。
+#[tauri::command]
+pub fn filetr_start(app: AppHandle, path: String, opts: crate::filetr::Opts) -> AppResult<u64> {
+    let p = existing_file(&path)?;
+    if crate::filetr::kind_of(&p).is_none() {
+        return Err(AppError::invalid("支持 TXT、Markdown、PDF、SRT / VTT / ASS 字幕、Word(docx) 和 EPUB。"));
+    }
+    Ok(media_tools::spawn_job(&app, title_of(&p), "文件翻译", move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
 }
 
 /// 读取 AI 任务输出的文本结果（摘要 .md、章节 .txt、字幕 .srt）。只能读任务列表里自己生成的文件。

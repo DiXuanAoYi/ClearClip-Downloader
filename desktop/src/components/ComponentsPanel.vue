@@ -9,6 +9,7 @@ import type { CapsSummary, ToolProgress, ToolStatus } from '../types'
 import { formatBytes } from '../utils/format'
 import EditModels from './toolbox/edit/EditModels.vue'
 import WhisperCliRow from './WhisperCliRow.vue'
+import SttLocal from './SttLocal.vue'
 
 const mirrors = defineModel<string[]>({ required: true })
 const edition = defineModel<'lite' | 'full'>('edition', { default: 'lite' })
@@ -23,6 +24,7 @@ const INFO: Record<string, { name: string; desc: string }> = {
 const list = ref<ToolStatus[]>([])
 const progress = ref<Record<string, ToolProgress>>({})
 const loading = ref(false)
+const sttLocal = ref('')
 const sitesOpen = ref(false)
 const sites = ref<string[]>([])
 const sitesQuery = ref('')
@@ -133,6 +135,7 @@ function percent(p: ToolProgress): number {
 
 onMounted(async () => {
   unlisten = await events.onToolProgress((p) => (progress.value[p.tool] = p))
+  api.getSettings().then((s) => (sttLocal.value = s.ai.sttLocalModel ?? '')).catch(() => {})
   await refresh()
 })
 onUnmounted(() => unlisten?.())
@@ -190,10 +193,10 @@ onUnmounted(() => unlisten?.())
       <p class="mute small">按需下载的模型文件，不装也能用其它功能。下载地址可以改成镜像，也可以导入自己下载好的文件。</p>
       <h4>降噪（RNNoise）</h4>
       <EditModels kind="denoise" />
-      <h4>语音识别（Whisper，本地转写）</h4>
-      <p class="mute small">视频摘要的“用清影转写”、剪辑的文稿剪辑 / 智能字幕会用到。要先有下面的 <code>whisper-cli</code> 程序和至少一个模型；也可以改用接口转写（接口要支持 /audio/transcriptions），不用装这些。装好后会自动填进“设置 → AI”，并自动用本机转写。</p>
+      <h4>语音识别（本地转写）</h4>
+      <p class="mute small">视频摘要的“用清影转写”、没字幕视频自动生成字幕、剪辑的智能字幕会用到。中文推荐 SenseVoice（比 Whisper 快、准）；Whisper 需要先装下面的 <code>whisper-cli</code>，文稿剪辑的逐词剪只支持 Whisper。这里的选择和“设置 → AI → 语音转文字”是同一个，改哪边都同步。</p>
       <WhisperCliRow />
-      <EditModels kind="whisper" single />
+      <SttLocal v-model="sttLocal" persist />
       <h4>人像抠图</h4>
       <EditModels kind="matte" />
       <h4>人声分离</h4>

@@ -707,6 +707,8 @@ export interface AiSettings {
   correctMode: 'conservative' | 'aggressive' | 'rules'
   correctAuto: boolean
   whisperVadModel: string
+  /** 本机识别用哪个模型："" 自动 | whisper_tiny | whisper_base | whisper_small | sensevoice */
+  sttLocalModel: string
 }
 
 export interface SubgenOpts {
@@ -766,6 +768,8 @@ export interface AiStatus {
   sttReady: boolean
   sttKey: boolean
   whisperFound: boolean
+  whisperPath?: string | null
+  whisperModelPath?: string | null
 }
 
 export interface LibrarySettings {
@@ -962,6 +966,7 @@ export interface Settings {
   theme: 'system' | 'dark' | 'light'
   closeToTray: boolean
   shortcut: string
+  shotHotkey: string
   checkUpdate: boolean
   disclaimerAccepted: boolean
   autoResume: boolean
@@ -1036,6 +1041,8 @@ export interface Settings {
   meteredMode: boolean
   security: SecuritySettings
   writing: WritingSettings
+  /** 实时屏幕翻译 */
+  live: ScreenSettings
   onboarded: boolean
   language: 'zh' | 'en' | 'ja'
   floatBall: boolean
@@ -1050,6 +1057,11 @@ export interface WritingSettings {
   route: 'local_first' | 'local_only' | 'cloud_only'
   candidates: number
   style: string
+  pin: boolean
+  autoClose: boolean
+  win: number[]
+  lastAction: string
+  extras: string[]
 }
 
 /** 快捷键取到的内容 */
@@ -1902,6 +1914,14 @@ export interface WhisperCliStatus {
   autoInstall: boolean
   note: string
 }
+export interface SenseVoiceStatus {
+  runtime: boolean
+  runtimePath: string | null
+  model: boolean
+  ready: boolean
+  autoInstall: boolean
+  note: string
+}
 export interface ModelProgress {
   id: string
   got: number
@@ -2021,6 +2041,189 @@ export interface WriteJob {
   done: number
   total: number
   note: string
-  result: { text?: string; style?: string; candidates?: { text: string; guard?: string | null }[]; corrected?: string; issues?: { from: string; to: string; reason: string }[] } | null
+  result: { text?: string; style?: string; candidates?: { text: string; guard?: { missing: string[]; ratio: number; warn: boolean } | null }[]; corrected?: string; issues?: { from: string; to: string; reason: string }[] } | null
   error: string | null
+}
+
+export interface VocabWord {
+  id: number
+  word: string
+  phonetic: string
+  pos: string
+  meaning: string
+  ctxMeaning: string
+  sentence: string
+  sourceTitle: string
+  sourceUrl: string
+  timeSec: number
+  created: number
+  due: number
+  intervalDays: number
+  reps: number
+  lapses: number
+  level: string
+  /** 三个评分按钮各自的“下次复习”提示：不认识 / 模糊 / 认识 */
+  next: [string, string, string]
+}
+
+export interface VocabStats {
+  total: number
+  due: number
+  fresh: number
+  learned: number
+  today: number
+}
+
+// ---------- 实时屏幕翻译 ----------
+
+export interface OcrApi {
+  provider: 'ocrspace' | 'baidu' | 'google'
+  key: string
+  secret: string
+  endpoint: string
+}
+
+export interface ScreenProfile {
+  exe: string
+  mode: string
+  ocr: string
+  ocrLang: string
+  targetLang: string
+  region: [number, number, number, number]
+  target: string
+}
+
+export interface ScreenSettings {
+  hotkey: string
+  hotkeyPick: string
+  hotkeyHide: string
+  hotkeyMode: string
+  floatButton: boolean
+  mode: 'standard' | 'subtitle' | 'manga'
+  ocr: 'system' | 'enhanced' | 'api' | 'vision'
+  ocrLang: string
+  ocrApi: OcrApi
+  targetLang: string
+  fps: number
+  stableMs: number
+  changePct: number
+  keepMs: number
+  fontMin: number
+  fontScale: number
+  bilingual: boolean
+  skipSame: boolean
+  opacity: number
+  subPlace: 'cover' | 'bar'
+  subBilingual: boolean
+  subFps: number
+  subStableMs: number
+  subKeepMs: number
+  subDedupe: boolean
+  subMerge: boolean
+  subBar: [number, number, number, number]
+  subFont: number
+  mangaEngine: 'vision' | 'local'
+  mangaAck: boolean
+  mangaErase: 'fill' | 'none'
+  audioLang: string
+  audioStt: 'local' | 'cloud'
+  audioBilingual: boolean
+  profiles: ScreenProfile[]
+  history: boolean
+}
+
+export interface ScreenTarget {
+  kind: 'region' | 'window' | 'screen' | ''
+  rect: [number, number, number, number]
+  hwnd: number
+  exe: string
+  title: string
+}
+
+export interface ScreenStatus {
+  supported: boolean
+  running: boolean
+  mode: string
+  target: ScreenTarget | null
+  hidden: boolean
+  msg: string
+  audio: boolean
+}
+
+export interface ScreenBlock {
+  x: number
+  y: number
+  w: number
+  h: number
+  text: string
+  orig: string
+  fg: string
+  bg: string
+  font: number
+  vertical: boolean
+  lines: number
+  center: boolean
+}
+
+export interface ScreenPayload {
+  seq: number
+  mode: string
+  rect: [number, number, number, number]
+  blocks: ScreenBlock[]
+  bilingual: boolean
+  opacity: number
+  fontMin: number
+  cjk: boolean
+  erase: boolean
+}
+
+export interface ScreenSub {
+  seq: number
+  text: string
+  orig: string
+  bilingual: boolean
+  font: number
+  source: string
+}
+
+export interface ScreenWindow {
+  hwnd: number
+  title: string
+  exe: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface ScreenPick {
+  dataUrl: string
+  x: number
+  y: number
+  w: number
+  h: number
+  windows: ScreenWindow[]
+}
+
+export interface ScreenTry {
+  lines: string[]
+  ms: number
+  w: number
+  h: number
+  engine: string
+}
+
+export interface ScreenEntry {
+  at: number
+  mode: string
+  exe: string
+  src: string
+  text: string
+}
+
+export interface OcrStatus {
+  installed: boolean
+  dir: string
+  size: number
+  supported: boolean
 }

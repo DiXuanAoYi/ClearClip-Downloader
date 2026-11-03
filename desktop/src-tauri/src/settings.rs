@@ -198,6 +198,8 @@ pub struct Settings {
     pub theme: String,
     pub close_to_tray: bool,
     pub shortcut: String,
+    /// 截图翻译的全局快捷键；留空表示不启用
+    pub shot_hotkey: String,
     pub check_update: bool,
     pub disclaimer_accepted: bool,
     /// 启动时自动继续未完成的任务（否则恢复为“已暂停”）
@@ -338,6 +340,8 @@ pub struct Settings {
     pub security: SecuritySettings,
     /// 写作浮窗（桌面端入口）
     pub writing: WritingSettings,
+    /// 实时屏幕翻译
+    pub live: LiveSettings,
     /// 已完成首次使用引导（升级前就在使用的用户不再弹出）
     pub onboarded: bool,
     /// 界面语言：zh / en / ja
@@ -535,6 +539,16 @@ pub struct WritingSettings {
     pub candidates: u8,
     /// 个人风格：一两句话，会附在每次改写的要求里；空表示不用
     pub style: String,
+    /// 写作窗固定在最前
+    pub pin: bool,
+    /// 写回后自动关闭写作窗
+    pub auto_close: bool,
+    /// 写作窗上次的位置和大小（物理像素）；宽为 0 表示没记过
+    pub win: [i32; 4],
+    /// 上次用的动作
+    pub last_action: String,
+    /// 最近用过的“额外要求”
+    pub extras: Vec<String>,
 }
 
 impl Default for WritingSettings {
@@ -547,6 +561,11 @@ impl Default for WritingSettings {
             route: "local_first".into(),
             candidates: 1,
             style: String::new(),
+            pin: true,
+            auto_close: false,
+            win: [0; 4],
+            last_action: String::new(),
+            extras: vec![],
         }
     }
 }
@@ -561,6 +580,13 @@ impl WritingSettings {
         let mut seen = std::collections::HashSet::new();
         self.off_apps = self.off_apps.iter().map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty() && seen.insert(a.clone())).take(100).collect();
         self.style = self.style.trim().chars().take(300).collect();
+        self.last_action = self.last_action.trim().chars().take(24).collect();
+        let mut seen = std::collections::HashSet::new();
+        self.extras =
+            self.extras.iter().map(|e| e.trim().chars().take(200).collect::<String>()).filter(|e| !e.is_empty() && seen.insert(e.clone())).take(8).collect();
+        if self.win[2] < 300 || self.win[3] < 300 {
+            self.win = [0; 4];
+        }
     }
     /// 现在是否被暂停。
     pub fn paused(&self, now: i64) -> bool {
@@ -569,6 +595,220 @@ impl WritingSettings {
     pub fn app_off(&self, exe: &str) -> bool {
         let e = exe.trim().to_lowercase();
         !e.is_empty() && self.off_apps.contains(&e)
+    }
+}
+
+/// 云端文字识别（OCR）服务的账号。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct OcrApi {
+    /// ocrspace / baidu / google
+    pub provider: String,
+    pub key: String,
+    /// 百度需要 Secret Key
+    pub secret: String,
+    /// 自建或代理的地址；留空用官方地址
+    pub endpoint: String,
+}
+
+impl Default for OcrApi {
+    fn default() -> Self {
+        OcrApi { provider: "ocrspace".into(), key: String::new(), secret: String::new(), endpoint: String::new() }
+    }
+}
+
+/// 每个程序单独记住的实时翻译设置。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LiveProfile {
+    /// 进程名（小写，如 `game.exe`）
+    pub exe: String,
+    /// 空表示沿用全局
+    pub mode: String,
+    pub ocr: String,
+    pub ocr_lang: String,
+    pub target_lang: String,
+    /// 上次框的区域（屏幕物理像素 x, y, w, h）；宽为 0 表示没记过
+    pub region: [i32; 4],
+    /// 整个窗口还是区域：window / region
+    pub target: String,
+}
+
+/// 实时屏幕翻译（标准 / 字幕 / 漫画 三种模式共用）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LiveSettings {
+    /// 开始 / 停止
+    pub hotkey: String,
+    /// 重新框选区域
+    pub hotkey_pick: String,
+    /// 显示 / 隐藏译文
+    pub hotkey_hide: String,
+    /// 切换模式（标准 → 字幕 → 漫画）
+    pub hotkey_mode: String,
+    /// 屏幕边上的小悬浮钮
+    pub float_button: bool,
+    /// standard / subtitle / manga
+    pub mode: String,
+    /// 识字：system（Windows 自带）/ enhanced（增强识字组件）/ api（云端识字服务）/ vision（视觉模型）
+    pub ocr: String,
+    /// 系统识字用的语言（BCP-47，如 ja、en-US）；空表示用已装语言里最合适的
+    pub ocr_lang: String,
+    pub ocr_api: OcrApi,
+    /// 译成什么语言；空表示用“设置 → AI”里的目标语言
+    pub target_lang: String,
+    /// 每秒看几次屏幕（1–10）
+    pub fps: u8,
+    /// 画面稳定多久再翻（毫秒）
+    pub stable_ms: u32,
+    /// 画面变化超过百分之几才重新识别（1–50）
+    pub change_pct: u8,
+    /// 画面里的文字消失后译文再保留多久（毫秒）
+    pub keep_ms: u32,
+    /// 译文最小字号（像素）
+    pub font_min: u8,
+    /// 译文字号放大倍数（百分比 60–200）
+    pub font_scale: u16,
+    /// 同时显示原文（小字）
+    pub bilingual: bool,
+    /// 数字、符号、已经是目标语言的文字不翻
+    pub skip_same: bool,
+    /// 译文层不透明度（百分比 30–100）
+    pub opacity: u8,
+    // ---- 字幕模式 ----
+    /// cover（盖住原字幕）/ bar（悬浮条）
+    pub sub_place: String,
+    pub sub_bilingual: bool,
+    pub sub_fps: u8,
+    pub sub_stable_ms: u32,
+    pub sub_keep_ms: u32,
+    pub sub_dedupe: bool,
+    pub sub_merge: bool,
+    /// 悬浮条位置和大小（屏幕物理像素）；宽为 0 表示没记过
+    pub sub_bar: [i32; 4],
+    pub sub_font: u8,
+    // ---- 漫画模式 ----
+    /// vision（视觉模型，会上传图片）/ local（本机识字 + 文字翻译）
+    pub manga_engine: String,
+    /// 已经确认过“漫画模式会上传图片”
+    pub manga_ack: bool,
+    /// 擦掉原文的方式：fill（取色填充）/ none（只盖译文）
+    pub manga_erase: String,
+    // ---- 系统声音实时字幕 ----
+    /// 听的语言（空表示自动）
+    pub audio_lang: String,
+    /// local（本机 SenseVoice）/ cloud（云端语音识别）
+    pub audio_stt: String,
+    pub audio_bilingual: bool,
+    // ---- 按程序记住 ----
+    pub profiles: Vec<LiveProfile>,
+    /// 保存翻译历史
+    pub history: bool,
+}
+
+impl Default for LiveSettings {
+    fn default() -> Self {
+        LiveSettings {
+            hotkey: "Ctrl+Alt+L".into(),
+            hotkey_pick: "Ctrl+Alt+R".into(),
+            hotkey_hide: "Ctrl+Alt+H".into(),
+            hotkey_mode: "Ctrl+Alt+M".into(),
+            float_button: false,
+            mode: "standard".into(),
+            ocr: "system".into(),
+            ocr_lang: String::new(),
+            ocr_api: OcrApi::default(),
+            target_lang: String::new(),
+            fps: 2,
+            stable_ms: 500,
+            change_pct: 3,
+            keep_ms: 1500,
+            font_min: 12,
+            font_scale: 100,
+            bilingual: false,
+            skip_same: true,
+            opacity: 100,
+            sub_place: "cover".into(),
+            sub_bilingual: true,
+            sub_fps: 6,
+            sub_stable_ms: 300,
+            sub_keep_ms: 600,
+            sub_dedupe: true,
+            sub_merge: true,
+            sub_bar: [0; 4],
+            sub_font: 24,
+            manga_engine: "vision".into(),
+            manga_ack: false,
+            manga_erase: "fill".into(),
+            audio_lang: String::new(),
+            audio_stt: "local".into(),
+            audio_bilingual: true,
+            profiles: vec![],
+            history: true,
+        }
+    }
+}
+
+impl LiveSettings {
+    pub fn sanitize(&mut self) {
+        for h in [&mut self.hotkey, &mut self.hotkey_pick, &mut self.hotkey_hide, &mut self.hotkey_mode] {
+            *h = h.trim().to_string();
+        }
+        let pick = |v: &mut String, ok: &[&str], d: &str| {
+            if !ok.contains(&v.as_str()) {
+                *v = d.into();
+            }
+        };
+        pick(&mut self.mode, &["standard", "subtitle", "manga"], "standard");
+        pick(&mut self.ocr, &["system", "enhanced", "api", "vision"], "system");
+        pick(&mut self.ocr_api.provider, &["ocrspace", "baidu", "google"], "ocrspace");
+        pick(&mut self.sub_place, &["cover", "bar"], "cover");
+        pick(&mut self.manga_engine, &["vision", "local"], "vision");
+        pick(&mut self.manga_erase, &["fill", "none"], "fill");
+        pick(&mut self.audio_stt, &["local", "cloud"], "local");
+        self.ocr_lang = self.ocr_lang.trim().chars().take(16).collect();
+        self.target_lang = self.target_lang.trim().chars().take(40).collect();
+        self.audio_lang = self.audio_lang.trim().chars().take(16).collect();
+        self.ocr_api.key = self.ocr_api.key.trim().to_string();
+        self.ocr_api.secret = self.ocr_api.secret.trim().to_string();
+        self.ocr_api.endpoint = self.ocr_api.endpoint.trim().to_string();
+        self.fps = self.fps.clamp(1, 10);
+        self.sub_fps = self.sub_fps.clamp(1, 12);
+        self.stable_ms = self.stable_ms.clamp(100, 5000);
+        self.sub_stable_ms = self.sub_stable_ms.clamp(100, 3000);
+        self.keep_ms = self.keep_ms.min(10_000);
+        self.sub_keep_ms = self.sub_keep_ms.min(5_000);
+        self.change_pct = self.change_pct.clamp(1, 50);
+        self.font_min = self.font_min.clamp(8, 40);
+        self.font_scale = self.font_scale.clamp(60, 200);
+        self.opacity = self.opacity.clamp(30, 100);
+        self.sub_font = self.sub_font.clamp(12, 72);
+        if self.sub_bar[2] < 200 || self.sub_bar[3] < 30 {
+            self.sub_bar = [0; 4];
+        }
+        let mut seen = std::collections::HashSet::new();
+        for p in self.profiles.iter_mut() {
+            p.exe = p.exe.trim().to_lowercase();
+            if !["", "standard", "subtitle", "manga"].contains(&p.mode.as_str()) {
+                p.mode.clear();
+            }
+            if !["", "system", "enhanced", "api", "vision"].contains(&p.ocr.as_str()) {
+                p.ocr.clear();
+            }
+            if !["", "window", "region"].contains(&p.target.as_str()) {
+                p.target.clear();
+            }
+            if p.region[2] < 20 || p.region[3] < 20 {
+                p.region = [0; 4];
+            }
+        }
+        self.profiles.retain(|p| !p.exe.is_empty() && seen.insert(p.exe.clone()));
+        self.profiles.truncate(200);
+    }
+
+    pub fn profile(&self, exe: &str) -> Option<&LiveProfile> {
+        let e = exe.trim().to_lowercase();
+        (!e.is_empty()).then(|| self.profiles.iter().find(|p| p.exe == e)).flatten()
     }
 }
 
@@ -680,6 +920,9 @@ pub struct AiSettings {
     pub whisper_bin: String,
     /// whisper.cpp 的 ggml 模型文件
     pub whisper_model: String,
+    /// 本机语音转文字用哪个模型：`whisper_tiny` / `whisper_base` / `whisper_small` / `sensevoice`；留空自动选。
+    /// “设置 → AI”和“设置 → 组件”里是同一个选择。
+    pub stt_local_model: String,
     /// 下载到的字幕不是目标语言时自动翻译
     pub auto_translate: bool,
     /// 下载的视频没有字幕时自动转写
@@ -705,12 +948,13 @@ impl Default for AiSettings {
             target_lang: "简体中文".into(),
             bilingual: true,
             batch_size: 40,
-            stt_engine: "api".into(),
+            stt_engine: "local".into(),
             stt_base_url: String::new(),
             stt_model: "whisper-1".into(),
             stt_language: String::new(),
             whisper_bin: String::new(),
             whisper_model: String::new(),
+            stt_local_model: String::new(),
             auto_translate: false,
             auto_transcribe: false,
             correct_mode: "conservative".into(),
@@ -740,11 +984,14 @@ impl AiSettings {
         }
         self.batch_size = self.batch_size.clamp(5, 100);
         if !matches!(self.stt_engine.as_str(), "api" | "local") {
-            self.stt_engine = "api".into();
+            self.stt_engine = "local".into();
         }
         self.stt_language = self.stt_language.trim().to_ascii_lowercase();
         self.whisper_bin = self.whisper_bin.trim().to_string();
         self.whisper_model = self.whisper_model.trim().to_string();
+        if !matches!(self.stt_local_model.as_str(), "" | "whisper_tiny" | "whisper_base" | "whisper_small" | "sensevoice") {
+            self.stt_local_model = String::new();
+        }
         self.whisper_vad_model = self.whisper_vad_model.trim().to_string();
         if !matches!(self.correct_mode.as_str(), "conservative" | "aggressive" | "rules") {
             self.correct_mode = "conservative".into();
@@ -932,6 +1179,7 @@ impl Default for Settings {
             theme: "system".into(),
             close_to_tray: true,
             shortcut: "CommandOrControl+Shift+D".into(),
+            shot_hotkey: "Ctrl+Alt+T".into(),
             check_update: true,
             disclaimer_accepted: false,
             auto_resume: false,
@@ -1006,6 +1254,7 @@ impl Default for Settings {
             metered_mode: false,
             security: SecuritySettings::default(),
             writing: WritingSettings::default(),
+            live: LiveSettings::default(),
             onboarded: false,
             language: "zh".into(),
             float_ball: false,
@@ -1149,7 +1398,9 @@ impl Settings {
         self.security.auto_lock_minutes = self.security.auto_lock_minutes.min(24 * 60);
         self.security.safebox_auto_lock_minutes = self.security.safebox_auto_lock_minutes.min(24 * 60);
         self.security.panic_shortcut = self.security.panic_shortcut.trim().to_string();
+        self.shot_hotkey = self.shot_hotkey.trim().to_string();
         self.writing.sanitize();
+        self.live.sanitize();
         self.max_size_mb = self.max_size_mb.min(1_000_000);
         self.library.trash_keep_days = self.library.trash_keep_days.min(3650);
         self.library.reorganize_template = self.library.reorganize_template.trim().to_string();
@@ -1256,5 +1507,25 @@ mod tests {
         std::fs::write(&p, r#"{"language": "xx"}"#).unwrap();
         assert_eq!(Settings::load(&p, &dl).language, "zh");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn live_settings_sanitize() {
+        let mut l = LiveSettings { mode: "x".into(), fps: 99, stable_ms: 1, font_scale: 5, ..Default::default() };
+        l.profiles = vec![
+            LiveProfile { exe: " Game.EXE ".into(), mode: "bad".into(), region: [1, 2, 3, 4], ..Default::default() },
+            LiveProfile { exe: "game.exe".into(), ..Default::default() },
+            LiveProfile { exe: "".into(), ..Default::default() },
+        ];
+        l.sanitize();
+        assert_eq!((l.mode.as_str(), l.fps, l.stable_ms, l.font_scale), ("standard", 10, 100, 60));
+        assert_eq!(l.profiles.len(), 1);
+        assert_eq!(l.profiles[0].exe, "game.exe");
+        assert_eq!(l.profiles[0].mode, "");
+        assert_eq!(l.profiles[0].region, [0; 4]);
+        assert!(l.profile("GAME.exe").is_some() && l.profile("").is_none());
+        // 旧配置里没有 live 字段也能读
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.live.mode, "standard");
     }
 }

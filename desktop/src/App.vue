@@ -10,6 +10,8 @@ import LibraryView from './views/LibraryView.vue'
 import ToolboxView from './views/ToolboxView.vue'
 import SubsView from './views/SubsView.vue'
 import LiveView from './views/LiveView.vue'
+import ScreenView from './views/ScreenView.vue'
+import VocabView from './views/VocabView.vue'
 import SafeboxView from './views/SafeboxView.vue'
 import SettingsView from './views/SettingsView.vue'
 import LockScreen from './components/LockScreen.vue'
@@ -86,7 +88,9 @@ const navs: { id: ViewName; label: string }[] = [
   { id: 'queue', label: '下载队列' },
   { id: 'subs', label: '订阅' },
   { id: 'live', label: '直播' },
+  { id: 'screen', label: '屏幕翻译' },
   { id: 'library', label: '媒体库' },
+  { id: 'vocab', label: '生词本' },
   { id: 'tools', label: '工具箱' },
   { id: 'safebox', label: '保险箱' },
   { id: 'settings', label: '设置' },
@@ -293,7 +297,9 @@ onMounted(async () => {
       <QueueView v-if="app.view === 'queue'" />
       <SubsView v-if="app.view === 'subs'" />
       <LiveView v-if="app.view === 'live'" />
+      <ScreenView v-if="app.view === 'screen'" />
       <LibraryView v-if="app.view === 'library'" />
+      <VocabView v-if="app.view === 'vocab'" />
       <ToolboxView v-if="app.view === 'tools'" />
       <SafeboxView v-if="app.view === 'safebox'" />
       <SettingsView v-if="app.view === 'settings'" />

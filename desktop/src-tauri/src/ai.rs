@@ -302,8 +302,22 @@ pub fn entry_endpoint(st: &AppState, settings: &Settings, id: &str) -> AppResult
 
 /// 一次对话，返回模型的回答文字。用了模型池时 `model` 被忽略，按候选服务各自的模型依次尝试。
 pub async fn chat(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppResult<String> {
+    chat_msg(ep, model, system, json!(user)).await
+}
+
+/// 带一张图片的对话（识图翻译）。`image` 是 `data:image/...;base64,...`。要用支持看图的模型。
+pub async fn chat_img(ep: &Endpoint, model: &str, system: &str, text: &str, image: &str) -> AppResult<String> {
+    let content = json!([
+        {"type": "text", "text": text},
+        {"type": "image_url", "image_url": {"url": image}}
+    ]);
+    chat_msg(ep, model, system, content).await
+}
+
+/// `user` 是消息内容：纯文字是字符串，带图片是内容块数组。
+async fn chat_msg(ep: &Endpoint, model: &str, system: &str, user: Value) -> AppResult<String> {
     if ep.cands.is_empty() {
-        return chat_one(ep, model, system, user).await;
+        return chat_one(ep, model, system, &user).await;
     }
     let now = || crate::db::now();
     let mut tried: Vec<String> = Vec::new();
@@ -318,7 +332,7 @@ pub async fn chat(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppRe
             cands: vec![],
             pool: None,
         };
-        match chat_one(&one, &c.model, system, user).await {
+        match chat_one(&one, &c.model, system, &user).await {
             Ok(t) => {
                 if let Some(p) = &ep.pool {
                     p.record_ok(&c.id, now());
@@ -341,7 +355,7 @@ pub async fn chat(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppRe
     Err(AppError::new(last.kind, format!("模型池里的 {} 个服务都失败了：{}", tried.len(), tried.join("；"))))
 }
 
-async fn chat_one(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppResult<String> {
+async fn chat_one(ep: &Endpoint, model: &str, system: &str, user: &Value) -> AppResult<String> {
     let body = json!({
         "model": model,
         "temperature": 0.2,
@@ -909,11 +923,57 @@ pub fn whisper_progress(line: &str) -> Option<f64> {
     rest.trim().trim_end_matches('%').trim().parse::<f64>().ok()
 }
 
+/// 本机 whisper.cpp 的模型文件：设置里填的优先；没填或文件不在了（比如便携版搬了家），
+/// 就在数据目录里找已下载的模型（`models/whisper_*.bin`，优先大的），再找 `whisper-cpp/` 下的 `ggml-*.bin`。
+pub(crate) fn find_whisper_model(settings: &Settings) -> Option<PathBuf> {
+    // “设置 → AI”和“设置 → 组件”共用的选择优先：选了哪个 Whisper 模型就用哪个（装了才算）
+    let chosen = settings.ai.stt_local_model.as_str();
+    if chosen.starts_with("whisper_") {
+        if let Some(data) = crate::ml::DATA_DIR.get() {
+            let p = crate::ml::store::path_of(data, chosen);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    let configured = settings.ai.whisper_model.trim();
+    if !configured.is_empty() && Path::new(configured).is_file() {
+        return Some(PathBuf::from(configured));
+    }
+    let data = crate::ml::DATA_DIR.get()?;
+    for id in ["whisper_small", "whisper_base", "whisper_tiny"] {
+        let p = crate::ml::store::path_of(data, id);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let mut found: Vec<PathBuf> = [data.join("models"), data.join("whisper-cpp")]
+        .iter()
+        .filter_map(|d| std::fs::read_dir(d).ok())
+        .flat_map(|r| r.flatten().map(|e| e.path()))
+        .filter(|p| {
+            let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+            n.starts_with("ggml-") && n.ends_with(".bin") && !n.contains("silero") && p.is_file()
+        })
+        .collect();
+    found.sort_by_key(|p| std::cmp::Reverse(p.metadata().map_or(0, |m| m.len())));
+    found.into_iter().next()
+}
+
 pub(crate) fn find_whisper_bin(settings: &Settings) -> Option<PathBuf> {
     let configured = settings.ai.whisper_bin.trim();
     if !configured.is_empty() {
         let p = PathBuf::from(configured);
-        return p.is_file().then_some(p);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    // 清影自己装的那份（便携版搬家后，设置里的旧路径会失效）
+    if let Some(data) = crate::ml::DATA_DIR.get() {
+        let p = crate::ml::whisper_cli::dir_of(data).join(crate::ml::whisper_cli::bin_name());
+        if p.is_file() {
+            return Some(p);
+        }
     }
     let exts: &[&str] = if cfg!(windows) { &["", ".exe"] } else { &[""] };
     let path = std::env::var_os("PATH")?;
@@ -936,6 +996,66 @@ pub fn whisper_available(settings: &Settings) -> bool {
     find_whisper_bin(settings).is_some()
 }
 
+/// 本机转写用哪个引擎。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalStt {
+    Whisper,
+    SenseVoice,
+}
+
+fn sensevoice_ready() -> bool {
+    crate::ml::DATA_DIR.get().is_some_and(|d| crate::ml::sensevoice::find_files(d).is_some())
+}
+
+/// 选了 SenseVoice 就用它；选了某个 Whisper 就用 Whisper；没选（自动）时 Whisper 能用就用 Whisper，不能用而 SenseVoice 装好了就用 SenseVoice。
+pub fn local_stt(settings: &Settings) -> LocalStt {
+    match settings.ai.stt_local_model.as_str() {
+        crate::ml::sensevoice::MODEL_ID => LocalStt::SenseVoice,
+        m if m.starts_with("whisper_") => LocalStt::Whisper,
+        _ if !(find_whisper_bin(settings).is_some() && find_whisper_model(settings).is_some()) && sensevoice_ready() => LocalStt::SenseVoice,
+        _ => LocalStt::Whisper,
+    }
+}
+
+/// 本机转写是否已经齐备（运行程序 + 模型都在）。
+pub fn local_stt_ready(settings: &Settings) -> bool {
+    match local_stt(settings) {
+        LocalStt::SenseVoice => sensevoice_ready(),
+        LocalStt::Whisper => find_whisper_bin(settings).is_some() && find_whisper_model(settings).is_some(),
+    }
+}
+
+async fn extract_wav16k(ffmpeg: &Path, input: &Path, work: &Path) -> AppResult<PathBuf> {
+    let wav = work.join("audio.wav");
+    let mut a = base_args();
+    a.extend([
+        "-i".to_string(),
+        input.to_string_lossy().into_owned(),
+        "-vn".into(),
+        "-ac".into(),
+        "1".into(),
+        "-ar".into(),
+        "16000".into(),
+        "-c:a".into(),
+        "pcm_s16le".into(),
+        wav.to_string_lossy().into_owned(),
+    ]);
+    run_ffmpeg_in(ffmpeg, &a, None).await?;
+    Ok(wav)
+}
+
+async fn run_sensevoice_local(ctx: &JobCtx, ffmpeg: &Path, input: &Path, lang: &str, work: &Path) -> AppResult<Vec<Cue>> {
+    let files = crate::ml::DATA_DIR
+        .get()
+        .and_then(|d| crate::ml::sensevoice::find_files(d))
+        .ok_or_else(|| AppError::invalid("还没有装好 SenseVoice。请在“设置 → 组件 → 语音识别”里点“下载安装”（也可以在“设置 → AI”里装）。"))?;
+    ctx.note("正在提取音频…");
+    let wav = extract_wav16k(ffmpeg, input, work).await?;
+    ctx.check()?;
+    ctx.note("正在用 SenseVoice 识别（中文推荐，比 Whisper 快得多）…");
+    crate::ml::sensevoice::recognize(&files, &wav, lang, || ctx.canceled()).await
+}
+
 async fn run_whisper_local(
     ctx: &JobCtx,
     settings: &Settings,
@@ -948,10 +1068,10 @@ async fn run_whisper_local(
     use tokio::io::{AsyncBufReadExt, BufReader};
     let bin = find_whisper_bin(settings)
         .ok_or_else(|| AppError::invalid("找不到 whisper.cpp（whisper-cli）。请在“设置 → AI”里指定它的位置，或把它放进系统 PATH。"))?;
-    let model = settings.ai.whisper_model.trim();
-    if model.is_empty() || !Path::new(model).is_file() {
-        return Err(AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin）。"));
-    }
+    let model_path = find_whisper_model(settings)
+        .ok_or_else(|| AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin），或在“设置 → 组件”下载一个。"))?;
+    let model = model_path.to_string_lossy().into_owned();
+    let model = model.as_str();
     ctx.note("正在提取音频…");
     let wav = work.join("audio.wav");
     let mut a = base_args();
@@ -1097,7 +1217,7 @@ pub fn auto_transcribe(app: &tauri::AppHandle, st: &Arc<AppState>, item: &crate:
         return;
     }
     let ready = if s.ai.stt_engine == "local" {
-        !s.ai.whisper_model.is_empty()
+        local_stt_ready(&s)
     } else {
         st.vault.get(KEY_STT).or_else(|| st.vault.get(KEY_CHAT)).is_some() || is_local_url(s.ai.stt_url())
     };
@@ -1219,8 +1339,7 @@ pub fn use_local_stt(st: &AppState, settings: &Settings) -> bool {
         return true;
     }
     let own_api = !settings.ai.stt_base_url.trim().is_empty() || st.vault.has(KEY_STT) || stt_pool_endpoint(st, settings).is_some();
-    let model = settings.ai.whisper_model.trim();
-    !own_api && !model.is_empty() && Path::new(model).is_file() && find_whisper_bin(settings).is_some()
+    !own_api && local_stt_ready(settings)
 }
 
 fn stt_api_hint(e: AppError) -> AppError {
@@ -1236,12 +1355,17 @@ fn stt_api_hint(e: AppError) -> AppError {
 
 pub fn stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
     if use_local_stt(st, settings) {
+        if local_stt(settings) == LocalStt::SenseVoice {
+            if !sensevoice_ready() {
+                return Err(AppError::invalid("还没有装好 SenseVoice。请在“设置 → 组件 → 语音识别”里点“下载安装”。"));
+            }
+            return Ok(());
+        }
         if find_whisper_bin(settings).is_none() {
             return Err(AppError::invalid("找不到 whisper.cpp（whisper-cli）。请在“设置 → AI”里指定它的位置，或把它放进系统 PATH。"));
         }
-        let model = settings.ai.whisper_model.trim();
-        if model.is_empty() || !Path::new(model).is_file() {
-            return Err(AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin）。"));
+        if find_whisper_model(settings).is_none() {
+            return Err(AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin），或在“设置 → 组件”下载一个。"));
         }
         return Ok(());
     }
@@ -1272,9 +1396,16 @@ pub async fn transcribe_cues_words(
 ) -> AppResult<(Vec<Cue>, Option<String>)> {
     let mut words_json = None;
     let cues = if use_local_stt(&ctx.st, settings) {
-        let (srt, wj) = run_whisper_local(ctx, settings, ffmpeg, input, lang, work, want_words).await?;
-        words_json = wj;
-        subtitle::parse_srt(&srt)
+        // 要逐词时间的场合（文稿剪辑）只有 Whisper 能给；其余按所选模型走
+        let sense =
+            local_stt(settings) == LocalStt::SenseVoice && !(want_words && find_whisper_bin(settings).is_some() && find_whisper_model(settings).is_some());
+        if sense {
+            run_sensevoice_local(ctx, ffmpeg, input, lang, work).await?
+        } else {
+            let (srt, wj) = run_whisper_local(ctx, settings, ffmpeg, input, lang, work, want_words).await?;
+            words_json = wj;
+            subtitle::parse_srt(&srt)
+        }
     } else {
         let ep = match stt_pool_endpoint(&ctx.st, settings) {
             Some(ep) => ep,

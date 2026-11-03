@@ -345,6 +345,11 @@ function insertVar(v: string) {
               <small v-if="app.shortcutError" class="err">{{ app.shortcutError }}</small>
               <small v-else class="mute">格式如 CommandOrControl+Shift+D，留空表示不使用。</small>
             </div>
+            <div class="field">
+              <label>截图翻译快捷键（仅 Windows）</label>
+              <el-input v-model="form.shotHotkey" size="small" placeholder="Ctrl+Alt+T" class="mono" />
+              <small class="mute">按下后整屏冻结，框选要翻译的区域，用视觉模型识字翻译并盖回原位。需要在“AI”里选一个能看图的模型；留空表示不使用。</small>
+            </div>
             <div class="kv">
               <span>识别所有网址<small class="mute block">关闭时只识别内置平台和下面列出的网站，避免复制普通网址时频繁弹窗</small></span>
               <el-switch v-model="form.clipboardAllSites" />

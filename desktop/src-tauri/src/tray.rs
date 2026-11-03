@@ -52,6 +52,10 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         // 写作浮标的临时控制：暂停一小时、在上一个出现过浮标的程序里不再出现
         menu.insert(&MenuItem::with_id(app, "wpause", "写作浮标：暂停 1 小时", true, None::<&str>)?, 4)?;
         menu.insert(&MenuItem::with_id(app, "woff", "写作浮标：不在上一个程序里出现", true, None::<&str>)?, 5)?;
+        // 实时屏幕翻译
+        menu.insert(&MenuItem::with_id(app, "sc_toggle", "屏幕翻译：开始 / 停止", true, None::<&str>)?, 6)?;
+        menu.insert(&MenuItem::with_id(app, "sc_pick", "屏幕翻译：重新框选区域", true, None::<&str>)?, 7)?;
+        menu.insert(&MenuItem::with_id(app, "sc_hide", "屏幕翻译：显示 / 隐藏译文", true, None::<&str>)?, 8)?;
     }
     app.manage(TrayWatchItem(watch));
     app.manage(TrayLabels { show: show.clone(), parse: parse.clone(), lock: lock.clone(), quit: quit.clone() });
@@ -93,6 +97,9 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                     crate::writebadge::hide(app);
                 }
             }
+            "sc_toggle" => crate::livetr::hotkey(app, "toggle"),
+            "sc_pick" => crate::livetr::hotkey(app, "pick"),
+            "sc_hide" => crate::livetr::hotkey(app, "hide"),
             "quit" => app.exit(0),
             _ => {}
         })

@@ -21,10 +21,12 @@ pub mod engine;
 pub mod error;
 pub mod experts;
 pub mod experts_cmds;
+pub mod filetr;
 pub mod glossary;
 pub mod glossary_cmds;
 pub mod grab;
 pub mod i18n;
+pub mod imgtrans;
 pub mod inbox;
 pub mod lan;
 pub mod library;
@@ -32,6 +34,11 @@ pub mod library_cmds;
 pub mod library_media;
 pub mod links;
 pub mod live;
+pub mod liveaudio;
+pub mod livecore;
+pub mod livetr;
+pub mod livetx;
+pub mod livewin;
 pub mod lut;
 pub mod media_cmds;
 pub mod media_server;
@@ -41,6 +48,8 @@ pub mod model;
 pub mod naming;
 pub mod net;
 pub mod notify;
+pub mod ocr;
+pub mod ocr_paddle;
 pub mod organize;
 pub mod phone;
 pub mod player;
@@ -51,10 +60,12 @@ pub mod providers;
 pub mod quality;
 pub mod rules;
 pub mod safebox;
+pub mod scrcap;
 pub mod secret;
 pub mod security;
 pub mod security_cmds;
 pub mod settings;
+pub mod shotwin;
 pub mod subedit;
 pub mod subgen;
 pub mod subs;
@@ -70,6 +81,7 @@ pub mod upload;
 pub mod vault;
 pub mod vidcaps;
 pub mod vidnorm;
+pub mod vocab;
 pub mod vsum;
 mod winframe;
 pub mod writeassist;
@@ -251,16 +263,27 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
                     if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        let panic = app
-                            .try_state::<Arc<AppState>>()
-                            .and_then(|st| st.settings_raw().security.panic_shortcut.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok());
-                        let write = app
-                            .try_state::<Arc<AppState>>()
-                            .and_then(|st| st.settings_raw().writing.hotkey.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok());
-                        if panic.as_ref() == Some(shortcut) {
+                        let st = app.try_state::<Arc<AppState>>().map(|s| s.settings_raw());
+                        let parse = |s: &str| s.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok();
+                        let panic = st.as_ref().and_then(|s| parse(&s.security.panic_shortcut));
+                        let write = st.as_ref().and_then(|s| parse(&s.writing.hotkey));
+                        let shot = st.as_ref().and_then(|s| parse(&s.shot_hotkey));
+                        let live = |pick: fn(&settings::LiveSettings) -> &str| st.as_ref().and_then(|s| parse(pick(&s.live)));
+                        let sc = Some(*shortcut);
+                        if panic == sc {
                             security::panic(app);
-                        } else if write.as_ref() == Some(shortcut) {
+                        } else if shot == sc {
+                            shotwin::hotkey(app);
+                        } else if write == sc {
                             writeassist::hotkey(app);
+                        } else if live(|l| &l.hotkey) == sc {
+                            livetr::hotkey(app, "toggle");
+                        } else if live(|l| &l.hotkey_pick) == sc {
+                            livetr::hotkey(app, "pick");
+                        } else if live(|l| &l.hotkey_hide) == sc {
+                            livetr::hotkey(app, "hide");
+                        } else if live(|l| &l.hotkey_mode) == sc {
+                            livetr::hotkey(app, "mode");
                         } else {
                             clipboard::parse_clipboard_now(app);
                         }
@@ -281,6 +304,7 @@ pub fn run() {
                 log::info!("restored a backup");
             }
             let mut settings = Settings::load(&settings_path, &default_dl);
+            let _ = ml::DATA_DIR.set(data_dir.clone());
             bt::init(data_dir.clone());
             engine::hostmem::init(data_dir.clone());
             let db = Db::open(&data_dir.join("clearclip.db")).map_err(|e| e.to_string())?;
@@ -366,6 +390,7 @@ pub fn run() {
             let previews = data_dir.join("previews");
             let _ = std::fs::create_dir_all(&previews);
             let _ = app.asset_protocol_scope().allow_directory(&previews, false);
+            ai_pool::migrate_default(&app.state::<Arc<AppState>>());
             download::restore(&handle);
             batch::restore(&handle);
             if let Ok(n) = app.state::<Arc<AppState>>().db.inbox_prune(settings.inbox.keep_days, settings.inbox.max_items) {
@@ -405,6 +430,7 @@ pub fn run() {
             security::spawn_idle_watch(&handle);
             security::apply_window_protection(&handle, settings.security.content_protection);
             tray::apply_float(&handle, settings.float_ball && !locked);
+            livetr::ensure_bar(&handle, settings.live.float_button && !locked);
             spawn_account_reminders(handle.clone());
 
             tray::create(&handle)?;
@@ -607,6 +633,7 @@ pub fn run() {
             ai_cmds::ai_transcribe,
             ai_cmds::subgen_start,
             ai_cmds::subgen_correct,
+            ai_cmds::filetr_start,
             subedit::subtitle_tracks,
             subedit::subedit_load,
             subedit::subedit_validate,
@@ -642,6 +669,15 @@ pub fn run() {
             ml::store::ml_model_remove,
             ml::whisper_cli::whisper_cli_status,
             ml::whisper_cli::whisper_cli_install,
+            ml::sensevoice::sensevoice_status,
+            ml::sensevoice::sensevoice_install,
+            ml::sensevoice::sensevoice_remove,
+            vocab::vocab_list,
+            vocab::vocab_stats,
+            vocab::vocab_add,
+            vocab::vocab_remove,
+            vocab::vocab_review,
+            vocab::vocab_export,
             edit::highlights::edit_highlights,
             edit::highlights::edit_highlights_llm,
             edit::analyze::edit_waveform,
@@ -686,6 +722,35 @@ pub fn run() {
             commands::show_main,
             commands::hide_mini,
             commands::mini_ready,
+            shotwin::shot_take,
+            shotwin::shot_run,
+            shotwin::shot_close,
+            livetr::sc_status,
+            liveaudio::sc_audio_start,
+            liveaudio::sc_audio_stop,
+            livetr::sc_start,
+            livetr::sc_stop,
+            livetr::sc_toggle,
+            livetr::sc_pick,
+            livetr::sc_pick_take,
+            livetr::sc_pick_done,
+            livetr::sc_pick_cancel,
+            livetr::sc_set_mode,
+            livetr::sc_hide,
+            livetr::sc_windows,
+            livetr::sc_ocr_langs,
+            livetr::sc_overlay_state,
+            livetr::sc_ack_manga,
+            livetr::sc_bar,
+            livetr::sc_bar_expand,
+            livetr::sc_try,
+            livetr::sc_history,
+            livetr::sc_history_clear,
+            livetr::sc_cache_clear,
+            ocr_paddle::ocr_status,
+            ocr_paddle::ocr_install,
+            ocr_paddle::ocr_import,
+            ocr_paddle::ocr_remove,
             writeassist::write_take,
             writeassist::write_badge_click,
             writeassist::write_off_this_app,
@@ -696,6 +761,10 @@ pub fn run() {
             writeassist::write_cancel,
             writeassist::write_apply,
             writeassist::write_close,
+            writeassist::write_undo,
+            writeassist::write_pin,
+            writeassist::write_prefs,
+            writeassist::write_open_settings,
             writeassist::write_pause,
             commands::open_login,
             commands::save_login_cookies,

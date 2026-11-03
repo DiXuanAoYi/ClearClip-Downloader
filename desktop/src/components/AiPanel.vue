@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { TARGET_LANGS } from '../utils/langs'
+import SttLocal from './SttLocal.vue'
 import { onMounted, ref } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
@@ -11,18 +12,8 @@ import ExpertsPanel from './ExpertsPanel.vue'
 
 const ai = defineModel<AiSettings>({ required: true })
 const status = ref<AiStatus | null>(null)
-const chatKey = ref('')
 const sttKey = ref('')
-const testing = ref(false)
 
-const CHAT_PRESETS = [
-  { name: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-  { name: 'DeepSeek', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  { name: '月之暗面', url: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-  { name: '通义千问', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-turbo' },
-  { name: '智谱', url: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
-  { name: '本机 Ollama', url: 'http://localhost:11434/v1', model: 'qwen2.5:7b' },
-]
 const STT_PRESETS = [
   { name: 'OpenAI', url: '', model: 'whisper-1' },
   { name: 'Groq', url: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3-turbo' },
@@ -35,27 +26,14 @@ async function refresh() {
 }
 onMounted(refresh)
 
-async function saveKey(name: 'ai.api_key' | 'stt.api_key', value: string) {
+async function saveKey(name: 'stt.api_key', value: string) {
   try {
     await api.secretSet(name, value)
     ElMessage.success(value ? '密钥已加密保存' : '密钥已清除')
-    if (name === 'ai.api_key') chatKey.value = ''
-    else sttKey.value = ''
+    sttKey.value = ''
     await refresh()
   } catch (e) {
     ElMessage.error(errorText(e))
-  }
-}
-
-async function test() {
-  testing.value = true
-  try {
-    const r = await api.aiTest()
-    ElMessage.success(`接口可用，模型回复：${r}`)
-  } catch (e) {
-    ElMessage.error(errorText(e))
-  } finally {
-    testing.value = false
   }
 }
 
@@ -73,25 +51,6 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
     <AiPool v-model="ai" />
     <GlossaryPanel v-model="ai" />
     <ExpertsPanel v-model="ai" />
-    <section class="group card">
-      <h3>默认服务（模型池为空或都不可用时使用）</h3>
-      <small class="mute">使用兼容 OpenAI 的接口。字幕文字会发送到你填写的服务商；用本机 Ollama 则完全不出本机。密钥加密保存在本机，不会写进设置文件，也不会进入备份。</small>
-      <div class="presets">
-        <el-button v-for="p in CHAT_PRESETS" :key="p.name" size="small" link type="primary" @click="ai.baseUrl = p.url; ai.model = p.model">{{ p.name }}</el-button>
-      </div>
-      <div class="field"><label>接口地址</label><el-input v-model="ai.baseUrl" size="small" class="mono" placeholder="https://api.openai.com/v1" /></div>
-      <div class="field"><label>模型</label><el-input v-model="ai.model" size="small" class="mono" placeholder="gpt-4o-mini" /></div>
-      <div class="field">
-        <label>API 密钥 <span v-if="status?.chatKey" class="ok">已保存</span></label>
-        <div class="keyrow">
-          <el-input v-model="chatKey" size="small" type="password" show-password :placeholder="status?.chatKey ? '输入新密钥可替换' : 'sk-…（本机 Ollama 可留空）'" />
-          <el-button size="small" :disabled="!chatKey.trim()" @click="saveKey('ai.api_key', chatKey)">保存</el-button>
-          <el-button v-if="status?.chatKey" size="small" @click="saveKey('ai.api_key', '')">清除</el-button>
-        </div>
-      </div>
-      <div><el-button size="small" :loading="testing" @click="test">测试接口</el-button></div>
-    </section>
-
     <section class="group card">
       <h3>翻译</h3>
       <div class="kv">
@@ -115,7 +74,7 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <span>方式</span>
         <el-radio-group v-model="ai.sttEngine" size="small">
           <el-radio-button value="api">在线接口</el-radio-button>
-          <el-radio-button value="local">本机 whisper.cpp</el-radio-button>
+          <el-radio-button value="local">本机识别（离线）</el-radio-button>
         </el-radio-group>
       </div>
       <template v-if="ai.sttEngine === 'api'">
@@ -123,10 +82,10 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <div class="presets">
           <el-button v-for="p in STT_PRESETS" :key="p.name" size="small" link type="primary" @click="ai.sttBaseUrl = p.url; ai.sttModel = p.model">{{ p.name }}</el-button>
         </div>
-        <div class="field"><label>接口地址（留空与上面相同）</label><el-input v-model="ai.sttBaseUrl" size="small" class="mono" placeholder="https://api.groq.com/openai/v1" /></div>
+        <div class="field"><label>接口地址</label><el-input v-model="ai.sttBaseUrl" size="small" class="mono" placeholder="https://api.groq.com/openai/v1" /></div>
         <div class="field"><label>模型</label><el-input v-model="ai.sttModel" size="small" class="mono" placeholder="whisper-1" /></div>
         <div class="field">
-          <label>API 密钥（留空沿用上面的密钥） <span v-if="status?.sttKey" class="ok">{{ status?.chatKey && !sttKey ? '沿用对话密钥' : '已保存' }}</span></label>
+          <label>API 密钥 <span v-if="status?.sttKey" class="ok">已保存</span></label>
           <div class="keyrow">
             <el-input v-model="sttKey" size="small" type="password" show-password placeholder="单独的语音接口密钥" />
             <el-button size="small" :disabled="!sttKey.trim()" @click="saveKey('stt.api_key', sttKey)">保存</el-button>
@@ -135,17 +94,22 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         </div>
       </template>
       <template v-else>
-        <small class="mute">
-          需要自己安装 <a href="#" @click.prevent="api.openUrl('https://github.com/ggml-org/whisper.cpp')">whisper.cpp</a>（macOS：<span class="mono">brew install whisper-cpp</span>；Windows 可下载它发布的程序包），并下载一个 ggml 模型（如 <span class="mono">ggml-base.bin</span>，中文推荐 small 或更大）。全程不联网。
-        </small>
+        <small class="mute">全程不联网。模型和“设置 → 组件 → 语音识别”是同一个选择，在哪边改都一样。中文建议用 SenseVoice（快、准）；Whisper 适合多语种和要逐词时间的场景。</small>
+        <SttLocal v-model="ai.sttLocalModel" />
+        <el-collapse class="adv">
+          <el-collapse-item title="高级：手动指定程序 / 模型文件（Whisper）" name="adv">
         <div class="field">
           <label>whisper-cli 位置 <span :class="status?.whisperFound ? 'ok' : 'bad'">{{ status?.whisperFound ? '已找到' : '未找到' }}</span></label>
-          <div class="keyrow"><el-input v-model="ai.whisperBin" size="small" class="mono" placeholder="留空则在系统 PATH 里找 whisper-cli" @change="refresh" /><el-button size="small" @click="pickFile('whisperBin')">选择…</el-button></div>
+          <small v-if="status?.whisperPath && status.whisperPath !== ai.whisperBin" class="mute">自动检测到：<span class="mono">{{ status.whisperPath }}</span></small>
+          <div class="keyrow"><el-input v-model="ai.whisperBin" size="small" class="mono" placeholder="留空则自动查找（清影安装的、系统 PATH 里的 whisper-cli）" @change="refresh" /><el-button size="small" @click="pickFile('whisperBin')">选择…</el-button></div>
         </div>
         <div class="field">
-          <label>模型文件</label>
-          <div class="keyrow"><el-input v-model="ai.whisperModel" size="small" class="mono" placeholder="ggml-base.bin 的路径" @change="refresh" /><el-button size="small" @click="pickFile('whisperModel')">选择…</el-button></div>
+          <label>模型文件 <span :class="status?.whisperModelPath ? 'ok' : 'bad'">{{ status?.whisperModelPath ? '已找到' : '未找到' }}</span></label>
+          <small v-if="status?.whisperModelPath && status.whisperModelPath !== ai.whisperModel" class="mute">自动检测到：<span class="mono">{{ status.whisperModelPath }}</span></small>
+          <div class="keyrow"><el-input v-model="ai.whisperModel" size="small" class="mono" placeholder="留空则自动使用“设置 → 组件”里下载的模型" @change="refresh" /><el-button size="small" @click="pickFile('whisperModel')">选择…</el-button></div>
         </div>
+          </el-collapse-item>
+        </el-collapse>
       </template>
       <div class="field"><label>音频语言</label><el-input v-model="ai.sttLanguage" size="small" class="short mono" placeholder="留空自动识别，或 zh / en / ja" /></div>
       <div v-if="ai.sttEngine === 'local'" class="field">

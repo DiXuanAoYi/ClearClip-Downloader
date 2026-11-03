@@ -1,16 +1,24 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口、迷你窗和悬浮拖拽窗可用的权限。平台登录窗口不在此列，无法调用任何命令。",
+  "description": "主窗口、迷你窗、悬浮拖拽窗、写作窗和写作浮标可用的权限。平台登录窗口不在此列，无法调用任何命令。",
   "windows": [
     "main",
     "mini",
-    "float"
+    "float",
+    "write",
+    "wbadge",
+    "shot",
+    "live-overlay",
+    "live-bar",
+    "live-subbar",
+    "live-pick"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
     "dialog:allow-open",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "core:window:allow-start-resize-dragging"
   ]
 }

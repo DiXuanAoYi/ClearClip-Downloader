@@ -45,3 +45,7 @@
 ## 名称与商标
 
 抖音、快手等名称属于各自的权利人，本项目与其无隶属关系。
+
+## wordfreq 词频数据
+
+`desktop/src-tauri/src/wordlist_en.txt`（英文常用词按频率排序的前 12000 个词）来自 [wordfreq](https://github.com/rspeer/wordfreq)，数据许可 CC BY-SA 4.0，用于字幕学习里的离线词汇等级。

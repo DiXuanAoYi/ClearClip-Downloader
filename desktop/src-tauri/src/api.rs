@@ -161,6 +161,53 @@ pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply
                 Err(e) => err("500 Internal Server Error", &e.message),
             }
         }
+        // 字幕学习：生词本（浏览器扩展用）。查词本身走 /ai/run 的 kind=lookup
+        ("GET", "/api/v1/vocab/list") => {
+            let q = req.query.get("q").cloned().unwrap_or_default();
+            let f = req.query.get("state").cloned().unwrap_or_else(|| "all".into());
+            match crate::vocab::list(&state.data_dir, &q, &f, 2000).and_then(|w| Ok((w, crate::vocab::stats(&state.data_dir)?))) {
+                Ok((words, stats)) => ok(json!({"words": words, "stats": stats})),
+                Err(e) => err("500 Internal Server Error", &e.message),
+            }
+        }
+        ("GET", "/api/v1/vocab/words") => match crate::vocab::all_words(&state.data_dir) {
+            Ok(words) => ok(json!({"words": words})),
+            Err(e) => err("500 Internal Server Error", &e.message),
+        },
+        ("POST", "/api/v1/vocab/add") => match serde_json::from_slice::<crate::vocab::NewWord>(&req.body) {
+            Ok(w) => match crate::vocab::add(&state.data_dir, &w) {
+                Ok(id) => ok(json!({"id": id})),
+                Err(e) => err("400 Bad Request", &e.message),
+            },
+            Err(_) => err("400 Bad Request", "请求格式不对"),
+        },
+        ("POST", "/api/v1/vocab/remove") => {
+            let id = serde_json::from_slice::<Value>(&req.body).ok().and_then(|v| v["id"].as_i64()).unwrap_or(0);
+            match crate::vocab::remove(&state.data_dir, id) {
+                Ok(()) => ok(json!({"ok": true})),
+                Err(e) => err("500 Internal Server Error", &e.message),
+            }
+        }
+        ("POST", "/api/v1/vocab/review") => {
+            let v = serde_json::from_slice::<Value>(&req.body).unwrap_or(Value::Null);
+            match crate::vocab::review(&state.data_dir, v["id"].as_i64().unwrap_or(0), v["grade"].as_u64().unwrap_or(1) as u8) {
+                Ok(w) => ok(json!({"word": w})),
+                Err(e) => err("500 Internal Server Error", &e.message),
+            }
+        }
+        ("POST", "/api/v1/vocab/unfamiliar") => {
+            let v = serde_json::from_slice::<Value>(&req.body).unwrap_or(Value::Null);
+            let words: Vec<String> =
+                v["words"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).take(400).collect()).unwrap_or_default();
+            ok(json!({"words": crate::vocab::unfamiliar(&words, v["minRank"].as_u64().unwrap_or(0) as usize)}))
+        }
+        ("GET", "/api/v1/vocab/export") => {
+            let f = req.query.get("format").cloned().unwrap_or_else(|| "csv".into());
+            match crate::vocab::export(&state.data_dir, &f) {
+                Ok((text, ext)) => ok(json!({"text": text, "ext": ext})),
+                Err(e) => err("500 Internal Server Error", &e.message),
+            }
+        }
         // 视频摘要（浏览器扩展用）：提交 → 轮询
         ("GET", "/api/v1/ai/status") => {
             // 浏览器扩展顺带报到：桌面端据此在对应浏览器的窗口里不再弹写作浮标
