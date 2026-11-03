@@ -53,6 +53,8 @@
       border: 1px solid #cfd5d1; border-radius: 10px; box-shadow: 0 12px 32px #0003; padding: 10px 12px; }
     .card .src { color: #5d6862; font-size: 12px; max-height: 4.5em; overflow: hidden; margin-bottom: 6px; }
     .card .out { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.6; }
+    .card .cmpRow + .cmpRow { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #c9d2cd; }
+    .card .eng { font-size: 11px; color: #5d6862; margin-bottom: 2px; }
     .card .bar { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
     .card .bar .grow { flex: 1; color: #5d6862; font-size: 12px; }
     .bar-pill { position: fixed; z-index: 2147483647; right: 16px; bottom: 16px; display: flex; gap: 8px; align-items: center; background: #1d2420; color: #fff;
@@ -371,14 +373,39 @@
     },
     { passive: true, capture: true },
   )
+  // 按住：超过 holdMs 就翻译（不用松手）；松手早于这个时间算单击。其他键或鼠标按下都取消。
+  let holdTimer = 0
+  let held = false
+  const clearHold = () => {
+    clearTimeout(holdTimer)
+    holdTimer = 0
+  }
   document.addEventListener('keydown', (e) => {
+    if (e.repeat && e.key === S.cfg.hover) return
     tapKey = S.cfg.hover !== 'off' && e.key === S.cfg.hover ? e.key : null
-    if (e.key !== S.cfg.hover) tapKey = null
+    if (e.key !== S.cfg.hover) {
+      tapKey = null
+      clearHold()
+      return
+    }
+    held = false
+    clearHold()
+    if (tapKey && S.cfg.holdMs > 0) {
+      holdTimer = setTimeout(() => {
+        holdTimer = 0
+        if (!tapKey) return
+        held = true
+        // 按住只负责“翻译”，已经翻过的段落不动（还原用单击）
+        hoverTranslate(true)
+      }, S.cfg.holdMs)
+    }
   }, true)
-  document.addEventListener('mousedown', () => (tapKey = null), true)
+  document.addEventListener('mousedown', () => ((tapKey = null), clearHold()), true)
   document.addEventListener('keyup', (e) => {
-    if (tapKey && e.key === tapKey) hoverTranslate()
+    clearHold()
+    if (tapKey && e.key === tapKey && !held) hoverTranslate()
     tapKey = null
+    held = false
   }, true)
 
   function blockUnder(el) {
@@ -398,12 +425,13 @@
     return null
   }
 
-  async function hoverTranslate() {
+  async function hoverTranslate(onlyTranslate = false) {
     const b = S.lastBlock && blockUnder(S.lastBlock)
     if (!b) return
     ensureStyle()
     const rec = S.blocks.get(b)
     if (rec?.node) {
+      if (onlyTranslate) return
       // 再点一次 = 还原这一段
       rec.node.remove()
       unhide(b)
@@ -465,31 +493,64 @@
 
   async function translateSelection(text, rect) {
     closeCard()
-    const out = h('div', { class: 'out', text: '正在翻译…' })
+    const list = h('div', { class: 'cmp' })
     const copyBtn = h('button', { class: 'sec', text: '复制', disabled: true })
-    selCard = h('div', { class: 'card' }, h('div', { class: 'src', text: text.slice(0, 200) }), out,
-      h('div', { class: 'bar' }, h('span', { class: 'grow', text: T.nameOf(S.cfg.target) }), copyBtn, h('button', { class: 'sec', text: '关闭', onclick: closeCard })))
+    const cmpBtn = h('button', { class: 'sec', text: '对比其他服务', onclick: () => compareMore() })
+    selCard = h('div', { class: 'card' }, h('div', { class: 'src', text: text.slice(0, 200) }), list,
+      h('div', { class: 'bar' }, h('span', { class: 'grow', text: T.nameOf(S.cfg.target) }), T.ENGINES.length > 1 ? cmpBtn : null, copyBtn, h('button', { class: 'sec', text: '关闭', onclick: closeCard })))
     const box = rect || { left: innerWidth / 2 - 190, bottom: innerHeight / 3 }
     selCard.style.left = `${Math.max(8, Math.min(box.left, innerWidth - 400))}px`
     selCard.style.top = `${Math.max(8, Math.min(box.bottom + 8, innerHeight - 200))}px`
     uiRoot().add(selCard)
-    const r = await send({ type: 'cc-tr', texts: [text], target: S.cfg.target, engine: S.cfg.engine, page: pageInfo() })
-    if (!selCard) return
-    if (!r.ok) {
-      out.textContent = r.error || '翻译失败了'
-      return
+
+    const rows = new Map()
+    const shown = new Set()
+    let best = ''
+    const row = (engine) => {
+      const out = h('div', { class: 'out', text: '正在翻译…' })
+      const el = h('div', { class: 'cmpRow' }, T.ENGINES.length > 1 ? h('div', { class: 'eng', text: T.ENGINE_NAMES[engine] || engine }) : null, out)
+      list.append(el)
+      rows.set(engine, out)
+      return out
     }
-    const tr = r.texts?.[0] || ''
-    out.textContent = tr === text ? '这段文字已经是目标语言，不用翻译。' : tr
-    copyBtn.disabled = tr === text
+    const one = async (engine) => {
+      if (shown.has(engine)) return
+      shown.add(engine)
+      const out = row(engine)
+      const r = await send({ type: 'cc-tr', texts: [text], target: S.cfg.target, engine, page: pageInfo() })
+      if (!selCard) return
+      if (!r.ok) {
+        out.textContent = r.error || '翻译失败了'
+        return
+      }
+      const tr = r.texts?.[0] || ''
+      out.textContent = tr === text ? '这段文字已经是目标语言，不用翻译。' : tr
+      if (tr !== text && !best) {
+        best = tr
+        copyBtn.disabled = false
+      }
+      // 每行点一下复制自己的译文
+      if (tr !== text) {
+        out.title = '点一下复制这个译文'
+        out.style.cursor = 'copy'
+        out.onclick = () => navigator.clipboard?.writeText(tr).then(() => (copyBtn.textContent = '已复制'), () => (copyBtn.textContent = '复制失败'))
+      }
+    }
+    const compareMore = () => {
+      cmpBtn.remove()
+      return Promise.all(T.ENGINES.map(one))
+    }
     copyBtn.onclick = async () => {
       try {
-        await navigator.clipboard.writeText(tr)
+        await navigator.clipboard.writeText(best)
         copyBtn.textContent = '已复制'
       } catch {
         copyBtn.textContent = '复制失败'
       }
     }
+    // 默认只用设置里选的服务；开了“并排对比”就一次问全部
+    if (S.cfg.compare) await compareMore()
+    else await one(S.cfg.engine)
   }
 
   // ---------- 输入框：连按三次空格，译成“输入框语言”----------

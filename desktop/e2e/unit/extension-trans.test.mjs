@@ -109,3 +109,17 @@ console.log('extension-trans: ok')
   assert.deepEqual(JSON.parse(JSON.stringify(parsed)), { 'github.com': { target: 'ja', mode: 'replace' }, 'news.site.com': { mode: 'replace' } })
   assert.equal(T.formatSites(parsed), 'github.com ja replace\nnews.site.com - replace')
 }
+
+// ---- 对比翻译与按住翻译
+{
+  const d = plain(T.normalizeCfg(undefined))
+  assert.equal(d.holdMs, 450)
+  assert.equal(d.compare, false)
+  assert.equal(T.normalizeCfg({ holdMs: 0 }).holdMs, 0)
+  assert.equal(T.normalizeCfg({ holdMs: 99999 }).holdMs, 2000)
+  assert.equal(T.normalizeCfg({ holdMs: -5 }).holdMs, 0)
+  assert.equal(T.normalizeCfg({ holdMs: 'abc' }).holdMs, 450)
+  assert.equal(T.normalizeCfg({ compare: true }).compare, true)
+  assert.equal(T.normalizeCfg({ compare: 'yes' }).compare, false)
+  assert.ok(T.ENGINES.every((e) => T.ENGINE_NAMES[e]))
+}

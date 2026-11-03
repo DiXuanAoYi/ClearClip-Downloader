@@ -200,6 +200,13 @@
   const STYLES = ['card', 'dim', 'underline', 'highlight', 'plain']
   const ENGINES = ['clearclip', 'google']
   const HOVER_KEYS = ['off', 'Control', 'Alt', 'Shift']
+  /** 对比翻译时每个服务的显示名 */
+  const ENGINE_NAMES = { clearclip: '清影（大模型）', google: '谷歌翻译' }
+  /** 按住修饰键多少毫秒算“按住”：0 = 只认单击 */
+  const clampHold = (v) => {
+    const n = Math.round(Number(v))
+    return Number.isFinite(n) ? Math.min(2000, Math.max(0, n)) : 450
+  }
 
   const DEFAULT_CFG = {
     target: 'zh-CN', // 网页翻译的目标语言
@@ -207,6 +214,8 @@
     style: 'card', // 译文样式（card 淡蓝底色 + 左侧竖线）
     engine: 'clearclip', // clearclip 用清影里设置的大模型 / google 免费的谷歌翻译（页面文字会发给谷歌）
     hover: 'Control', // 单击一下这个键，翻译鼠标指着的段落；off 关闭
+    holdMs: 450, // 按住上面这个键超过这么久也会翻译（不用松手）；0 = 只认单击
+    compare: false, // 划词翻译时把所有翻译服务的结果并排显示
     select: true, // 选中文字后出现“译”按钮
     input: true, // 输入框里连按三次空格，翻译成下面的语言
     inputLang: 'en',
@@ -272,6 +281,8 @@
       style: STYLES.includes(r.style) ? r.style : DEFAULT_CFG.style,
       engine: ENGINES.includes(r.engine) ? r.engine : DEFAULT_CFG.engine,
       hover: HOVER_KEYS.includes(r.hover) ? r.hover : DEFAULT_CFG.hover,
+      holdMs: clampHold(r.holdMs ?? DEFAULT_CFG.holdMs),
+      compare: r.compare === true,
       select: r.select !== false,
       input: r.input !== false,
       inputLang: lang(r.inputLang, DEFAULT_CFG.inputLang),
@@ -341,7 +352,7 @@
 
   globalThis.ccTrans = {
     LANGS, NAMES, uiLang, label, byCode, promptName, nameOf, scriptCounts, inTarget, worthTranslating, pageInTarget, batchPlan,
-    DEFAULT_CFG, MODES, STYLES, ENGINES, HOVER_KEYS, normalizeCfg, normalizeSites, parseSites, formatSites, effectiveCfg, hostList, shouldAuto, autoMatches, listed,
+    DEFAULT_CFG, MODES, STYLES, ENGINES, ENGINE_NAMES, HOVER_KEYS, normalizeCfg, normalizeSites, parseSites, formatSites, effectiveCfg, hostList, shouldAuto, autoMatches, listed,
     googleUrl, parseGoogle, cacheKey, pruneCache,
   }
 })()

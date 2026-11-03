@@ -184,10 +184,14 @@
       <div class="col"><label>译文样式</label><select id="trStyle"><option value="card">底色块（醒目）</option><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>
     </div>
     <div class="rowBtns">
-      <div class="col"><label>悬停翻译（单击此键）</label><select id="trHover"><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="off">关闭</option></select></div>
+      <div class="col"><label>悬停翻译（单击或按住此键）</label><select id="trHover"><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="off">关闭</option></select></div>
       <div class="col"><label>输入框翻译成</label><select id="trInputLang"></select></div>
     </div>
+    <div class="rowBtns">
+      <div class="col"><label>按住多久直接翻译</label><select id="trHold"><option value="0">不用，只认单击</option><option value="300">0.3 秒</option><option value="450">0.45 秒（默认）</option><option value="700">0.7 秒</option><option value="1000">1 秒</option></select></div>
+    </div>
     <label class="row"><input id="trSelect" type="checkbox" /> 选中文字后显示“译”按钮</label>
+    <label class="row"><input id="trCompare" type="checkbox" /> 划词翻译时并排显示所有翻译服务的结果（清影大模型 + 谷歌）；关掉则只用上面的引擎，卡片里可以临时“对比其他服务”</label>
     <label class="row"><input id="trInput" type="checkbox" /> 输入框里连按三次空格，翻译成上面的语言</label>
     <label class="row"><input id="trDomain" type="checkbox" /> 翻译前先判断网页领域，按领域选词（更准，多一次模型调用；只对“清影（大模型）”有效）</label>
     <label class="row"><input id="trLazy" type="checkbox" /> 只翻译看得见（和快要看见）的段落</label>

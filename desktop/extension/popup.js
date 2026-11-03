@@ -534,6 +534,8 @@ async function loadTransCfg() {
   $('trEngine').value = c.engine
   $('trStyle').value = c.style
   $('trHover').value = c.hover
+  $('trHold').value = String(c.holdMs)
+  $('trCompare').checked = c.compare
   $('trSelect').checked = c.select
   $('trInput').checked = c.input
   $('trLazy').checked = c.lazy
@@ -554,6 +556,8 @@ $('saveTrans').onclick = async () => {
     style: $('trStyle').value,
     hover: $('trHover').value,
     inputLang: $('trInputLang').value,
+    holdMs: Number($('trHold').value),
+    compare: $('trCompare').checked,
     select: $('trSelect').checked,
     input: $('trInput').checked,
     lazy: $('trLazy').checked,
