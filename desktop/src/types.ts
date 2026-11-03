@@ -966,6 +966,7 @@ export interface Settings {
   theme: 'system' | 'dark' | 'light'
   closeToTray: boolean
   shortcut: string
+  shotHotkey: string
   checkUpdate: boolean
   disclaimerAccepted: boolean
   autoResume: boolean

@@ -53,10 +53,12 @@ pub mod providers;
 pub mod quality;
 pub mod rules;
 pub mod safebox;
+pub mod scrcap;
 pub mod secret;
 pub mod security;
 pub mod security_cmds;
 pub mod settings;
+pub mod shotwin;
 pub mod subedit;
 pub mod subgen;
 pub mod subs;
@@ -260,8 +262,13 @@ pub fn run() {
                         let write = app
                             .try_state::<Arc<AppState>>()
                             .and_then(|st| st.settings_raw().writing.hotkey.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok());
+                        let shot = app
+                            .try_state::<Arc<AppState>>()
+                            .and_then(|st| st.settings_raw().shot_hotkey.trim().parse::<tauri_plugin_global_shortcut::Shortcut>().ok());
                         if panic.as_ref() == Some(shortcut) {
                             security::panic(app);
+                        } else if shot.as_ref() == Some(shortcut) {
+                            shotwin::hotkey(app);
                         } else if write.as_ref() == Some(shortcut) {
                             writeassist::hotkey(app);
                         } else {
@@ -701,6 +708,9 @@ pub fn run() {
             commands::show_main,
             commands::hide_mini,
             commands::mini_ready,
+            shotwin::shot_take,
+            shotwin::shot_run,
+            shotwin::shot_close,
             writeassist::write_take,
             writeassist::write_badge_click,
             writeassist::write_off_this_app,

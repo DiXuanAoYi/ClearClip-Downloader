@@ -198,6 +198,8 @@ pub struct Settings {
     pub theme: String,
     pub close_to_tray: bool,
     pub shortcut: String,
+    /// 截图翻译的全局快捷键；留空表示不启用
+    pub shot_hotkey: String,
     pub check_update: bool,
     pub disclaimer_accepted: bool,
     /// 启动时自动继续未完成的任务（否则恢复为“已暂停”）
@@ -961,6 +963,7 @@ impl Default for Settings {
             theme: "system".into(),
             close_to_tray: true,
             shortcut: "CommandOrControl+Shift+D".into(),
+            shot_hotkey: "Ctrl+Alt+T".into(),
             check_update: true,
             disclaimer_accepted: false,
             auto_resume: false,
@@ -1178,6 +1181,7 @@ impl Settings {
         self.security.auto_lock_minutes = self.security.auto_lock_minutes.min(24 * 60);
         self.security.safebox_auto_lock_minutes = self.security.safebox_auto_lock_minutes.min(24 * 60);
         self.security.panic_shortcut = self.security.panic_shortcut.trim().to_string();
+        self.shot_hotkey = self.shot_hotkey.trim().to_string();
         self.writing.sanitize();
         self.max_size_mb = self.max_size_mb.min(1_000_000);
         self.library.trash_keep_days = self.library.trash_keep_days.min(3650);

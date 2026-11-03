@@ -1081,6 +1081,7 @@ dependencies = [
  "lopdf",
  "lzma-rs",
  "md-5",
+ "png 0.17.16",
  "prost",
  "qrcode",
  "regex",
