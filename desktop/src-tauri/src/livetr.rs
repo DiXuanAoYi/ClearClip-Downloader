@@ -780,7 +780,7 @@ fn vision_png(f: &Frame) -> AppResult<(Vec<u8>, usize, usize)> {
     Ok((out, nw, nh))
 }
 
-fn close_subbar_if_idle(app: &AppHandle) {
+pub fn close_subbar_if_idle(app: &AppHandle) {
     if !crate::liveaudio::running() {
         close_subbar(app);
     }

@@ -726,6 +726,8 @@ pub fn run() {
             shotwin::shot_run,
             shotwin::shot_close,
             livetr::sc_status,
+            liveaudio::sc_audio_start,
+            liveaudio::sc_audio_stop,
             livetr::sc_start,
             livetr::sc_stop,
             livetr::sc_toggle,
