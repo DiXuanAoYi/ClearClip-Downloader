@@ -2146,6 +2146,7 @@ export interface ScreenStatus {
   mode: string
   target: ScreenTarget | null
   hidden: boolean
+  paused: boolean
   msg: string
   audio: boolean
 }

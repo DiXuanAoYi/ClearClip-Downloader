@@ -97,6 +97,7 @@ pub struct Status {
     pub mode: String,
     pub target: Option<Target>,
     pub hidden: bool,
+    pub paused: bool,
     pub msg: String,
     pub audio: bool,
 }
@@ -106,6 +107,7 @@ pub struct Status {
 struct Session {
     stop: Arc<AtomicBool>,
     hidden: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     mode: Arc<Mutex<String>>,
     target: Target,
 }
@@ -131,6 +133,7 @@ pub fn status() -> Status {
         mode: s.as_ref().map(|s| lock_in(&s.mode).clone()).unwrap_or_default(),
         target: s.as_ref().map(|s| s.target.clone()).or_else(|| lock(&LAST).clone()),
         hidden: s.as_ref().is_some_and(|s| s.hidden.load(Ordering::Relaxed)),
+        paused: s.as_ref().is_some_and(|s| s.paused.load(Ordering::Relaxed)),
         msg: lock(&MSG).clone(),
         audio: crate::liveaudio::running(),
     }
@@ -410,7 +413,7 @@ fn save_live(st: &AppState, f: impl FnOnce(&mut LiveSettings)) {
 // ---------- 小悬浮钮 ----------
 
 const BAR_BTN: i32 = 44;
-const BAR_W: i32 = 330;
+const BAR_W: i32 = 560;
 
 /// 屏幕边上的小悬浮钮：平时是一个圆钮，点开是控制条。
 pub fn ensure_bar(app: &AppHandle, on: bool) {
@@ -454,6 +457,7 @@ struct Runner {
     st: Arc<AppState>,
     stop: Arc<AtomicBool>,
     hidden: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     mode: Arc<Mutex<String>>,
     target: Target,
     t0: Instant,
@@ -592,7 +596,7 @@ impl Runner {
         } else {
             ensure_overlay(&self.app, rect);
         }
-        if self.hidden.load(Ordering::Relaxed) {
+        if self.hidden.load(Ordering::Relaxed) || self.paused.load(Ordering::Relaxed) {
             return Ok(());
         }
         if self.now() < self.backoff_until {
@@ -917,13 +921,16 @@ pub fn start(app: &AppHandle, st: &Arc<AppState>, mut target: Target, mode: Opti
 
     let stop_flag = Arc::new(AtomicBool::new(false));
     let hidden = Arc::new(AtomicBool::new(false));
+    let paused = Arc::new(AtomicBool::new(false));
     let mode_cell = Arc::new(Mutex::new(mode.clone()));
-    *lock(&SESSION) = Some(Session { stop: stop_flag.clone(), hidden: hidden.clone(), mode: mode_cell.clone(), target: target.clone() });
+    *lock(&SESSION) =
+        Some(Session { stop: stop_flag.clone(), hidden: hidden.clone(), paused: paused.clone(), mode: mode_cell.clone(), target: target.clone() });
     let runner = Runner {
         app: app.clone(),
         st: st.clone(),
         stop: stop_flag,
         hidden,
+        paused,
         mode: mode_cell,
         target,
         t0: Instant::now(),
@@ -1009,6 +1016,19 @@ pub fn set_hidden(app: &AppHandle, hidden: Option<bool>) -> bool {
     };
     let _ = app.emit_to(OV, EVT_HIDDEN, v);
     let _ = app.emit_to(SUBBAR, EVT_HIDDEN, v);
+    let _ = app.emit(EVT_STATE, status());
+    v
+}
+
+/// 暂停 / 继续：暂停时停止抓屏，已贴的译文留在原处。
+pub fn set_paused(app: &AppHandle, paused: Option<bool>) -> bool {
+    let v = {
+        let g = lock(&SESSION);
+        let Some(sess) = g.as_ref() else { return false };
+        let v = paused.unwrap_or(!sess.paused.load(Ordering::Relaxed));
+        sess.paused.store(v, Ordering::Relaxed);
+        v
+    };
     let _ = app.emit(EVT_STATE, status());
     v
 }
@@ -1138,6 +1158,11 @@ pub fn sc_set_mode(app: AppHandle, state: St<'_>, mode: String) -> Status {
         save_live(&state, |l| l.mode = mode);
     }
     status()
+}
+
+#[tauri::command]
+pub fn sc_pause(app: AppHandle, paused: Option<bool>) -> bool {
+    set_paused(&app, paused)
 }
 
 #[tauri::command]

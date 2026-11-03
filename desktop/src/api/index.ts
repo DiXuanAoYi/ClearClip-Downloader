@@ -394,6 +394,7 @@ export const api = {
   scPick: () => invoke<void>('sc_pick'),
   scSetMode: (mode: string) => invoke<ScreenStatus>('sc_set_mode', { mode }),
   scHide: (hidden?: boolean) => invoke<boolean>('sc_hide', { hidden }),
+  scPause: (paused?: boolean) => invoke<boolean>('sc_pause', { paused }),
   scWindows: () => invoke<ScreenWindow[]>('sc_windows'),
   scOcrLangs: () => invoke<{ tag: string; name: string }[]>('sc_ocr_langs'),
   scOverlayState: () => invoke<ScreenPayload | null>('sc_overlay_state'),

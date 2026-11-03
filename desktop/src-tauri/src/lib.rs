@@ -739,6 +739,7 @@ pub fn run() {
             livetr::sc_pick_cancel,
             livetr::sc_set_mode,
             livetr::sc_hide,
+            livetr::sc_pause,
             livetr::sc_windows,
             livetr::sc_ocr_langs,
             livetr::sc_overlay_state,

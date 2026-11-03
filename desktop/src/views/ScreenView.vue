@@ -11,7 +11,7 @@ import { formatBytes, formatDateTime } from '../utils/format'
 /** 实时屏幕翻译：翻译别的软件和游戏画面上的文字。控制在这里，也可以用悬浮钮、托盘和快捷键。 */
 const app = useAppStore()
 const form = ref<ScreenSettings>(JSON.parse(JSON.stringify(app.settings!.live)) as ScreenSettings)
-const st = ref<ScreenStatus>({ supported: true, running: false, mode: 'standard', target: null, hidden: false, msg: '', audio: false })
+const st = ref<ScreenStatus>({ supported: true, running: false, mode: 'standard', target: null, hidden: false, paused: false, msg: '', audio: false })
 const wins = ref<ScreenWindow[]>([])
 const winPick = ref<number | ''>('')
 const langs = ref<{ tag: string; name: string }[]>([])
@@ -297,6 +297,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         <el-button v-if="!st.running" type="success" :disabled="!st.supported || !st.target" @click="start()">开始（{{ form.hotkey }}）</el-button>
         <el-button v-else type="danger" @click="stop">停止（{{ form.hotkey }}）</el-button>
         <el-button :disabled="!st.supported || !st.target" :loading="trying" @click="tryOnce">试识别一次</el-button>
+        <el-button v-if="st.running" @click="api.scPause()">{{ st.paused ? '继续' : '暂停' }}</el-button>
         <el-button v-if="st.running" @click="api.scHide()">{{ st.hidden ? '显示译文' : '隐藏译文' }}（{{ form.hotkeyHide }}）</el-button>
       </div>
       <div v-if="tried" class="try">
