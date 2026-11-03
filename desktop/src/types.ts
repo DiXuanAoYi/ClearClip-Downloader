@@ -2041,3 +2041,32 @@ export interface WriteJob {
   result: { text?: string; style?: string; candidates?: { text: string; guard?: { missing: string[]; ratio: number; warn: boolean } | null }[]; corrected?: string; issues?: { from: string; to: string; reason: string }[] } | null
   error: string | null
 }
+
+export interface VocabWord {
+  id: number
+  word: string
+  phonetic: string
+  pos: string
+  meaning: string
+  ctxMeaning: string
+  sentence: string
+  sourceTitle: string
+  sourceUrl: string
+  timeSec: number
+  created: number
+  due: number
+  intervalDays: number
+  reps: number
+  lapses: number
+  level: string
+  /** 三个评分按钮各自的“下次复习”提示：不认识 / 模糊 / 认识 */
+  next: [string, string, string]
+}
+
+export interface VocabStats {
+  total: number
+  due: number
+  fresh: number
+  learned: number
+  today: number
+}

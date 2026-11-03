@@ -26,6 +26,7 @@ const VIEWS: [ViewName, string, string][] = [
   ['subs', '订阅', 'subscriptions dingyue'],
   ['live', '直播', 'live zhibo'],
   ['library', '媒体库', 'library meitiku'],
+  ['vocab', '生词本', 'vocab shengciben words review fuxi'],
   ['tools', '工具箱', 'tools toolbox gongjuxiang'],
   ['safebox', '保险箱', 'safebox vault baoxianxiang'],
   ['settings', '设置', 'settings shezhi'],
