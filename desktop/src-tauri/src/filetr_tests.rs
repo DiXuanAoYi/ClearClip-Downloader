@@ -119,3 +119,40 @@ fn pdf_lines_are_reflowed_into_paragraphs() {
     assert_eq!(extract_plain(&t, false).len(), 3);
     assert_eq!(kind_of(Path::new("a.pdf")), Some(Kind::Pdf));
 }
+
+#[test]
+fn page_sizes_cover_everything() {
+    // 字幕：每 40 条一页，最后一页是余数
+    assert_eq!(page_sizes(&[], 95, true), vec![40, 40, 15]);
+    assert_eq!(page_sizes(&[], 0, true), vec![0]);
+    // 文档：按各个部分（章 / 页）原样分
+    assert_eq!(page_sizes(&[3, 0, 5], 8, false), vec![3, 0, 5]);
+}
+
+#[test]
+fn cache_roundtrip_and_key_depends_on_target() {
+    let dir = std::env::temp_dir().join(format!("cc-filetr-cache-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("a.txt");
+    std::fs::write(&f, "hello").unwrap();
+    let a = cache_path(&dir, &f, "简体中文");
+    assert_ne!(a, cache_path(&dir, &f, "English"));
+    let v = View { input: "x".into(), pages: vec![ViewPage { src: vec!["a".into()], trans: vec![Some("甲".into())] }], ..Default::default() };
+    save_cache(&a, &v);
+    let back = load_cache(&a).unwrap();
+    assert_eq!(back.pages[0].trans[0].as_deref(), Some("甲"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn preview_splits_text_into_pages() {
+    let dir = std::env::temp_dir().join(format!("cc-filetr-pv-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("b.md");
+    std::fs::write(&f, "# Title\n\nFirst paragraph here.\n\nSecond paragraph here.\n").unwrap();
+    let v = preview(&f).unwrap();
+    assert_eq!(v.pages.len(), 1);
+    assert!(v.pages[0].src.len() >= 2);
+    assert!(v.pages[0].trans.iter().all(Option::is_none));
+    let _ = std::fs::remove_dir_all(&dir);
+}

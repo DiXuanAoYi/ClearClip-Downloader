@@ -458,6 +458,85 @@ impl Default for Opts {
     }
 }
 
+/// 阅读器 / 缓存用的旁路数据：每个片段的原文和译文，按页（部分）分组。
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct View {
+    pub input: String,
+    pub target: String,
+    pub bilingual: bool,
+    /// 每一页（EPUB 的一章、PDF 的一页、字幕按 40 条分页）的片段
+    pub pages: Vec<ViewPage>,
+    pub failed: usize,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewPage {
+    pub src: Vec<String>,
+    pub trans: Vec<Option<String>>,
+}
+
+fn cache_path(data_dir: &Path, input: &Path, target: &str) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let len = std::fs::metadata(input).map(|m| m.len()).unwrap_or(0);
+    let mut h = Sha256::new();
+    h.update(input.to_string_lossy().as_bytes());
+    h.update(len.to_le_bytes());
+    h.update(target.as_bytes());
+    let hex: String = h.finalize().iter().take(10).map(|b| format!("{b:02x}")).collect();
+    data_dir.join("filetr").join(format!("{hex}.json"))
+}
+
+fn load_cache(path: &Path) -> Option<View> {
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+}
+
+fn save_cache(path: &Path, v: &View) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(b) = serde_json::to_vec(v) {
+        let _ = std::fs::write(path, b);
+    }
+}
+
+/// 把一长串片段切成页：每页的片段数。
+pub fn page_sizes(parts_slots: &[usize], total: usize, is_sub: bool) -> Vec<usize> {
+    if is_sub || parts_slots.is_empty() {
+        let n = total.div_ceil(40).max(1);
+        return (0..n).map(|i| (total - i * 40).min(40)).collect();
+    }
+    parts_slots.to_vec()
+}
+
+/// 读出某个任务的阅读器数据（任务的输出文件旁边没有数据时返回 None）。
+pub fn view_for(data_dir: &Path, input: &Path, target: &str) -> Option<View> {
+    load_cache(&cache_path(data_dir, input, target))
+}
+
+/// 不翻译，只把文件切成页，给阅读器看原文。
+pub fn preview(path: &Path) -> AppResult<View> {
+    let kind = kind_of(path).ok_or_else(|| AppError::invalid("支持 TXT、Markdown、PDF、SRT/VTT/ASS 字幕、Word(docx) 和 EPUB。"))?;
+    let mut v = View { input: path.to_string_lossy().into_owned(), ..Default::default() };
+    if kind == Kind::Sub {
+        let cues = crate::subtitle_tools::read(path)?;
+        let texts: Vec<String> = cues.iter().map(|c| c.lines.join(" ")).collect();
+        let mut at = 0;
+        for n in page_sizes(&[], texts.len(), true) {
+            v.pages.push(ViewPage { src: texts[at..at + n].to_vec(), trans: vec![None; n] });
+            at += n;
+        }
+    } else {
+        for p in load(path, kind)? {
+            let src: Vec<String> = p.slots.iter().map(|s| s.text.clone()).collect();
+            v.pages.push(ViewPage { trans: vec![None; src.len()], src });
+        }
+    }
+    v.pages.retain(|p| !p.src.is_empty());
+    Ok(v)
+}
+
 /// 翻译一份文件，返回输出文件路径。
 pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     let kind = kind_of(input).ok_or_else(|| AppError::invalid("支持 TXT、Markdown、PDF、SRT/VTT/ASS 字幕、Word(docx) 和 EPUB。"))?;
@@ -481,19 +560,53 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     if texts.is_empty() {
         return Err(AppError::invalid("没有找到需要翻译的文字。"));
     }
-    ctx.note(format!("共 {} 段，开始翻译成{}…", texts.len(), target));
+    // 页（部分）的划分：与阅读器一致
+    let slot_counts: Vec<usize> = parts.iter().map(|p| p.slots.len()).collect();
+    let sizes = page_sizes(&slot_counts, texts.len(), kind == Kind::Sub);
+    let sizes: Vec<usize> = sizes.into_iter().filter(|n| *n > 0).collect();
 
-    // 2. 翻译（术语库 + AI 专家 + 网页翻译同款提示词）
-    let work: Vec<Cue> = texts.iter().enumerate().map(|(i, t)| Cue { start: i as u64, end: i as u64 + 1, lines: vec![t.clone()] }).collect();
+    // 缓存：同一个文件、同一目标语言，已经译好的片段不再重翻（也就是“重试失败段落”）
+    let cpath = cache_path(&ctx.st.data_dir, input, &target);
+    let mut trans: Vec<Option<String>> = vec![None; texts.len()];
+    if let Some(old) = load_cache(&cpath) {
+        let flat: Vec<(&String, &Option<String>)> = old.pages.iter().flat_map(|p| p.src.iter().zip(p.trans.iter())).collect();
+        if flat.len() == texts.len() && flat.iter().zip(&texts).all(|((s, _), t)| *s == t) {
+            for (i, (_, t)) in flat.iter().enumerate() {
+                trans[i] = (*t).clone().filter(|x| !x.trim().is_empty());
+            }
+        }
+    }
+    let cached = trans.iter().filter(|t| t.is_some()).count();
+    ctx.note(format!("共 {} 段、{} 页，译成{}；已有 {} 段译文可直接用", texts.len(), sizes.len(), target, cached));
+
+    // 2. 翻译（术语库 + AI 专家 + 网页翻译同款提示词），一页一页地译，每页译完就存缓存
     let terms = if settings.ai.glossary_on { ctx.st.glossary.terms_for("", ai::lang_tag(&target)) } else { vec![] };
     let guide = ctx.st.experts.resolve(&settings.ai.expert, settings.ai.expert_auto, "").map(|e| crate::experts::guide_block(&e)).unwrap_or_default();
     let system = format!("{}{}", crate::vsum::webtrans_system(&target), guide);
-    let prog = |done: usize, total: usize| -> AppResult<()> {
+    let mut view = View { input: input.to_string_lossy().into_owned(), target: target.clone(), bilingual: opts.bilingual, pages: vec![], failed: 0 };
+    let mut at = 0usize;
+    let mut failed = 0usize;
+    for (pi, n) in sizes.iter().enumerate() {
         ctx.check()?;
-        ctx.percent(95.0 * done as f64 / total.max(1) as f64);
-        Ok(())
-    };
-    let t = ai::map_cues_g(&ep, &settings.ai.model, &system, &work, settings.ai.batch_size.clamp(8, 30), &terms, &prog).await?;
+        let todo: Vec<usize> = (at..at + n).filter(|i| trans[*i].is_none()).collect();
+        if !todo.is_empty() {
+            let have = trans.iter().filter(|t| t.is_some()).count();
+            ctx.note(format!("共 {} 页 · 正在译第 {} 页 · 已缓存 {} 段", sizes.len(), pi + 1, have));
+            let work: Vec<Cue> = todo.iter().enumerate().map(|(k, i)| Cue { start: k as u64, end: k as u64 + 1, lines: vec![texts[*i].clone()] }).collect();
+            let prog = |_: usize, _: usize| -> AppResult<()> { ctx.check() };
+            let t = ai::map_cues_g(&ep, &settings.ai.model, &system, &work, settings.ai.batch_size.clamp(8, 30), &terms, &prog).await?;
+            for (k, i) in todo.iter().enumerate() {
+                trans[*i] = t.texts.get(k).cloned().flatten().filter(|x| !x.trim().is_empty());
+            }
+        }
+        failed += (at..at + n).filter(|i| trans[*i].is_none()).count();
+        view.pages.push(ViewPage { src: texts[at..at + n].to_vec(), trans: trans[at..at + n].to_vec() });
+        view.failed = failed;
+        save_cache(&cpath, &view);
+        at += n;
+        ctx.percent(95.0 * at as f64 / texts.len().max(1) as f64);
+    }
+    let t = ai::Translated { texts: trans, failed };
     let tag = if opts.bilingual { "双语" } else { "译文" };
     let base = ai::strip_lang_suffix(&crate::ai::stem_of(input)).to_string();
 

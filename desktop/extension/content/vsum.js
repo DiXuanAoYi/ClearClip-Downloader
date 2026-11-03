@@ -1622,7 +1622,11 @@
       children.push(h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([id, n]) => h('button', { class: S.tab === id ? 'on' : '', role: 'tab', 'aria-selected': S.tab === id, text: id === 'vocab' && VOCAB.list ? `${n} ${VOCAB.list.length}` : n, onclick: () => ((S.tab = id), savePrefs(), render()) }))))
     }
     const body = h('div', { class: 'body' }, h('div', { id: 'prog' }))
-    if (!d) body.append(h('div', { class: 'mute', text: '正在读取字幕…' }))
+    if (!d) {
+      // 读取期间也先把各标签页画出来（灰着），不要整个面板只剩一行字
+      children.push(h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([, n]) => h('button', { disabled: true, role: 'tab', text: n }))))
+      body.append(h('div', { class: 'mute', text: '正在读取字幕…（最多等 25 秒）' }))
+    }
     else {
       if (!d.lines.length && S.tab !== 'more' && S.tab !== 'notes' && S.tab !== 'vocab' && S.tab !== 'comments') body.append(noData())
       else {
@@ -1752,7 +1756,11 @@
     S.data = null
     render()
     try {
-      const d = await Src.load()
+      // 读字幕最多等 25 秒：网络慢或后台没响应时，不要让面板一直停在“正在读取”，直接给出可操作的界面
+      const d = await Promise.race([
+        Src.load(),
+        new Promise((r) => setTimeout(() => r({ title: document.title, url: location.href, site: 'html5', lines: [], chapters: [], tracks: [], note: '读取字幕超时（网络慢或站点没响应）。可以点“重新读取”，或在“更多”里导入字幕 / 用清影转写。', fetchFailed: true }), 25000)),
+      ])
       S.recovering = !d.lines.length // 先走“本地字幕 / 缓存 / 在线字幕 / 自动转写”，都没有结果再列字幕轨
       setData(d)
       try {

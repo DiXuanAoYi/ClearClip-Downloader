@@ -2227,3 +2227,16 @@ export interface OcrStatus {
   size: number
   supported: boolean
 }
+
+export interface FileTransPage {
+  src: string[]
+  trans: (string | null)[]
+}
+
+export interface FileTransView {
+  input: string
+  target: string
+  bilingual: boolean
+  pages: FileTransPage[]
+  failed: number
+}

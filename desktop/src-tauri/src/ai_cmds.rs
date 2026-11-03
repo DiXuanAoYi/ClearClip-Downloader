@@ -200,6 +200,21 @@ pub fn filetr_start(app: AppHandle, path: String, opts: crate::filetr::Opts) -> 
     Ok(media_tools::spawn_job(&app, title_of(&p), "文件翻译", move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
 }
 
+/// 文件翻译：不翻译，只把文件切成页，给阅读器先看原文。
+#[tauri::command]
+pub fn filetr_preview(path: String) -> AppResult<crate::filetr::View> {
+    let p = existing_file(&path)?;
+    crate::filetr::preview(&p)
+}
+
+/// 文件翻译：读出这个文件（和目标语言）已经译好的内容，没有就返回空。
+#[tauri::command]
+pub fn filetr_view(state: St<'_>, path: String, target: Option<String>) -> AppResult<Option<crate::filetr::View>> {
+    let p = existing_file(&path)?;
+    let t = target.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).unwrap_or_else(|| state.settings().ai.target_lang.clone());
+    Ok(crate::filetr::view_for(&state.data_dir, &p, &t))
+}
+
 /// 读取 AI 任务输出的文本结果（摘要 .md、章节 .txt、字幕 .srt）。只能读任务列表里自己生成的文件。
 #[tauri::command]
 pub fn media_job_text(state: St<'_>, id: u64, which: Option<String>) -> AppResult<String> {

@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { ECue } from '../utils/subedit'
 import type {
+  FileTransView,
   ScreenStatus,
   ScreenTarget,
   ScreenWindow,
@@ -303,6 +304,8 @@ export const api = {
   aiSummarize: (path: string) => invoke<number>('ai_summarize', { path }),
   aiTranscribe: (path: string, language?: string) => invoke<number>('ai_transcribe', { path, language }),
   subgenStart: (path: string, opts: SubgenOpts) => invoke<number>('subgen_start', { path, opts }),
+  filetrPreview: (path: string) => invoke<FileTransView>('filetr_preview', { path }),
+  filetrView: (path: string, target?: string) => invoke<FileTransView | null>('filetr_view', { path, target }),
   filetrStart: (path: string, opts: { bilingual: boolean; target?: string }) => invoke<number>('filetr_start', { path, opts }),
   subgenCorrect: (path: string, mode?: string) => invoke<number>('subgen_correct', { path, mode }),
   subtitleTracks: (path: string) => invoke<SubTrackInfo[]>('subtitle_tracks', { path }),
