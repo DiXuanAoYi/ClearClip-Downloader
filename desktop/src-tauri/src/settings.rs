@@ -200,6 +200,10 @@ pub struct Settings {
     pub shortcut: String,
     /// 截图翻译的全局快捷键；留空表示不启用
     pub shot_hotkey: String,
+    /// 截图翻译完成后自动复制译文
+    pub shot_auto_copy: bool,
+    /// 记录最近的截图翻译（只存文字，不存图片）
+    pub shot_history: bool,
     pub check_update: bool,
     pub disclaimer_accepted: bool,
     /// 启动时自动继续未完成的任务（否则恢复为“已暂停”）
@@ -1196,6 +1200,8 @@ impl Default for Settings {
             close_to_tray: true,
             shortcut: "CommandOrControl+Shift+D".into(),
             shot_hotkey: "Ctrl+Alt+T".into(),
+            shot_auto_copy: false,
+            shot_history: true,
             check_update: true,
             disclaimer_accepted: false,
             auto_resume: false,

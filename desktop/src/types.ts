@@ -967,6 +967,8 @@ export interface Settings {
   closeToTray: boolean
   shortcut: string
   shotHotkey: string
+  shotAutoCopy: boolean
+  shotHistory: boolean
   checkUpdate: boolean
   disclaimerAccepted: boolean
   autoResume: boolean
@@ -2091,6 +2093,13 @@ export interface ScreenProfile {
   targetLang: string
   region: [number, number, number, number]
   target: string
+}
+
+export interface ShotEntry {
+  at: number
+  src: string
+  text: string
+  saved: boolean
 }
 
 export interface ScreenSettings {

@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { ECue } from '../utils/subedit'
 import type {
   FileTransView,
+  ShotEntry,
   ScreenStatus,
   ScreenTarget,
   ScreenWindow,
@@ -384,6 +385,14 @@ export const api = {
   writeSettings: () => invoke<WritingSettings>('write_settings'),
   shotTake: () => invoke<{ dataUrl: string; w: number; h: number } | null>('shot_take'),
   shotRun: (req: Record<string, unknown>) => invoke<number>('shot_run', { req }),
+  shotPin: (dataUrl: string, x: number, y: number, w: number, h: number) => invoke<void>('shot_pin', { dataUrl, x, y, w, h }),
+  shotPinTake: () => invoke<string | null>('shot_pin_take'),
+  shotPinClose: () => invoke<void>('shot_pin_close'),
+  shotCompare: (text: string, lang: string) => invoke<string>('shot_compare', { text, lang }),
+  shotHistAdd: (src: string, text: string) => invoke<number>('shot_hist_add', { src, text }),
+  shotHistList: (savedOnly?: boolean) => invoke<ShotEntry[]>('shot_hist_list', { savedOnly }),
+  shotHistSave: (at: number, saved: boolean) => invoke<void>('shot_hist_save', { at, saved }),
+  shotHistClear: (keepSaved?: boolean) => invoke<void>('shot_hist_clear', { keepSaved }),
   shotClose: () => invoke<void>('shot_close'),
   audioStart: () => invoke<ScreenStatus>('sc_audio_start'),
   audioStop: () => invoke<void>('sc_audio_stop'),
