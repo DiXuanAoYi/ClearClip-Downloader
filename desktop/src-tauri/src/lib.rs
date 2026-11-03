@@ -70,6 +70,7 @@ pub mod upload;
 pub mod vault;
 pub mod vidcaps;
 pub mod vidnorm;
+pub mod vocab;
 pub mod vsum;
 mod winframe;
 pub mod writeassist;
@@ -647,6 +648,12 @@ pub fn run() {
             ml::sensevoice::sensevoice_status,
             ml::sensevoice::sensevoice_install,
             ml::sensevoice::sensevoice_remove,
+            vocab::vocab_list,
+            vocab::vocab_stats,
+            vocab::vocab_add,
+            vocab::vocab_remove,
+            vocab::vocab_review,
+            vocab::vocab_export,
             edit::highlights::edit_highlights,
             edit::highlights::edit_highlights_llm,
             edit::analyze::edit_waveform,

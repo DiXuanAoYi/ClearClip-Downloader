@@ -159,7 +159,7 @@ async function startVsum(tab) {
 /** 在当前页面的视频上叠字幕层（再次注入 = 关闭）。 */
 async function startSubLayer(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用字幕层')
-  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'sublayer-logic.js', 'content/vsum-source.js', 'content/sublayer.js'])
+  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/sublayer.js'])
 }
 
 // ---------- 以图搜图 ----------
@@ -245,6 +245,26 @@ const HANDLERS = {
       // 清影没开：用上次的
     }
     return { lang: (await api.storage.local.get('appLang')).appLang || '' }
+  },
+  // 字幕学习：生词本（清影桌面端保存）
+  'cc-vocab': async (m) => {
+    const enc = encodeURIComponent
+    switch (m.op) {
+      case 'words':
+        return { ...(await call('/api/v1/vocab/words')) }
+      case 'list':
+        return { ...(await call(`/api/v1/vocab/list?q=${enc(String(m.q || '').slice(0, 80))}&state=${enc(String(m.state || 'all'))}`)) }
+      case 'add':
+        return { ...(await call('/api/v1/vocab/add', m.word && typeof m.word === 'object' ? m.word : {})) }
+      case 'remove':
+        return { ...(await call('/api/v1/vocab/remove', { id: Number(m.id) || 0 })) }
+      case 'unfamiliar':
+        return { ...(await call('/api/v1/vocab/unfamiliar', { words: Array.isArray(m.words) ? m.words.slice(0, 400) : [], minRank: Number(m.minRank) || 0 })) }
+      case 'export':
+        return { ...(await call(`/api/v1/vocab/export?format=${enc(String(m.format || 'csv'))}`)) }
+      default:
+        throw new Error('不支持的操作')
+    }
   },
   'cc-ai-run': async (m) => ({ ...(await call('/api/v1/ai/run', m.req && typeof m.req === 'object' ? m.req : {})) }),
   'cc-ai-job': async (m) => ({ ...(await call(`/api/v1/ai/job?id=${encodeURIComponent(String(m.id))}`)) }),

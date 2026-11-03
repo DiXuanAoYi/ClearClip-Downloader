@@ -160,7 +160,20 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
         "summary" | "article" | "mindmap" | "cards" | "quotes" | "rewrite" | "comments" => crate::ai_pool::Task::Summary,
         _ => crate::ai_pool::Task::Chat,
     };
-    let mut ep = ai::chat_endpoint_for(&st, &settings, task)?;
+    let mut ep = match ai::chat_endpoint_for(&st, &settings, task) {
+        Ok(ep) => ep,
+        // 查词没有可用模型时，退到离线词频表（只有词汇等级，没有释义）
+        Err(_) if req.kind == "lookup" => {
+            let (id, _) = new_job();
+            with_job(id, |j| {
+                j.done = 1;
+                j.total = 1;
+                j.result = Some(crate::vocab::offline_lookup(req.text.trim()));
+            });
+            return Ok(id);
+        }
+        Err(e) => return Err(e),
+    };
     if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
         ep = crate::writing::route(ep, &req.write.route)?;
     }
@@ -557,7 +570,7 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 23] = [
+    const KINDS: [&str; 24] = [
         "write",
         "style",
         "grammar",
@@ -581,6 +594,7 @@ pub fn check(req: &Req) -> AppResult<()> {
         "domain",
         "comments",
         "askcomments",
+        "lookup",
     ];
     if !KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::invalid("不支持的类型"));
@@ -606,6 +620,9 @@ pub fn check(req: &Req) -> AppResult<()> {
     }
     if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
         crate::writing::check_opts(&req.kind, &req.text, &req.write)?;
+    }
+    if req.kind == "lookup" && (req.text.trim().is_empty() || req.text.chars().count() > 80) {
+        return Err(AppError::invalid("请选一个单词或短语（80 字以内）。"));
     }
     if matches!(req.kind.as_str(), "explain" | "note" | "refine" | "domain") && req.text.trim().is_empty() {
         return Err(AppError::invalid("没有可处理的文字。"));
@@ -687,6 +704,17 @@ fn explain_system(lang: &str) -> String {
         "You explain a piece of text the user selected from a video transcript. Be extremely concise: 1-3 sentences at most, in {lang}. \
          For a word or term give a short definition; for a phrase or claim explain it in context. No preamble such as \"This refers to...\"; use plain language. \
          The transcript may be machine-generated and contain homophone errors: infer the intended word and mention the correct spelling in your answer."
+    )
+}
+
+fn lookup_system(lang: &str) -> String {
+    format!(
+        "You are a bilingual dictionary for a language learner watching a video. Given WORD (a word or short phrase, any inflection) and the SENTENCE it appears in, reply with ONE JSON object only: \
+         {{\"lemma\": base form, \"phonetic\": IPA between slashes or \"\" if not a word of a language with IPA, \"pos\": short part of speech such as n. / v. / adj. / phr., \
+         \"meaning\": common dictionary meaning in {lang} (max 25 characters, 2-3 senses separated by ；), \
+         \"context_meaning\": what it means in THIS sentence in {lang} (max 40 characters, empty if identical to meaning), \
+         \"note\": optional one short usage tip in {lang} (collocation, register, false friend), else \"\"}}. \
+         The transcript may contain recognition errors: if WORD looks like a mis-heard word, give the likely intended word in \"lemma\" and explain in \"note\". No markdown, no extra text."
     )
 }
 
@@ -1339,6 +1367,21 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             let text = chat(ep, model, &pick_system(req, explain_system(lang)), &user).await?;
             progress(1, 1)?;
             Ok(json!({"text": text.trim()}))
+        }
+        "lookup" => {
+            progress(0, 1)?;
+            let word = req.text.trim();
+            let user = format!("WORD: {}\nSENTENCE: {}\nVIDEO: {}", word, req.context.trim(), req.title.trim());
+            let resp = chat(ep, model, &pick_system(req, lookup_system(lang)), &user).await?;
+            progress(1, 1)?;
+            let mut v = serde_json::from_str::<Value>(ai::strip_fences(&resp)).map_err(|_| model_err())?;
+            let r = crate::vocab::rank(word);
+            if let Some(o) = v.as_object_mut() {
+                o.insert("word".into(), json!(word));
+                o.insert("rank".into(), json!(r));
+                o.insert("level".into(), json!(crate::vocab::level(r)));
+            }
+            Ok(v)
         }
         "note" | "refine" => {
             progress(0, 1)?;
