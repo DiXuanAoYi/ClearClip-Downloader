@@ -89,6 +89,8 @@ pub struct Req {
     pub write: crate::writing::Opts,
     /// comments / askcomments：评论
     pub comments: Vec<Cmt>,
+    /// imgtrans：要识别并翻译的图片（data URL）
+    pub image: String,
 }
 
 /// 自定义提示词的长度上限。
@@ -156,7 +158,7 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
     let task = match req.kind.as_str() {
-        "translate" | "punctuate" | "webtrans" | "domain" => crate::ai_pool::Task::Translate,
+        "translate" | "punctuate" | "webtrans" | "domain" | "imgtrans" => crate::ai_pool::Task::Translate,
         "summary" | "article" | "mindmap" | "cards" | "quotes" | "rewrite" | "comments" => crate::ai_pool::Task::Summary,
         _ => crate::ai_pool::Task::Chat,
     };
@@ -570,7 +572,7 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 24] = [
+    const KINDS: [&str; 25] = [
         "write",
         "style",
         "grammar",
@@ -595,6 +597,7 @@ pub fn check(req: &Req) -> AppResult<()> {
         "comments",
         "askcomments",
         "lookup",
+        "imgtrans",
     ];
     if !KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::invalid("不支持的类型"));
@@ -608,6 +611,9 @@ pub fn check(req: &Req) -> AppResult<()> {
     let needs_lines = matches!(req.kind.as_str(), "summary" | "mindmap" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
     if needs_lines && req.lines.iter().all(|l| l.text.trim().is_empty()) {
         return Err(AppError::invalid("没有可处理的字幕。"));
+    }
+    if req.kind == "imgtrans" {
+        crate::imgtrans::check_image(&req.image)?;
     }
     if matches!(req.kind.as_str(), "article" | "rewrite") && req.text.trim().is_empty() {
         return Err(AppError::invalid("没有可处理的文字。"));
@@ -1367,6 +1373,15 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             let text = chat(ep, model, &pick_system(req, explain_system(lang)), &user).await?;
             progress(1, 1)?;
             Ok(json!({"text": text.trim()}))
+        }
+        "imgtrans" => {
+            progress(0, 1)?;
+            let resp = ai::chat_img(ep, model, &crate::imgtrans::system(lang), "Translate the text in this image.", &req.image)
+                .await
+                .map_err(crate::imgtrans::vision_hint)?;
+            progress(1, 1)?;
+            let blocks = crate::imgtrans::parse_blocks(&resp).ok_or_else(model_err)?;
+            Ok(json!({"blocks": blocks}))
         }
         "lookup" => {
             progress(0, 1)?;

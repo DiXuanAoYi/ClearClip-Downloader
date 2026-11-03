@@ -61,6 +61,29 @@ async function captureArea(tab, r, vw) {
   await saveBlob(await pngOf(c), captureName(tab.title, new Date(), 'png'))
 }
 
+/**
+ * 截图翻译用：截可见区域，裁出选框，缩到最宽 1400 像素，存成 JPEG 数据地址。
+ * 太大就继续降画质 / 缩小，直到小于清影接口的上限（约 1.9 MB）。
+ */
+async function cropForTranslate(tab, r, vw, maxChars = 1800000) {
+  const bmp = await bitmapOf(await shotTab(tab))
+  const k = bmp.width / (vw || bmp.width)
+  const sw = Math.max(1, Math.round(r.w * k))
+  const sh = Math.max(1, Math.round(r.h * k))
+  let scale = Math.min(1, 1400 / sw)
+  for (let i = 0; i < 6; i++) {
+    const w = Math.max(1, Math.round(sw * scale))
+    const hh = Math.max(1, Math.round(sh * scale))
+    const c = canvasOf(w, hh)
+    c.getContext('2d').drawImage(bmp, Math.round(r.x * k), Math.round(r.y * k), sw, sh, 0, 0, w, hh)
+    const blob = await (c.convertToBlob ? c.convertToBlob({ type: 'image/jpeg', quality: 0.85 }) : new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.85)))
+    const url = await toDataUrl(blob)
+    if (url.length <= maxChars) return { dataUrl: url, w, h: hh }
+    scale *= 0.75
+  }
+  throw new Error('选区太大，请框选小一点的区域')
+}
+
 /** 整页：一屏一屏滚动截图再拼起来。固定在顶部的元素只保留第一屏；超长页面分成几张图。 */
 function hideFixed() {
   window.__ccFixed = []

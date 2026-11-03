@@ -865,6 +865,7 @@ $('batchLinks').onclick = async () => {
 }
 $('startVsum').onclick = () => runOnPage('vsum')
 $('startSubLayer').onclick = () => runOnPage('sublayer')
+$('startShot').onclick = () => runOnPage('shot')
 $('openSettings').onclick = () => show('settings')
 $('saveRules').onclick = saveRules
 $('notifyDone').onchange = () => api.storage.local.set({ notifyDone: $('notifyDone').checked })

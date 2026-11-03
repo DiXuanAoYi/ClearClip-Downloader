@@ -157,6 +157,11 @@ async function startVsum(tab) {
 }
 
 /** 在当前页面的视频上叠字幕层（再次注入 = 关闭）。 */
+async function startShot(tab) {
+  if (!isWebPage(tab)) throw new Error('当前页面不能使用截图翻译')
+  await injectFiles(tab.id, ['content/ui.js', 'trans-logic.js', 'content/shot.js'])
+}
+
 async function startSubLayer(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用字幕层')
   await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/sublayer.js'])
@@ -195,6 +200,7 @@ const HANDLERS = {
     else if (m.action === 'picker') await startPicker(tab)
     else if (m.action === 'vsum') await startVsum(tab)
     else if (m.action === 'sublayer') await startSubLayer(tab)
+    else if (m.action === 'shot') await startShot(tab)
     else if (m.action === 'batch-links') return await sendPageVideoLinks(tab)
     else if (m.action === 'webtrans') await webTransDo(tab, String(m.mode || 'toggle'))
     else throw new Error('未知操作')
@@ -215,6 +221,14 @@ const HANDLERS = {
   },
   // 页面保存：弹窗发来（带标签页编号）；选区截图由页面里的选框发来
   'cc-page-save': async (m) => ({ ...(await pageSave(String(m.action), await api.tabs.get(Number(m.tabId)), '')) }),
+  // 截图翻译：裁出选区，连同“翻译成什么语言”一起交给页面
+  'cc-shot': async (m, sender) => {
+    const cfg = await getTransCfg()
+    const r = m.rect || {}
+    const rect = { x: Number(r.x) || 0, y: Number(r.y) || 0, w: Number(r.w) || 0, h: Number(r.h) || 0 }
+    if (rect.w < 8 || rect.h < 8) throw new Error('选区太小')
+    return { ...(await cropForTranslate(sender.tab, rect, Number(m.vw) || 0)), lang: ccTrans.promptName(cfg.target) }
+  },
   'cc-area': async (m, sender) => {
     await captureArea(sender.tab, m.rect, m.vw)
     return {}
@@ -295,7 +309,7 @@ api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const handler = msg && HANDLERS[msg.type]
   if (!handler) return false
   // 内容脚本只能从有标签页的发送者来；扩展页面的消息 sender.tab 可能为空
-  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save|capture|area|ai-status|ai-run|ai-job|ai-cancel|note|tr)$/.test(msg.type) && !sender.tab) return false
+  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save|capture|area|shot|ai-status|ai-run|ai-job|ai-cancel|note|tr)$/.test(msg.type) && !sender.tab) return false
   handler(msg, sender)
     .then((r) => sendResponse({ ok: true, ...r }))
     .catch(async (e) => {

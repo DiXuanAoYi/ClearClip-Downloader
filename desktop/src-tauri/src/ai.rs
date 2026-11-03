@@ -302,8 +302,22 @@ pub fn entry_endpoint(st: &AppState, settings: &Settings, id: &str) -> AppResult
 
 /// 一次对话，返回模型的回答文字。用了模型池时 `model` 被忽略，按候选服务各自的模型依次尝试。
 pub async fn chat(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppResult<String> {
+    chat_msg(ep, model, system, json!(user)).await
+}
+
+/// 带一张图片的对话（识图翻译）。`image` 是 `data:image/...;base64,...`。要用支持看图的模型。
+pub async fn chat_img(ep: &Endpoint, model: &str, system: &str, text: &str, image: &str) -> AppResult<String> {
+    let content = json!([
+        {"type": "text", "text": text},
+        {"type": "image_url", "image_url": {"url": image}}
+    ]);
+    chat_msg(ep, model, system, content).await
+}
+
+/// `user` 是消息内容：纯文字是字符串，带图片是内容块数组。
+async fn chat_msg(ep: &Endpoint, model: &str, system: &str, user: Value) -> AppResult<String> {
     if ep.cands.is_empty() {
-        return chat_one(ep, model, system, user).await;
+        return chat_one(ep, model, system, &user).await;
     }
     let now = || crate::db::now();
     let mut tried: Vec<String> = Vec::new();
@@ -318,7 +332,7 @@ pub async fn chat(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppRe
             cands: vec![],
             pool: None,
         };
-        match chat_one(&one, &c.model, system, user).await {
+        match chat_one(&one, &c.model, system, &user).await {
             Ok(t) => {
                 if let Some(p) = &ep.pool {
                     p.record_ok(&c.id, now());
@@ -341,7 +355,7 @@ pub async fn chat(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppRe
     Err(AppError::new(last.kind, format!("模型池里的 {} 个服务都失败了：{}", tried.len(), tried.join("；"))))
 }
 
-async fn chat_one(ep: &Endpoint, model: &str, system: &str, user: &str) -> AppResult<String> {
+async fn chat_one(ep: &Endpoint, model: &str, system: &str, user: &Value) -> AppResult<String> {
     let body = json!({
         "model": model,
         "temperature": 0.2,
