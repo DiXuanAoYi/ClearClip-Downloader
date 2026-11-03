@@ -171,7 +171,7 @@ impl Gate {
             self.first_change = None;
             return Act::Idle;
         }
-        let stable = prev <= thr && self.changed_at.is_none_or(|t| now.saturating_sub(t) >= stable_ms);
+        let stable = prev <= thr && self.changed_at.map_or(true, |t| now.saturating_sub(t) >= stable_ms);
         let forced = self.first_change.is_some_and(|t| now.saturating_sub(t) >= force_ms);
         if stable || forced {
             self.first_change = None;
@@ -267,7 +267,20 @@ pub fn blocks_from(groups: &[Group], trans: &[String], f: &Frame, live: &LiveSet
         .map(|(g, t)| {
             let (bg, fg) = livecore::sample_colors(&f.bgra, f.w, f.h, g.x, g.y, g.w, g.h);
             let font = (g.em * 0.9 * f32::from(live.font_scale) / 100.0).max(f32::from(live.font_min));
-            OBlock { x: g.x, y: g.y, w: g.w, h: g.h, text: t.trim().to_string(), orig: g.text.clone(), fg: livecore::hex(fg), bg: livecore::hex(bg), font, vertical: g.vertical, lines: g.lines, center: false }
+            OBlock {
+                x: g.x,
+                y: g.y,
+                w: g.w,
+                h: g.h,
+                text: t.trim().to_string(),
+                orig: g.text.clone(),
+                fg: livecore::hex(fg),
+                bg: livecore::hex(bg),
+                font,
+                vertical: g.vertical,
+                lines: g.lines,
+                center: false,
+            }
         })
         .collect()
 }
@@ -533,7 +546,18 @@ impl Runner {
         if self.shown {
             self.shown = false;
             self.emit_blocks(&self.last_mode.clone(), vec![], &LiveSettings::default(), false, "", false);
-            let _ = self.app.emit_to(SUBBAR, EVT_SUB, SubPayload { seq: SEQ.fetch_add(1, Ordering::Relaxed), text: String::new(), orig: String::new(), bilingual: false, font: 24, source: "screen".into() });
+            let _ = self.app.emit_to(
+                SUBBAR,
+                EVT_SUB,
+                SubPayload {
+                    seq: SEQ.fetch_add(1, Ordering::Relaxed),
+                    text: String::new(),
+                    orig: String::new(),
+                    bilingual: false,
+                    font: 24,
+                    source: "screen".into(),
+                },
+            );
         }
     }
 
@@ -626,7 +650,10 @@ impl Runner {
             if self.seen_hist.len() > 200 {
                 self.seen_hist.pop_front();
             }
-            livetx::history_push(&self.st.data_dir, &livetx::Entry { at: crate::db::now(), mode: mode.into(), exe: self.target.exe.clone(), src: src.clone(), text: text.clone() });
+            livetx::history_push(
+                &self.st.data_dir,
+                &livetx::Entry { at: crate::db::now(), mode: mode.into(), exe: self.target.exe.clone(), src: src.clone(), text: text.clone() },
+            );
         }
     }
 
@@ -679,7 +706,8 @@ impl Runner {
         let ep = crate::ai::chat_endpoint_for(&self.st, &settings, crate::ai_pool::Task::Translate)?;
         let model = settings.ai.model.clone();
         let system = livetx::manga_system(lang);
-        let resp = tauri::async_runtime::block_on(crate::ai::chat_img(&ep, &model, &system, "Translate the text on this page.", &url)).map_err(crate::imgtrans::vision_hint)?;
+        let resp = tauri::async_runtime::block_on(crate::ai::chat_img(&ep, &model, &system, "Translate the text on this page.", &url))
+            .map_err(crate::imgtrans::vision_hint)?;
         let list = livetx::parse_manga(&resp).ok_or_else(|| AppError::msg("视觉模型没有按要求返回结果，换一个更强的视觉模型试试。"))?;
         let (fw, fh) = (frame.w as f32, frame.h as f32);
         let mut blocks = vec![];
@@ -699,7 +727,20 @@ impl Runner {
             // 起始字号：竖排看列宽，横排看行高（界面再按框缩）
             let em = if vertical { (w / b.translation.chars().count().max(1) as f32).max(w.min(h) * 0.5) } else { h };
             let font = (em * 0.9 * f32::from(live.font_scale) / 100.0).max(f32::from(live.font_min));
-            blocks.push(OBlock { x: ex, y: ey, w: ew, h: eh, text: b.translation.clone(), orig: b.text.clone(), fg: livecore::hex(fg), bg: livecore::hex(bg), font, vertical, lines: 1, center: true });
+            blocks.push(OBlock {
+                x: ex,
+                y: ey,
+                w: ew,
+                h: eh,
+                text: b.translation.clone(),
+                orig: b.text.clone(),
+                fg: livecore::hex(fg),
+                bg: livecore::hex(bg),
+                font,
+                vertical,
+                lines: 1,
+                center: true,
+            });
         }
         if blocks.is_empty() {
             self.clear();
@@ -739,12 +780,36 @@ impl Runner {
                 self.history(live, "subtitle", &[(src.clone(), t.clone())]);
                 self.shown = true;
                 if live.sub_place == "bar" {
-                    let _ = self.app.emit_to(SUBBAR, EVT_SUB, SubPayload { seq: SEQ.fetch_add(1, Ordering::Relaxed), text: t, orig: src, bilingual: live.sub_bilingual, font: live.sub_font, source: "screen".into() });
+                    let _ = self.app.emit_to(
+                        SUBBAR,
+                        EVT_SUB,
+                        SubPayload {
+                            seq: SEQ.fetch_add(1, Ordering::Relaxed),
+                            text: t,
+                            orig: src,
+                            bilingual: live.sub_bilingual,
+                            font: live.sub_font,
+                            source: "screen".into(),
+                        },
+                    );
                 } else {
                     // 盖住原字幕：整条字幕带用底色盖掉，译文居中
                     let (bg, fg) = livecore::sample_colors(&frame.bgra, frame.w, frame.h, 0.0, 0.0, frame.w as f32, frame.h as f32);
                     let font = (frame.h as f32 * if live.sub_bilingual { 0.5 } else { 0.7 } * f32::from(live.font_scale) / 100.0).max(f32::from(live.font_min));
-                    let b = OBlock { x: 0.0, y: 0.0, w: frame.w as f32, h: frame.h as f32, text: t, orig: src, fg: livecore::hex(fg), bg: livecore::hex(bg), font, vertical: false, lines: 1, center: true };
+                    let b = OBlock {
+                        x: 0.0,
+                        y: 0.0,
+                        w: frame.w as f32,
+                        h: frame.h as f32,
+                        text: t,
+                        orig: src,
+                        fg: livecore::hex(fg),
+                        bg: livecore::hex(bg),
+                        font,
+                        vertical: false,
+                        lines: 1,
+                        center: true,
+                    };
                     self.emit_blocks("subtitle", vec![b], live, true, lang, live.sub_bilingual);
                 }
                 Ok(())
@@ -889,14 +954,11 @@ pub fn toggle(app: &AppHandle) {
     let own = crate::writeassist::is_own_window(hwnd);
     let raw = st.settings_raw();
     // 前台程序记过设置：直接按它的来
-    let from_profile = (!own)
-        .then(|| raw.live.profile(&exe))
-        .flatten()
-        .and_then(|p| match p.target.as_str() {
-            "region" if p.region[2] > 0 => Some(Target { kind: "region".into(), rect: p.region, hwnd, exe: exe.clone(), title: String::new() }),
-            "window" => Some(Target { kind: "window".into(), rect: [0; 4], hwnd, exe: exe.clone(), title: String::new() }),
-            _ => None,
-        });
+    let from_profile = (!own).then(|| raw.live.profile(&exe)).flatten().and_then(|p| match p.target.as_str() {
+        "region" if p.region[2] > 0 => Some(Target { kind: "region".into(), rect: p.region, hwnd, exe: exe.clone(), title: String::new() }),
+        "window" => Some(Target { kind: "window".into(), rect: [0; 4], hwnd, exe: exe.clone(), title: String::new() }),
+        _ => None,
+    });
     let target = from_profile.or_else(|| lock(&LAST).clone());
     match target {
         Some(t) => {
@@ -1126,7 +1188,11 @@ pub async fn sc_try(state: St<'_>, target: Option<Target>) -> AppResult<TryResul
     let st = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         livewin::init_thread();
-        let rect = if t.kind == "window" { livewin::window_bounds(t.hwnd).map(|(x, y, w, h)| [x, y, w, h]).ok_or_else(|| AppError::msg("这个窗口找不到了。"))? } else { t.rect };
+        let rect = if t.kind == "window" {
+            livewin::window_bounds(t.hwnd).map(|(x, y, w, h)| [x, y, w, h]).ok_or_else(|| AppError::msg("这个窗口找不到了。"))?
+        } else {
+            t.rect
+        };
         let live = livetx::effective(&st.settings_raw().live, &t.exe, None);
         let t0 = Instant::now();
         let f = livewin::grab_rect(rect[0], rect[1], rect[2].max(1) as u32, rect[3].max(1) as u32).map_err(AppError::msg)?;

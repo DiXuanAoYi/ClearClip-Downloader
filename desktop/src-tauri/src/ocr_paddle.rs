@@ -212,7 +212,8 @@ impl Engine {
             return Err(AppError::msg("检测模型的输出不完整"));
         }
         let (kx, ky) = (w as f32 / pw as f32, h as f32 / ph as f32);
-        let mut boxes: Vec<[f32; 4]> = db_boxes(&prob[..ph * pw], pw, ph, 0.3, 0.5, 1.6).into_iter().map(|b| [b[0] * kx, b[1] * ky, b[2] * kx, b[3] * ky]).collect();
+        let mut boxes: Vec<[f32; 4]> =
+            db_boxes(&prob[..ph * pw], pw, ph, 0.3, 0.5, 1.6).into_iter().map(|b| [b[0] * kx, b[1] * ky, b[2] * kx, b[3] * ky]).collect();
         boxes.sort_by(|a, b| a[1].total_cmp(&b[1]).then(a[0].total_cmp(&b[0])));
         boxes.truncate(120);
         let mut out = vec![];
@@ -235,7 +236,8 @@ impl Engine {
                     let mut padded = vec![0f32; 3 * 48 * bucket];
                     for ch_i in 0..3 {
                         for y in 0..48 {
-                            padded[(ch_i * 48 + y) * bucket..(ch_i * 48 + y) * bucket + rw].copy_from_slice(&chw[(ch_i * 48 + y) * rw..(ch_i * 48 + y + 1) * rw]);
+                            padded[(ch_i * 48 + y) * bucket..(ch_i * 48 + y) * bucket + rw]
+                                .copy_from_slice(&chw[(ch_i * 48 + y) * rw..(ch_i * 48 + y + 1) * rw]);
                         }
                     }
                     chw = padded;
@@ -263,9 +265,10 @@ impl Engine {
 
 /// 用已安装的组件识别一张图（引擎在内存里缓存，路径变了才重新装载）。
 pub fn recognize(data_dir: &Path, bgra: &[u8], w: usize, h: usize) -> AppResult<Vec<OLine>> {
-    let files = find_files(data_dir).ok_or_else(|| AppError::new(crate::error::ErrorKind::NeedUpdate, "还没有安装“增强识字组件”。到“屏幕翻译 → 识字”里下载或导入。"))?;
+    let files = find_files(data_dir)
+        .ok_or_else(|| AppError::new(crate::error::ErrorKind::NeedUpdate, "还没有安装“增强识字组件”。到“屏幕翻译 → 识字”里下载或导入。"))?;
     let mut g = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
-    if g.as_ref().is_none_or(|(p, _)| *p != files.det) {
+    if g.as_ref().map_or(true, |(p, _)| *p != files.det) {
         *g = Some((files.det.clone(), Engine::load(&files)?));
     }
     match g.as_mut() {
@@ -288,7 +291,12 @@ pub struct OcrStatus {
 pub fn status_of(data_dir: &Path) -> OcrStatus {
     let d = dir_of(data_dir);
     let size = [DET_FILE, REC_FILE, DICT_FILE].iter().filter_map(|f| std::fs::metadata(d.join(f)).ok()).map(|m| m.len()).sum();
-    OcrStatus { installed: find_files(data_dir).is_some(), dir: d.to_string_lossy().into_owned(), size, supported: cfg!(not(all(windows, target_arch = "aarch64"))) }
+    OcrStatus {
+        installed: find_files(data_dir).is_some(),
+        dir: d.to_string_lossy().into_owned(),
+        size,
+        supported: cfg!(not(all(windows, target_arch = "aarch64"))),
+    }
 }
 
 #[tauri::command]

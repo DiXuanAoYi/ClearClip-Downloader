@@ -43,7 +43,11 @@ pub fn effective(live: &LiveSettings, exe: &str, mode: Option<&str>) -> LiveSett
 pub fn target_lang(live: &LiveSettings, ai_target: &str) -> String {
     let t = live.target_lang.trim();
     let t = if t.is_empty() { ai_target.trim() } else { t };
-    if t.is_empty() { "简体中文".into() } else { t.into() }
+    if t.is_empty() {
+        "简体中文".into()
+    } else {
+        t.into()
+    }
 }
 
 // ---------- 翻译 ----------

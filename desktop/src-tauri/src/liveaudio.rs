@@ -83,7 +83,18 @@ pub struct Segmenter {
 
 impl Default for Segmenter {
     fn default() -> Self {
-        Segmenter { buf: vec![], pre: Default::default(), cur: vec![], speaking: false, quiet: 0, speech: 0, noise: 0.004, min_speech: 20, end_quiet: 30, max_frames: 600 }
+        Segmenter {
+            buf: vec![],
+            pre: Default::default(),
+            cur: vec![],
+            speaking: false,
+            quiet: 0,
+            speech: 0,
+            noise: 0.004,
+            min_speech: 20,
+            end_quiet: 30,
+            max_frames: 600,
+        }
     }
 }
 
@@ -217,10 +228,8 @@ mod win {
 
     async fn recognize(st: &Arc<crate::AppState>, wav: &std::path::Path, lang: &str, cloud: bool, stop: &Arc<AtomicBool>) -> AppResult<String> {
         if !cloud {
-            let files = crate::ml::DATA_DIR
-                .get()
-                .and_then(|d| crate::ml::sensevoice::find_files(d))
-                .ok_or_else(|| AppError::invalid("本机语音识别还没装好。"))?;
+            let files =
+                crate::ml::DATA_DIR.get().and_then(|d| crate::ml::sensevoice::find_files(d)).ok_or_else(|| AppError::invalid("本机语音识别还没装好。"))?;
             let stop2 = stop.clone();
             let cues = crate::ml::sensevoice::recognize(&files, wav, lang, move || stop2.load(Ordering::Relaxed)).await?;
             return Ok(text_of(&cues));
@@ -296,13 +305,30 @@ mod win {
                         if text.is_empty() {
                             continue;
                         }
-                        let tr = crate::livetx::translate(app, std::slice::from_ref(&text), &lang, "", stop).ok().and_then(|v| v.into_iter().next()).unwrap_or_default();
+                        let tr = crate::livetx::translate(app, std::slice::from_ref(&text), &lang, "", stop)
+                            .ok()
+                            .and_then(|v| v.into_iter().next())
+                            .unwrap_or_default();
                         if tr.trim().is_empty() {
                             continue;
                         }
-                        let _ = app.emit_to(SUBBAR, EVT_SUB, SubPayload { seq: u64::from(n), text: tr.clone(), orig: text.clone(), bilingual: live.audio_bilingual, font: live.sub_font, source: "audio".into() });
+                        let _ = app.emit_to(
+                            SUBBAR,
+                            EVT_SUB,
+                            SubPayload {
+                                seq: u64::from(n),
+                                text: tr.clone(),
+                                orig: text.clone(),
+                                bilingual: live.audio_bilingual,
+                                font: live.sub_font,
+                                source: "audio".into(),
+                            },
+                        );
                         if live.history {
-                            crate::livetx::history_push(&st.data_dir, &crate::livetx::Entry { at: crate::db::now(), mode: "audio".into(), exe: String::new(), src: text, text: tr });
+                            crate::livetx::history_push(
+                                &st.data_dir,
+                                &crate::livetx::Entry { at: crate::db::now(), mode: "audio".into(), exe: String::new(), src: text, text: tr },
+                            );
                         }
                         shown_at = Some(Instant::now());
                     }
@@ -313,7 +339,11 @@ mod win {
             // 一阵没有新句子就把字幕撤掉
             if shown_at.is_some_and(|t| t.elapsed() > Duration::from_secs(7)) {
                 shown_at = None;
-                let _ = app.emit_to(SUBBAR, EVT_SUB, SubPayload { seq: u64::from(n) + 1, text: String::new(), orig: String::new(), bilingual: false, font: 24, source: "audio".into() });
+                let _ = app.emit_to(
+                    SUBBAR,
+                    EVT_SUB,
+                    SubPayload { seq: u64::from(n) + 1, text: String::new(), orig: String::new(), bilingual: false, font: 24, source: "audio".into() },
+                );
             }
         }
         drop(stream);

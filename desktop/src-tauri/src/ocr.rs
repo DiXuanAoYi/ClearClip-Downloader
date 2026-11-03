@@ -65,7 +65,10 @@ pub fn baidu_lang(tag: &str) -> &'static str {
 /// OCR.space：`ParsedResults[].TextOverlay.Lines[]`。
 pub fn parse_ocrspace(v: &Value) -> AppResult<Vec<OLine>> {
     if v.get("IsErroredOnProcessing").and_then(Value::as_bool).unwrap_or(false) {
-        let m = v.get("ErrorMessage").map(|m| m.as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("；")).or_else(|| m.as_str().map(str::to_string))).flatten().unwrap_or_default();
+        let m = v
+            .get("ErrorMessage")
+            .and_then(|m| m.as_array().map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("；")).or_else(|| m.as_str().map(str::to_string)))
+            .unwrap_or_default();
         return Err(AppError::msg(format!("OCR.space：{}", if m.is_empty() { "识别失败".to_string() } else { m })));
     }
     let mut out = vec![];
@@ -78,7 +81,8 @@ pub fn parse_ocrspace(v: &Value) -> AppResult<Vec<OLine>> {
             }
             let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, 0f32, 0f32);
             for w in words {
-                let (left, top, ww, hh) = (f(&w["Left"]).unwrap_or(0.0), f(&w["Top"]).unwrap_or(0.0), f(&w["Width"]).unwrap_or(0.0), f(&w["Height"]).unwrap_or(0.0));
+                let (left, top, ww, hh) =
+                    (f(&w["Left"]).unwrap_or(0.0), f(&w["Top"]).unwrap_or(0.0), f(&w["Width"]).unwrap_or(0.0), f(&w["Height"]).unwrap_or(0.0));
                 x0 = x0.min(left);
                 y0 = y0.min(top);
                 x1 = x1.max(left + ww);
@@ -171,7 +175,9 @@ pub async fn api_recognize(client: &reqwest::Client, api: &OcrApi, lang: &str, p
                 .await
                 .map_err(net_err)?;
             let tok = json_of(tok, "百度").await?;
-            let token = tok.get("access_token").and_then(Value::as_str).ok_or_else(|| AppError::msg(format!("百度没有给出 access_token：{}", tok.get("error_description").and_then(Value::as_str).unwrap_or("请检查 Key"))))?;
+            let token = tok.get("access_token").and_then(Value::as_str).ok_or_else(|| {
+                AppError::msg(format!("百度没有给出 access_token：{}", tok.get("error_description").and_then(Value::as_str).unwrap_or("请检查 Key")))
+            })?;
             let r = client
                 .post(format!("{base}/rest/2.0/ocr/v1/accurate"))
                 .query(&[("access_token", token)])
@@ -193,7 +199,13 @@ pub async fn api_recognize(client: &reqwest::Client, api: &OcrApi, lang: &str, p
             let r = client
                 .post(url)
                 .header("apikey", api.key.as_str())
-                .form(&[("base64Image", data.as_str()), ("language", ocrspace_lang(lang)), ("isOverlayRequired", "true"), ("OCREngine", "2"), ("scale", "true")])
+                .form(&[
+                    ("base64Image", data.as_str()),
+                    ("language", ocrspace_lang(lang)),
+                    ("isOverlayRequired", "true"),
+                    ("OCREngine", "2"),
+                    ("scale", "true"),
+                ])
                 .send()
                 .await
                 .map_err(net_err)?;
@@ -241,7 +253,13 @@ pub fn recognize(cx: &Ctx<'_>, engine: &str, bgra: &[u8], w: usize, h: usize) ->
             if !crate::livewin::SUPPORTED {
                 return Err(AppError::msg("Windows 自带识字只在 Windows 上可用。请换成增强识字或识字接口。"));
             }
-            system_ocr(bgra, w, h, &lang_hint(cx.live)).map_err(|e| if e.message.contains("语言包") { AppError::new(crate::error::ErrorKind::NeedUpdate, e.message) } else { e })
+            system_ocr(bgra, w, h, &lang_hint(cx.live)).map_err(|e| {
+                if e.message.contains("语言包") {
+                    AppError::new(crate::error::ErrorKind::NeedUpdate, e.message)
+                } else {
+                    e
+                }
+            })
         }
     }
 }

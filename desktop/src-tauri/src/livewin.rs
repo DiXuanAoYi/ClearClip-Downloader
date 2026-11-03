@@ -29,10 +29,10 @@ pub struct OcrLang {
     pub name: String,
 }
 
-#[cfg(windows)]
-pub use win::*;
 #[cfg(not(windows))]
 pub use other::*;
+#[cfg(windows)]
+pub use win::*;
 
 #[cfg(not(windows))]
 mod other {
@@ -212,9 +212,7 @@ mod win {
     pub fn ocr_languages() -> Vec<OcrLang> {
         use windows::Media::Ocr::OcrEngine;
         let Ok(list) = OcrEngine::AvailableRecognizerLanguages() else { return vec![] };
-        list.into_iter()
-            .filter_map(|l| Some(OcrLang { tag: l.LanguageTag().ok()?.to_string(), name: l.DisplayName().ok()?.to_string() }))
-            .collect()
+        list.into_iter().filter_map(|l| Some(OcrLang { tag: l.LanguageTag().ok()?.to_string(), name: l.DisplayName().ok()?.to_string() })).collect()
     }
 
     fn engine_for(tag: &str) -> Result<windows::Media::Ocr::OcrEngine, String> {
@@ -293,7 +291,7 @@ mod win {
             for l in installed.iter().take(6) {
                 if let Ok(lines) = engine_for(&l.tag).and_then(|e| run(&e, bgra, w, h)) {
                     let score: usize = lines.iter().map(|x| x.text.chars().filter(|c| c.is_alphanumeric()).count()).sum();
-                    if best.as_ref().is_none_or(|b| score > b.0) {
+                    if best.as_ref().map_or(true, |b| score > b.0) {
                         best = Some((score, lines, l.tag.clone()));
                     }
                 }

@@ -122,13 +122,7 @@ pub fn group_lines(lines: &[OLine]) -> Vec<Group> {
     }
     ls.clear();
     // 阅读顺序：竖排（日漫）靠右的先读，横排从上到下
-    out.sort_by(|a, b| {
-        if a.vertical && b.vertical {
-            b.x.total_cmp(&a.x)
-        } else {
-            a.y.total_cmp(&b.y).then(a.x.total_cmp(&b.x))
-        }
-    });
+    out.sort_by(|a, b| if a.vertical && b.vertical { b.x.total_cmp(&a.x) } else { a.y.total_cmp(&b.y).then(a.x.total_cmp(&b.x)) });
     out
 }
 
@@ -138,7 +132,11 @@ fn group_horizontal(sorted: &[OLine]) -> Vec<Group> {
     for l in sorted {
         if let Some(r) = rows.iter_mut().find(|r| {
             let em = r.h.min(l.h);
-            (r.cy() - l.cy()).abs() < em * 0.45 && l.x >= r.x - em * 0.5 && l.x - r.right() <= em * 1.1 && (r.h / l.h).clamp(0.0, 9.0) > 0.6 && (r.h / l.h) < 1.67
+            (r.cy() - l.cy()).abs() < em * 0.45
+                && l.x >= r.x - em * 0.5
+                && l.x - r.right() <= em * 1.1
+                && (r.h / l.h).clamp(0.0, 9.0) > 0.6
+                && (r.h / l.h) < 1.67
         }) {
             let joined = if l.x < r.x { join_text(&l.text, &r.text) } else { join_text(&r.text, &l.text) };
             let (x, y) = (r.x.min(l.x), r.y.min(l.y));
@@ -247,13 +245,19 @@ pub fn should_skip(text: &str, target: &str) -> bool {
         "ko" => has_hangul(t) && !has_kana(t),
         _ => {
             // 全是拉丁字母，多半已经是英文（粗略判断，别的拉丁语系交给模型）
-            letters > 0 && non_space.iter().filter(|c| c.is_alphabetic()).all(|c| c.is_ascii()) && t.split_whitespace().any(|w| w.len() > 1) && is_probably_english(t)
+            letters > 0
+                && non_space.iter().filter(|c| c.is_alphabetic()).all(|c| c.is_ascii())
+                && t.split_whitespace().any(|w| w.len() > 1)
+                && is_probably_english(t)
         }
     }
 }
 
 fn is_probably_english(t: &str) -> bool {
-    const COMMON: &[&str] = &["the", "and", "you", "to", "of", "is", "in", "it", "that", "for", "on", "with", "are", "this", "was", "have", "not", "your", "but", "can", "will", "all"];
+    const COMMON: &[&str] = &[
+        "the", "and", "you", "to", "of", "is", "in", "it", "that", "for", "on", "with", "are", "this", "was", "have", "not", "your", "but", "can", "will",
+        "all",
+    ];
     let words: Vec<String> = t.split(|c: char| !c.is_alphabetic()).filter(|w| !w.is_empty()).map(str::to_lowercase).collect();
     if words.is_empty() {
         return false;
@@ -289,7 +293,10 @@ pub fn similarity(a: &str, b: &str) -> f32 {
 }
 
 pub fn ends_sentence(s: &str) -> bool {
-    s.trim_end().chars().last().is_some_and(|c| matches!(c, '。' | '！' | '？' | '.' | '!' | '?' | '…' | '」' | '』' | '”' | '"' | '）' | ')' | '♪' | '～' | '~'))
+    s.trim_end()
+        .chars()
+        .last()
+        .is_some_and(|c| matches!(c, '。' | '！' | '？' | '.' | '!' | '?' | '…' | '」' | '』' | '”' | '"' | '）' | ')' | '♪' | '～' | '~'))
 }
 
 /// 字幕一句话分在两屏时：上一屏没说完、间隔不长，就把新的一屏接在后面再翻译。
@@ -413,15 +420,11 @@ pub fn sample_colors(bgra: &[u8], w: usize, h: usize, x: f32, y: f32, rw: f32, r
         let k = ((c[0] as u16 >> 4) << 8) | ((c[1] as u16 >> 4) << 4) | (c[2] as u16 >> 4);
         let e = buckets.entry(k).or_insert((0, [0; 3]));
         e.0 += 1;
-        for i in 0..3 {
-            e.1[i] += c[i] as u32;
+        for (acc, v) in e.1.iter_mut().zip(c.iter()) {
+            *acc += *v as u32;
         }
     }
-    let bg = buckets
-        .values()
-        .max_by_key(|(n, _)| *n)
-        .map(|(n, s)| [(s[0] / n) as u8, (s[1] / n) as u8, (s[2] / n) as u8])
-        .unwrap_or([0, 0, 0]);
+    let bg = buckets.values().max_by_key(|(n, _)| *n).map(|(n, s)| [(s[0] / n) as u8, (s[1] / n) as u8, (s[2] / n) as u8]).unwrap_or([0, 0, 0]);
     // 框内：离底色最远的 8%
     let mut inner: Vec<([u8; 3], i32)> = vec![];
     let (sy, sx) = (((y1 - y0) / 24).max(1), ((x1 - x0) / 48).max(1));
@@ -442,8 +445,8 @@ pub fn sample_colors(bgra: &[u8], w: usize, h: usize, x: f32, y: f32, rw: f32, r
     } else {
         let mut s = [0u32; 3];
         for (c, _) in &inner[..take] {
-            for i in 0..3 {
-                s[i] += c[i] as u32;
+            for (acc, v) in s.iter_mut().zip(c.iter()) {
+                *acc += *v as u32;
             }
         }
         [(s[0] / take as u32) as u8, (s[1] / take as u32) as u8, (s[2] / take as u32) as u8]
@@ -536,6 +539,7 @@ pub fn text_key_of(s: &str) -> String {
 
 /// 漫画：视觉模型给的框只是个大概。在框向外扩 `grow` 倍的范围里找和底色差别大的点（字），返回它们的外接框；
 /// 找到的点太少（框里其实没字）或外接框比原框大太多，就返回 None，沿用模型的框。
+#[allow(clippy::too_many_arguments)]
 pub fn ink_bbox(bgra: &[u8], w: usize, h: usize, x: f32, y: f32, rw: f32, rh: f32, bg: [u8; 3], grow: f32) -> Option<[f32; 4]> {
     if w == 0 || h == 0 || bgra.len() < w * h * 4 || rw < 4.0 || rh < 4.0 {
         return None;
@@ -579,7 +583,11 @@ mod tests {
 
     #[test]
     fn merges_wrapped_lines_into_one_paragraph() {
-        let g = group_lines(&[l("The ruins to the north are guarded", 14.0, 10.0, 300.0, 20.0), l("by an ancient spirit.", 14.0, 32.0, 150.0, 20.0), l("Inventory", 400.0, 200.0, 80.0, 20.0)]);
+        let g = group_lines(&[
+            l("The ruins to the north are guarded", 14.0, 10.0, 300.0, 20.0),
+            l("by an ancient spirit.", 14.0, 32.0, 150.0, 20.0),
+            l("Inventory", 400.0, 200.0, 80.0, 20.0),
+        ]);
         assert_eq!(g.len(), 2);
         assert_eq!(g[0].text, "The ruins to the north are guarded by an ancient spirit.");
         assert_eq!(g[0].lines, 2);
