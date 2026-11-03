@@ -192,6 +192,10 @@
       <div class="col"><label>按住多久直接翻译</label><select id="trHold"><option value="0">不用，只认单击</option><option value="300">0.3 秒</option><option value="450">0.45 秒（默认）</option><option value="700">0.7 秒</option><option value="1000">1 秒</option></select></div>
     </div>
     <label class="row"><input id="trSelect" type="checkbox" /> 选中文字后显示“译”按钮</label>
+    <label>各翻译服务单独设置（语言留“沿用”就用上面的目标语言）</label>
+    <div class="row"><label class="row"><input id="svcOn_clearclip" type="checkbox" /> 清影（大模型）</label><select id="svcLang_clearclip"></select></div>
+    <textarea id="svcPrompt_clearclip" rows="2" placeholder="给大模型的额外要求，如：保留专有名词原文；语气口语化（最多 500 字，可留空）"></textarea>
+    <div class="row"><label class="row"><input id="svcOn_google" type="checkbox" /> 谷歌翻译</label><select id="svcLang_google"></select></div>
     <label class="row"><input id="trCompare" type="checkbox" /> 划词翻译时并排显示所有翻译服务的结果（清影大模型 + 谷歌）；关掉则只用上面的引擎，卡片里可以临时“对比其他服务”</label>
     <label class="row"><input id="trInput" type="checkbox" /> 输入框里连按三次空格，翻译成上面的语言</label>
     <label class="row"><input id="trDomain" type="checkbox" /> 翻译前先判断网页领域，按领域选词（更准，多一次模型调用；只对“清影（大模型）”有效）</label>

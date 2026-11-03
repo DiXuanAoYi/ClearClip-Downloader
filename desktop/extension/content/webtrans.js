@@ -259,7 +259,7 @@
       if (rec) rec.state = 'busy'
     }
     status()
-    const r = await send({ type: 'cc-tr', texts: batch.map((b) => b.text), target: S.cfg.target, engine: S.cfg.engine, page: pageInfo() })
+    const r = await send({ type: 'cc-tr', texts: batch.map((b) => b.text), target: T.engineTarget(S.cfg, T.pickEngine(S.cfg)), engine: T.pickEngine(S.cfg), page: pageInfo() })
     S.inflight--
     if (!r.ok) {
       S.err = r.error || '翻译失败了'
@@ -497,7 +497,7 @@
     const copyBtn = h('button', { class: 'sec', text: '复制', disabled: true })
     const cmpBtn = h('button', { class: 'sec', text: '对比其他服务', onclick: () => compareMore() })
     selCard = h('div', { class: 'card' }, h('div', { class: 'src', text: text.slice(0, 200) }), list,
-      h('div', { class: 'bar' }, h('span', { class: 'grow', text: T.nameOf(S.cfg.target) }), T.ENGINES.length > 1 ? cmpBtn : null, copyBtn, h('button', { class: 'sec', text: '关闭', onclick: closeCard })))
+      h('div', { class: 'bar' }, h('span', { class: 'grow', text: T.nameOf(S.cfg.target) }), T.activeEngines(S.cfg).length > 1 ? cmpBtn : null, copyBtn, h('button', { class: 'sec', text: '关闭', onclick: closeCard })))
     const box = rect || { left: innerWidth / 2 - 190, bottom: innerHeight / 3 }
     selCard.style.left = `${Math.max(8, Math.min(box.left, innerWidth - 400))}px`
     selCard.style.top = `${Math.max(8, Math.min(box.bottom + 8, innerHeight - 200))}px`
@@ -508,7 +508,7 @@
     let best = ''
     const row = (engine) => {
       const out = h('div', { class: 'out', text: '正在翻译…' })
-      const el = h('div', { class: 'cmpRow' }, T.ENGINES.length > 1 ? h('div', { class: 'eng', text: T.ENGINE_NAMES[engine] || engine }) : null, out)
+      const el = h('div', { class: 'cmpRow' }, T.activeEngines(S.cfg).length > 1 ? h('div', { class: 'eng', text: T.ENGINE_NAMES[engine] || engine }) : null, out)
       list.append(el)
       rows.set(engine, out)
       return out
@@ -517,7 +517,7 @@
       if (shown.has(engine)) return
       shown.add(engine)
       const out = row(engine)
-      const r = await send({ type: 'cc-tr', texts: [text], target: S.cfg.target, engine, page: pageInfo() })
+      const r = await send({ type: 'cc-tr', texts: [text], target: T.engineTarget(S.cfg, engine), engine, page: pageInfo() })
       if (!selCard) return
       if (!r.ok) {
         out.textContent = r.error || '翻译失败了'
@@ -538,7 +538,7 @@
     }
     const compareMore = () => {
       cmpBtn.remove()
-      return Promise.all(T.ENGINES.map(one))
+      return Promise.all(T.activeEngines(S.cfg).map(one))
     }
     copyBtn.onclick = async () => {
       try {
@@ -550,7 +550,7 @@
     }
     // 默认只用设置里选的服务；开了“并排对比”就一次问全部
     if (S.cfg.compare) await compareMore()
-    else await one(S.cfg.engine)
+    else await one(T.pickEngine(S.cfg))
   }
 
   // ---------- 输入框：连按三次空格，译成“输入框语言”----------
@@ -576,7 +576,7 @@
     const src = textOfInput(el).replace(/\s+$/, '')
     if (src.trim().length < 1) return
     const t = toast(uiRoot(), `正在翻译成${T.nameOf(S.cfg.inputLang)}…`, false, 30000)
-    const r = await send({ type: 'cc-tr', texts: [src], target: S.cfg.inputLang, engine: S.cfg.engine })
+    const r = await send({ type: 'cc-tr', texts: [src], target: S.cfg.inputLang, engine: T.pickEngine(S.cfg) })
     t.remove()
     if (!r.ok) return void toast(uiRoot(), r.error || '翻译失败了', true, 4000)
     const out = String(r.texts?.[0] || '').trim()
@@ -637,7 +637,7 @@
       S.cfg = T.effectiveCfg(T.normalizeCfg(ch.transCfg.newValue), location.hostname)
       if (S.on && (was.mode !== S.cfg.mode || was.style !== S.cfg.style)) restyle()
       // 目标语言 / 引擎变了：已经翻好的作废，重新来
-      if (S.on && (was.target !== S.cfg.target || was.engine !== S.cfg.engine)) {
+      if (S.on && (was.target !== S.cfg.target || was.engine !== S.cfg.engine || JSON.stringify(was.services) !== JSON.stringify(S.cfg.services))) {
         pageOff()
         pageOn()
       }

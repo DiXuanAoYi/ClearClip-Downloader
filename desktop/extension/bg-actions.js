@@ -288,10 +288,10 @@ const HANDLERS = {
     const cfg = await getTransCfg()
     const texts = (Array.isArray(m.texts) ? m.texts : []).map((t) => String(t)).slice(0, 60)
     if (!texts.length) return { texts: [], cached: 0 }
-    const engine = ccTrans.ENGINES.includes(m.engine) ? m.engine : cfg.engine
+    const engine = ccTrans.ENGINES.includes(m.engine) ? m.engine : ccTrans.pickEngine(cfg)
     const p = m.page && typeof m.page === 'object' ? m.page : null
     const page = p ? { host: String(p.host || '').slice(0, 100), title: String(p.title || ''), sample: String(p.sample || '') } : null
-    return translateTexts(texts, { target: String(m.target || cfg.target), engine, page, domain: cfg.domain })
+    return translateTexts(texts, { target: String(m.target || ccTrans.engineTarget(cfg, engine)), engine, page, domain: cfg.domain, extra: ccTrans.enginePrompt(cfg, engine) })
   },
   'cc-tr-clear': async () => (await clearTransCache(), {}),
   // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）

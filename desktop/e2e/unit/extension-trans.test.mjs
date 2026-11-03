@@ -123,3 +123,21 @@ console.log('extension-trans: ok')
   assert.equal(T.normalizeCfg({ compare: 'yes' }).compare, false)
   assert.ok(T.ENGINES.every((e) => T.ENGINE_NAMES[e]))
 }
+
+// ---- 各翻译服务单独设置
+{
+  assert.deepEqual(plain(T.normalizeCfg(undefined).services), {})
+  const c = T.normalizeCfg({ services: { clearclip: { target: ' ja ', prompt: '  口语化 ', enabled: true }, google: { enabled: false, prompt: 'x' }, bogus: { enabled: false } } })
+  assert.deepEqual(plain(c.services), { clearclip: { target: 'ja', prompt: '口语化' }, google: { enabled: false } })
+  assert.equal(T.engineTarget(c, 'clearclip'), 'ja')
+  assert.equal(T.engineTarget(c, 'google'), c.target)
+  assert.equal(T.enginePrompt(c, 'clearclip'), '口语化')
+  assert.equal(T.enginePrompt(c, 'google'), '')
+  assert.deepEqual(plain(T.activeEngines(c)), ['clearclip'])
+  // 选的服务被关掉就换一个还开着的
+  assert.equal(T.pickEngine({ ...c, engine: 'google' }), 'clearclip')
+  // 全关掉：退回全部，不至于什么都翻不了
+  const none = T.normalizeCfg({ services: { clearclip: { enabled: false }, google: { enabled: false } } })
+  assert.deepEqual(plain(T.activeEngines(none)), ['clearclip', 'google'])
+  assert.equal(T.normalizeCfg({ services: { clearclip: { prompt: 'x'.repeat(900) } } }).services.clearclip.prompt.length, 500)
+}

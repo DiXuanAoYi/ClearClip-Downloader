@@ -216,6 +216,7 @@
     hover: 'Control', // 单击一下这个键，翻译鼠标指着的段落；off 关闭
     holdMs: 450, // 按住上面这个键超过这么久也会翻译（不用松手）；0 = 只认单击
     compare: false, // 划词翻译时把所有翻译服务的结果并排显示
+    services: {}, // 各翻译服务单独的设置：{ clearclip|google: { enabled?, target?, prompt? } }
     select: true, // 选中文字后出现“译”按钮
     input: true, // 输入框里连按三次空格，翻译成下面的语言
     inputLang: 'en',
@@ -226,6 +227,34 @@
     skipTarget: true, // 本来就是目标语言的段落 / 页面不翻译
     domain: true, // 翻译前先判断网页领域，按领域选词（只对“清影（大模型）”有效）
   }
+
+  /** 各翻译服务单独设置：enabled 默认开；target 留空沿用全局；prompt 只对大模型有效，作为额外要求。 */
+  function normalizeServices(raw) {
+    const out = {}
+    const r = raw && typeof raw === 'object' ? raw : {}
+    for (const eng of ENGINES) {
+      const v = r[eng] && typeof r[eng] === 'object' ? r[eng] : {}
+      const e = {}
+      if (v.enabled === false) e.enabled = false
+      if (typeof v.target === 'string' && v.target.trim()) e.target = v.target.trim()
+      if (eng === 'clearclip' && typeof v.prompt === 'string' && v.prompt.trim()) e.prompt = v.prompt.trim().slice(0, 500)
+      if (Object.keys(e).length) out[eng] = e
+    }
+    return out
+  }
+  /** 参与翻译 / 对比的服务；全被关掉时退回全部，免得什么都翻不了 */
+  const activeEngines = (cfg) => {
+    const on = ENGINES.filter((e) => cfg?.services?.[e]?.enabled !== false)
+    return on.length ? on : ENGINES.slice()
+  }
+  /** 当前真正用的服务：设置里选的被关掉了，就换第一个还开着的 */
+  const pickEngine = (cfg) => {
+    const on = activeEngines(cfg)
+    return on.includes(cfg?.engine) ? cfg.engine : on[0]
+  }
+  /** 某个服务翻成什么语言：它自己的设置优先 */
+  const engineTarget = (cfg, engine) => cfg?.services?.[engine]?.target || cfg?.target
+  const enginePrompt = (cfg, engine) => cfg?.services?.[engine]?.prompt || ''
 
   const hostList = (v) => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/)).map((x) => String(x || '').trim().toLowerCase().replace(/^\*?\.?/, '')).filter(Boolean))]
 
@@ -283,6 +312,7 @@
       hover: HOVER_KEYS.includes(r.hover) ? r.hover : DEFAULT_CFG.hover,
       holdMs: clampHold(r.holdMs ?? DEFAULT_CFG.holdMs),
       compare: r.compare === true,
+      services: normalizeServices(r.services),
       select: r.select !== false,
       input: r.input !== false,
       inputLang: lang(r.inputLang, DEFAULT_CFG.inputLang),
@@ -352,7 +382,7 @@
 
   globalThis.ccTrans = {
     LANGS, NAMES, uiLang, label, byCode, promptName, nameOf, scriptCounts, inTarget, worthTranslating, pageInTarget, batchPlan,
-    DEFAULT_CFG, MODES, STYLES, ENGINES, ENGINE_NAMES, HOVER_KEYS, normalizeCfg, normalizeSites, parseSites, formatSites, effectiveCfg, hostList, shouldAuto, autoMatches, listed,
+    DEFAULT_CFG, MODES, STYLES, ENGINES, ENGINE_NAMES, normalizeServices, activeEngines, pickEngine, engineTarget, enginePrompt, HOVER_KEYS, normalizeCfg, normalizeSites, parseSites, formatSites, effectiveCfg, hostList, shouldAuto, autoMatches, listed,
     googleUrl, parseGoogle, cacheKey, pruneCache,
   }
 })()

@@ -536,6 +536,18 @@ async function loadTransCfg() {
   $('trHover').value = c.hover
   $('trHold').value = String(c.holdMs)
   $('trCompare').checked = c.compare
+  for (const eng of ccTrans.ENGINES) {
+    const sv = c.services[eng] || {}
+    $(`svcOn_${eng}`).checked = sv.enabled !== false
+    const sel = $(`svcLang_${eng}`)
+    fillLangs(sel, sv.target || c.target)
+    const keep = document.createElement('option')
+    keep.value = ''
+    keep.textContent = '沿用上面的目标语言'
+    sel.prepend(keep)
+    sel.value = sv.target || ''
+  }
+  $('svcPrompt_clearclip').value = c.services.clearclip?.prompt || ''
   $('trSelect').checked = c.select
   $('trInput').checked = c.input
   $('trLazy').checked = c.lazy
@@ -558,6 +570,9 @@ $('saveTrans').onclick = async () => {
     inputLang: $('trInputLang').value,
     holdMs: Number($('trHold').value),
     compare: $('trCompare').checked,
+    services: Object.fromEntries(
+      ccTrans.ENGINES.map((eng) => [eng, { enabled: $(`svcOn_${eng}`).checked, target: $(`svcLang_${eng}`).value, prompt: eng === 'clearclip' ? $('svcPrompt_clearclip').value : '' }]),
+    ),
     select: $('trSelect').checked,
     input: $('trInput').checked,
     lazy: $('trLazy').checked,
