@@ -11,8 +11,8 @@ import { TARGET_LANGS } from '../utils/langs'
 
 /** 文件翻译：拖入文件 → 一页一页翻 → 左原文右译文对照阅读 → 导出。设计图 ④。 */
 const app = useAppStore()
-const EXTS = ['pdf', 'epub', 'txt', 'md', 'markdown', 'srt', 'vtt', 'ass', 'ssa', 'docx']
-const FORMATS = ['PDF', 'EPUB', 'DOCX', 'TXT', 'MD', 'SRT / ASS']
+const EXTS = ['png', 'jpg', 'jpeg', 'webp', 'pdf', 'epub', 'txt', 'md', 'markdown', 'srt', 'vtt', 'ass', 'ssa', 'docx']
+const FORMATS = ['PDF', 'EPUB', 'DOCX', 'TXT', 'MD', 'SRT / ASS', '图片']
 
 const jobs = ref<JobSnap[]>([])
 const files = ref<Record<number, string>>({}) // 任务编号 → 源文件路径
@@ -105,7 +105,7 @@ async function choose() {
 
 async function addFiles(paths: string[]) {
   const ok = paths.filter((p) => EXTS.includes((p.split('.').pop() || '').toLowerCase()))
-  if (!ok.length) return ElMessage.warning('支持 PDF、EPUB、DOCX、TXT、Markdown 和 SRT / VTT / ASS 字幕。图片请用“截图翻译”。')
+  if (!ok.length) return ElMessage.warning('支持 PDF、EPUB、DOCX、TXT、Markdown、SRT / VTT / ASS 字幕，以及 PNG / JPG / WebP 图片。')
   for (const p of ok) await start(p)
 }
 
@@ -165,7 +165,7 @@ function status(j: JobSnap): string {
   <div class="ft">
     <header class="h1">
       <h1>文件翻译</h1>
-      <p>PDF、EPUB、DOCX、TXT、Markdown、字幕，译成双语对照，术语和专家沿用你的设置</p>
+      <p>PDF（含扫描版）、EPUB、DOCX、TXT、Markdown、字幕、图片，译成双语对照，术语和专家沿用你的设置</p>
     </header>
     <div class="cols">
       <aside class="lc">
@@ -215,7 +215,7 @@ function status(j: JobSnap): string {
             </div>
           </div>
           <div class="sw on"><i />保留排版：公式、表格、图片位置原样不动（只替换文字）</div>
-          <small class="mute">PDF 只能取出文字，输出为 TXT；扫描版 PDF（没有文字层）暂不能翻译，请先用文字识别软件转成可复制文字。</small>
+          <small class="mute">PDF 和图片输出为 TXT。扫描版 PDF 和图片会先交给视觉模型识字（需要支持看图的模型，一次最多 60 页，识别结果会缓存），识字准确度取决于模型。</small>
         </div>
       </aside>
 

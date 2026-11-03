@@ -25,8 +25,10 @@ pub enum Kind {
     Sub,
     Docx,
     Epub,
-    /// 只能抽出文字，输出为 TXT
+    /// 只能抽出文字，输出为 TXT；扫描版（只有图片）会先用视觉模型识字
     Pdf,
+    /// 图片：用视觉模型识字后翻译，输出 TXT
+    Img,
 }
 
 pub fn kind_of(p: &Path) -> Option<Kind> {
@@ -37,6 +39,7 @@ pub fn kind_of(p: &Path) -> Option<Kind> {
         "docx" => Some(Kind::Docx),
         "epub" => Some(Kind::Epub),
         "pdf" => Some(Kind::Pdf),
+        "png" | "jpg" | "jpeg" | "jfif" | "webp" => Some(Kind::Img),
         _ => None,
     }
 }
@@ -176,6 +179,9 @@ pub fn reflow_pdf(pages: &[String]) -> String {
     out
 }
 
+/// 扫描版 PDF（没有可抽的文字）的错误提示；`run` 看到它就改走视觉模型识字。
+const SCANNED: &str = "没有读到文字——可能是扫描版 PDF（图片）。";
+
 fn load_pdf(path: &Path) -> AppResult<String> {
     let doc = lopdf::Document::load(path).map_err(|e| AppError::invalid(format!("打不开这个 PDF：{e}")))?;
     if doc.is_encrypted() {
@@ -187,7 +193,7 @@ fn load_pdf(path: &Path) -> AppResult<String> {
     }
     let text = reflow_pdf(&pages);
     if !worth(&text) {
-        return Err(AppError::invalid("没有读到文字——可能是扫描版 PDF（图片），需要先做文字识别。"));
+        return Err(AppError::invalid(SCANNED));
     }
     Ok(text)
 }
@@ -412,6 +418,7 @@ pub fn load(path: &Path, kind: Kind) -> AppResult<Vec<Part>> {
             let slots = extract_plain(&raw, false);
             Ok(vec![Part { name: String::new(), raw, slots }])
         }
+        Kind::Img => Err(AppError::invalid("图片需要先识字：开始翻译时会用视觉模型识别。")),
         Kind::Sub => Err(AppError::invalid("字幕文件走字幕通道。")),
     }
 }
@@ -477,6 +484,135 @@ pub struct ViewPage {
     pub trans: Vec<Option<String>>,
 }
 
+// ---------- 扫描件 / 图片：视觉模型识字 ----------
+
+const OCR_SYSTEM: &str = "You are an OCR engine. Transcribe ALL readable text in the image exactly as written, in reading order, in its original language. \
+Separate paragraphs with a blank line; keep headings and list markers. Do not translate, summarize or add commentary. Reply with the plain text only. If there is no text reply with nothing.";
+const OCR_MAX_PAGES: usize = 60;
+const OCR_MAX_BYTES: usize = 6 * 1024 * 1024;
+
+fn ocr_path(data_dir: &Path, input: &Path) -> PathBuf {
+    cache_path(data_dir, input, "ocr").with_extension("ocr.txt")
+}
+
+/// 一张图的 (mime, 字节)。
+type Pic = (&'static str, Vec<u8>);
+
+/// 把 8 位灰度 / RGB 的原始像素编码成 PNG。
+fn png_of(w: u32, h: u32, rgb: bool, raw: &[u8]) -> Option<Vec<u8>> {
+    let n = w as usize * h as usize * if rgb { 3 } else { 1 };
+    if raw.len() < n || n == 0 {
+        return None;
+    }
+    let mut out = vec![];
+    {
+        let mut enc = png::Encoder::new(&mut out, w, h);
+        enc.set_color(if rgb { png::ColorType::Rgb } else { png::ColorType::Grayscale });
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().ok()?.write_image_data(&raw[..n]).ok()?;
+    }
+    Some(out)
+}
+
+/// 取出扫描版 PDF 每一页里的图片：JPEG 原样用，8 位灰度 / RGB 的位图转 PNG，其余跳过。返回 (图片, 跳过的张数)。
+fn pdf_pictures(path: &Path) -> AppResult<(Vec<Pic>, usize)> {
+    let doc = lopdf::Document::load(path).map_err(|e| AppError::invalid(format!("打不开这个 PDF：{e}")))?;
+    let mut pics: Vec<Pic> = vec![];
+    let mut skipped = 0usize;
+    for (_, page_id) in doc.get_pages() {
+        // 一页取最大的一张图（扫描页就是整页一张图）
+        let mut best: Option<(i64, Pic)> = None;
+        for im in doc.get_page_images(page_id).unwrap_or_default() {
+            let filters = im.filters.clone().unwrap_or_default();
+            let pic: Option<Pic> = if filters.iter().any(|f| f == "DCTDecode") {
+                Some(("image/jpeg", im.content.to_vec()))
+            } else if im.bits_per_component == Some(8) && matches!(im.color_space.as_deref(), Some("DeviceGray" | "DeviceRGB")) {
+                let raw = doc.get_object(im.id).ok().and_then(|o| o.as_stream().ok()).and_then(|st| st.decompressed_content().ok());
+                raw.and_then(|raw| png_of(im.width as u32, im.height as u32, im.color_space.as_deref() == Some("DeviceRGB"), &raw)).map(|b| ("image/png", b))
+            } else {
+                None
+            };
+            match pic {
+                Some(p) if best.as_ref().map_or(true, |(a, _)| im.width * im.height > *a) => best = Some((im.width * im.height, p)),
+                Some(_) => {}
+                None => skipped += 1,
+            }
+        }
+        if let Some((_, p)) = best {
+            pics.push(p);
+        }
+    }
+    Ok((pics, skipped))
+}
+
+/// 一张图识字。
+async fn ocr_one(ep: &ai::Endpoint, model: &str, pic: &Pic) -> AppResult<String> {
+    use base64::Engine;
+    let url = format!("data:{};base64,{}", pic.0, base64::engine::general_purpose::STANDARD.encode(&pic.1));
+    let resp = ai::chat_img(ep, model, OCR_SYSTEM, "Transcribe the text in this image.", &url).await.map_err(crate::imgtrans::vision_hint)?;
+    Ok(resp.trim().trim_start_matches("```text").trim_start_matches("```").trim_end_matches("```").trim().to_string())
+}
+
+/// 图片 / 扫描版 PDF 的识字结果（识过的存在数据目录里，重试翻译不再重识）。
+async fn ocr_text(ctx: &JobCtx, ep: &ai::Endpoint, model: &str, input: &Path, kind: Kind) -> AppResult<String> {
+    let cp = ocr_path(&ctx.st.data_dir, input);
+    if let Ok(t) = std::fs::read_to_string(&cp) {
+        if worth(&t) {
+            ctx.note("用上次识别出的文字（不再重新识字）");
+            return Ok(t);
+        }
+    }
+    let pics: Vec<Pic> = if kind == Kind::Img {
+        let mime = crate::media_server::mime_for(input);
+        vec![(
+            if mime == "image/png" {
+                "image/png"
+            } else if mime == "image/webp" {
+                "image/webp"
+            } else {
+                "image/jpeg"
+            },
+            std::fs::read(input)?,
+        )]
+    } else {
+        let (pics, skipped) = pdf_pictures(input)?;
+        if pics.is_empty() {
+            return Err(AppError::invalid("这个 PDF 里没有能识别的页面图片（只支持 JPEG 和 8 位灰度/彩色位图）。"));
+        }
+        if skipped > 0 {
+            ctx.note(format!("有 {skipped} 张图片格式不支持，已跳过"));
+        }
+        pics
+    };
+    if pics.len() > OCR_MAX_PAGES {
+        ctx.note(format!("共 {} 页，只识别前 {OCR_MAX_PAGES} 页", pics.len()));
+    }
+    let total = pics.len().min(OCR_MAX_PAGES);
+    let mut out: Vec<String> = vec![];
+    for (i, pic) in pics.iter().take(total).enumerate() {
+        ctx.check()?;
+        if pic.1.len() > OCR_MAX_BYTES {
+            ctx.note(format!("第 {} 页图片超过 6 MB，已跳过", i + 1));
+            continue;
+        }
+        ctx.note(format!("视觉模型识字：第 {} / {} 页", i + 1, total));
+        ctx.percent(20.0 * i as f64 / total as f64);
+        let t = ocr_one(ep, model, pic).await?;
+        if !t.is_empty() {
+            out.push(t);
+        }
+    }
+    let text = out.join("\n\n");
+    if !worth(&text) {
+        return Err(AppError::invalid("视觉模型没有从图片里识别出文字。确认选的模型支持看图，或图片是否清晰。"));
+    }
+    if let Some(dir) = cp.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&cp, &text);
+    Ok(text)
+}
+
 fn cache_path(data_dir: &Path, input: &Path, target: &str) -> PathBuf {
     use sha2::{Digest, Sha256};
     let len = std::fs::metadata(input).map(|m| m.len()).unwrap_or(0);
@@ -517,7 +653,7 @@ pub fn view_for(data_dir: &Path, input: &Path, target: &str) -> Option<View> {
 
 /// 不翻译，只把文件切成页，给阅读器看原文。
 pub fn preview(path: &Path) -> AppResult<View> {
-    let kind = kind_of(path).ok_or_else(|| AppError::invalid("支持 TXT、Markdown、PDF、SRT/VTT/ASS 字幕、Word(docx) 和 EPUB。"))?;
+    let kind = kind_of(path).ok_or_else(|| AppError::invalid("支持 TXT、Markdown、PDF、SRT/VTT/ASS 字幕、Word(docx)、EPUB，以及图片（PNG / JPG / WebP）。"))?;
     let mut v = View { input: path.to_string_lossy().into_owned(), ..Default::default() };
     if kind == Kind::Sub {
         let cues = crate::subtitle_tools::read(path)?;
@@ -528,7 +664,13 @@ pub fn preview(path: &Path) -> AppResult<View> {
             at += n;
         }
     } else {
-        for p in load(path, kind)? {
+        let loaded = match load(path, kind) {
+            Ok(l) => l,
+            // 图片和扫描版 PDF 要先识字，识字在开始翻译时做；这里只给空的阅读页
+            Err(e) if kind == Kind::Img || (kind == Kind::Pdf && e.to_string().contains(SCANNED)) => vec![],
+            Err(e) => return Err(e),
+        };
+        for p in loaded {
             let src: Vec<String> = p.slots.iter().map(|s| s.text.clone()).collect();
             v.pages.push(ViewPage { trans: vec![None; src.len()], src });
         }
@@ -539,7 +681,8 @@ pub fn preview(path: &Path) -> AppResult<View> {
 
 /// 翻译一份文件，返回输出文件路径。
 pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
-    let kind = kind_of(input).ok_or_else(|| AppError::invalid("支持 TXT、Markdown、PDF、SRT/VTT/ASS 字幕、Word(docx) 和 EPUB。"))?;
+    let kind =
+        kind_of(input).ok_or_else(|| AppError::invalid("支持 TXT、Markdown、PDF、SRT/VTT/ASS 字幕、Word(docx)、EPUB，以及图片（PNG / JPG / WebP）。"))?;
     let settings = ctx.st.settings();
     let target = if opts.target.trim().is_empty() { settings.ai.target_lang.clone() } else { opts.target.trim().to_string() };
     let ep = ai::chat_endpoint_for(&ctx.st, &settings, Task::Translate)?;
@@ -550,7 +693,16 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     if kind == Kind::Sub {
         cues = crate::subtitle_tools::read(input)?;
     } else {
-        parts = load(input, kind)?;
+        parts = match load(input, kind) {
+            Ok(p) => p,
+            Err(e) if kind == Kind::Img || (kind == Kind::Pdf && e.to_string().contains(SCANNED)) => {
+                ctx.note("没有可抽取的文字，改用视觉模型识字");
+                let raw = ocr_text(ctx, &ep, &settings.ai.model, input, kind).await?;
+                let slots = extract_plain(&raw, false);
+                vec![Part { name: String::new(), raw, slots }]
+            }
+            Err(e) => return Err(e),
+        };
     }
     let texts: Vec<String> = if kind == Kind::Sub {
         cues.iter().map(|c| c.lines.join(" ")).collect()
@@ -618,7 +770,11 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
         ai::register_subtitle(&ctx.st, input, &out, ai::lang_tag(&target));
         out
     } else {
-        let ext = if kind == Kind::Pdf { "txt".to_string() } else { input.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default() };
+        let ext = if matches!(kind, Kind::Pdf | Kind::Img) {
+            "txt".to_string()
+        } else {
+            input.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default()
+        };
         let out = ai::out_beside(input, &base, tag, &ext);
         let mut offset = 0usize;
         let mut rendered = std::collections::HashMap::new();
@@ -627,7 +783,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
             offset += p.slots.len();
         }
         match kind {
-            Kind::Txt | Kind::Md | Kind::Pdf => std::fs::write(&out, rendered.remove("").unwrap_or_default())?,
+            Kind::Txt | Kind::Md | Kind::Pdf | Kind::Img => std::fs::write(&out, rendered.remove("").unwrap_or_default())?,
             _ => write_zip(input, &out, &rendered)?,
         }
         out

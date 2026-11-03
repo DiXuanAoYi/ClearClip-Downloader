@@ -156,3 +156,16 @@ fn preview_splits_text_into_pages() {
     assert!(v.pages[0].trans.iter().all(Option::is_none));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn images_and_scanned_pdf_are_recognised() {
+    assert_eq!(kind_of(Path::new("a.PNG")), Some(Kind::Img));
+    assert_eq!(kind_of(Path::new("a.jpeg")), Some(Kind::Img));
+    assert_eq!(kind_of(Path::new("a.webp")), Some(Kind::Img));
+    assert!(load(Path::new("a.png"), Kind::Img).is_err());
+    // 2×1 的 RGB 像素能编成合法 PNG；数据不够就不编
+    let png = png_of(2, 1, true, &[255, 0, 0, 0, 255, 0]).unwrap();
+    assert_eq!(&png[1..4], b"PNG");
+    assert!(png_of(2, 1, true, &[1, 2, 3]).is_none());
+    assert!(png_of(0, 0, false, &[]).is_none());
+}

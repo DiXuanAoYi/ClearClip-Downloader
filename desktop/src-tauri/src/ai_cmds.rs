@@ -195,7 +195,7 @@ pub fn subgen_correct(app: AppHandle, path: String, mode: Option<String>) -> App
 pub fn filetr_start(app: AppHandle, path: String, opts: crate::filetr::Opts) -> AppResult<u64> {
     let p = existing_file(&path)?;
     if crate::filetr::kind_of(&p).is_none() {
-        return Err(AppError::invalid("支持 TXT、Markdown、PDF、SRT / VTT / ASS 字幕、Word(docx) 和 EPUB。"));
+        return Err(AppError::invalid("支持 TXT、Markdown、PDF、SRT / VTT / ASS 字幕、Word(docx)、EPUB，以及图片（PNG / JPG / WebP）。"));
     }
     Ok(media_tools::spawn_job(&app, title_of(&p), "文件翻译", move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
 }
