@@ -3,18 +3,23 @@
   if (globalThis.ccUI) return
   const api = globalThis.browser ?? globalThis.chrome
 
+  // 主题令牌：跟随系统，也跟随摘要面板里选的 浅色 / 深色（host 的 data-theme）
+  const LIGHT = '--bg:#fff;--card:#fff;--soft:#f3f1ec;--line:#cfd5d1;--fg:#1d2420;--mute:#5d6862;--acc:#b4561a;--accsoft:#f6e6da;--onacc:#fff;--bad:#b3261e;--shade:#0005;'
+  const DARKV = '--bg:#1d2420;--card:#262f2a;--soft:#262f2a;--line:#3a443e;--fg:#eef1ee;--mute:#a9b3ad;--acc:#f0a064;--accsoft:#3a2c20;--onacc:#14181a;--bad:#ee917b;--shade:#000a;color-scheme:dark;'
   const BASE = `
-    :host { all: initial }
+    :host { all: initial; ${LIGHT} }
+    @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) { ${DARKV} } }
+    :host([data-theme="dark"]) { ${DARKV} }
     * { box-sizing: border-box; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; letter-spacing: normal; }
-    button { cursor: pointer; border: 0; border-radius: 6px; padding: 5px 10px; color: #fff; background: #b4561a; font-weight: 600; }
-    button.sec { background: #fff; color: #1d2420; border: 1px solid #cfd5d1; font-weight: 400; }
+    button { cursor: pointer; border: 0; border-radius: 6px; padding: 5px 10px; color: var(--onacc); background: var(--acc); font-weight: 600; }
+    button.sec { background: var(--card); color: var(--fg); border: 1px solid var(--line); font-weight: 400; }
     button:focus-visible { outline: 2px solid #d9762b; outline-offset: 2px; }
     .layer { position: fixed; z-index: 2147483647; }
-    .menu { background: #fff; color: #1d2420; border: 1px solid #cfd5d1; border-radius: 8px; box-shadow: 0 10px 28px #0003; padding: 4px; min-width: 220px; max-width: 360px; }
+    .menu { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px #0003; padding: 4px; min-width: 220px; max-width: 360px; }
     .menu .it { display: block; width: 100%; text-align: left; background: transparent; color: inherit; font-weight: 400; border-radius: 4px; padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .menu .it:hover { background: #d9762b24; }
-    .menu .hd { font-size: 11px; color: #5d6862; padding: 4px 10px; }
-    .toast { background: #1d2420; color: #fff; border-radius: 8px; padding: 8px 14px; box-shadow: 0 6px 20px #0004; }
+    .menu .hd { font-size: 11px; color: var(--mute); padding: 4px 10px; }
+    .toast { background: var(--fg); color: var(--bg); border-radius: 8px; padding: 8px 14px; box-shadow: 0 6px 20px #0004; }
     .toast.err { background: #a8362d; }
   `
 
@@ -32,6 +37,16 @@
     }
     place()
     document.addEventListener('fullscreenchange', place)
+    try {
+      void Promise.resolve(api.storage?.local?.get('vsumPrefs'))
+        .then((r) => {
+          const t = r?.vsumPrefs?.theme
+          if (t === 'dark' || t === 'light') host.setAttribute('data-theme', t)
+        })
+        .catch(() => {})
+    } catch {
+      /* 读不到就跟随系统 */
+    }
     return {
       host,
       root,

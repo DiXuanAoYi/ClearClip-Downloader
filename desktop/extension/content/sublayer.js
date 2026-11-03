@@ -500,11 +500,30 @@
 
   let bubTimer = 0
   let bubFor = ''
+  // 悬停 / 点词时暂停视频，词卡关闭后接着播（只恢复我们自己暂停的）
+  let pausedByWord = false
+  function pauseForWord() {
+    const v = S.video
+    if (v && !v.paused && !v.ended) {
+      v.pause()
+      pausedByWord = true
+    }
+  }
+  function resumeAfterWord() {
+    if (!pausedByWord) return
+    pausedByWord = false
+    try {
+      void S.video?.play()
+    } catch {
+      /* 页面不让播就算了 */
+    }
+  }
   function hideBubble(now = false) {
     clearTimeout(bubTimer)
     const go = () => {
       bub.classList.remove('open')
       bubFor = ''
+      resumeAfterWord()
     }
     if (now) go()
     else bubTimer = setTimeout(go, 280)
@@ -575,18 +594,20 @@
     if (!el) return
     clearTimeout(bubTimer)
     clearTimeout(cap._hv)
+    pauseForWord()
     cap._hv = setTimeout(() => showBubble(el), 300)
   })
   cap.addEventListener('mouseout', (e) => {
     if (!e.target?.closest?.('.w')) return
     clearTimeout(cap._hv)
+    if (!bub.classList.contains('open')) resumeAfterWord()
     hideBubble()
   })
   cap.addEventListener('click', (e) => {
     const el = e.target?.closest?.('.w')
     if (!el) return
     // 点词：暂停视频，立刻显示
-    S.video?.pause()
+    pauseForWord()
     clearTimeout(cap._hv)
     showBubble(el)
   })

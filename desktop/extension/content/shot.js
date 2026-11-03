@@ -5,23 +5,23 @@
   const { mount, h, send, toast } = globalThis.ccUI
   const ui = mount(`
     .shade { inset: 0; cursor: crosshair; background: #0000; }
-    .box { border: 2px solid #f08a3c; box-shadow: 0 0 0 9999px #0006; pointer-events: none; }
-    .tip { left: 50%; top: 16px; transform: translateX(-50%); background: #1d2420; color: #fff; border-radius: 8px; padding: 6px 14px; }
-    .card { background: #fff; color: #1d2420; border-radius: 10px; box-shadow: 0 8px 30px #0005; font: 13px/1.5 system-ui, sans-serif; overflow: hidden; display: flex; flex-direction: column; max-height: 86vh; }
-    .bar { display: flex; gap: 6px; align-items: center; padding: 6px 8px; background: #f3f1ec; flex-wrap: wrap; }
-    .bar button { border: 1px solid #cfc9bd; background: #fff; border-radius: 6px; padding: 3px 9px; cursor: pointer; font: inherit; }
-    .bar button.on { background: #f08a3c; border-color: #f08a3c; color: #fff; }
+    .box { border: 2px solid var(--acc); box-shadow: 0 0 0 9999px var(--shade); pointer-events: none; }
+    .tip { left: 50%; top: 16px; transform: translateX(-50%); background: var(--fg); color: var(--bg); border-radius: 8px; padding: 6px 14px; }
+    .card { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 30px var(--shade); font: 13px/1.5 system-ui, sans-serif; overflow: hidden; display: flex; flex-direction: column; max-height: 86vh; }
+    .bar { display: flex; gap: 6px; align-items: center; padding: 6px 8px; background: var(--soft); flex-wrap: wrap; }
+    .bar button { border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; padding: 3px 9px; cursor: pointer; font: inherit; }
+    .bar button.on { background: var(--acc); border-color: var(--acc); color: var(--onacc); }
     .bar .sp { flex: 1; }
     .stage { position: relative; overflow: hidden; background: #000; flex: none; }
     .stage canvas { display: block; width: 100%; height: auto; }
     .tb { position: absolute; display: flex; align-items: center; justify-content: center; text-align: center; overflow: hidden; border-radius: 3px; line-height: 1.15; font-weight: 600; word-break: break-word; }
-    .busy { padding: 10px 14px; color: #555; }
+    .busy { padding: 10px 14px; color: var(--mute); }
     .list { overflow: auto; padding: 4px 10px 10px; }
-    .row { padding: 5px 0; border-top: 1px solid #eee; cursor: pointer; }
+    .row { padding: 5px 0; border-top: 1px solid var(--line); cursor: pointer; }
     .row:first-child { border-top: 0; }
-    .row .o { color: #777; font-size: 12px; }
+    .row .o { color: var(--mute); font-size: 12px; }
     .row .t { font-weight: 600; }
-    .err { padding: 10px 14px; color: #b3261e; }
+    .err { padding: 10px 14px; color: var(--bad); }
   `)
 
   const stop = () => {

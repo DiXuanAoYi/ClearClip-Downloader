@@ -10,7 +10,7 @@ import { formatBytes, formatDateTime } from '../utils/format'
 
 /** 实时屏幕翻译：翻译别的软件和游戏画面上的文字。控制在这里，也可以用悬浮钮、托盘和快捷键。 */
 const app = useAppStore()
-const form = ref<ScreenSettings>(structuredClone(app.settings!.live))
+const form = ref<ScreenSettings>(JSON.parse(JSON.stringify(app.settings!.live)) as ScreenSettings)
 const st = ref<ScreenStatus>({ supported: true, running: false, mode: 'standard', target: null, hidden: false, msg: '', audio: false })
 const wins = ref<ScreenWindow[]>([])
 const winPick = ref<number | ''>('')
