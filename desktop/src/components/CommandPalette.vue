@@ -27,6 +27,7 @@ const VIEWS: [ViewName, string, string][] = [
   ['live', '直播', 'live zhibo'],
   ['screen', '屏幕翻译', 'screen translate pingmu fanyi ocr game youxi'],
   ['library', '媒体库', 'library meitiku'],
+  ['filetr', '文件翻译', 'filetr wenjian fanyi file translate pdf epub'],
   ['vocab', '生词本', 'vocab shengciben words review fuxi'],
   ['tools', '工具箱', 'tools toolbox gongjuxiang'],
   ['safebox', '保险箱', 'safebox vault baoxianxiang'],

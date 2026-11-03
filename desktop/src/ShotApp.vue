@@ -13,6 +13,11 @@ const blocks = ref<Block[]>([])
 const message = ref('')
 const cover = ref(true)
 const toastText = ref('')
+const histAt = ref(0)
+const saved = ref(false)
+const cmp = ref<{ name: string; text: string; err?: boolean }[]>([])
+const cmpBusy = ref(false)
+let langName = '简体中文'
 const out = ref<HTMLCanvasElement | null>(null)
 let img: HTMLImageElement | null = null
 let base: HTMLCanvasElement | null = null
@@ -56,7 +61,46 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     e.preventDefault()
     close()
+  } else if (e.key === 'Enter' && sel.value && (phase.value === 'done' || phase.value === 'error')) {
+    e.preventDefault()
+    void run(sel.value)
   }
+}
+async function pin() {
+  const cv = out.value
+  const r = sel.value
+  if (!cv || !r) return
+  try {
+    await api.shotPin(cv.toDataURL('image/png'), r.x, r.y, r.w, r.h)
+    close()
+  } catch (e) {
+    tip(errorText(e))
+  }
+}
+async function saveNote() {
+  if (!histAt.value) return tip('历史记录已在设置里关闭')
+  saved.value = !saved.value
+  await api.shotHistSave(histAt.value, saved.value).catch(() => {})
+  tip(saved.value ? '已存为笔记（设置 → 剪贴板里查看）' : '已取消笔记')
+}
+async function compare() {
+  if (cmpBusy.value) return
+  cmpBusy.value = true
+  const src = blocks.value.map((b) => b.text).join('\n')
+  cmp.value = [{ name: '清影大模型', text: blocks.value.map((b) => b.translation).join('\n') }]
+  try {
+    cmp.value.push({ name: '通用翻译', text: await api.shotCompare(src, langName) })
+  } catch (e) {
+    cmp.value.push({ name: '通用翻译', text: errorText(e), err: true })
+  } finally {
+    cmpBusy.value = false
+  }
+}
+function speak() {
+  const t = blocks.value.map((b) => b.translation).join('。')
+  if (!t || !('speechSynthesis' in window)) return tip('这台电脑没有朗读功能')
+  speechSynthesis.cancel()
+  speechSynthesis.speak(new SpeechSynthesisUtterance(t))
 }
 
 const rectOf = (e: MouseEvent): Rect => {
@@ -117,7 +161,10 @@ async function run(r: Rect) {
   message.value = '正在识别并翻译……'
   try {
     const settings = await api.getSettings()
-    jobId = await api.shotRun({ kind: 'imgtrans', image: c.url, lang: settings.ai.targetLang || '简体中文' })
+    langName = settings.ai.targetLang || '简体中文'
+    cmp.value = []
+    saved.value = false
+    jobId = await api.shotRun({ kind: 'imgtrans', image: c.url, lang: langName })
     for (let n = 0; n < 240 && alive; n++) {
       await new Promise((ok) => setTimeout(ok, 500))
       const j = await api.writeJob(jobId)
@@ -131,6 +178,8 @@ async function run(r: Rect) {
         phase.value = 'done'
         await nextTick()
         draw()
+        histAt.value = await api.shotHistAdd(list.map((b) => b.text).join('\n'), list.map((b) => b.translation).join('\n')).catch(() => 0)
+        if (settings.shotAutoCopy) void copyText(list.map((b) => b.translation).join('\n'))
         return
       }
     }
@@ -257,7 +306,7 @@ const barStyle = computed(() => {
   const r = sel.value
   if (!r) return {}
   const below = r.y + r.h + 56 < innerHeight
-  const left = Math.max(8, Math.min(r.x, innerWidth - 360))
+  const left = Math.max(8, Math.min(r.x, innerWidth - 700))
   return { left: `${left}px`, top: below ? `${r.y + r.h + 8}px` : `${Math.max(8, r.y - 46)}px` }
 })
 const listStyle = computed(() => {
@@ -284,16 +333,28 @@ const listStyle = computed(() => {
         <button :class="{ on: cover }" @click="setCover(true)">译文覆盖</button>
         <button :class="{ on: !cover }" @click="setCover(false)">原图</button>
         <button @click="copyText(blocks.map((b) => b.translation).join('\n'))">复制译文</button>
+        <button @click="copyText(blocks.map((b) => b.text).join('\n'))">复制原文</button>
+        <button @click="speak">朗读</button>
+        <button :disabled="cmpBusy" @click="compare">对比服务</button>
+        <button @click="pin">钉在桌面</button>
+        <button :class="{ on: saved }" @click="saveNote">{{ saved ? '已存笔记' : '存为笔记' }}</button>
         <button @click="copyImage">复制图片</button>
         <button @click="close">关闭</button>
       </div>
       <div class="list" :style="listStyle" @mousedown.stop>
+        <div v-if="cmp.length" class="cmp">
+          <div v-for="c in cmp" :key="c.name" class="ci" :class="{ err: c.err }" @click="!c.err && copyText(c.text)">
+            <b>{{ c.name }}</b>
+            <div>{{ c.text }}</div>
+          </div>
+        </div>
         <div v-for="(b, i) in blocks" :key="i" class="row" @click="copyText(b.translation)">
           <div class="o">{{ b.text }}</div>
           <div class="t">{{ b.translation }}</div>
         </div>
       </div>
     </template>
+    <div v-if="phase === 'done'" class="keys">Esc 关闭 · Enter 重新翻译 · 点译文行复制该段</div>
     <div v-if="toastText" class="toast">{{ toastText }}</div>
   </div>
 </template>
@@ -313,5 +374,10 @@ const listStyle = computed(() => {
 .row:first-child { border-top: 0; }
 .o { color: #777; font-size: 12px; }
 .t { font-weight: 600; }
+.cmp { border-bottom: 2px solid #f0a064; margin-bottom: 4px; }
+.ci { padding: 6px 0; border-top: 1px solid #eee; cursor: pointer; }
+.ci:first-child { border-top: 0; }
+.ci b { font-size: 12px; color: #b4561a; }
+.keys { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: #1d2420cc; color: #fff; padding: 4px 12px; border-radius: 999px; font-size: 12px; pointer-events: none; }
 .toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #1d2420; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 13px; }
 </style>

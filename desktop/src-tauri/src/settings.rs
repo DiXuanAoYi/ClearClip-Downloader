@@ -200,6 +200,10 @@ pub struct Settings {
     pub shortcut: String,
     /// 截图翻译的全局快捷键；留空表示不启用
     pub shot_hotkey: String,
+    /// 截图翻译完成后自动复制译文
+    pub shot_auto_copy: bool,
+    /// 记录最近的截图翻译（只存文字，不存图片）
+    pub shot_history: bool,
     pub check_update: bool,
     pub disclaimer_accepted: bool,
     /// 启动时自动继续未完成的任务（否则恢复为“已暂停”）
@@ -692,8 +696,18 @@ pub struct LiveSettings {
     pub manga_engine: String,
     /// 已经确认过“漫画模式会上传图片”
     pub manga_ack: bool,
-    /// 擦掉原文的方式：fill（取色填充）/ none（只盖译文）
+    /// 擦掉原文的方式：fill（取色填充）/ inpaint（邻近修补，渐变底）/ none（只盖译文）
     pub manga_erase: String,
+    /// 阅读方向：true 右→左（日漫），false 左→右
+    pub manga_rtl: bool,
+    /// 译文字体：hand（手写风黑体）/ sans（黑体）/ serif（宋体）
+    pub manga_font: String,
+    /// 拟声词保留原样，旁边加小注
+    pub manga_sfx: bool,
+    /// 翻页后自动重新翻译
+    pub manga_follow: bool,
+    /// 人名、称呼前后页保持一致
+    pub manga_names: bool,
     // ---- 系统声音实时字幕 ----
     /// 听的语言（空表示自动）
     pub audio_lang: String,
@@ -740,6 +754,11 @@ impl Default for LiveSettings {
             manga_engine: "vision".into(),
             manga_ack: false,
             manga_erase: "fill".into(),
+            manga_rtl: true,
+            manga_font: "hand".into(),
+            manga_sfx: true,
+            manga_follow: true,
+            manga_names: true,
             audio_lang: String::new(),
             audio_stt: "local".into(),
             audio_bilingual: true,
@@ -764,7 +783,8 @@ impl LiveSettings {
         pick(&mut self.ocr_api.provider, &["ocrspace", "baidu", "google"], "ocrspace");
         pick(&mut self.sub_place, &["cover", "bar"], "cover");
         pick(&mut self.manga_engine, &["vision", "local"], "vision");
-        pick(&mut self.manga_erase, &["fill", "none"], "fill");
+        pick(&mut self.manga_erase, &["fill", "inpaint", "none"], "fill");
+        pick(&mut self.manga_font, &["hand", "sans", "serif"], "hand");
         pick(&mut self.audio_stt, &["local", "cloud"], "local");
         self.ocr_lang = self.ocr_lang.trim().chars().take(16).collect();
         self.target_lang = self.target_lang.trim().chars().take(40).collect();
@@ -1180,6 +1200,8 @@ impl Default for Settings {
             close_to_tray: true,
             shortcut: "CommandOrControl+Shift+D".into(),
             shot_hotkey: "Ctrl+Alt+T".into(),
+            shot_auto_copy: false,
+            shot_history: true,
             check_update: true,
             disclaimer_accepted: false,
             auto_resume: false,

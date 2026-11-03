@@ -10,8 +10,8 @@ import { formatBytes, formatDateTime } from '../utils/format'
 
 /** 实时屏幕翻译：翻译别的软件和游戏画面上的文字。控制在这里，也可以用悬浮钮、托盘和快捷键。 */
 const app = useAppStore()
-const form = ref<ScreenSettings>(structuredClone(app.settings!.live))
-const st = ref<ScreenStatus>({ supported: true, running: false, mode: 'standard', target: null, hidden: false, msg: '', audio: false })
+const form = ref<ScreenSettings>(JSON.parse(JSON.stringify(app.settings!.live)) as ScreenSettings)
+const st = ref<ScreenStatus>({ supported: true, running: false, mode: 'standard', target: null, hidden: false, paused: false, msg: '', audio: false })
 const wins = ref<ScreenWindow[]>([])
 const winPick = ref<number | ''>('')
 const langs = ref<{ tag: string; name: string }[]>([])
@@ -82,6 +82,7 @@ onMounted(async () => {
   void loadWins()
   void loadHist()
   langs.value = await api.scOcrLangs().catch(() => [])
+  experts.value = (await api.expertsState().catch(() => null))?.experts ?? []
   ocr.value = await api.ocrStatus().catch(() => null)
   offs = [
     await api.onScreenState((s) => (st.value = s)),
@@ -136,6 +137,35 @@ async function startWindow() {
   if (!w) return ElMessage.info('先选一个窗口')
   await start({ kind: 'window', rect: [w.x, w.y, w.w, w.h], hwnd: w.hwnd, exe: w.exe, title: w.title })
 }
+/** 取景方式：整个屏幕（主显示器，物理像素） */
+async function startScreen() {
+  const dpr = window.devicePixelRatio || 1
+  const w = Math.round(window.screen.width * dpr)
+  const h = Math.round(window.screen.height * dpr)
+  await start({ kind: 'region', rect: [0, 0, w, h], hwnd: 0, exe: '', title: '整个屏幕' })
+}
+const SPEEDS: [number, string][] = [
+  [1, '省电 · 1 帧/秒'],
+  [3, '均衡 · 3 帧/秒'],
+  [6, '流畅 · 6 帧/秒'],
+]
+const experts = ref<{ id: string; name: string }[]>([])
+const expertId = computed({
+  get: () => (app.settings?.ai.expertAuto ? '__auto' : app.settings?.ai.expert || ''),
+  set: (v: string) => {
+    const ai = app.settings?.ai
+    if (!ai) return
+    void app.patch({ ai: { ...ai, expertAuto: v === '__auto', expert: v === '__auto' ? ai.expert : v } })
+  },
+})
+const glossaryOn = computed({
+  get: () => !!app.settings?.ai.glossaryOn,
+  set: (v: boolean) => {
+    const ai = app.settings?.ai
+    if (ai) void app.patch({ ai: { ...ai, glossaryOn: v } })
+  },
+})
+
 async function tryOnce() {
   trying.value = true
   tried.value = null
@@ -242,9 +272,32 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         <el-button :disabled="!winPick || !st.supported" @click="startWindow">翻译这个窗口</el-button>
       </div>
       <div class="row">
+        <span class="mute">取景方式</span>
+        <el-button-group>
+          <el-button :disabled="!st.supported" @click="pick">框选区域</el-button>
+          <el-button :disabled="!winPick || !st.supported" @click="startWindow">跟随窗口</el-button>
+          <el-button :disabled="!st.supported" @click="startScreen">整个屏幕</el-button>
+        </el-button-group>
+        <small class="mute">“跟随窗口”先在上面的下拉框里选窗口；框选后译文会盖在原处。</small>
+      </div>
+      <div class="row">
+        <span class="mute">刷新速度</span>
+        <el-radio-group v-model="form.fps">
+          <el-radio-button v-for="[n, t] in SPEEDS" :key="n" :value="n">{{ t }}</el-radio-button>
+        </el-radio-group>
+        <span class="mute">术语库</span>
+        <el-switch v-model="glossaryOn" />
+        <span class="mute">专家</span>
+        <el-select v-model="expertId" style="width: 180px" placeholder="自动匹配">
+          <el-option value="__auto" label="自动匹配" />
+          <el-option v-for="e in experts" :key="e.id" :value="e.id" :label="e.name" />
+        </el-select>
+      </div>
+      <div class="row">
         <el-button v-if="!st.running" type="success" :disabled="!st.supported || !st.target" @click="start()">开始（{{ form.hotkey }}）</el-button>
         <el-button v-else type="danger" @click="stop">停止（{{ form.hotkey }}）</el-button>
         <el-button :disabled="!st.supported || !st.target" :loading="trying" @click="tryOnce">试识别一次</el-button>
+        <el-button v-if="st.running" @click="api.scPause()">{{ st.paused ? '继续' : '暂停' }}</el-button>
         <el-button v-if="st.running" @click="api.scHide()">{{ st.hidden ? '显示译文' : '隐藏译文' }}（{{ form.hotkeyHide }}）</el-button>
       </div>
       <div v-if="tried" class="try">
@@ -350,6 +403,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         <div class="kv"><span>字幕条里同时显示原文</span><el-switch v-model="form.subBilingual" /></div>
         <div class="kv"><span>相似的句子不重复翻<small class="mute block">字幕逐字出现、略有改动时，只翻最终那句</small></span><el-switch v-model="form.subDedupe" /></div>
         <div class="kv"><span>跨屏合并<small class="mute block">一句话分两屏显示时，合成一句再翻</small></span><el-switch v-model="form.subMerge" /></div>
+        <el-alert type="info" :closable="false" show-icon title="看的是本地视频文件时，用工具箱里的“生成字幕”更准：提前翻好，不会晚一拍。" />
       </el-tab-pane>
 
       <el-tab-pane label="漫画模式" name="manga">
@@ -361,11 +415,39 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           </el-radio-group>
         </div>
         <div class="field">
-          <label>原文怎么擦</label>
+          <label>阅读方向</label>
+          <el-radio-group v-model="form.mangaRtl">
+            <el-radio :value="true">右→左（日漫）</el-radio>
+            <el-radio :value="false">左→右</el-radio>
+          </el-radio-group>
+        </div>
+        <div class="field">
+          <label>擦字方式</label>
           <el-radio-group v-model="form.mangaErase">
-            <el-radio value="fill">按底色填平再写译文</el-radio>
+            <el-radio value="fill">取色填充</el-radio>
+            <el-radio value="inpaint">邻近修补（渐变、网点底更自然）</el-radio>
             <el-radio value="none">只盖译文，不擦</el-radio>
           </el-radio-group>
+        </div>
+        <div class="field">
+          <label>译文字体</label>
+          <el-select v-model="form.mangaFont" style="width: 200px">
+            <el-option value="hand" label="手写风黑体" />
+            <el-option value="sans" label="黑体" />
+            <el-option value="serif" label="宋体" />
+          </el-select>
+        </div>
+        <div class="kv"><span>拟声词保留原样，旁边加小注</span><el-switch v-model="form.mangaSfx" /></div>
+        <div class="kv"><span>翻页后自动重新翻译</span><el-switch v-model="form.mangaFollow" /></div>
+        <div class="kv"><span>人名、称呼前后页保持一致<small class="mute block">本次会话里记住模型报的译名，下一页沿用</small></span><el-switch v-model="form.mangaNames" /></div>
+        <el-alert type="warning" :closable="false" show-icon title="漫画模式会把当前这一页图片发给你配置的视觉模型。开启前会提示一次，并显示用的是哪个模型。" />
+        <div class="field">
+          <label>为什么默认走视觉模型</label>
+          <small class="mute">本机文字识别对竖排日文、手写体、艺术字不稳；视觉模型一次给出文字、翻译和位置。代价是要上传图片、每页等 2–4 秒。</small>
+        </div>
+        <div class="field">
+          <label>做不到的，提前说</label>
+          <small class="mute">没有框的旁白、画面里的手写字、特效字识别率会低；目标是“能看懂”，不是专业汉化组的逐页打磨。拟声词按原样保留。</small>
         </div>
         <small class="mute">原文是竖排的，译文也竖排；原文横排的，译文也横排。翻页（画面大幅变化）时旧译文自动清除。{{ form.mangaAck ? '已确认过上传提示。' : '第一次使用会提示一次上传图片的说明。' }}</small>
       </el-tab-pane>

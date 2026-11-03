@@ -49,6 +49,8 @@ test('dictation diff marks missed words and scores', () => {
   const d = L.dictationDiff('The quick brown fox jumps.', 'the quick fox jump')
   assert.deepEqual(plain(d.missed), ['brown', 'jumps'])
   assert.equal(d.score, 60)
+  assert.equal(d.right, 3)
+  assert.equal(d.total, 5)
   assert.equal(d.parts.map((p) => p.text).join(''), 'The quick brown fox jumps.')
   assert.equal(d.parts.find((p) => p.text === 'brown').ok, false)
   assert.equal(L.dictationDiff('Hello there', 'hello there').score, 100)

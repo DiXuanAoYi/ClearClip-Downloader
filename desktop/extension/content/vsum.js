@@ -24,6 +24,8 @@
     select, input[type=text], textarea { border: 1px solid #cfd5d1; border-radius: 6px; padding: 4px 6px; background: #fff; color: inherit; min-width: 0; }
     textarea { width: 100%; resize: vertical; }
     .card { background: #fff; border: 1px solid #e3e6e3; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; white-space: pre-wrap; word-break: break-word; }
+    .vcard .vh { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+    .vcard .vf { margin-top: 4px; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; margin: 6px 0; }
     .chip { background: #d9762b1f; color: #8a3f0c; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
     .ln { position: relative; display: grid; grid-template-columns: 48px 1fr; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; }
@@ -1166,6 +1168,73 @@
     return h('div', {}, ...out)
   }
 
+  // ---------- 生词页：字幕学习里收藏的词，按本视频 / 全部查看 ----------
+  const VOCAB = { list: null, err: '', scope: 'video', hard: true, loading: false }
+  async function loadVocab() {
+    VOCAB.loading = true
+    const r = await send({ type: 'cc-vocab', op: 'list', q: '' })
+    VOCAB.loading = false
+    if (!r?.ok) VOCAB.err = r?.error || '连不上清影应用'
+    else {
+      VOCAB.err = ''
+      VOCAB.list = r.words || []
+      VOCAB.stats = r.stats || {}
+    }
+    if (S.tab === 'vocab') render()
+  }
+  const sameVideo = (w) => {
+    try {
+      return V.videoKey(w.sourceUrl) === localKey()
+    } catch {
+      return w.sourceUrl === (S.data?.url || location.href)
+    }
+  }
+  const shownVocab = () => {
+    let l = VOCAB.list || []
+    if (VOCAB.scope === 'video') l = l.filter(sameVideo)
+    if (VOCAB.hard) l = l.filter((w) => w.level && w.level !== '基础')
+    return l
+  }
+  const fmtClock = (sec) => {
+    const t = Math.max(0, Math.floor(sec || 0))
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`
+  }
+  function vocabCard(w) {
+    const here = sameVideo(w)
+    return h('div', { class: 'card vcard' },
+      h('div', { class: 'vh' },
+        h('b', { text: w.word }),
+        w.phonetic ? h('span', { class: 'mute', text: w.phonetic }) : null,
+        w.level ? h('span', { class: 'chip', text: w.level }) : null),
+      h('div', { text: `${w.pos ? w.pos + ' ' : ''}${w.meaning || ''}${w.ctxMeaning ? `（本句：${w.ctxMeaning}）` : ''}` }),
+      w.sentence ? h('div', { class: 'mute', text: w.sentence }) : null,
+      h('div', { class: 'vf' },
+        here ? h('button', { class: 'ts', text: `跳到 ${fmtClock(w.timeSec)}`, onclick: () => seek((w.timeSec || 0) * 1000) }) : h('span', { class: 'mute', text: `${(w.sourceTitle || '').slice(0, 24)} ${fmtClock(w.timeSec)}` })))
+  }
+  function tabVocab() {
+    if (!VOCAB.list && !VOCAB.loading && !VOCAB.err) void loadVocab()
+    const list = shownVocab()
+    const exportAnki = async () => {
+      const r = await send({ type: 'cc-vocab', op: 'export', format: 'anki' })
+      if (!r?.ok) return toast(ui, r?.error || '导出失败', true)
+      saveFile(`生词本.${r.ext}`, r.text)
+    }
+    return h('div', {},
+      h('div', { class: 'stick' }, h('div', { class: 'tools' },
+        sel([['video', '本视频'], ['all', '全部视频']], VOCAB.scope, (v) => ((VOCAB.scope = v), render()), '范围'),
+        h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: VOCAB.hard ? true : null, onchange: (e) => ((VOCAB.hard = e.target.checked), render()) }), ' 只看难词'),
+        h('span', { class: 'mute', text: VOCAB.loading ? '读取中…' : `${list.length} 个` }))),
+      VOCAB.err ? h('div', { class: 'mute', text: `${VOCAB.err}。生词保存在清影应用里，先把应用开着。` }) : null,
+      !VOCAB.err && VOCAB.list && !list.length ? h('div', { class: 'mute', text: '还没有收藏的词。看视频时在字幕上悬停生词，点“收藏到生词本”。' }) : null,
+      ...list.map(vocabCard),
+      actsBar(
+        h('button', { text: '导出 Anki', disabled: !list.length, onclick: exportAnki }),
+        h('button', { class: 'sec', text: '存为笔记', disabled: !list.length, onclick: () => addNote({ t: -1, text: list.map((w) => `- ${w.word} ${w.phonetic || ''} ${w.meaning || ''}`.trim()).join('\n'), kind: 'note' }) }),
+        h('button', { class: 'sec', text: '刷新', onclick: () => ((VOCAB.list = null), loadVocab()) }),
+        h('button', { class: 'sec', text: '去应用里复习', title: '复习在清影应用的“生词本”页', onclick: () => toast(ui, '打开清影应用 → 生词本，就能复习今天到期的词') })),
+    )
+  }
+
   function tabNotes() {
     const list = V.sortNotes(shownNotes())
     const mine = S.notes.filter((n) => n.key === localKey())
@@ -1520,7 +1589,7 @@
 
   // ---------- 框架 ----------
 
-  const TABS = [['summary', '摘要'], ['chapters', '章节'], ['transcript', '文稿'], ['mindmap', '导图'], ['ask', '问答'], ['notes', '笔记'], ['comments', '评论'], ['more', '更多']]
+  const TABS = [['summary', '摘要'], ['chapters', '章节'], ['transcript', '文稿'], ['mindmap', '导图'], ['ask', '问答'], ['notes', '笔记'], ['vocab', '生词'], ['comments', '评论'], ['more', '更多']]
 
   function renderProgress() {
     const el = ui.root.getElementById('prog')
@@ -1550,14 +1619,18 @@
         d.track && `· ${d.track}`,
         d.durationMs > 0 && `· ${V.fmtClock(d.durationMs)}`,
         S.status && !S.status.ready && h('span', { style: 'color:#a8362d', text: '· 清影里未设置大模型' })))
-      children.push(h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([id, n]) => h('button', { class: S.tab === id ? 'on' : '', role: 'tab', 'aria-selected': S.tab === id, text: n, onclick: () => ((S.tab = id), savePrefs(), render()) }))))
+      children.push(h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([id, n]) => h('button', { class: S.tab === id ? 'on' : '', role: 'tab', 'aria-selected': S.tab === id, text: id === 'vocab' && VOCAB.list ? `${n} ${VOCAB.list.length}` : n, onclick: () => ((S.tab = id), savePrefs(), render()) }))))
     }
     const body = h('div', { class: 'body' }, h('div', { id: 'prog' }))
-    if (!d) body.append(h('div', { class: 'mute', text: '正在读取字幕…' }))
+    if (!d) {
+      // 读取期间也先把各标签页画出来（灰着），不要整个面板只剩一行字
+      children.push(h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([, n]) => h('button', { disabled: true, role: 'tab', text: n }))))
+      body.append(h('div', { class: 'mute', text: '正在读取字幕…（最多等 25 秒）' }))
+    }
     else {
-      if (!d.lines.length && S.tab !== 'more' && S.tab !== 'notes' && S.tab !== 'comments') body.append(noData())
+      if (!d.lines.length && S.tab !== 'more' && S.tab !== 'notes' && S.tab !== 'vocab' && S.tab !== 'comments') body.append(noData())
       else {
-        const fn = { summary: tabSummary, chapters: tabChapters, transcript: tabTranscript, mindmap: tabMindmap, ask: tabAsk, notes: tabNotes, comments: tabComments, more: tabMore }[S.tab]
+        const fn = { summary: tabSummary, chapters: tabChapters, transcript: tabTranscript, mindmap: tabMindmap, ask: tabAsk, notes: tabNotes, vocab: tabVocab, comments: tabComments, more: tabMore }[S.tab]
         body.append(fn())
       }
     }
@@ -1622,6 +1695,9 @@
     const ok = r && S.prefs.pill && S.data && isVideo() && r.width > 200 && r.height > 120 && r.bottom > 0 && r.top < innerHeight
     pill.style.display = ok ? '' : 'none'
     if (ok) {
+      const cnt = S.notes.filter((n) => n.key === localKey()).length
+      const lab = `笔记 (${cnt})`
+      if (pill.textContent !== lab) pill.textContent = lab
       // 鼠标移出视频区域后淡出隐藏（离开 1.5 秒后）；刚出现时先显示 2.5 秒
       const m = globalThis.__ccPtr || { x: -1, y: -1, t: 0 }
       const inside = m.x >= r.left && m.x <= r.right && m.y >= r.top && m.y <= r.bottom
@@ -1683,7 +1759,11 @@
     S.data = null
     render()
     try {
-      const d = await Src.load()
+      // 读字幕最多等 25 秒：网络慢或后台没响应时，不要让面板一直停在“正在读取”，直接给出可操作的界面
+      const d = await Promise.race([
+        Src.load(),
+        new Promise((r) => setTimeout(() => r({ title: document.title, url: location.href, site: 'html5', lines: [], chapters: [], tracks: [], note: '读取字幕超时（网络慢或站点没响应）。可以点“重新读取”，或在“更多”里导入字幕 / 用清影转写。', fetchFailed: true }), 25000)),
+      ])
       S.recovering = !d.lines.length // 先走“本地字幕 / 缓存 / 在线字幕 / 自动转写”，都没有结果再列字幕轨
       setData(d)
       try {

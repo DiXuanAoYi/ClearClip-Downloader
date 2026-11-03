@@ -967,6 +967,8 @@ export interface Settings {
   closeToTray: boolean
   shortcut: string
   shotHotkey: string
+  shotAutoCopy: boolean
+  shotHistory: boolean
   checkUpdate: boolean
   disclaimerAccepted: boolean
   autoResume: boolean
@@ -2093,6 +2095,13 @@ export interface ScreenProfile {
   target: string
 }
 
+export interface ShotEntry {
+  at: number
+  src: string
+  text: string
+  saved: boolean
+}
+
 export interface ScreenSettings {
   hotkey: string
   hotkeyPick: string
@@ -2124,7 +2133,12 @@ export interface ScreenSettings {
   subFont: number
   mangaEngine: 'vision' | 'local'
   mangaAck: boolean
-  mangaErase: 'fill' | 'none'
+  mangaErase: 'fill' | 'inpaint' | 'none'
+  mangaRtl: boolean
+  mangaFont: 'hand' | 'sans' | 'serif'
+  mangaSfx: boolean
+  mangaFollow: boolean
+  mangaNames: boolean
   audioLang: string
   audioStt: 'local' | 'cloud'
   audioBilingual: boolean
@@ -2146,6 +2160,7 @@ export interface ScreenStatus {
   mode: string
   target: ScreenTarget | null
   hidden: boolean
+  paused: boolean
   msg: string
   audio: boolean
 }
@@ -2175,6 +2190,7 @@ export interface ScreenPayload {
   fontMin: number
   cjk: boolean
   erase: boolean
+  fontFamily: string
 }
 
 export interface ScreenSub {
@@ -2226,4 +2242,17 @@ export interface OcrStatus {
   dir: string
   size: number
   supported: boolean
+}
+
+export interface FileTransPage {
+  src: string[]
+  trans: (string | null)[]
+}
+
+export interface FileTransView {
+  input: string
+  target: string
+  bilingual: boolean
+  pages: FileTransPage[]
+  failed: number
 }

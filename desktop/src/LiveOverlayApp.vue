@@ -8,6 +8,7 @@ import type { ScreenBlock, ScreenPayload } from './types'
  *  竖排原文 → 竖排译文（writing-mode: vertical-rl），横排原文 → 横排译文。 */
 const payload = ref<ScreenPayload | null>(null)
 const hidden = ref(false)
+const paused = ref(false)
 const els = ref<Record<number, HTMLElement | null>>({})
 const dpr = window.devicePixelRatio || 1
 let offs: UnlistenFn[] = []
@@ -28,6 +29,7 @@ function style(b: ScreenBlock, p: ScreenPayload) {
     background: b.bg,
     opacity: String(Math.max(0.3, p.opacity / 100)),
     fontSize: `${Math.max(p.fontMin, b.font / dpr)}px`,
+    ...(p.fontFamily ? { fontFamily: p.fontFamily } : {}),
   } as Record<string, string>
 }
 
@@ -55,7 +57,9 @@ async function apply(p: ScreenPayload) {
 onMounted(async () => {
   document.documentElement.style.background = 'transparent'
   document.body.style.background = 'transparent'
-  offs = await Promise.all([api.onScreenBlocks((p) => void apply(p)), api.onScreenHidden((h) => (hidden.value = h))])
+  offs = await Promise.all([api.onScreenBlocks((p) => void apply(p)), api.onScreenHidden((h) => (hidden.value = h)), api.onScreenState((s) => (paused.value = !!s.paused))])
+  const stt = await api.scStatus().catch(() => null)
+  if (stt) paused.value = !!stt.paused
   const cur = await api.scOverlayState().catch(() => null)
   if (cur && !payload.value) void apply(cur)
 })
@@ -63,6 +67,7 @@ onBeforeUnmount(() => offs.forEach((f) => f()))
 </script>
 
 <template>
+  <div v-if="!hidden" class="edge" :class="{ paused }"><span>{{ paused ? '已暂停' : '翻译中' }}</span></div>
   <div v-if="payload && !hidden" class="ov">
     <div
       v-for="(b, i) in payload.blocks"
@@ -84,6 +89,9 @@ html, body { margin: 0; background: transparent !important; overflow: hidden; }
 </style>
 
 <style scoped>
+.edge { position: fixed; inset: 0; border: 2px solid #f0a064; border-radius: 4px; pointer-events: none; box-sizing: border-box; }
+.edge.paused { border-style: dashed; opacity: 0.8; }
+.edge span { position: absolute; left: 0; top: 0; background: #f0a064; color: #14181a; font: 600 11px/18px -apple-system, 'Microsoft YaHei', sans-serif; padding: 0 8px; border-radius: 0 0 4px 0; }
 .ov { position: fixed; inset: 0; pointer-events: none; }
 .blk { position: absolute; box-sizing: border-box; overflow: hidden; padding: 1px 3px; border-radius: 3px; font-family: -apple-system, 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif; line-height: 1.22; font-weight: 600; word-break: break-word; overflow-wrap: anywhere; display: flex; flex-direction: column; justify-content: flex-start; }
 .blk.c { justify-content: center; align-items: center; text-align: center; }

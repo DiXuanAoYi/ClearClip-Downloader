@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
-import type { Settings, UpdateInfo } from '../types'
+import type { Settings, ShotEntry, UpdateInfo } from '../types'
 import { previewFilename } from '../utils/format'
 import AccountsPanel from '../components/AccountsPanel.vue'
 import NetworkPanel from '../components/NetworkPanel.vue'
@@ -143,6 +143,20 @@ async function call(fn: () => Promise<unknown>) {
 function insertVar(v: string) {
   form.value.filenameTemplate += v
 }
+
+const shotHist = ref<ShotEntry[]>([])
+async function loadShotHist() {
+  shotHist.value = await api.shotHistList().catch(() => [])
+}
+async function toggleShotNote(h: ShotEntry) {
+  await api.shotHistSave(h.at, !h.saved).catch(() => {})
+  await loadShotHist()
+}
+async function clearShotHist() {
+  await api.shotHistClear(true).catch(() => {})
+  await loadShotHist()
+}
+onMounted(loadShotHist)
 </script>
 
 <template>
@@ -349,6 +363,19 @@ function insertVar(v: string) {
               <label>截图翻译快捷键（仅 Windows）</label>
               <el-input v-model="form.shotHotkey" size="small" placeholder="Ctrl+Alt+T" class="mono" />
               <small class="mute">按下后整屏冻结，框选要翻译的区域，用视觉模型识字翻译并盖回原位。需要在“AI”里选一个能看图的模型；留空表示不使用。</small>
+            </div>
+            <div class="kv"><span>翻译后自动复制译文</span><el-switch v-model="form.shotAutoCopy" /></div>
+            <div class="kv"><span>记录最近的截图翻译<small class="mute block">只存文字，不存图片</small></span><el-switch v-model="form.shotHistory" /></div>
+            <div class="field">
+              <label>最近的截图翻译</label>
+              <div v-if="!shotHist.length" class="mute">还没有记录。</div>
+              <div v-for="h in shotHist.slice(0, 8)" :key="h.at" class="shotrow">
+                <div class="shotsrc mute">{{ h.src }}</div>
+                <div class="shottr">{{ h.text }}</div>
+                <small class="mute">{{ h.saved ? '★ 笔记 · ' : '' }}{{ new Date(h.at).toLocaleString() }}</small>
+                <el-button size="small" link @click="toggleShotNote(h)">{{ h.saved ? '取消笔记' : '存为笔记' }}</el-button>
+              </div>
+              <el-button v-if="shotHist.length" size="small" @click="clearShotHist">清空（保留笔记）</el-button>
             </div>
             <div class="kv">
               <span>识别所有网址<small class="mute block">关闭时只识别内置平台和下面列出的网站，避免复制普通网址时频繁弹窗</small></span>
@@ -815,4 +842,7 @@ h3 {
 a {
   color: var(--cc-acc);
 }
+.shotrow { border-top: 1px solid var(--el-border-color-lighter); padding: 6px 0; display: grid; gap: 2px; }
+.shotsrc { font-size: 12px; white-space: pre-wrap; max-height: 3em; overflow: hidden; }
+.shottr { font-weight: 600; white-space: pre-wrap; max-height: 4.5em; overflow: hidden; }
 </style>
