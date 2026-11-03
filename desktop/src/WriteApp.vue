@@ -25,7 +25,6 @@ const cfg = ref<WritingSettings | null>(null)
 const pin = ref(true)
 const autoClose = ref(false)
 const extras = ref<string[]>([])
-const showMore = ref(false)
 const compare = ref(false)
 const favs = ref<Set<string>>(new Set())
 const canUndo = ref(false)
@@ -289,7 +288,7 @@ onBeforeUnmount(() => {
         <span class="logo" data-tauri-drag-region>写</span>
         <div class="ttl" data-tauri-drag-region>
           <b data-tauri-drag-region>清影写作</b>
-          <span v-if="src?.app" class="from" data-tauri-drag-region>来自 {{ src.app }}</span>
+          <span v-if="src?.app" class="from" data-tauri-drag-region>{{ src.app }}</span>
         </div>
         <button class="ib" :class="{ on: pin }" :title="pin ? '已固定在最前，点击取消' : '固定在最前'" @click="setPin">
           <svg viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3v2h-5v5l-1 1-1-1v-5H5v-2l3-3z" /></svg>
@@ -322,10 +321,9 @@ onBeforeUnmount(() => {
         <section class="acts">
           <div class="seg">
             <button v-for="a in mainActions" :key="a.id" class="sg" :class="{ on: action.id === a.id }" @click="pickAction(a)">{{ a.name }}</button>
-            <button v-if="moreActions.length" class="sg more" :aria-expanded="showMore" @click="showMore = !showMore">{{ showMore ? '收起' : '更多' }}</button>
           </div>
-          <div v-if="showMore" class="more-grid">
-            <button v-for="a in moreActions" :key="a.id" class="chip" @click="pickAction(a); showMore = false">{{ a.name }}</button>
+          <div v-if="moreActions.length" class="more-grid">
+            <button v-for="a in moreActions" :key="a.id" class="chip" :class="{ on: action.id === a.id }" @click="pickAction(a)">{{ a.name }}</button>
           </div>
         </section>
 
@@ -416,12 +414,12 @@ html.dark .shell .foot a { color: var(--acc); }
 .shell { --m: 10px; position: relative; height: 100vh; padding: var(--m); box-sizing: border-box; }
 .wa { --acc: #d9762b; --accd: #b4561a; --soft: #fbeadb; --line: #e1e5e2; --bg: #f5f6f5; --card: #fff; --mut: #66716c; --err: #c2453b; --ok: #2f8a57; --fg: #1d2420; --shadow: 0 8px 28px rgba(20, 30, 25, 0.22), 0 1px 3px rgba(20, 30, 25, 0.18);
   height: 100%; display: flex; flex-direction: column; background: var(--card); color: var(--fg); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; }
-.bar { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px 14px; cursor: grab; user-select: none; }
+.bar { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px 14px; cursor: grab; user-select: none; background: var(--bg); border-bottom: 1px solid var(--line); }
 .bar:active { cursor: grabbing; }
 .logo { width: 24px; height: 24px; border-radius: 8px; background: linear-gradient(135deg, var(--acc), var(--accd)); color: #fff; display: grid; place-items: center; font: 700 12px/1 inherit; flex: none; }
-.ttl { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
+.ttl { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
 .ttl b { font-size: 14px; }
-.from { font-size: 11px; color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.from { font-size: 11px; line-height: 20px; padding: 0 9px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
 .ib { border: 0; background: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--mut); }
 .ib svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .ib:hover { background: var(--bg); color: var(--fg); }
@@ -443,10 +441,10 @@ main { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-dire
 .sg { flex: 1; border: 0; background: none; color: var(--mut); border-radius: 7px; padding: 5px 4px; cursor: pointer; font: inherit; font-size: 12.5px; white-space: nowrap; }
 .sg:hover { color: var(--fg); }
 .sg.on { background: var(--card); color: var(--accd); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
-.sg.more { flex: 0 0 auto; padding: 5px 9px; }
 .more-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 999px; padding: 2px 11px; cursor: pointer; font: inherit; font-size: 12px; }
 .chip:hover { border-color: var(--acc); color: var(--accd); }
+.chip.on { border-color: var(--acc); color: var(--accd); background: var(--soft); font-weight: 600; }
 .chip.tiny { padding: 0 8px; font-size: 11px; color: var(--mut); line-height: 20px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opts { display: flex; gap: 6px; }
 .opts select, .opts input { min-width: 0; padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: inherit; font: inherit; outline: none; }

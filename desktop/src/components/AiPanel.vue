@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { TARGET_LANGS } from '../utils/langs'
+import SttLocal from './SttLocal.vue'
 import { onMounted, ref } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
@@ -73,7 +74,7 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <span>方式</span>
         <el-radio-group v-model="ai.sttEngine" size="small">
           <el-radio-button value="api">在线接口</el-radio-button>
-          <el-radio-button value="local">本机 whisper.cpp</el-radio-button>
+          <el-radio-button value="local">本机识别（离线）</el-radio-button>
         </el-radio-group>
       </div>
       <template v-if="ai.sttEngine === 'api'">
@@ -93,9 +94,10 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         </div>
       </template>
       <template v-else>
-        <small class="mute">
-          需要自己安装 <a href="#" @click.prevent="api.openUrl('https://github.com/ggml-org/whisper.cpp')">whisper.cpp</a>（macOS：<span class="mono">brew install whisper-cpp</span>；Windows 可下载它发布的程序包），并下载一个 ggml 模型（如 <span class="mono">ggml-base.bin</span>，中文推荐 small 或更大）。全程不联网。
-        </small>
+        <small class="mute">全程不联网。模型和“设置 → 组件 → 语音识别”是同一个选择，在哪边改都一样。中文建议用 SenseVoice（快、准）；Whisper 适合多语种和要逐词时间的场景。</small>
+        <SttLocal v-model="ai.sttLocalModel" />
+        <el-collapse class="adv">
+          <el-collapse-item title="高级：手动指定程序 / 模型文件（Whisper）" name="adv">
         <div class="field">
           <label>whisper-cli 位置 <span :class="status?.whisperFound ? 'ok' : 'bad'">{{ status?.whisperFound ? '已找到' : '未找到' }}</span></label>
           <small v-if="status?.whisperPath && status.whisperPath !== ai.whisperBin" class="mute">自动检测到：<span class="mono">{{ status.whisperPath }}</span></small>
@@ -106,6 +108,8 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
           <small v-if="status?.whisperModelPath && status.whisperModelPath !== ai.whisperModel" class="mute">自动检测到：<span class="mono">{{ status.whisperModelPath }}</span></small>
           <div class="keyrow"><el-input v-model="ai.whisperModel" size="small" class="mono" placeholder="留空则自动使用“设置 → 组件”里下载的模型" @change="refresh" /><el-button size="small" @click="pickFile('whisperModel')">选择…</el-button></div>
         </div>
+          </el-collapse-item>
+        </el-collapse>
       </template>
       <div class="field"><label>音频语言</label><el-input v-model="ai.sttLanguage" size="small" class="short mono" placeholder="留空自动识别，或 zh / en / ja" /></div>
       <div v-if="ai.sttEngine === 'local'" class="field">

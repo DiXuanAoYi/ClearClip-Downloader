@@ -61,6 +61,7 @@ bt-http = { package = "reqwest", version = "0.13", default-features = false, fea
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustfft = "6"
 serde_yaml = "0.9"
+bzip2 = { version = "0.5.2", default-features = false, features = ["libbz2-rs-sys"] }
 
 # tract 的 ARM64 汇编内核在 MSVC 下编不过（Windows ARM64），那个平台不带 AI 推理
 [target.'cfg(not(all(windows, target_arch = "aarch64")))'.dependencies]

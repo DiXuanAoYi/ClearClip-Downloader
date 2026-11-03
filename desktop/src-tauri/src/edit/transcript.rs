@@ -250,10 +250,11 @@ async fn run_whisper(
     use tokio::io::{AsyncBufReadExt, BufReader};
     let bin = ai::find_whisper_bin(settings)
         .ok_or_else(|| AppError::invalid("找不到 whisper.cpp（whisper-cli）。请在“设置 → AI”里指定它的位置，或把它放进系统 PATH。"))?;
-    let model = settings.ai.whisper_model.trim();
-    if model.is_empty() || !Path::new(model).is_file() {
-        return Err(AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin）。"));
-    }
+    let model_path = ai::find_whisper_model(settings).ok_or_else(|| {
+        AppError::invalid("文稿剪辑要逐词时间，需要 Whisper 模型：请在“设置 → 组件 → 语音识别”里下载一个 Whisper 模型（SenseVoice 只给整句时间）。")
+    })?;
+    let model = model_path.to_string_lossy().into_owned();
+    let model = model.as_str();
     let prefix = work.join("out");
     let mut cmd = tokio::process::Command::new(&bin);
     cmd.args(whisper_word_args(model, wav, &prefix, lang))
@@ -491,8 +492,8 @@ pub fn edit_stt_status(state: St<'_>) -> SttStatus {
     let reason = if engine == "local" {
         if !ai::whisper_available(&s) {
             "找不到 whisper.cpp，请在“设置 → AI”里指定 whisper-cli 的位置。"
-        } else if s.ai.whisper_model.trim().is_empty() || !Path::new(s.ai.whisper_model.trim()).is_file() {
-            "请在“设置 → AI”里选择 whisper.cpp 的模型文件（ggml-*.bin）。"
+        } else if ai::find_whisper_model(&s).is_none() {
+            "文稿剪辑要逐词时间，需要 Whisper 模型：请在“设置 → 组件 → 语音识别”里下载一个（SenseVoice 只给整句时间）。"
         } else {
             ""
         }

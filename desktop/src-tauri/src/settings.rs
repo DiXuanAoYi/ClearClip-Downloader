@@ -702,6 +702,9 @@ pub struct AiSettings {
     pub whisper_bin: String,
     /// whisper.cpp 的 ggml 模型文件
     pub whisper_model: String,
+    /// 本机语音转文字用哪个模型：`whisper_tiny` / `whisper_base` / `whisper_small` / `sensevoice`；留空自动选。
+    /// “设置 → AI”和“设置 → 组件”里是同一个选择。
+    pub stt_local_model: String,
     /// 下载到的字幕不是目标语言时自动翻译
     pub auto_translate: bool,
     /// 下载的视频没有字幕时自动转写
@@ -727,12 +730,13 @@ impl Default for AiSettings {
             target_lang: "简体中文".into(),
             bilingual: true,
             batch_size: 40,
-            stt_engine: "api".into(),
+            stt_engine: "local".into(),
             stt_base_url: String::new(),
             stt_model: "whisper-1".into(),
             stt_language: String::new(),
             whisper_bin: String::new(),
             whisper_model: String::new(),
+            stt_local_model: String::new(),
             auto_translate: false,
             auto_transcribe: false,
             correct_mode: "conservative".into(),
@@ -762,11 +766,14 @@ impl AiSettings {
         }
         self.batch_size = self.batch_size.clamp(5, 100);
         if !matches!(self.stt_engine.as_str(), "api" | "local") {
-            self.stt_engine = "api".into();
+            self.stt_engine = "local".into();
         }
         self.stt_language = self.stt_language.trim().to_ascii_lowercase();
         self.whisper_bin = self.whisper_bin.trim().to_string();
         self.whisper_model = self.whisper_model.trim().to_string();
+        if !matches!(self.stt_local_model.as_str(), "" | "whisper_tiny" | "whisper_base" | "whisper_small" | "sensevoice") {
+            self.stt_local_model = String::new();
+        }
         self.whisper_vad_model = self.whisper_vad_model.trim().to_string();
         if !matches!(self.correct_mode.as_str(), "conservative" | "aggressive" | "rules") {
             self.correct_mode = "conservative".into();

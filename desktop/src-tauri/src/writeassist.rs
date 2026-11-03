@@ -186,6 +186,7 @@ fn show_window(app: &AppHandle) {
         .resizable(true)
         .always_on_top(cfg.pin)
         .skip_taskbar(true)
+        .visible(false)
         .focused(true)
         .content_protected(protected);
     let mut phys = None;
@@ -217,6 +218,8 @@ fn show_window(app: &AppHandle) {
             } else if let Some((x, y)) = phys {
                 let _ = w.set_position(PhysicalPosition::new(x, y));
             }
+            // 先去掉系统标题栏样式，再显示：否则窗口一出现就带着“清影写作”标题条
+            let _ = w.show();
             let _ = w.set_focus();
         }
         Err(e) => log::warn!("创建写作窗失败：{e}"),

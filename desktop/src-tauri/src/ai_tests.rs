@@ -415,7 +415,7 @@ fn settings_are_normalized() {
     assert_eq!(s.base_url, "https://api.x.com/v1");
     assert_eq!(s.stt_base_url, "");
     assert_eq!(s.stt_url(), "https://api.x.com/v1", "falls back to the chat endpoint");
-    assert_eq!((s.batch_size, s.stt_engine.as_str(), s.target_lang.as_str()), (5, "api", "简体中文"));
+    assert_eq!((s.batch_size, s.stt_engine.as_str(), s.target_lang.as_str()), (5, "local", "简体中文"));
 }
 
 #[test]

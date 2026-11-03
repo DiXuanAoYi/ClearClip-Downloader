@@ -707,6 +707,8 @@ export interface AiSettings {
   correctMode: 'conservative' | 'aggressive' | 'rules'
   correctAuto: boolean
   whisperVadModel: string
+  /** 本机识别用哪个模型："" 自动 | whisper_tiny | whisper_base | whisper_small | sensevoice */
+  sttLocalModel: string
 }
 
 export interface SubgenOpts {
@@ -1906,6 +1908,14 @@ export interface ModelStatus {
 export interface WhisperCliStatus {
   installed: boolean
   path: string | null
+  autoInstall: boolean
+  note: string
+}
+export interface SenseVoiceStatus {
+  runtime: boolean
+  runtimePath: string | null
+  model: boolean
+  ready: boolean
   autoInstall: boolean
   note: string
 }
