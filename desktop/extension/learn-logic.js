@@ -96,7 +96,8 @@
     let k = 0
     const parts = seg.map((p) => (p.word ? { text: p.text, ok: ok[k++] } : { text: p.text, ok: true }))
     const missed = refWords.filter((_, i) => !ok[i])
-    return { parts, missed, score: n ? Math.round((ok.filter(Boolean).length / n) * 100) : 0 }
+    const right = ok.filter(Boolean).length
+    return { parts, missed, right, total: n, score: n ? Math.round((right / n) * 100) : 0 }
   }
 
   /** 精听时“这一句播到哪了”的判断：到句末要不要暂停 / 循环。返回 'play' | 'again' | 'stop'。 */

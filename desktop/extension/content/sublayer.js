@@ -88,6 +88,24 @@
     .ls .res .ok { color: #6fcf97 }
     .ls .res .no { color: #ff7b72; text-decoration: underline wavy }
     .ls .sc { color: #9aa6a2; font-size: 12px }
+    .ls .pill2 { font-size: 11.5px; padding: 1px 8px; border-radius: 9px; background: #3a2c20; color: #f0a064 }
+    .ls .keys { color: #9aa6a2; font-size: 11.5px; line-height: 1.6 }
+    .ls .keys kbd { border: 1px solid #2f383c; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; margin: 0 2px; background: #14181a; font: inherit; font-size: 11px }
+    .ls .chips { display: flex; gap: 6px; flex-wrap: wrap }
+    .ls .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9px; border: 1px solid #2f383c; font-size: 12.5px }
+    .ls .chip a { color: #f0a064; cursor: pointer }
+    .ls .prog { display: flex; flex-direction: column; gap: 2px; max-height: 120px; overflow-y: auto; border-top: 1px solid #2f383c; padding-top: 6px }
+    .ls .prog .pr { display: flex; gap: 8px; font-size: 12px; color: #9aa6a2; cursor: pointer; padding: 1px 0 }
+    .ls .prog .pr.cur { color: #f0a064 }
+    .ls .prog .pr span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+    .bub .heart { margin-left: 6px; border: 0; background: transparent; color: #9aa6a2; font-size: 18px; line-height: 1; padding: 0 2px; cursor: pointer }
+    .bub .heart.on { color: #f0a064 }
+    .bub .hd .sp { flex: 1 }
+    .bub .lab { color: #9aa6a2; font-size: 11.5px }
+    .bub .quote { padding: 6px 8px; border-left: 3px solid #f0a064; background: #14181a; border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.55 }
+    .bub .quote mark { background: transparent; color: #f0a064; font-weight: 600 }
+    .bub .quote .tag { float: right; font-size: 10.5px; padding: 0 6px; border-radius: 8px; background: #3a2c20; color: #f0a064; margin-left: 6px }
+    .bub .saved { color: #6cc08a; font-size: 12px }
     .dr { position: fixed; display: none; width: 340px; max-height: 70vh; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 8px }
     .dr.open { display: flex }
     .dr input { height: 28px; border: 1px solid #2f383c; border-radius: 8px; background: #14181a; color: #e7ecea; padding: 0 8px }
@@ -565,16 +583,103 @@
       parts.push(h('div', { class: 'tip', text: '清影里没有可用的 AI 模型，只能显示词汇等级。到“设置 → AI”配置后就能看到释义和本句意思。' }))
     } else {
       if (res.meaning) parts.push(h('div', { class: 'ms' }, res.pos ? h('i', { text: res.pos }) : null, document.createTextNode(res.meaning)))
-      if (res.context_meaning) parts.push(h('div', { class: 'cx', text: `本句：${res.context_meaning}` }))
+      if (res.context_meaning) parts.push(h('div', { class: 'lab', text: '在这句话里：' }), h('div', { class: 'cx', text: res.context_meaning }))
       if (res.note) parts.push(h('div', { class: 'tip', text: res.note }))
     }
-    const star = h('button', { class: have ? '' : 'p', text: have ? '已收藏' : '收藏到生词本', onclick: () => saveWord(lemma, res, li, star) })
-    parts.push(h('div', { class: 'row2' }, star, h('button', { text: '朗读', onclick: () => speak(lemma) }), h('button', { text: '复制', onclick: () => navigator.clipboard?.writeText(lemma).catch(() => {}) })))
+    const heart = h('button', { class: `heart${have ? ' on' : ''}`, text: have ? '♥' : '♡', title: have ? '已在生词本' : '加入生词本', onclick: () => saveWord(lemma, res, li, heart, saveLine) })
+    const saveLine = h('div', { class: 'saved', text: have ? '已加入生词本' : '' })
+    parts[0].append(h('span', { class: 'sp' }), heart)
+    if (sentence) {
+      const quote = h('div', { class: 'quote' }, h('span', { class: 'tag', text: '本句' }))
+      const idx = sentence.toLowerCase().indexOf(String(word).toLowerCase())
+      if (idx >= 0) quote.append(document.createTextNode(`“${sentence.slice(0, idx)}`), h('mark', { text: sentence.slice(idx, idx + String(word).length) }), document.createTextNode(`${sentence.slice(idx + String(word).length)}”`))
+      else quote.append(document.createTextNode(`“${sentence}”`))
+      parts.push(quote)
+    }
+    const t0 = S.lines[li]?.t || 0
+    parts.push(
+      h(
+        'div',
+        { class: 'row2' },
+        h('button', { class: 'p', text: `跳到这句 ${LN.fmtTime(t0)}`, onclick: () => seekLine(li, true) }),
+        h('button', { text: '播放原声', onclick: () => playClip(li) }),
+        h('button', { text: '朗读', onclick: () => speak(lemma) }),
+        h('button', { text: '复制', onclick: () => navigator.clipboard?.writeText(lemma).catch(() => {}) }),
+      ),
+      h('div', { class: 'row2' }, h('button', { text: clipKeyHas(lemma) ? '♪ 已录原声' : '录下原声（Anki 用）', onclick: (e) => recordClip(lemma, li, e.target) })),
+      saveLine,
+    )
     bub.replaceChildren(...parts)
     placeBubble(r)
   }
 
-  async function saveWord(lemma, res, li, btn) {
+  // ---------- 跳到这句 / 播放原声 / 录原声 ----------
+
+  function seekLine(li, play) {
+    const sp = LN.span(S.lines, li, S.prefs.delay)
+    if (!sp || !S.video) return
+    S.video.currentTime = Math.max(0, sp.start / 1000)
+    if (play) S.video.play().catch(() => {})
+  }
+  function playClip(li) {
+    const sp = LN.span(S.lines, li, S.prefs.delay)
+    if (!sp || !S.video) return
+    S.clipEnd = sp.end / 1000
+    S.video.currentTime = Math.max(0, sp.start / 1000)
+    S.video.play().catch(() => {})
+  }
+  const clipCache = {}
+  const clipKeyHas = (w) => !!clipCache[LN.norm(w)]
+  async function loadClips() {
+    Object.assign(clipCache, await store.get('vocabClips', {}))
+  }
+  /** 把这一句的原声录下来（播放一遍，用 captureStream 录；跨域或受保护的视频录不了）。 */
+  async function recordClip(word, li, btn) {
+    const v = S.video
+    const sp = LN.span(S.lines, li, S.prefs.delay)
+    if (!v || !sp) return
+    if (typeof MediaRecorder === 'undefined' || !(v.captureStream || v.mozCaptureStream)) return toast(ui, '这个浏览器不支持录音', true)
+    try {
+      const stream = (v.captureStream || v.mozCaptureStream).call(v)
+      const tracks = stream.getAudioTracks()
+      if (!tracks.length) throw new Error('这个视频录不到声音（可能跨域或受保护）')
+      const rec = new MediaRecorder(new MediaStream(tracks))
+      const chunks = []
+      rec.ondataavailable = (e) => e.data.size && chunks.push(e.data)
+      const stopped = new Promise((ok) => (rec.onstop = ok))
+      btn.textContent = '录制中…'
+      const prevRate = v.playbackRate
+      v.playbackRate = 1
+      v.currentTime = Math.max(0, sp.start / 1000)
+      await v.play()
+      rec.start()
+      await new Promise((ok) => {
+        const tm = setInterval(() => {
+          if (v.currentTime * 1000 >= sp.end || v.paused || v.ended) (clearInterval(tm), ok())
+        }, 80)
+      })
+      rec.stop()
+      v.pause()
+      v.playbackRate = prevRate
+      await stopped
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
+      if (blob.size > 900000) throw new Error('这一句太长了，没有保存')
+      const data = await new Promise((ok, bad) => {
+        const fr = new FileReader()
+        fr.onload = () => ok(String(fr.result))
+        fr.onerror = () => bad(new Error('读取录音失败'))
+        fr.readAsDataURL(blob)
+      })
+      clipCache[LN.norm(word)] = data
+      await store.set('vocabClips', clipCache)
+      btn.textContent = '♪ 已录原声'
+    } catch (e) {
+      btn.textContent = '录下原声（Anki 用）'
+      toast(ui, e.message || '录音失败', true, 3000)
+    }
+  }
+
+  async function saveWord(lemma, res, li, btn, statusEl) {
     const line = S.lines[li] || { t: 0, text: '' }
     const r = await send({
       type: 'cc-vocab',
@@ -584,8 +689,9 @@
     if (!r.ok) return toast(ui, r.error || '收藏失败', true)
     S.saved.add(LN.norm(lemma))
     S.ver++
-    btn.textContent = '已收藏'
-    btn.classList.remove('p')
+    btn.textContent = '♥'
+    btn.classList.add('on')
+    if (statusEl) statusEl.textContent = '已加入生词本'
     toast(ui, `已收藏“${lemma}”，可以在清影的“生词本”里复习`)
   }
 
@@ -660,14 +766,75 @@
       }),
     )
   }
-  async function exportVocab(format) {
-    const r = await send({ type: 'cc-vocab', op: 'export', format })
-    if (!r.ok) return toast(ui, r.error || '导出失败', true)
-    const name = `生词本.${r.ext}`
-    const a = h('a', { href: URL.createObjectURL(new Blob([r.text], { type: 'text/plain;charset=utf-8' })), download: name })
+  const crcTable = (() => {
+    const t = new Uint32Array(256)
+    for (let n = 0; n < 256; n++) {
+      let c = n
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+      t[n] = c >>> 0
+    }
+    return t
+  })()
+  const crc32 = (u8) => {
+    let c = 0xffffffff
+    for (let i = 0; i < u8.length; i++) c = crcTable[(c ^ u8[i]) & 255] ^ (c >>> 8)
+    return (c ^ 0xffffffff) >>> 0
+  }
+  /** 不压缩的 zip（Anki 的媒体文件本来就是压缩过的音频）。files: [{name, data: Uint8Array}] */
+  function zipStore(files) {
+    const enc = new TextEncoder()
+    const chunks = []
+    const cen = []
+    let off = 0
+    const u16 = (n) => [n & 255, (n >> 8) & 255]
+    const u32 = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]
+    for (const f of files) {
+      const nm = enc.encode(f.name)
+      const crc = crc32(f.data)
+      const head = new Uint8Array([0x50, 0x4b, 3, 4, 20, 0, 0, 8, 0, 0, 0, 0, 0, 0, ...u32(crc), ...u32(f.data.length), ...u32(f.data.length), ...u16(nm.length), 0, 0])
+      chunks.push(head, nm, f.data)
+      cen.push(new Uint8Array([0x50, 0x4b, 1, 2, 20, 0, 20, 0, 0, 8, 0, 0, 0, 0, 0, 0, ...u32(crc), ...u32(f.data.length), ...u32(f.data.length), ...u16(nm.length), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...u32(off)]), nm)
+      off += head.length + nm.length + f.data.length
+    }
+    const cenLen = cen.reduce((n, c) => n + c.length, 0)
+    const end = new Uint8Array([0x50, 0x4b, 5, 6, 0, 0, 0, 0, ...u16(files.length), ...u16(files.length), ...u32(cenLen), ...u32(off), 0, 0])
+    return new Blob([...chunks, ...cen, end], { type: 'application/zip' })
+  }
+  const dataToBytes = (d) => Uint8Array.from(atob(d.split(',')[1] || ''), (c) => c.charCodeAt(0))
+  function download(blob, name) {
+    const a = h('a', { href: URL.createObjectURL(blob), download: name })
     document.body.append(a)
     a.click()
     a.remove()
+  }
+  async function exportVocab(format) {
+    const r = await send({ type: 'cc-vocab', op: 'export', format })
+    if (!r.ok) return toast(ui, r.error || '导出失败', true)
+    await loadClips()
+    if (format === 'anki' && Object.keys(clipCache).length) {
+      // 把录下的原声作为媒体一起打包：卡片背面追加 [sound:xxx]
+      const files = []
+      const lines = String(r.text)
+        .split('\n')
+        .map((ln) => {
+          const cols = ln.split('\t')
+          const w = (cols[1] || '').match(/<b>(.*?)<\/b>/)?.[1]
+          const clip = w && clipCache[LN.norm(w)]
+          if (!clip) return ln
+          const name = `clearclip_${LN.norm(w).replace(/[^\p{L}\p{N}]+/gu, '_')}.webm`
+          if (!files.some((f) => f.name === name)) files.push({ name, data: dataToBytes(clip) })
+          cols[1] += ` [sound:${name}]`
+          return cols.join('\t')
+        })
+        .join('\n')
+      if (files.length) {
+        files.unshift({ name: '生词本.txt', data: new TextEncoder().encode(lines) })
+        download(zipStore(files), '生词本-anki.zip')
+        return toast(ui, `已导出 Anki 包：卡片 + ${files.length - 1} 段原声。把 .webm 复制到 Anki 的 collection.media，再导入 .txt`, false, 6000)
+      }
+    }
+    const name = `生词本.${r.ext}`
+    download(new Blob([r.text], { type: 'text/plain;charset=utf-8' }), name)
     toast(ui, `已导出 ${name}`)
   }
 
@@ -680,15 +847,31 @@
     togglePop(false)
     const v = S.video
     const i = Math.max(0, L.indexAt(S.lines, v.currentTime * 1000, S.prefs.delay))
-    S.ls = { i, done: 0, loops: 3, rate: 0.75, hideO: true, hideT: true, revealed: false, waiting: false, typed: '', result: null, prevRate: v.playbackRate }
+    S.ls = { i, done: 0, loops: 3, rate: 0.75, hideO: true, hideT: true, revealed: false, waiting: false, typed: '', result: null, prevRate: v.playbackRate, pauseEnd: true, skip: new Set(), prog: {} }
+    store.get(progKey(), {}).then((p) => S.ls && (S.ls.prog = p || {}) && renderListen())
+    document.addEventListener('keydown', lsKeys, true)
     hideBubble(true)
     cap.dataset.k = ''
     playLine()
     renderListen()
   }
+  function lsKeys(e) {
+    const ls = S.ls
+    if (!ls) return
+    const t = e.composedPath()[0]
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    const k = e.key
+    const hit = k.toLowerCase() === 'r' ? () => (Object.assign(ls, { done: 0 }), playLine()) : k === ' ' ? () => (S.video.paused ? S.video.play() : S.video.pause()) : k === 'ArrowLeft' ? () => gotoLine(-1) : k === 'ArrowRight' ? () => gotoLine(1) : k === 'Tab' ? () => ((ls.revealed = true), (cap.dataset.k = ''), renderListen()) : null
+    if (!hit) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    hit()
+  }
   function stopListen() {
     const ls = S.ls
     if (!ls) return
+    document.removeEventListener('keydown', lsKeys, true)
     if (S.video) S.video.playbackRate = ls.prevRate || 1
     S.ls = null
     lsEl.classList.remove('open')
@@ -716,21 +899,25 @@
     const ls = S.ls
     ls.typed = box.value
     ls.result = LN.dictationDiff(S.lines[ls.i].text, ls.typed)
+    saveProg(ls.result)
     ls.revealed = true
     S.video?.pause()
     cap.dataset.k = ''
     renderListen()
   }
-  async function addMissed() {
+  async function addMissedWord(w) {
     const ls = S.ls
     const line = S.lines[ls.i]
-    let n = 0
-    for (const w of ls.result?.missed || []) {
-      const r = await send({ type: 'cc-vocab', op: 'add', word: { word: LN.norm(w), sentence: line.text, sourceTitle: document.title, sourceUrl: location.href, timeSec: line.t / 1000 } })
-      if (r.ok) (S.saved.add(LN.norm(w)), n++)
-    }
-    S.ver++
-    toast(ui, n ? `已把 ${n} 个没听出来的词加入生词本` : '没有可加入的词')
+    const r = await send({ type: 'cc-vocab', op: 'add', word: { word: LN.norm(w), sentence: line.text, sourceTitle: document.title, sourceUrl: location.href, timeSec: line.t / 1000 } })
+    if (r.ok) (S.saved.add(LN.norm(w)), S.ver++)
+    return !!r.ok
+  }
+  const progKey = () => `listenProg:${location.origin}${location.pathname}${location.search}`.slice(0, 200)
+  function saveProg(res) {
+    const ls = S.ls
+    if (!ls || !res) return
+    ls.prog[ls.i] = { right: res.right, total: res.total }
+    store.set(progKey(), ls.prog)
   }
   function renderListen() {
     const ls = S.ls
@@ -738,19 +925,33 @@
     const v = S.video?.getBoundingClientRect()
     lsEl.classList.add('open')
     lsEl.style.left = `${Math.max(8, Math.min(window.innerWidth - 428, (v ? v.left + v.width / 2 : window.innerWidth / 2) - 210))}px`
-    lsEl.style.top = `${Math.max(8, Math.min(window.innerHeight - 330, v ? v.bottom + 8 : 100))}px`
-    const box = h('textarea', { placeholder: '把听到的写下来，写完点“提交”对照原句' })
+    lsEl.style.top = `${Math.max(8, Math.min(window.innerHeight - 420, v ? v.bottom + 8 : 100))}px`
+    const box = h('textarea', { placeholder: '把听到的写下来，Enter 提交对照原句' })
     box.value = ls.typed
     box.addEventListener('keydown', (e) => {
       e.stopPropagation()
-      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) (e.preventDefault(), submitDictation(box))
+      if (e.isComposing) return
+      if (e.key === 'Enter' && !e.shiftKey) (e.preventDefault(), submitDictation(box))
+      else if (e.key === 'Tab') (e.preventDefault(), (ls.revealed = true), (cap.dataset.k = ''), renderListen())
+      else if (e.altKey && e.key.toLowerCase() === 'r') (e.preventDefault(), Object.assign(ls, { done: 0 }), playLine())
+      else if (e.altKey && e.key === 'ArrowLeft') (e.preventDefault(), gotoLine(-1))
+      else if (e.altKey && e.key === 'ArrowRight') (e.preventDefault(), gotoLine(1))
     })
     box.addEventListener('keyup', (e) => e.stopPropagation())
     const sel = (opts, cur, fn) => h('select', { onchange: (e) => fn(e.target.value) }, ...opts.map(([v, t]) => h('option', { value: v, text: t, selected: String(v) === String(cur) ? '' : null })))
     const chk = (t, on, fn) => h('label', {}, h('input', { type: 'checkbox', checked: on ? '' : null, onchange: (e) => fn(e.target.checked) }), document.createTextNode(t))
     const res = ls.result
+    const loopTxt = ls.loops ? `单句循环 ${Math.min(ls.done + 1, ls.loops)}/${ls.loops}` : '单句循环 ∞'
+    const missed = (res?.missed || []).filter((w) => !ls.skip.has(LN.norm(w)))
+    const lo = Math.max(0, ls.i - 2)
+    const rows = []
+    for (let k = lo; k < Math.min(S.lines.length, lo + 8); k++) {
+      const pg = ls.prog[k]
+      rows.push(h('div', { class: `pr${k === ls.i ? ' cur' : ''}`, onclick: () => ((ls.i = k), Object.assign(ls, { done: 0, revealed: false, typed: '', result: null }), (cap.dataset.k = ''), playLine(), renderListen()) }, h('span', { text: LN.fmtTime(S.lines[k].t) }), h('span', { text: S.lines[k].text }), h('span', { text: pg ? `${pg.right}/${pg.total}` : k === ls.i ? '▶' : '' })))
+    }
     lsEl.replaceChildren(
-      h('div', { class: 'r' }, h('b', { text: `精听 第 ${ls.i + 1} / ${S.lines.length} 句` }), h('span', { class: 'sp' }), h('button', { text: '退出', onclick: () => stopListen() })),
+      h('div', { class: 'r' }, h('b', { text: `精听 · 第 ${ls.i + 1} 句` }), h('span', { class: 'sc', text: `共 ${S.lines.length} 句` }), h('span', { class: 'pill2', text: loopTxt }), h('span', { class: 'sp' }), h('button', { text: '退出', onclick: () => stopListen() })),
+      h('div', { class: 'keys' }, h('kbd', { text: 'R' }), '重播 ', h('kbd', { text: 'Space' }), '暂停 ', h('kbd', { text: '←' }), h('kbd', { text: '→' }), '上/下句 ', h('kbd', { text: 'Tab' }), '揭晓 ', h('kbd', { text: 'Enter' }), '提交', h('div', { text: ls.hideO ? '原文已遮住，只听声音。输入框里用 Alt+R / Alt+←→。' : '' })),
       h(
         'div',
         { class: 'r' },
@@ -761,7 +962,7 @@
         sel([[0.5, '0.5×'], [0.75, '0.75×'], [1, '1×'], [1.25, '1.25×']], ls.rate, (v) => ((ls.rate = Number(v)), S.video && (S.video.playbackRate = ls.rate))),
         sel([[1, '播 1 次'], [3, '循环 3 次'], [0, '一直循环']], ls.loops, (v) => (ls.loops = Number(v))),
       ),
-      h('div', { class: 'r' }, chk('遮住原文', ls.hideO, (v) => ((ls.hideO = v), (cap.dataset.k = ''))), chk('遮住译文', ls.hideT, (v) => ((ls.hideT = v), (cap.dataset.k = '')))),
+      h('div', { class: 'r' }, chk('显示原文', !ls.hideO, (v) => ((ls.hideO = !v), (cap.dataset.k = ''))), chk('显示译文', !ls.hideT, (v) => ((ls.hideT = !v), (cap.dataset.k = ''))), chk('句末暂停', ls.pauseEnd, (v) => (ls.pauseEnd = v))),
       box,
       h('div', { class: 'r' }, h('button', { class: 'p', text: '提交', onclick: () => submitDictation(box) }), h('button', { text: '揭晓原文', onclick: () => ((ls.revealed = true), (cap.dataset.k = ''), renderListen()) }), h('span', { class: 'sc', text: ls.waiting ? '本句播完了，写下来，或点下一句' : '' })),
       res
@@ -769,9 +970,14 @@
             'div',
             {},
             h('div', { class: 'res' }, ...res.parts.map((p) => (/\p{L}/u.test(p.text) ? h('span', { class: p.ok ? 'ok' : 'no', text: p.text }) : document.createTextNode(p.text)))),
-            h('div', { class: 'r' }, h('span', { class: 'sc', text: `写对了 ${res.score}%${res.missed.length ? `，漏掉 ${res.missed.length} 个词` : '，全对'}` }), h('span', { class: 'sp' }), res.missed.length ? h('button', { text: '错词加入生词本', onclick: addMissed }) : null),
+            h('div', { class: 'r' }, h('span', { class: 'sc', text: `${res.right}/${res.total}　听对 ${res.right} 个词${res.total - res.right ? `，错 ${res.total - res.right} 个` : '，全对'}` })),
+            missed.length
+              ? h('div', { class: 'chips' }, ...missed.map((w) => h('span', { class: 'chip' }, h('b', { text: w }), h('a', { text: S.saved.has(LN.norm(w)) ? '已加入' : '加入生词本', onclick: async (e) => ((await addMissedWord(w)) && (e.target.textContent = '已加入')) }), h('a', { text: '已掌握', onclick: () => (ls.skip.add(LN.norm(w)), renderListen()) }))))
+              : null,
+            h('div', { class: 'r' }, h('button', { text: '再听一遍', onclick: () => (Object.assign(ls, { done: 0, revealed: false, typed: '', result: null }), (cap.dataset.k = ''), playLine(), renderListen()) }), h('button', { class: 'p', text: '下一句', onclick: () => gotoLine(1) })),
           )
         : null,
+      h('div', { class: 'prog' }, h('div', { class: 'sc', text: `本视频进度 · 已练 ${Object.keys(ls.prog).length} / ${S.lines.length} 句` }), ...rows),
     )
   }
   function listenTick() {
@@ -784,6 +990,7 @@
       ls.done++
       v.currentTime = sp.start / 1000
     } else if (act === 'stop') {
+      if (!ls.pauseEnd && ls.i < S.lines.length - 1) return gotoLine(1)
       v.pause()
       ls.waiting = true
       renderListen()
@@ -803,6 +1010,7 @@
   globalThis.ccSubLayerRun = { destroy: api_destroy }
 
   ;(async () => {
+    loadClips()
     S.prefs = L.clampPrefs(await store.get('subLayerPrefs', null))
     S.on = (await store.get('subLayerOn', true)) !== false
     S.learn = { on: true, level: 1, ...(await store.get('learnPrefs', {})) }
@@ -825,6 +1033,10 @@
       layout()
       paint()
       listenTick()
+      if (S.clipEnd && S.video && (S.video.currentTime >= S.clipEnd || S.video.paused)) {
+        if (S.video.currentTime >= S.clipEnd) S.video.pause()
+        S.clipEnd = 0
+      }
       const lb = S.busy && S.status ? S.status.replace(/^正在/, '').slice(0, 10) : '双语'
       if (lbEl.textContent !== lb) lbEl.textContent = lb
     }, 150)

@@ -1695,6 +1695,9 @@
     const ok = r && S.prefs.pill && S.data && isVideo() && r.width > 200 && r.height > 120 && r.bottom > 0 && r.top < innerHeight
     pill.style.display = ok ? '' : 'none'
     if (ok) {
+      const cnt = S.notes.filter((n) => n.key === localKey()).length
+      const lab = `笔记 (${cnt})`
+      if (pill.textContent !== lab) pill.textContent = lab
       // 鼠标移出视频区域后淡出隐藏（离开 1.5 秒后）；刚出现时先显示 2.5 秒
       const m = globalThis.__ccPtr || { x: -1, y: -1, t: 0 }
       const inside = m.x >= r.left && m.x <= r.right && m.y >= r.top && m.y <= r.bottom
