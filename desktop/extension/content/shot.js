@@ -147,12 +147,13 @@
     const stage = h('div', { class: 'stage' }, out)
     const status = h('div', { class: 'busy', text: '正在识别并翻译图片里的文字……' })
     const list = h('div', { class: 'list' })
-    const bCover = h('button', { class: 'on', text: '译文覆盖' })
+    const bCover = h('button', { class: 'on', text: '译图' })
     const bOrig = h('button', { text: '原图' })
     const bCopy = h('button', { text: '复制译文' })
-    const bSave = h('button', { text: '保存图片' })
+    const bCopyO = h('button', { text: '复制原文' })
+    const bSave = h('button', { text: '下载译图' })
     const bClose = h('button', { text: '关闭' })
-    const bar = h('div', { class: 'bar' }, bCover, bOrig, h('span', { class: 'sp' }), bCopy, bSave, bClose)
+    const bar = h('div', { class: 'bar' }, bCover, bOrig, h('span', { class: 'sp' }), bCopy, bCopyO, bSave, bClose)
     const card = h('div', { class: 'layer card' }, bar, stage, status, list)
     card.style.cssText = `left:${left}px;top:${top}px;width:${cw}px`
     ui.add(card)
@@ -231,6 +232,7 @@
       }
     }
     bCopy.onclick = () => blocks.length && copyText(blocks.map((b) => b.translation).join('\n'))
+    bCopyO.onclick = () => blocks.length && copyText(blocks.map((b) => b.text).join('\n'))
     bSave.onclick = () => {
       out.toBlob((bl) => {
         if (!bl) return

@@ -56,7 +56,16 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     e.preventDefault()
     close()
+  } else if (e.key === 'Enter' && sel.value && (phase.value === 'done' || phase.value === 'error')) {
+    e.preventDefault()
+    void run(sel.value)
   }
+}
+function speak() {
+  const t = blocks.value.map((b) => b.translation).join('。')
+  if (!t || !('speechSynthesis' in window)) return tip('这台电脑没有朗读功能')
+  speechSynthesis.cancel()
+  speechSynthesis.speak(new SpeechSynthesisUtterance(t))
 }
 
 const rectOf = (e: MouseEvent): Rect => {
@@ -284,6 +293,8 @@ const listStyle = computed(() => {
         <button :class="{ on: cover }" @click="setCover(true)">译文覆盖</button>
         <button :class="{ on: !cover }" @click="setCover(false)">原图</button>
         <button @click="copyText(blocks.map((b) => b.translation).join('\n'))">复制译文</button>
+        <button @click="copyText(blocks.map((b) => b.text).join('\n'))">复制原文</button>
+        <button @click="speak">朗读</button>
         <button @click="copyImage">复制图片</button>
         <button @click="close">关闭</button>
       </div>
@@ -294,6 +305,7 @@ const listStyle = computed(() => {
         </div>
       </div>
     </template>
+    <div v-if="phase === 'done'" class="keys">Esc 关闭 · Enter 重新翻译 · 点译文行复制该段</div>
     <div v-if="toastText" class="toast">{{ toastText }}</div>
   </div>
 </template>
@@ -313,5 +325,6 @@ const listStyle = computed(() => {
 .row:first-child { border-top: 0; }
 .o { color: #777; font-size: 12px; }
 .t { font-weight: 600; }
+.keys { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: #1d2420cc; color: #fff; padding: 4px 12px; border-radius: 999px; font-size: 12px; pointer-events: none; }
 .toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #1d2420; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 13px; }
 </style>
