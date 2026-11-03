@@ -21,6 +21,9 @@
     .row:first-child { border-top: 0; }
     .row .o { color: var(--mute); font-size: 12px; }
     .row .t { font-weight: 600; }
+    .row .o[contenteditable] { outline: none; border-radius: 4px; }
+    .row .o[contenteditable]:focus { background: var(--soft); color: var(--fg); }
+    .row button { margin-top: 3px; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; padding: 1px 8px; cursor: pointer; font: inherit; font-size: 12px; }
     .err { padding: 10px 14px; color: var(--bad); }
   `)
 
@@ -151,9 +154,11 @@
     const bOrig = h('button', { text: '原图' })
     const bCopy = h('button', { text: '复制译文' })
     const bCopyO = h('button', { text: '复制原文' })
+    const bNote = h('button', { text: '存为笔记' })
+    const bEng = h('button', { text: '识别：视觉模型 ▾', title: '切换识别与翻译方式' })
     const bSave = h('button', { text: '下载译图' })
     const bClose = h('button', { text: '关闭' })
-    const bar = h('div', { class: 'bar' }, bCover, bOrig, h('span', { class: 'sp' }), bCopy, bCopyO, bSave, bClose)
+    const bar = h('div', { class: 'bar' }, bCover, bOrig, h('span', { class: 'sp' }), bCopy, bCopyO, bNote, bEng, bSave, bClose)
     const card = h('div', { class: 'layer card' }, bar, stage, status, list)
     card.style.cssText = `left:${left}px;top:${top}px;width:${cw}px`
     ui.add(card)
@@ -233,6 +238,107 @@
     }
     bCopy.onclick = () => blocks.length && copyText(blocks.map((b) => b.translation).join('\n'))
     bCopyO.onclick = () => blocks.length && copyText(blocks.map((b) => b.text).join('\n'))
+    // ---- 识别方式：一步（视觉模型直接给译文） / 两步（视觉模型只管识字，译文交给翻译模型，用上术语库和专家） ----
+    const store = (globalThis.browser || globalThis.chrome).storage.local
+    let engine = 'one'
+    try {
+      const got = await store.get('shotEngine')
+      if (got && got.shotEngine === 'two') engine = 'two'
+    } catch {
+      /* 读不到就用默认 */
+    }
+    const engLabel = () => (engine === 'two' ? '识别：视觉识字 + 翻译模型 ▾' : '识别：视觉模型 ▾')
+    bEng.textContent = engLabel()
+    // 提交一个后台任务并等结果
+    const runAi = async (req) => {
+      const sub = await send({ type: 'cc-ai-run', req })
+      if (!sub.ok) throw new Error(sub.error || '提交失败')
+      for (let n = 0; n < 240; n++) {
+        await wait(500)
+        if (!globalThis.__ccShotStop) throw new Error('已取消')
+        const j = await send({ type: 'cc-ai-job', id: sub.id })
+        if (!j.ok) throw new Error(j.error || '任务失败')
+        if (j.state === 'error') throw new Error(j.error || '翻译失败')
+        if (j.state === 'done') return j.result || {}
+      }
+      throw new Error('翻译超时')
+    }
+    const retrans = async (texts) => {
+      const res = await runAi({ kind: 'webtrans', lang: cap.lang, title: document.title, context: location.hostname, lines: texts.map((t, i) => ({ t: i, text: t })) })
+      const out = new Map((res.lines || []).map((l) => [l.t, l.text]))
+      return texts.map((t, i) => out.get(i) || '')
+    }
+    const renderList = () => {
+      list.replaceChildren()
+      blocks.forEach((b, i) => {
+        const o = h('div', { class: 'o', text: b.text || '' })
+        o.contentEditable = 'true'
+        o.title = '识别不准？直接改这里的字，再点“重译”'
+        const t = h('div', { class: 't', text: b.translation })
+        const re = h('button', { text: '重译这段' })
+        re.onclick = async (ev) => {
+          ev.stopPropagation()
+          const src = o.textContent.trim()
+          if (!src) return
+          re.disabled = true
+          re.textContent = '翻译中…'
+          try {
+            const [tr] = await retrans([src])
+            if (tr) {
+              b.text = src
+              b.translation = tr
+              t.textContent = tr
+              draw()
+            } else toast(ui, '没有得到译文', true, 1800)
+          } catch (e) {
+            toast(ui, e.message || '重译失败', true, 2400)
+          }
+          re.disabled = false
+          re.textContent = '重译这段'
+        }
+        const row = h('div', { class: 'row' }, o, t, re)
+        row.onclick = (ev) => {
+          if (ev.target === o || ev.target === re) return
+          copyText(b.translation)
+        }
+        list.appendChild(row)
+      })
+    }
+    bEng.onclick = async () => {
+      engine = engine === 'two' ? 'one' : 'two'
+      bEng.textContent = engLabel()
+      try {
+        await store.set({ shotEngine: engine })
+      } catch {
+        /* 记不住也能用 */
+      }
+      if (engine === 'two' && blocks.length) {
+        bEng.disabled = true
+        try {
+          const trs = await retrans(blocks.map((b) => b.text))
+          blocks.forEach((b, i) => trs[i] && (b.translation = trs[i]))
+          renderList()
+          draw()
+        } catch (e) {
+          toast(ui, e.message || '重新翻译失败', true, 2400)
+        }
+        bEng.disabled = false
+      } else toast(ui, '下一次框选起按这个方式识别', false, 1800)
+    }
+    bNote.onclick = async () => {
+      if (!blocks.length) return
+      const text = blocks.map((b) => `${b.text}\n→ ${b.translation}`).join('\n\n')
+      const note = { id: `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, key: `shot:${location.href}`, url: location.href, title: document.title.slice(0, 200), owner: '截图翻译', t: -1, text: text.slice(0, 6000), kind: 'quote', created: Date.now() }
+      try {
+        const got = await store.get('vsumNotes')
+        const cur = Array.isArray(got && got.vsumNotes) ? got.vsumNotes : []
+        await store.set({ vsumNotes: [...cur, note].slice(-2000) })
+        bNote.textContent = '已存笔记'
+        toast(ui, '已存进笔记（视频摘要面板 → 笔记 里能看到）', false, 2200)
+      } catch {
+        toast(ui, '保存失败', true, 1800)
+      }
+    }
     bSave.onclick = () => {
       out.toBlob((bl) => {
         if (!bl) return
@@ -257,13 +363,18 @@
         blocks = (j.result?.blocks || []).filter((b) => b && b.translation)
         jobId = ''
         if (!blocks.length) return fail('没有识别到文字')
+        if (engine === 'two') {
+          status.textContent = '正在用翻译模型重新翻译……'
+          try {
+            const trs = await retrans(blocks.map((b) => b.text))
+            blocks.forEach((b, i) => trs[i] && (b.translation = trs[i]))
+          } catch {
+            /* 失败就保留视觉模型给的译文 */
+          }
+        }
         status.remove()
         draw()
-        for (const b of blocks) {
-          const row = h('div', { class: 'row' }, h('div', { class: 'o', text: b.text || '' }), h('div', { class: 't', text: b.translation }))
-          row.onclick = () => copyText(b.translation)
-          list.appendChild(row)
-        }
+        renderList()
         return
       }
     }
