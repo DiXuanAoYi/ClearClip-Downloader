@@ -21,6 +21,7 @@ pub mod engine;
 pub mod error;
 pub mod experts;
 pub mod experts_cmds;
+pub mod filetr;
 pub mod glossary;
 pub mod glossary_cmds;
 pub mod grab;
@@ -610,6 +611,7 @@ pub fn run() {
             ai_cmds::ai_transcribe,
             ai_cmds::subgen_start,
             ai_cmds::subgen_correct,
+            ai_cmds::filetr_start,
             subedit::subtitle_tracks,
             subedit::subedit_load,
             subedit::subedit_validate,

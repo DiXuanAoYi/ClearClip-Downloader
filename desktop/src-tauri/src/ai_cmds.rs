@@ -190,6 +190,16 @@ pub fn subgen_correct(app: AppHandle, path: String, mode: Option<String>) -> App
     Ok(media_tools::spawn_job(&app, title_of(&p), "字幕纠错", move |ctx| async move { crate::subgen::run_correct(&ctx, &p, mode).await }))
 }
 
+/// 文件翻译：TXT / Markdown / 字幕 / Word / EPUB 整份翻译，按原格式输出双语或仅译文。
+#[tauri::command]
+pub fn filetr_start(app: AppHandle, path: String, opts: crate::filetr::Opts) -> AppResult<u64> {
+    let p = existing_file(&path)?;
+    if crate::filetr::kind_of(&p).is_none() {
+        return Err(AppError::invalid("支持 TXT、Markdown、PDF、SRT / VTT / ASS 字幕、Word(docx) 和 EPUB。"));
+    }
+    Ok(media_tools::spawn_job(&app, title_of(&p), "文件翻译", move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
+}
+
 /// 读取 AI 任务输出的文本结果（摘要 .md、章节 .txt、字幕 .srt）。只能读任务列表里自己生成的文件。
 #[tauri::command]
 pub fn media_job_text(state: St<'_>, id: u64, which: Option<String>) -> AppResult<String> {
