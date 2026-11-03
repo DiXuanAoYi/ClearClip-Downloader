@@ -76,6 +76,8 @@ struct OPayload {
     cjk: bool,
     /// 漫画：先用底色盖掉原文
     erase: bool,
+    /// 译文字体族（漫画模式用；空表示默认）
+    font_family: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -330,6 +332,15 @@ fn place(w: &tauri::WebviewWindow, r: [i32; 4]) {
 }
 
 /// 贴字层：透明、点击穿透、始终在最上、不出现在截图里（所以不会被自己再识别一遍）。
+fn manga_font_css(k: &str) -> String {
+    match k {
+        "serif" => "'Songti SC', 'SimSun', 'Noto Serif CJK SC', serif",
+        "sans" => "'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif",
+        _ => "'Yuppy SC', 'Xingkai SC', 'STXingkai', 'KaiTi', 'Microsoft YaHei', sans-serif",
+    }
+    .to_string()
+}
+
 fn ensure_overlay(app: &AppHandle, rect: [i32; 4]) {
     let fresh = app.get_webview_window(OV).is_none();
     let Some(w) = small_window(app, OV, "liveov", "清影屏幕翻译", true) else { return };
@@ -467,6 +478,8 @@ struct Runner {
     sub: SubTrack,
     last_key: String,
     shown: bool,
+    /// 漫画：本次会话里已确定的人名译法，下一页接着用
+    names: Vec<(String, String)>,
     empty_since: Option<u64>,
     backoff_until: u64,
     gone_ticks: u32,
@@ -576,6 +589,7 @@ impl Runner {
             font_min: live.font_min,
             cjk: is_cjk_lang(lang),
             erase,
+            font_family: if mode == "manga" { manga_font_css(&live.manga_font) } else { String::new() },
         };
         if let Ok(v) = serde_json::to_value(&p) {
             *lock(&LAST_PAYLOAD) = Some(v);
@@ -615,7 +629,7 @@ impl Runner {
         let base = self.base_sig.as_ref().map_or(1.0, |b| livecore::change_ratio(b, &sig));
         self.prev_sig = Some(sig.clone());
         // 大幅变化（换场景 / 翻页）：旧译文马上撤掉，别盖在新画面上
-        if base > 0.45 && self.shown {
+        if base > 0.45 && self.shown && (mode != "manga" || live.manga_follow) {
             self.clear();
             self.last_key.clear();
         }
@@ -709,9 +723,19 @@ impl Runner {
         let settings = self.st.settings();
         let ep = crate::ai::chat_endpoint_for(&self.st, &settings, crate::ai_pool::Task::Translate)?;
         let model = settings.ai.model.clone();
-        let system = livetx::manga_system(lang);
+        let known: &[(String, String)] = if live.manga_names { &self.names } else { &[] };
+        let system = livetx::manga_system(lang, live.manga_rtl, live.manga_sfx, known);
         let resp = tauri::async_runtime::block_on(crate::ai::chat_img(&ep, &model, &system, "Translate the text on this page.", &url))
             .map_err(crate::imgtrans::vision_hint)?;
+        if live.manga_names {
+            for (s, t) in livetx::parse_names(&resp) {
+                if let Some(e) = self.names.iter_mut().find(|e| e.0 == s) {
+                    e.1 = t;
+                } else if self.names.len() < 60 {
+                    self.names.push((s, t));
+                }
+            }
+        }
         let list = livetx::parse_manga(&resp).ok_or_else(|| AppError::msg("视觉模型没有按要求返回结果，换一个更强的视觉模型试试。"))?;
         let (fw, fh) = (frame.w as f32, frame.h as f32);
         let mut blocks = vec![];
@@ -727,6 +751,33 @@ impl Runner {
             let (ex, ey) = ((x - pad).max(0.0), (y - pad).max(0.0));
             let (ew, eh) = ((w + 2.0 * pad).min(fw - ex), (h + 2.0 * pad).min(fh - ey));
             let (bg, fg) = livecore::sample_colors(&frame.bgra, frame.w, frame.h, ex, ey, ew, eh);
+            if b.sfx && live.manga_sfx {
+                // 拟声词：原字不动，在旁边挂一个小注
+                let nw = (b.translation.chars().count() as f32 * 18.0 + 12.0).max(40.0).min(fw);
+                let nx = (x + w / 2.0 - nw / 2.0).clamp(0.0, (fw - nw).max(0.0));
+                let ny = (y + h + 2.0).min((fh - 22.0).max(0.0));
+                blocks.push(OBlock {
+                    x: nx,
+                    y: ny,
+                    w: nw,
+                    h: 22.0,
+                    text: b.translation.clone(),
+                    orig: String::new(),
+                    fg: "#ffffff".into(),
+                    bg: "#000000b8".into(),
+                    font: 15.0,
+                    vertical: false,
+                    lines: 1,
+                    center: true,
+                });
+                continue;
+            }
+            let bg_css = if live.manga_erase == "inpaint" {
+                livecore::edge_gradient(&frame.bgra, frame.w, frame.h, ex, ey, ew, eh)
+                    .map(|(a, c)| format!("linear-gradient({}, {})", livecore::hex(a), livecore::hex(c)))
+            } else {
+                None
+            };
             let vertical = livetx::is_vertical(b, fw, fh);
             // 起始字号：竖排看列宽，横排看行高（界面再按框缩）
             let em = if vertical { (w / b.translation.chars().count().max(1) as f32).max(w.min(h) * 0.5) } else { h };
@@ -739,7 +790,7 @@ impl Runner {
                 text: b.translation.clone(),
                 orig: b.text.clone(),
                 fg: livecore::hex(fg),
-                bg: livecore::hex(bg),
+                bg: bg_css.unwrap_or_else(|| livecore::hex(bg)),
                 font,
                 vertical,
                 lines: 1,
@@ -751,7 +802,7 @@ impl Runner {
             return Ok(true);
         }
         let hist: Vec<(String, String)> = blocks.iter().map(|b| (b.orig.clone(), b.text.clone())).collect();
-        let erase = live.manga_erase == "fill";
+        let erase = live.manga_erase != "none";
         self.emit_blocks(mode, blocks, live, erase, lang, live.bilingual);
         self.history(live, mode, &hist);
         self.shown = true;
@@ -940,6 +991,7 @@ pub fn start(app: &AppHandle, st: &Arc<AppState>, mut target: Target, mode: Opti
         sub: SubTrack::default(),
         last_key: String::new(),
         shown: false,
+        names: Vec::new(),
         empty_since: None,
         backoff_until: 0,
         gone_ticks: 0,

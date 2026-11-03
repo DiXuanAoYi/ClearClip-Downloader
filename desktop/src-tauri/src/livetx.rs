@@ -129,14 +129,27 @@ pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, sto
 
 // ---------- 漫画：视觉模型 ----------
 
-pub fn manga_system(lang: &str) -> String {
+pub fn manga_system(lang: &str, rtl: bool, sfx: bool, names: &[(String, String)]) -> String {
+    let order = if rtl {
+        "List blocks in reading order (for vertical Japanese manga: right to left, top to bottom)."
+    } else {
+        "List blocks in reading order (left to right, top to bottom)."
+    };
+    let sfx_rule = if sfx { " Set \"sfx\": true for onomatopoeia / sound effects (then \"translation\" is a very short gloss, 1–4 characters)." } else { "" };
+    let known = if names.is_empty() {
+        String::new()
+    } else {
+        let list: Vec<String> = names.iter().map(|(a, b)| format!("{a}={b}")).collect();
+        format!(" Keep these names and terms translated exactly as: {}.", list.join("; "))
+    };
     format!(
         "You are a manga/comic page translator with OCR. Find every piece of text that matters to the reader on this page: speech bubbles, thought bubbles, narration boxes, captions, signs and important sound effects. \
          Skip page numbers and watermarks. For each text block give: \"text\" (original, line breaks removed), \"translation\" (natural, concise {lang} that fits the bubble; keep the character's tone), \
          \"box\": [x, y, w, h] — a tight box around the TEXT itself (not the whole bubble), each number 0–1000 relative to the whole image with origin at the top-left, \
          and \"vertical\": true if the original text is written top-to-bottom in columns (vertical Japanese/Chinese), false if it is written horizontally. \
-         List blocks in reading order (for vertical Japanese manga: right to left, top to bottom). \
-         Reply with ONE JSON object only, no commentary, no code fences: {{\"blocks\":[{{\"text\":\"...\",\"translation\":\"...\",\"box\":[0,0,100,50],\"vertical\":true}}]}}. If there is no text reply {{\"blocks\":[]}}."
+         {order}{sfx_rule}{known} \
+         Also list character names and forms of address you translated as \"names\": [{{\"src\":\"...\",\"tr\":\"...\"}}]. \
+         Reply with ONE JSON object only, no commentary, no code fences: {{\"blocks\":[{{\"text\":\"...\",\"translation\":\"...\",\"box\":[0,0,100,50],\"vertical\":true,\"sfx\":false}}],\"names\":[]}}. If there is no text reply {{\"blocks\":[],\"names\":[]}}."
     )
 }
 
@@ -148,6 +161,8 @@ pub struct MBlock {
     pub rect: [f32; 4],
     /// 模型没说就是 None，由框的长宽比推断
     pub vertical: Option<bool>,
+    /// 拟声词
+    pub sfx: bool,
 }
 
 fn num(v: &Value) -> Option<f32> {
@@ -179,11 +194,32 @@ pub fn parse_manga(resp: &str) -> Option<Vec<MBlock>> {
                     return None;
                 }
                 let vertical = b.get("vertical").and_then(|x| x.as_bool().or_else(|| x.as_str().map(|s| s.eq_ignore_ascii_case("true"))));
-                Some(MBlock { text, translation, rect: [x, y, w, h], vertical })
+                let sfx = b.get("sfx").and_then(|x| x.as_bool().or_else(|| x.as_str().map(|s| s.eq_ignore_ascii_case("true")))).unwrap_or(false);
+                Some(MBlock { text, translation, rect: [x, y, w, h], vertical, sfx })
             })
             .take(120)
             .collect(),
     )
+}
+
+/// 模型顺带报的人名、称呼对照。
+pub fn parse_names(resp: &str) -> Vec<(String, String)> {
+    let t = crate::ai::strip_fences(resp);
+    let (Some(a), Some(b)) = (t.find('{'), t.rfind('}')) else { return vec![] };
+    let Ok(v) = serde_json::from_str::<Value>(&t[a..=b]) else { return vec![] };
+    v.get("names")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|n| {
+                    let s = n.get("src")?.as_str()?.trim();
+                    let t = n.get("tr")?.as_str()?.trim();
+                    (!s.is_empty() && !t.is_empty() && s.chars().count() <= 24 && t.chars().count() <= 24).then(|| (s.to_string(), t.to_string()))
+                })
+                .take(40)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// 方向：模型明说了就听它的；没说就看框——又高又窄是竖排。
@@ -260,6 +296,17 @@ mod tests {
     }
 
     #[test]
+    fn manga_names_sfx_and_prompt_rules() {
+        let r = r#"{"blocks":[{"text":"ドン","translation":"咚","box":[10,10,50,50],"sfx":true}],"names":[{"src":"太郎","tr":"太郎"},{"src":"","tr":"x"}]}"#;
+        let b = parse_manga(r).unwrap();
+        assert!(b[0].sfx);
+        assert_eq!(parse_names(r), vec![("太郎".to_string(), "太郎".to_string())]);
+        let p = manga_system("简体中文", false, true, &[("先輩".into(), "前辈".into())]);
+        assert!(p.contains("left to right") && p.contains("先輩=前辈") && p.contains("sfx"));
+        assert!(manga_system("简体中文", true, false, &[]).contains("right to left"));
+    }
+
+    #[test]
     fn parses_manga_blocks_with_orientation() {
         let r = r#"```json
 {"blocks":[{"text":"こんにちは","translation":"你好","box":[800,100,60,300],"vertical":true},
@@ -273,7 +320,7 @@ mod tests {
         assert!((b[0].rect[0] - 0.8).abs() < 1e-5);
         // 没写方向：按长宽比
         assert!(!is_vertical(&b[1], 1000.0, 1400.0));
-        let tall = MBlock { text: "a".into(), translation: "b".into(), rect: [0.1, 0.1, 0.05, 0.3], vertical: None };
+        let tall = MBlock { text: "a".into(), translation: "b".into(), rect: [0.1, 0.1, 0.05, 0.3], vertical: None, sfx: false };
         assert!(is_vertical(&tall, 1000.0, 1000.0));
         // 明确说横排就是横排，即使框又高又窄
         let said = MBlock { vertical: Some(false), ..tall };

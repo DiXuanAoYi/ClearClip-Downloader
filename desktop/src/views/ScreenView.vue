@@ -415,12 +415,31 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           </el-radio-group>
         </div>
         <div class="field">
-          <label>原文怎么擦</label>
+          <label>阅读方向</label>
+          <el-radio-group v-model="form.mangaRtl">
+            <el-radio :value="true">右→左（日漫）</el-radio>
+            <el-radio :value="false">左→右</el-radio>
+          </el-radio-group>
+        </div>
+        <div class="field">
+          <label>擦字方式</label>
           <el-radio-group v-model="form.mangaErase">
-            <el-radio value="fill">按底色填平再写译文</el-radio>
+            <el-radio value="fill">取色填充</el-radio>
+            <el-radio value="inpaint">邻近修补（渐变、网点底更自然）</el-radio>
             <el-radio value="none">只盖译文，不擦</el-radio>
           </el-radio-group>
         </div>
+        <div class="field">
+          <label>译文字体</label>
+          <el-select v-model="form.mangaFont" style="width: 200px">
+            <el-option value="hand" label="手写风黑体" />
+            <el-option value="sans" label="黑体" />
+            <el-option value="serif" label="宋体" />
+          </el-select>
+        </div>
+        <div class="kv"><span>拟声词保留原样，旁边加小注</span><el-switch v-model="form.mangaSfx" /></div>
+        <div class="kv"><span>翻页后自动重新翻译</span><el-switch v-model="form.mangaFollow" /></div>
+        <div class="kv"><span>人名、称呼前后页保持一致<small class="mute block">本次会话里记住模型报的译名，下一页沿用</small></span><el-switch v-model="form.mangaNames" /></div>
         <el-alert type="warning" :closable="false" show-icon title="漫画模式会把当前这一页图片发给你配置的视觉模型。开启前会提示一次，并显示用的是哪个模型。" />
         <div class="field">
           <label>为什么默认走视觉模型</label>

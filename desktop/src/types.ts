@@ -2124,7 +2124,12 @@ export interface ScreenSettings {
   subFont: number
   mangaEngine: 'vision' | 'local'
   mangaAck: boolean
-  mangaErase: 'fill' | 'none'
+  mangaErase: 'fill' | 'inpaint' | 'none'
+  mangaRtl: boolean
+  mangaFont: 'hand' | 'sans' | 'serif'
+  mangaSfx: boolean
+  mangaFollow: boolean
+  mangaNames: boolean
   audioLang: string
   audioStt: 'local' | 'cloud'
   audioBilingual: boolean
@@ -2176,6 +2181,7 @@ export interface ScreenPayload {
   fontMin: number
   cjk: boolean
   erase: boolean
+  fontFamily: string
 }
 
 export interface ScreenSub {

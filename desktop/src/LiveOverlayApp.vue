@@ -29,6 +29,7 @@ function style(b: ScreenBlock, p: ScreenPayload) {
     background: b.bg,
     opacity: String(Math.max(0.3, p.opacity / 100)),
     fontSize: `${Math.max(p.fontMin, b.font / dpr)}px`,
+    ...(p.fontFamily ? { fontFamily: p.fontFamily } : {}),
   } as Record<string, string>
 }
 

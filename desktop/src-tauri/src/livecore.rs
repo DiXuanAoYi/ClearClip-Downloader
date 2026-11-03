@@ -367,6 +367,42 @@ fn px(bgra: &[u8], w: usize, x: usize, y: usize) -> [u8; 3] {
     [bgra[i + 2], bgra[i + 1], bgra[i]]
 }
 
+/// 邻近修补：取框上、下各一条紧贴外侧的像素平均色，做成上下渐变（网点、渐变底比纯色自然）。
+/// 两端颜色很接近时返回 None，调用方就用纯色。
+pub fn edge_gradient(bgra: &[u8], w: usize, h: usize, x: f32, y: f32, rw: f32, rh: f32) -> Option<([u8; 3], [u8; 3])> {
+    if w < 4 || h < 4 || bgra.len() < w * h * 4 {
+        return None;
+    }
+    let x0 = (x.max(0.0) as usize).min(w - 1);
+    let x1 = ((x + rw).max(0.0) as usize).min(w - 1).max(x0);
+    let strip = |yy: i64| -> Option<[u8; 3]> {
+        if yy < 0 || yy as usize >= h {
+            return None;
+        }
+        let step = ((x1 - x0) / 24).max(1);
+        let (mut r, mut g, mut b, mut n) = (0u32, 0u32, 0u32, 0u32);
+        let mut xx = x0;
+        while xx <= x1 {
+            let c = px(bgra, w, xx, yy as usize);
+            r += u32::from(c[0]);
+            g += u32::from(c[1]);
+            b += u32::from(c[2]);
+            n += 1;
+            xx += step;
+        }
+        (n > 0).then(|| [(r / n) as u8, (g / n) as u8, (b / n) as u8])
+    };
+    let top = strip(y as i64 - 2);
+    let bottom = strip((y + rh) as i64 + 2);
+    let (a, b) = match (top, bottom) {
+        (Some(a), Some(b)) => (a, b),
+        (Some(a), None) | (None, Some(a)) => (a, a),
+        _ => return None,
+    };
+    let d = a.iter().zip(b.iter()).map(|(p, q)| (i32::from(*p) - i32::from(*q)).abs()).sum::<i32>();
+    (d >= 24).then_some((a, b))
+}
+
 fn lum(c: [u8; 3]) -> f32 {
     fn f(v: u8) -> f32 {
         let s = v as f32 / 255.0;
@@ -575,6 +611,24 @@ pub fn ink_bbox(bgra: &[u8], w: usize, h: usize, x: f32, y: f32, rw: f32, rh: f3
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn edge_gradient_only_when_ends_differ() {
+        let (w, h) = (20usize, 40usize);
+        let mut img = vec![255u8; w * h * 4];
+        // 上半黑、下半白
+        for y in 0..20 {
+            for x in 0..w {
+                let i = (y * w + x) * 4;
+                img[i] = 0;
+                img[i + 1] = 0;
+                img[i + 2] = 0;
+            }
+        }
+        assert!(edge_gradient(&img, w, h, 2.0, 10.0, 10.0, 20.0).is_some());
+        let flat = vec![200u8; w * h * 4];
+        assert!(edge_gradient(&flat, w, h, 2.0, 10.0, 10.0, 20.0).is_none());
+    }
+
     use super::*;
 
     fn l(t: &str, x: f32, y: f32, w: f32, h: f32) -> OLine {
