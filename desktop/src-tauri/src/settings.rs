@@ -318,6 +318,10 @@ pub struct Settings {
     pub danmaku_ass: bool,
     /// 下载完成后用 ffmpeg 检查文件能否正常读取，损坏时自动重新下载一次
     pub verify_downloads: bool,
+    /// 视频缓存（扩展同步来的摘要和双语字幕）占用上限，MB
+    pub video_cache_mb: u64,
+    /// 收藏生词时自动把该视频的缓存同步到清影
+    pub video_cache_auto: bool,
     /// 媒体库：回收站、整理规则
     pub library: LibrarySettings,
     /// 弹幕转 ASS 时的样式
@@ -1272,6 +1276,8 @@ impl Default for Settings {
             subtitle_convert: true,
             danmaku_ass: true,
             verify_downloads: true,
+            video_cache_mb: crate::videocache::DEFAULT_LIMIT_MB,
+            video_cache_auto: true,
             library: LibrarySettings::default(),
             danmaku: DanmakuStyle::default(),
             max_size_mb: 0,

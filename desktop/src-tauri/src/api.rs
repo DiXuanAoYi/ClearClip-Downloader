@@ -208,6 +208,23 @@ pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply
                 Err(e) => err("500 Internal Server Error", &e.message),
             }
         }
+        // 视频缓存（浏览器扩展用）：同步摘要 / 双语字幕快照，恢复时取回
+        ("POST", "/api/v1/videocache/put") => match serde_json::from_slice::<crate::videocache::Put>(&req.body) {
+            Ok(p) => match crate::videocache::put(&state.data_dir, &p, state.settings().video_cache_mb) {
+                Ok(i) => ok(json!({"info": i})),
+                Err(e) => err("400 Bad Request", &e.message),
+            },
+            Err(_) => err("400 Bad Request", "请求格式不对"),
+        },
+        ("GET", "/api/v1/videocache/get") => match crate::videocache::get(&state.data_dir, req.query.get("url").map(String::as_str).unwrap_or("")) {
+            Ok(Some(f)) => ok(serde_json::to_value(&f).unwrap_or(Value::Null)),
+            Ok(None) => err("404 Not Found", "清影里没有这个视频的缓存"),
+            Err(e) => err("500 Internal Server Error", &e.message),
+        },
+        ("GET", "/api/v1/videocache/info") => match crate::videocache::info(&state.data_dir, req.query.get("url").map(String::as_str).unwrap_or("")) {
+            Ok(i) => ok(json!({"info": i, "auto": state.settings().video_cache_auto})),
+            Err(e) => err("500 Internal Server Error", &e.message),
+        },
         // 视频摘要（浏览器扩展用）：提交 → 轮询
         ("GET", "/api/v1/ai/status") => {
             // 浏览器扩展顺带报到：桌面端据此在对应浏览器的窗口里不再弹写作浮标

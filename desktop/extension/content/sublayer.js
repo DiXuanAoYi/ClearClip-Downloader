@@ -693,6 +693,34 @@
     btn.classList.add('on')
     if (statusEl) statusEl.textContent = '已加入生词本'
     toast(ui, `已收藏“${lemma}”，可以在清影的“生词本”里复习`)
+    syncCache(false)
+  }
+
+  /** 把这个视频的摘要会话和双语字幕同步到清影，生词本里就能看到、也能在别的浏览器恢复。 */
+  let cacheSynced = 0
+  async function syncCache(force) {
+    try {
+      if (!force && Date.now() - cacheSynced < 60000) return
+      const i = await send({ type: 'cc-videocache', op: 'info', url: location.href })
+      if (!i.ok || (!i.auto && !force)) return
+      const vk = V.videoKey(location.href)
+      const sess = Object.values(await store.get('vsumSessions', {})).find((e) => e && e.vk === vk)
+      const trans = S.trans?.some(Boolean) ? S.trans : null
+      const payload = {
+        url: location.href,
+        title: document.title,
+        site: V.videoIdOf(location.href)?.site || '',
+        summary: sess ? { key: sess.key, ts: sess.ts, vk: sess.vk, url: sess.url, data: sess.data } : null,
+        subs: trans ? { key: await transKey(), target: S.target, lines: S.lines.map((l) => ({ t: l.t, text: l.text })), trans } : null,
+        srcLang: '',
+        dstLang: S.target || '',
+      }
+      if (!payload.summary && !payload.subs) return
+      const r = await send({ type: 'cc-videocache', op: 'put', payload })
+      if (r.ok) cacheSynced = Date.now()
+    } catch {
+      // 清影没开或没配置：下次收藏再试
+    }
   }
 
   cap.addEventListener('mouseover', (e) => {

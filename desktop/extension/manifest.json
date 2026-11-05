@@ -28,6 +28,7 @@
       "bg-trans.js",
       "bg-link.js",
       "bg-capture.js",
+      "bg-vcache.js",
       "bg-actions.js",
       "background.js"
     ]

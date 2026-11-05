@@ -20,6 +20,7 @@ pub mod ed2k;
 pub mod edit;
 pub mod engine;
 pub mod error;
+pub mod excerpts;
 pub mod experts;
 pub mod experts_cmds;
 pub mod filetr;
@@ -81,6 +82,7 @@ mod tray;
 pub mod upload;
 pub mod vault;
 pub mod vidcaps;
+pub mod videocache;
 pub mod vidnorm;
 pub mod vocab;
 pub mod vsum;
@@ -684,6 +686,17 @@ pub fn run() {
             vocab::vocab_remove,
             vocab::vocab_review,
             vocab::vocab_export,
+            videocache::videocache_infos,
+            videocache::videocache_get,
+            videocache::videocache_remove,
+            videocache::videocache_clear,
+            videocache::videocache_stats,
+            videocache::videocache_open,
+            excerpts::excerpt_list,
+            excerpts::excerpt_add,
+            excerpts::excerpt_remove,
+            excerpts::excerpt_note,
+            excerpts::excerpt_markdown,
             edit::highlights::edit_highlights,
             edit::highlights::edit_highlights_llm,
             edit::analyze::edit_waveform,

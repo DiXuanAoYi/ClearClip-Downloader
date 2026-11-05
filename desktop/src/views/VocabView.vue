@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { save } from '@tauri-apps/plugin-dialog'
 import { api, errorText } from '../api'
-import type { VocabStats, VocabWord } from '../types'
+import type { VideoCacheFull, VideoCacheInfo, VocabStats, VocabWord } from '../types'
+import { videoKey } from '../utils/videokey'
 
 /** 生词本：统计 + 筛选 + 表格（熟练度）+ 右侧今日复习卡 + 导出。设计图 ②。 */
 const stats = ref<VocabStats>({ total: 0, due: 0, fresh: 0, learned: 0, today: 0 })
@@ -48,11 +49,66 @@ const rows = computed(() => {
 })
 const picked = computed(() => all.value.find((w) => w.id === sel.value) ?? null)
 
+// 视频缓存：扩展同步来的摘要和双语字幕
+const caches = ref<Record<string, VideoCacheInfo>>({})
+const cacheOf = (w: VocabWord) => (w.sourceUrl ? caches.value[videoKey(w.sourceUrl)] : undefined)
+const cacheStats = ref({ videos: 0, bytes: 0 })
+const autoSync = ref(true)
+const limitMb = ref(500)
+const viewing = ref<VideoCacheFull | null>(null)
+const fmtMb = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
+const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
+async function loadCaches() {
+  const urls = [...new Set(all.value.map((w) => w.sourceUrl).filter(Boolean))]
+  const list = urls.length ? await api.videocacheInfos(urls).catch(() => []) : []
+  caches.value = Object.fromEntries(list.map((i) => [i.videoKey, i]))
+  cacheStats.value = await api.videocacheStats().catch(() => ({ videos: 0, bytes: 0 }))
+  const s = await api.getSettings().catch(() => null)
+  if (s) {
+    autoSync.value = s.videoCacheAuto
+    limitMb.value = s.videoCacheMb
+  }
+}
+async function saveCacheSettings() {
+  const s = await api.getSettings()
+  await api.saveSettings({ ...s, videoCacheAuto: autoSync.value, videoCacheMb: Math.max(10, Number(limitMb.value) || 500) })
+}
+/** 用默认浏览器打开出处：跳到那一秒；装了扩展会定位到那一句并高亮这个词。 */
+async function openSource(w: VocabWord, restore = false) {
+  if (!w.sourceUrl) return ElMessage.info('这个词没有记录出处网址')
+  try {
+    await api.videocacheOpen(w.sourceUrl, w.timeSec, w.word, restore)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+async function viewCache(w: VocabWord) {
+  viewing.value = await api.videocacheGet(w.sourceUrl).catch(() => null)
+  if (!viewing.value) ElMessage.info('清影里没有这个视频的缓存')
+}
+async function dropCache(w: VocabWord) {
+  await api.videocacheRemove(w.sourceUrl)
+  await loadCaches()
+  ElMessage.success('已清除这个视频的缓存')
+}
+async function clearAllCache() {
+  const r = await ElMessageBox.confirm('清除全部视频缓存？浏览器里的摘要和字幕缓存不受影响。', '清除缓存', { type: 'warning' }).catch(() => 'no')
+  if (r === 'no') return
+  await api.videocacheClear()
+  await loadCaches()
+}
+const summaryText = computed(() => {
+  const r = viewing.value?.summary?.data?.res as Record<string, unknown> | undefined
+  const s = r?.summary
+  return typeof s === 'string' ? s : s ? JSON.stringify(s, null, 1) : ''
+})
+
 async function refresh() {
   loading.value = true
   try {
     ;[all.value, stats.value] = await Promise.all([api.vocabList('', 'all'), api.vocabStats()])
     if (!reviewActive()) await loadQueue()
+    void loadCaches()
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -180,7 +236,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <div class="th"><span>单词</span><span>释义与原句</span><span>来源</span><span>熟练度</span></div>
         <el-empty v-if="!loading && !rows.length" :description="stats.total ? '没有符合条件的词' : '还没有收藏的词。在浏览器里看视频，悬停字幕里的单词点“收藏”就会出现在这里。'" />
         <div class="rowsc">
-          <div v-for="w in rows" :key="w.id" class="tr" :class="{ sel: w.id === sel }" @click="sel = w.id">
+          <div v-for="w in rows" :key="w.id" class="tr" :class="{ sel: w.id === sel }" @click="sel = w.id" @dblclick="openSource(w)">
             <div>
               <b>{{ w.word }}</b><span class="ph">{{ w.phonetic }}</span>
               <span v-if="w.level" class="lv">{{ w.level }}</span>
@@ -189,13 +245,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <div>{{ w.pos ? w.pos + ' ' : '' }}{{ w.meaning || '（没有释义）' }}<span v-if="w.ctxMeaning" class="mute">　本句：{{ w.ctxMeaning }}</span></div>
               <div v-if="w.sentence" class="src">{{ w.sentence }}</div>
             </div>
-            <div class="src">{{ (w.sourceTitle || '').slice(0, 28) }}<span v-if="w.sourceTitle" class="tm">{{ Math.floor(w.timeSec / 60) }}:{{ String(Math.floor(w.timeSec % 60)).padStart(2, '0') }}</span></div>
+            <div class="src">
+              <a v-if="w.sourceUrl" class="lnk" :title="w.sourceUrl + '（双击整行也能打开）'" @click.stop="openSource(w)">{{ (w.sourceTitle || w.sourceUrl).slice(0, 28) }}<span class="tm">{{ clock(w.timeSec) }} ↗</span></a>
+              <template v-else>{{ (w.sourceTitle || '').slice(0, 28) }}</template>
+              <div v-if="cacheOf(w)" class="cbadge"><span v-if="cacheOf(w)!.hasSummary">摘要</span><span v-if="cacheOf(w)!.hasSubs">字幕</span></div>
+            </div>
             <div class="dots"><i v-for="n in 4" :key="n" :class="{ f: n <= mastery(w) }" /></div>
           </div>
         </div>
         <div v-if="picked" class="pickbar">
           <b>{{ picked.word }}</b>
           <a class="act" @click="speak(picked.word)">朗读</a>
+          <a v-if="picked.sourceUrl" class="act" @click="openSource(picked)">在浏览器打开出处</a>
+          <template v-if="cacheOf(picked)">
+            <a class="act" @click="viewCache(picked)">查看视频缓存</a>
+            <a class="act" @click="openSource(picked, true)">打开视频并恢复缓存</a>
+            <a class="act danger" @click="dropCache(picked)">清除缓存</a>
+          </template>
           <a class="act danger" @click="remove(picked)">删除</a>
           <span class="mute">{{ picked.reps ? '已复习 ' + picked.reps + ' 次' : '还没复习过' }}</span>
         </div>
@@ -232,8 +298,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
           <div class="hint">Anki 卡片正面是挖空原句，背面是释义和出处；在浏览器里的“生词”页也能一键导出。</div>
         </div>
+
+        <div class="exp">
+          <b>视频缓存</b>
+          <div class="hint">浏览器扩展里生成的摘要和双语字幕，收藏生词时同步一份到这里。现有 {{ cacheStats.videos }} 个视频，占用 {{ fmtMb(cacheStats.bytes) }}。</div>
+          <el-switch v-model="autoSync" size="small" active-text="收藏生词的视频自动同步" @change="saveCacheSettings" />
+          <div class="btns">上限 <el-input-number v-model="limitMb" size="small" :min="10" :max="5000" :step="100" controls-position="right" @change="saveCacheSettings" /> MB
+            <el-button size="small" :disabled="!cacheStats.videos" @click="clearAllCache">清除全部</el-button></div>
+        </div>
       </aside>
     </div>
+
+    <el-dialog :model-value="!!viewing" :title="viewing ? (viewing.info.title || '视频缓存') : ''" width="760px" @close="viewing = null">
+      <template v-if="viewing">
+        <div class="mute">{{ viewing.info.url }}</div>
+        <h4 v-if="summaryText">摘要</h4>
+        <pre v-if="summaryText" class="cachetxt">{{ summaryText }}</pre>
+        <h4 v-if="viewing.subs?.lines?.length">双语字幕（共 {{ viewing.subs.lines.length }} 句，显示前 120 句）</h4>
+        <div v-if="viewing.subs?.lines?.length" class="cachesubs">
+          <div v-for="(l, i) in viewing.subs.lines.slice(0, 120)" :key="i"><span class="tm">{{ clock(l.t / 1000) }}</span>{{ l.text }}<div v-if="viewing.subs.trans?.[i]" class="mute">{{ viewing.subs.trans[i] }}</div></div>
+        </div>
+        <div v-if="!summaryText && !viewing.subs?.lines?.length" class="mute">缓存里没有可显示的内容。</div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -291,4 +378,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .btns { display: flex; gap: 6px; flex-wrap: wrap }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5 }
 @media (max-width: 1000px) { .body { flex-direction: column } .rev { width: auto } }
+.lnk { color: var(--el-color-primary); cursor: pointer; text-decoration: underline; text-underline-offset: 2px }
+.cbadge { display: flex; gap: 4px; margin-top: 2px }
+.cbadge span { font-size: 11px; padding: 0 7px; border-radius: 9px; background: var(--el-color-success-light-9); color: var(--el-color-success) }
+.cachetxt { white-space: pre-wrap; max-height: 220px; overflow: auto; background: var(--el-fill-color-light); padding: 10px 12px; border-radius: 8px; font-family: inherit; font-size: 13px; line-height: 1.7 }
+.cachesubs { max-height: 300px; overflow: auto; font-size: 13px; line-height: 1.7 }
 </style>

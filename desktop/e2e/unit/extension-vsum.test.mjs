@@ -371,3 +371,23 @@ assert.equal(V.commentTime('比例是 3:2 不是时间'), -1)
   assert.deepEqual(plain(V.resegmentLines([{ t: 0, text: '短句' }], 0)), [{ t: 0, text: '短句' }])
   assert.deepEqual(plain(V.splitLong('Pi is 3.14 today.', 22, 48)), ['Pi is 3.14 today.'], '小数点不拆')
 }
+
+{
+  // 评论定位：解析时保留编号；按编号 / 作者 + 文字 / 文字开头找回原评论
+  const yt = V.parseYtComments({
+    onResponseReceivedEndpoints: [{ reloadContinuationItemsCommand: { slot: 'RELOAD_CONTINUATION_SLOT_BODY', continuationItems: [
+      { commentThreadRenderer: { comment: { commentRenderer: { commentId: 'UgxABC', authorText: { simpleText: '@kenji_ml' }, contentText: { runs: [{ text: '第 2 步的维度写错了，应该是 d_k' }] }, voteCount: { simpleText: '640' } } } } },
+    ] } }],
+  })
+  assert.equal(yt.items[0].id, 'UgxABC')
+  const bili = V.parseBiliComments({ data: { replies: [{ rpid: 123456, rpid_str: '123456', member: { uname: 'lin' }, content: { message: '请问有代码实现吗？' }, like: 3, rcount: 0 }], cursor: { next: 2, is_end: false } } })
+  assert.equal(bili.items[0].id, '123456')
+  const list = [...yt.items, ...bili.items]
+  assert.equal(V.findComment(list, { id: 'UgxABC', text: '' }).author, 'kenji_ml')
+  assert.equal(V.findComment(list, { author: 'lin', text: '请问有代码实现吗' }).id, '123456', '标点不同也能对上')
+  assert.equal(V.findComment(list, { text: '第 2 步的维度写错了，应该是 d_k 而不是 d_model（AI 引用时多写了几个字）' }).id, 'UgxABC', '开头一致')
+  assert.equal(V.findComment(list, { text: '完全无关的话' }), null)
+  assert.equal(V.commentLink('https://www.youtube.com/watch?v=abc123XYZ_-', yt.items[0]), 'https://www.youtube.com/watch?v=abc123XYZ_-&lc=UgxABC')
+  assert.equal(V.commentLink('https://www.bilibili.com/video/BV1xx411c7mD', bili.items[0]), '')
+}
+

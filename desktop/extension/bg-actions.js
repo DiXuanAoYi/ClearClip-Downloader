@@ -302,6 +302,13 @@ const HANDLERS = {
     return { lang: (await api.storage.local.get('appLang')).appLang || '' }
   },
   // 字幕学习：生词本（清影桌面端保存）
+  'cc-open-highlights': async () => (await api.tabs.create({ url: api.runtime.getURL('highlights.html') }), {}),
+  // 视频缓存：同步到清影 / 查询是否允许自动同步
+  'cc-videocache': async (m) => {
+    if (m.op === 'put') return { ...(await vcache.put(m.payload && typeof m.payload === 'object' ? m.payload : {})) }
+    if (m.op === 'info') return { ...(await vcache.info(String(m.url))) }
+    throw new Error('不支持的操作')
+  },
   'cc-vocab': async (m) => {
     const enc = encodeURIComponent
     switch (m.op) {

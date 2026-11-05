@@ -829,9 +829,41 @@
     return t == null ? -1 : t
   }
 
-  const cmt = (author, text, likes, replies) => {
+  const cmt = (author, text, likes, replies, id = '') => {
     const t = String(text || '').replace(/\s+/g, ' ').trim()
-    return { author: String(author || '').replace(/^@/, '').slice(0, 40), text: t.slice(0, 600), likes: parseCount(likes), replies: parseCount(replies), t: commentTime(t) }
+    return { author: String(author || '').replace(/^@/, '').slice(0, 40), text: t.slice(0, 600), likes: parseCount(likes), replies: parseCount(replies), t: commentTime(t), id: String(id || '').slice(0, 80) }
+  }
+
+  /** 把一段文字压成可比较的形式：去掉空白和标点，转小写。 */
+  const cmKey = (s) => String(s || '').replace(/[\s\p{P}\p{S}]+/gu, '').toLowerCase()
+
+  /** 在读取到的评论里找出“这一条”：先按编号，再按作者 + 文字，最后按文字开头。找不到返回 null。 */
+  function findComment(list, q) {
+    if (!q) return null
+    const arr = list || []
+    if (q.id) {
+      const m = arr.find((c) => c.id === q.id)
+      if (m) return m
+    }
+    const k = cmKey(q.text)
+    if (!k) return null
+    const same = (c) => cmKey(c.text) === k
+    const byAuthor = q.author ? arr.find((c) => same(c) && c.author === q.author) : null
+    if (byAuthor) return byAuthor
+    const exact = arr.find(same)
+    if (exact) return exact
+    const head = k.slice(0, 24)
+    return arr.find((c) => {
+      const ck = cmKey(c.text)
+      return ck.startsWith(head) || (head.length >= 12 && ck.includes(head)) || (ck.length >= 8 && k.startsWith(ck))
+    }) || null
+  }
+
+  /** YouTube 评论的直达链接（官方的 lc 参数）；没有编号返回空串。 */
+  function commentLink(url, c) {
+    const v = videoIdOf(url)
+    if (v?.site === 'youtube' && c?.id) return `https://www.youtube.com/watch?v=${v.id}&lc=${encodeURIComponent(c.id)}`
+    return ''
   }
 
   /**
@@ -863,12 +895,12 @@
         if (!th) continue
         const old = th.comment?.commentRenderer
         if (old) {
-          out.items.push(cmt(text(old.authorText), text(old.contentText), old.voteCount?.simpleText || old.likeCount, th.replies?.commentRepliesRenderer?.moreText ? text(th.replies.commentRepliesRenderer.moreText).replace(/\D/g, '') : old.replyCount))
+          out.items.push(cmt(text(old.authorText), text(old.contentText), old.voteCount?.simpleText || old.likeCount, th.replies?.commentRepliesRenderer?.moreText ? text(th.replies.commentRepliesRenderer.moreText).replace(/\D/g, '') : old.replyCount, old.commentId))
           continue
         }
         const vm = th.commentViewModel?.commentViewModel || th.commentViewModel
         const p = entities[vm?.commentKey]
-        if (p) out.items.push(cmt(p.author?.displayName, p.properties?.content?.content, p.toolbar?.likeCountNotliked ?? p.toolbar?.likeCountA11y, p.toolbar?.replyCount))
+        if (p) out.items.push(cmt(p.author?.displayName, p.properties?.content?.content, p.toolbar?.likeCountNotliked ?? p.toolbar?.likeCountA11y, p.toolbar?.replyCount, p.properties?.commentId))
       }
     }
     return out
@@ -879,7 +911,7 @@
     const d = json?.data || {}
     const all = [...(d.top_replies || []), ...(d.replies || [])]
     return {
-      items: all.map((r) => cmt(r?.member?.uname, r?.content?.message, r?.like, r?.rcount)),
+      items: all.map((r) => cmt(r?.member?.uname, r?.content?.message, r?.like, r?.rcount, r?.rpid_str || r?.rpid)),
       next: d.cursor?.next ?? 0,
       end: !!d.cursor?.is_end || !all.length,
     }
@@ -913,7 +945,7 @@
 
   globalThis.ccVsum = {
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
-    parseCount, commentTime, parseYtComments, parseBiliComments, cleanComments, commentsToMarkdown,
+    parseCount, commentTime, findComment, commentLink, cmKey, parseYtComments, parseBiliComments, cleanComments, commentsToMarkdown,
     videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, scriptOf, splitLong, resegmentLines, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
     searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, splitSummary, parsePoint, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
   }

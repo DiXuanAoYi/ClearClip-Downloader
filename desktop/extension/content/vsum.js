@@ -350,7 +350,7 @@
     const all = await store.get('vsumSessions', {})
     const key = sessKey()
     if (empty) delete all[key]
-    else all[key] = { ts: Date.now(), data: { res, chat: S.chat.slice(-40), style: S.prefs.style, lang: outLang(), title: S.data.title } }
+    else all[key] = { ts: Date.now(), key, vk: V.videoKey(S.data.url || location.href), url: S.data.url || location.href, data: { res, chat: S.chat.slice(-40), style: S.prefs.style, lang: outLang(), title: S.data.title } }
     await store.set('vsumSessions', V.pruneCache(all, SESS_KEEP, 2_500_000))
   }
   /** 取回上次的会话；摘要风格或输出语言变了，对应的结果不带。 */
@@ -1102,12 +1102,97 @@
     }
   }
 
+  // ---------- 评论定位：在页面的评论区里找到这一条，滚过去并高亮 ----------
+
+  /** 递归收集页面里（含 shadow DOM）所有匹配的元素。 */
+  function deepAll(root, selector, out = []) {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.matches(selector)) out.push(el)
+      if (el.shadowRoot) deepAll(el.shadowRoot, selector, out)
+    }
+    return out
+  }
+  /** 页面上现有的评论节点：{ el: 用来高亮的外层元素, text, id }。 */
+  function pageComments() {
+    const site = V.videoIdOf(location.href)?.site
+    const out = []
+    if (site === 'youtube') {
+      for (const th of document.querySelectorAll('ytd-comment-thread-renderer, ytd-comment-view-model, ytd-comment-renderer')) {
+        const body = th.querySelector('#content-text')
+        if (!body) continue
+        const link = th.querySelector('a[href*="lc="]')
+        const id = link ? new URL(link.href, location.href).searchParams.get('lc') || '' : ''
+        out.push({ el: th, text: body.textContent || '', id: id.split('.')[0] })
+      }
+    } else if (site === 'bilibili') {
+      for (const rt of deepAll(document, 'bili-rich-text')) {
+        const text = rt.shadowRoot?.querySelector('#contents')?.textContent || rt.textContent || ''
+        let host = rt
+        for (let i = 0; i < 6 && host; i++) {
+          const root = host.getRootNode()
+          host = root instanceof ShadowRoot ? root.host : host.parentElement
+          if (host?.tagName === 'BILI-COMMENT-RENDERER' || host?.tagName === 'BILI-COMMENT-REPLY-RENDERER') break
+        }
+        out.push({ el: host || rt, text, id: '' })
+      }
+    }
+    return out
+  }
+  function flash(el) {
+    const old = { outline: el.style.outline, bg: el.style.background, tr: el.style.transition }
+    el.style.transition = 'background .4s, outline-color .4s'
+    el.style.outline = '3px solid #e0a82e'
+    el.style.background = '#fff4d6'
+    setTimeout(() => {
+      el.style.outline = old.outline
+      el.style.background = old.bg
+      el.style.transition = old.tr
+    }, 2400)
+  }
+  let locating = 0
+  /** 找这一条评论：已在页面上就滚过去；没有就一边向下滚动加载一边找（最多 20 轮，可取消）。 */
+  async function locateComment(q) {
+    const c = V.findComment(S.cm?.list, q) || q
+    const key = V.cmKey(c.text)
+    const head = key.slice(0, 20)
+    if (!head) return toast(ui, '这条评论没有文字，没法定位', true)
+    const token = ++locating
+    for (let round = 0; round < 20 && token === locating && !S.closed; round++) {
+      const hit = pageComments().find((p) => (c.id && p.id === c.id) || V.cmKey(p.text).startsWith(head) || (head.length >= 12 && V.cmKey(p.text).includes(head)))
+      if (hit) {
+        hit.el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        flash(hit.el)
+        return toast(ui, '已定位到这条评论')
+      }
+      if (round === 0 && !pageComments().length) {
+        // 评论区还没出现：先滚到页面下方触发懒加载
+        document.querySelector('#comments, ytd-comments, bili-comments')?.scrollIntoView({ block: 'start' })
+      } else window.scrollBy({ top: Math.round(innerHeight * 0.9), behavior: 'auto' })
+      toast(ui, `正在向下查找这条评论（第 ${round + 1} 次）…`, false, 900)
+      await new Promise((r) => setTimeout(r, 800))
+    }
+    if (token !== locating) return
+    navigator.clipboard.writeText(c.text).catch(() => {})
+    const link = V.commentLink(S.data?.url || location.href, c)
+    toast(ui, link ? '页面里没找到，可能被折叠或删除了。文字已复制，也可以用“新标签页打开”' : '页面里没找到，可能被折叠或删除了。评论文字已复制，可以用页内搜索', true, 4500)
+  }
+
+  const cmLocate = (q) => {
+    const c = V.findComment(S.cm?.list, q) || q
+    const link = V.commentLink(S.data?.url || location.href, c)
+    return [
+      h('button', { class: 'sec', text: '定位 ↗', title: '在页面的评论区里找到这条评论并高亮', onclick: () => locateComment(q) }),
+      link && h('button', { class: 'sec', text: '新标签打开', title: 'YouTube 的评论直达链接', onclick: () => window.open(link, '_blank', 'noopener') }),
+    ]
+  }
+
   const cmQuote = (q) =>
     q &&
     h('div', { class: 'cq' }, q.text,
       h('div', { class: 'm' },
         h('span', { text: [q.author && `@${q.author}`, q.likes ? `赞 ${q.likes}` : ''].filter(Boolean).join(' · ') }),
-        q.t >= 0 && h('button', { class: 'sec', text: V.fmtClock(q.t), title: '跳到视频里的这个时间', onclick: () => seek(q.t) })))
+        q.t >= 0 && h('button', { class: 'sec', text: V.fmtClock(q.t), title: '跳到视频里的这个时间', onclick: () => seek(q.t) }),
+        ...cmLocate(q)))
 
   function tabComments() {
     if (S.cm?.key !== localKey()) {
@@ -1162,6 +1247,12 @@
           ...r.corrections.map((x) => h('div', { class: 'cmth' }, h('div', { text: x.text }), cmQuote(x.quote)))))
       }
       if (r.keywords?.length) out.push(h('div', { class: 'card' }, h('b', { text: '热词' }), h('div', { class: 'chips' }, ...r.keywords.map((k) => h('span', { class: 'chip', text: k })))))
+    }
+    if (c.list.length) {
+      const shown = c.showAll ? c.list.slice(0, 80) : []
+      out.push(h('div', { class: 'card' },
+        h('div', { class: 'tools' }, h('b', { text: '全部评论' }), h('span', { class: 'mute', style: 'flex:1', text: `按点赞排序，共 ${c.list.length} 条` }), h('button', { class: 'sec', text: c.showAll ? '收起' : '展开', onclick: () => ((c.showAll = !c.showAll), render()) })),
+        ...shown.map((x) => h('div', { class: 'cq' }, x.text, h('div', { class: 'm' }, h('span', { text: [x.author && `@${x.author}`, x.likes ? `赞 ${x.likes}` : ''].filter(Boolean).join(' · ') }), ...cmLocate(x))))))
     }
     if (c.list.length) {
       const inp = h('input', { type: 'text', placeholder: '问评论：例如“大家最希望作者下期讲什么？”', style: 'flex:1', onkeydown: (e) => e.key === 'Enter' && !e.isComposing && (cmAsk(inp.value), (inp.value = '')) })
@@ -1439,11 +1530,36 @@
     render()
   }
 
+  /** 手动把这个视频的摘要（和已翻译的文稿）同步到清影。 */
+  async function syncToApp() {
+    const d = S.data
+    if (!d?.lines?.length) return toast(ui, '还没有文稿', true)
+    await saveSession()
+    const url = d.url || location.href
+    const vk = V.videoKey(url)
+    const sess = Object.values(await store.get('vsumSessions', {})).find((e) => e && e.vk === vk)
+    const tr = S.res.translated
+    const payload = {
+      url,
+      title: d.title,
+      site: d.site || '',
+      summary: sess ? { key: sess.key, ts: sess.ts, vk: sess.vk, url: sess.url, data: sess.data } : null,
+      subs: tr?.some(Boolean) ? { key: '', target: S.prefs.lang, lines: d.lines.map((l) => ({ t: l.t, text: l.text })), trans: tr } : null,
+      dstLang: S.prefs.lang || '',
+    }
+    if (!payload.summary && !payload.subs) return toast(ui, '还没有可同步的摘要或翻译，先生成一份', true)
+    const r = await send({ type: 'cc-videocache', op: 'put', payload })
+    toast(ui, r.ok ? '已同步到清影，生词本里能看到这个视频的缓存' : r.error || '同步失败', !r.ok)
+  }
+
   function tabMore() {
     const box = h('div')
     const cards = S.res.cards
     const quotes = S.res.quotes
     box.append(
+      grp('清影里的缓存',
+        h('div', { class: 'mute', text: '把这个视频的摘要和翻译同步到清影应用。收藏生词时也会自动同步（可在清影的生词本里关掉）；在生词本里选“打开视频并恢复缓存”会取回到这里。' }),
+        h('div', { class: 'tools' }, h('button', { class: 'sec', text: '同步到清影', onclick: syncToApp }))),
       grp('学习卡片（可导入 Anki）',
       h('div', { class: 'tools' },
         h('button', { text: cards ? '重新生成' : '生成问答卡片', disabled: S.busy, onclick: () => task('cards', {}, (x) => (S.res.cards = x.cards)) }),
