@@ -1,5 +1,4 @@
 // 网页高亮与摘录管理页：按网页分组，可搜索、删除、导出 Markdown。
-const api = globalThis.browser ?? globalThis.chrome
 const $ = (id) => document.getElementById(id)
 const SEL = globalThis.ccSel
 let all = {}
