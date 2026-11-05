@@ -468,9 +468,20 @@ pub fn load_font(data_dir: &Path) -> AppResult<Vec<u8>> {
 
 use pdfium_render::prelude::*;
 
-fn bind(lib: &Path) -> AppResult<Pdfium> {
+/// PDFium 的动态库绑定在一个进程里只能初始化一次（再绑会报 BindingsAlreadyInitialized），所以绑一次，之后全进程复用。
+static PDFIUM: std::sync::OnceLock<Pdfium> = std::sync::OnceLock::new();
+static BIND_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn bind(lib: &Path) -> AppResult<&'static Pdfium> {
+    if let Some(p) = PDFIUM.get() {
+        return Ok(p);
+    }
+    let _g = BIND_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(p) = PDFIUM.get() {
+        return Ok(p);
+    }
     let b = Pdfium::bind_to_library(lib).map_err(|e| AppError::msg(format!("PDF 排版组件打不开：{e}。请在“文件翻译”里重新安装。")))?;
-    Ok(Pdfium::new(b))
+    Ok(PDFIUM.get_or_init(|| Pdfium::new(b)))
 }
 
 fn perr(e: PdfiumError) -> AppError {
