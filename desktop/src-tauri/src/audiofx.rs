@@ -509,7 +509,15 @@ mod tests {
 
     #[test]
     fn chain_order_is_denoise_enhance_reverb_loudness() {
-        let spec = AudioFxSpec { denoise: "medium".into(), enhance: true, reverb: Some(ReverbSpec::default()), normalize: Some(-16.0), normalize_tp: None, normalize_lra: None, preset: None };
+        let spec = AudioFxSpec {
+            denoise: "medium".into(),
+            enhance: true,
+            reverb: Some(ReverbSpec::default()),
+            normalize: Some(-16.0),
+            normalize_tp: None,
+            normalize_lra: None,
+            preset: None,
+        };
         let g = build_graph(&spec, &FxCaps::all(), true).unwrap().graph;
         let pos = |k: &str| g.find(k).unwrap_or_else(|| panic!("缺少 {k}：{g}"));
         assert!(

@@ -5,7 +5,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
-import type { OcrStatus, ScreenEntry, ScreenSettings, ScreenStatus, ScreenTarget, ScreenTry, ScreenWindow } from '../types'
+import type { AppGlossaryPack, OcrStatus, ScreenEntry, ScreenSettings, ScreenStatus, ScreenTarget, ScreenTry, ScreenWindow } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 
 /** 实时屏幕翻译：翻译别的软件和游戏画面上的文字。控制在这里，也可以用悬浮钮、托盘和快捷键。 */
@@ -20,7 +20,7 @@ const dl = ref<{ got: number; total: number } | null>(null)
 const tried = ref<ScreenTry | null>(null)
 const trying = ref(false)
 const hist = ref<ScreenEntry[]>([])
-const tab = ref<'main' | 'ocr' | 'sub' | 'manga' | 'audio' | 'apps' | 'history'>('main')
+const tab = ref<'main' | 'ocr' | 'sub' | 'manga' | 'audio' | 'apps' | 'terms' | 'history'>('main')
 let offs: UnlistenFn[] = []
 
 const MODES: { id: ScreenSettings['mode']; name: string; desc: string }[] = [
@@ -81,6 +81,7 @@ onMounted(async () => {
   await refresh()
   void loadWins()
   void loadHist()
+  void loadPacks()
   langs.value = await api.scOcrLangs().catch(() => [])
   experts.value = (await api.expertsState().catch(() => null))?.experts ?? []
   ocr.value = await api.ocrStatus().catch(() => null)
@@ -165,6 +166,31 @@ const glossaryOn = computed({
     if (ai) void app.patch({ ai: { ...ai, glossaryOn: v } })
   },
 })
+
+const packs = ref<AppGlossaryPack[]>([])
+async function loadPacks() {
+  packs.value = await api.glossaryAppPacks().catch(() => [])
+}
+async function installPacks(ids: string[]) {
+  try {
+    const n = await api.glossaryAppInstall(ids)
+    ElMessage.success(n ? `已装上 ${n} 个软件术语库，在“设置 → AI → 术语库”里可以改` : '这些已经装过了')
+    await loadPacks()
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+/** 当前翻译的软件（或最近一次翻译的软件）。 */
+const targetExe = computed(() => st.value.target?.exe || '')
+async function openAppGlossary() {
+  try {
+    const g = await api.glossaryForApp(targetExe.value)
+    ElMessage.success(`“${g.name}”已就绪，到“设置 → AI → 术语库”里往里加术语`)
+    app.goSettings('ai')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
 
 async function tryOnce() {
   trying.value = true
@@ -299,6 +325,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         <el-button :disabled="!st.supported || !st.target" :loading="trying" @click="tryOnce">试识别一次</el-button>
         <el-button v-if="st.running" @click="api.scPause()">{{ st.paused ? '继续' : '暂停' }}</el-button>
         <el-button v-if="st.running" @click="api.scHide()">{{ st.hidden ? '显示译文' : '隐藏译文' }}（{{ form.hotkeyHide }}）</el-button>
+        <el-button v-if="st.running" @click="api.scShot()">保存译图（{{ form.hotkeyShot }}）</el-button>
       </div>
       <div v-if="tried" class="try">
         <div class="mute">用“{{ tried.engine }}”识别 {{ tried.w }}×{{ tried.h }}，{{ tried.ms }} 毫秒，{{ tried.lines.length }} 段：</div>
@@ -337,7 +364,9 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           <div class="field"><label>重新框选</label><el-input v-model="form.hotkeyPick" size="small" class="mono" /></div>
           <div class="field"><label>显示 / 隐藏译文</label><el-input v-model="form.hotkeyHide" size="small" class="mono" /></div>
           <div class="field"><label>切换模式</label><el-input v-model="form.hotkeyMode" size="small" class="mono" /></div>
+          <div class="field"><label>保存带译文的截图</label><el-input v-model="form.hotkeyShot" size="small" class="mono" /></div>
         </div>
+        <small class="mute block">译文贴字层不会出现在系统截图或别的截图软件里（否则会被自己再识别一遍）。想留下带译文的图，用“保存译图”：它会取一帧干净的画面，把译文按现在的排版叠上去，存到“下载文件夹/屏幕翻译截图”，同时复制到剪贴板。</small>
         <small class="mute">快捷键留空表示不使用；与别的程序冲突时会在设置页提示。游戏如果是“独占全屏”，系统截不到画面，请改成“无边框窗口”或“窗口化”。</small>
       </el-tab-pane>
 
@@ -480,6 +509,23 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           <span class="mute">{{ p.mode ? modeName(p.mode) : '沿用全局模式' }} · {{ p.target === 'window' ? '整个窗口' : `区域 ${p.region[2]}×${p.region[3]}` }}{{ p.ocr ? ' · ' + p.ocr : '' }}</span>
           <el-button size="small" text type="danger" @click="removeProfile(p.exe)">删除</el-button>
         </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="软件术语库" name="terms" lazy>
+        <p class="mute">每个软件有自己的叫法：同一个 “Layer” 在 Photoshop 里是“图层”，在别处可能是“层”。给软件配一个术语库，翻译这个软件的画面时只带上它用得到的术语，译法统一，提示词也更短、更省额度。术语库的“生效范围”写 <code>app:软件名</code>（比如 <code>app:photoshop</code>），只在翻译这个软件时用。需要在“设置 → AI”里打开术语库。</p>
+        <div class="row">
+          <el-button :disabled="!targetExe" @click="openAppGlossary">为{{ targetExe ? ` ${targetExe} ` : '当前软件' }}新建 / 打开术语库</el-button>
+          <small v-if="!targetExe" class="mute">先框选或开始翻译一个软件，这里就知道它叫什么。</small>
+        </div>
+        <h4>内置起步包</h4>
+        <small class="mute block">取自这些软件官方中文界面常见的叫法，只是起点；软件版本不同叫法会有出入，装好后可以随意改。已经装过的不会被覆盖。</small>
+        <div v-for="p in packs" :key="p.id" class="prof">
+          <b>{{ p.name }}</b>
+          <span class="mute">{{ p.count }} 条 · 进程 {{ p.exes.join('、') }}</span>
+          <el-tag v-if="p.installed" size="small" type="success">已装</el-tag>
+          <el-button v-else size="small" @click="installPacks([p.id])">安装</el-button>
+        </div>
+        <div class="row"><el-button size="small" :disabled="packs.every((p) => p.installed)" @click="installPacks(packs.filter((p) => !p.installed).map((p) => p.id))">全部安装</el-button></div>
       </el-tab-pane>
 
       <el-tab-pane label="翻译历史" name="history" lazy>

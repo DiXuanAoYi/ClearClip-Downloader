@@ -654,6 +654,8 @@ pub struct LiveSettings {
     pub hotkey_hide: String,
     /// 切换模式（标准 → 字幕 → 漫画）
     pub hotkey_mode: String,
+    /// 保存带译文的截图
+    pub hotkey_shot: String,
     /// 屏幕边上的小悬浮钮
     pub float_button: bool,
     /// standard / subtitle / manga
@@ -731,6 +733,7 @@ impl Default for LiveSettings {
             hotkey_pick: "Ctrl+Alt+R".into(),
             hotkey_hide: "Ctrl+Alt+H".into(),
             hotkey_mode: "Ctrl+Alt+M".into(),
+            hotkey_shot: "Ctrl+Alt+S".into(),
             float_button: false,
             mode: "standard".into(),
             ocr: "system".into(),
@@ -774,7 +777,7 @@ impl Default for LiveSettings {
 
 impl LiveSettings {
     pub fn sanitize(&mut self) {
-        for h in [&mut self.hotkey, &mut self.hotkey_pick, &mut self.hotkey_hide, &mut self.hotkey_mode] {
+        for h in [&mut self.hotkey, &mut self.hotkey_pick, &mut self.hotkey_hide, &mut self.hotkey_mode, &mut self.hotkey_shot] {
             *h = h.trim().to_string();
         }
         let pick = |v: &mut String, ok: &[&str], d: &str| {

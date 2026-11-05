@@ -131,6 +131,7 @@ pub async fn save_settings(app: AppHandle, state: St<'_>, settings: Settings) ->
         || old.live.hotkey_pick != s.live.hotkey_pick
         || old.live.hotkey_hide != s.live.hotkey_hide
         || old.live.hotkey_mode != s.live.hotkey_mode
+        || old.live.hotkey_shot != s.live.hotkey_shot
     {
         apply_shortcut(&app, &s.shortcut);
     }
@@ -182,6 +183,7 @@ pub fn apply_shortcut(app: &AppHandle, shortcut: &str) {
         ("屏幕翻译 重新框选 快捷键", lv.hotkey_pick.as_str()),
         ("屏幕翻译 显示/隐藏译文 快捷键", lv.hotkey_hide.as_str()),
         ("屏幕翻译 切换模式 快捷键", lv.hotkey_mode.as_str()),
+        ("屏幕翻译 保存译图 快捷键", lv.hotkey_shot.as_str()),
     ] {
         if sc.is_empty() {
             continue;

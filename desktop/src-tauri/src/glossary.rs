@@ -299,6 +299,25 @@ fn glob(pattern: &str, text: &str) -> bool {
     pi == p.len()
 }
 
+/// 屏幕翻译等“不是网页”的场合，用软件名当作网址：`app://photoshop`。
+/// 术语库 / AI 专家的生效范围里写 `app:photoshop`（或直接写 `photoshop.exe`）就只在这个软件里生效。
+pub fn app_url(exe: &str) -> String {
+    let k = app_key(exe);
+    if k.is_empty() {
+        String::new()
+    } else {
+        format!("app://{k}")
+    }
+}
+
+/// 软件名的统一写法：小写，去掉 `app://` / `app:` 前缀和 `.exe`，空格和斜杠换成 `-`。
+pub fn app_key(s: &str) -> String {
+    let t = s.trim().to_lowercase();
+    let t = t.strip_prefix("app://").or_else(|| t.strip_prefix("app:")).unwrap_or(&t);
+    let t = t.rsplit(['\\', '/']).next().unwrap_or(t);
+    t.trim().trim_end_matches(".exe").trim().replace(' ', "-")
+}
+
 /// 与沉浸式翻译 `matches` 相同的写法：精确域名、`*.域名`（只匹配子域名）、完整网址（可含 `*`）、`*`。
 pub fn site_matches(pattern: &str, url: &str) -> bool {
     let pat = pattern.trim().to_lowercase();
@@ -307,6 +326,15 @@ pub fn site_matches(pattern: &str, url: &str) -> bool {
     }
     if pat == "*" || pat == "*://*/*" {
         return true;
+    }
+    // 软件：网址是 app://名字 时，只看名字；写 app:名字 / app://名字 / 名字.exe 都行
+    if url.trim().to_lowercase().starts_with("app://") {
+        let want = app_key(url);
+        let is_app_pat = pat.starts_with("app:") || pat.ends_with(".exe");
+        return is_app_pat && !want.is_empty() && app_key(&pat) == want;
+    }
+    if pat.starts_with("app:") {
+        return false;
     }
     let host = host_of(url);
     if pat.contains("://") {

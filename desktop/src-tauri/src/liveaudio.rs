@@ -305,7 +305,7 @@ mod win {
                         if text.is_empty() {
                             continue;
                         }
-                        let tr = crate::livetx::translate(app, std::slice::from_ref(&text), &lang, "", stop)
+                        let tr = crate::livetx::translate(app, std::slice::from_ref(&text), &lang, "", "", stop)
                             .ok()
                             .and_then(|v| v.into_iter().next())
                             .unwrap_or_default();

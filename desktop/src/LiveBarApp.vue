@@ -34,6 +34,7 @@ async function act(kind: string, arg = '') {
     else if (kind === 'mode') await api.scSetMode(arg)
     else if (kind === 'pause') await api.scPause()
     else if (kind === 'pick') await api.scPick()
+    else if (kind === 'shot') await api.scShot()
     else await api.scHide()
   } catch {
     /* 错误由后端状态文字呈现 */
@@ -63,6 +64,7 @@ onBeforeUnmount(() => offs.forEach((f) => f()))
       <button v-if="st?.running" :title="st?.paused ? '继续' : '暂停'" @click="act('pause')">{{ st?.paused ? '▶ 继续' : '⏸ 暂停' }}</button>
       <button v-for="m in MODES" :key="m[0]" :class="{ sel: st?.mode === m[0] }" @click="act('mode', m[0])">{{ m[1] }}</button>
       <button title="重新框选" @click="act('pick')">▭ 重选区域</button>
+      <button v-if="st?.running" title="把译文叠在画面上存成图片（也会复制到剪贴板）" @click="act('shot')">📷 存译图</button>
       <button :title="st?.hidden ? '显示译文' : '隐藏译文'" @click="act('hide')">{{ st?.hidden ? '👁 显示译文' : '👁 隐藏译文' }}</button>
       <span v-if="st?.running" class="live">{{ st.paused ? '已暂停' : `实时翻译中 · ${fps} 帧/秒` }}</span>
       <button title="收起成圆点" @click="toggleOpen">×</button>

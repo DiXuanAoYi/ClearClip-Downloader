@@ -3,6 +3,7 @@ pub mod ai_cmds;
 pub mod ai_pool;
 pub mod ai_probe;
 pub mod api;
+pub mod appterms;
 pub mod audiofx;
 pub mod backup;
 pub mod batch;
@@ -38,7 +39,8 @@ pub mod links;
 pub mod live;
 pub mod liveaudio;
 pub mod livecore;
-pub mod livetr;
+pub mod liveshot;
+mod livetr;
 pub mod livetx;
 pub mod livewin;
 pub mod lut;
@@ -288,6 +290,8 @@ pub fn run() {
                             livetr::hotkey(app, "hide");
                         } else if live(|l| &l.hotkey_mode) == sc {
                             livetr::hotkey(app, "mode");
+                        } else if live(|l| &l.hotkey_shot) == sc {
+                            livetr::hotkey(app, "shot");
                         } else {
                             clipboard::parse_clipboard_now(app);
                         }
@@ -773,6 +777,12 @@ pub fn run() {
             livetr::sc_windows,
             livetr::sc_ocr_langs,
             livetr::sc_overlay_state,
+            glossary_cmds::glossary_app_packs,
+            glossary_cmds::glossary_app_install,
+            glossary_cmds::glossary_for_app,
+            livetr::sc_shot,
+            livetr::sc_shot_frame,
+            livetr::sc_shot_save,
             livetr::sc_ack_manga,
             livetr::sc_bar,
             livetr::sc_bar_expand,

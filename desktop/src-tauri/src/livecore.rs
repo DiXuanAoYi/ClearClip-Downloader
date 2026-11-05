@@ -58,11 +58,41 @@ pub struct Group {
     pub lines: usize,
     /// 单行的字高
     pub em: f32,
+    /// 多行时各行的左右端点（横排）；用来判断原文是靠左、居中还是靠右
+    #[serde(skip)]
+    pub spans: Vec<(f32, f32)>,
+    /// 0 靠左 / 1 居中 / 2 靠右。单行认不出来，按靠左
+    pub align: u8,
+}
+
+/// 各行的左右端点是靠左、居中还是靠右排的：0 靠左 / 1 居中 / 2 靠右。
+/// 只有一行没法判断（单行的左边、中线、右边是同一个位置），按靠左。
+/// `em` 是字高，端点差在 0.6 个字以内算同一条线。
+pub fn align_of(spans: &[(f32, f32)], em: f32) -> u8 {
+    if spans.len() < 2 {
+        return 0;
+    }
+    let tol = (em * 0.6).max(1.5);
+    let spread = |f: &dyn Fn(&(f32, f32)) -> f32| {
+        let (lo, hi) = spans.iter().map(f).fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+        hi - lo
+    };
+    let (l, c, r) = (spread(&|s| s.0), spread(&|s| (s.0 + s.1) / 2.0), spread(&|s| s.1));
+    // 三条线里最齐的那条决定对齐；左边也齐就是靠左（最常见）
+    if l <= tol {
+        0
+    } else if c <= tol && c <= r {
+        1
+    } else if r <= tol {
+        2
+    } else {
+        0
+    }
 }
 
 impl Group {
     fn from_line(l: &OLine) -> Group {
-        Group { text: l.text.clone(), x: l.x, y: l.y, w: l.w, h: l.h, vertical: l.vertical, lines: 1, em: l.em() }
+        Group { text: l.text.clone(), x: l.x, y: l.y, w: l.w, h: l.h, vertical: l.vertical, lines: 1, em: l.em(), spans: vec![(l.x, l.right())], align: 0 }
     }
     fn right(&self) -> f32 {
         self.x + self.w
@@ -71,6 +101,7 @@ impl Group {
         self.y + self.h
     }
     fn grow(&mut self, l: &OLine) {
+        self.spans.push((l.x, l.right()));
         let (r, b) = (self.right().max(l.right()), self.bottom().max(l.bottom()));
         self.x = self.x.min(l.x);
         self.y = self.y.min(l.y);
@@ -168,6 +199,9 @@ fn group_horizontal(sorted: &[OLine]) -> Vec<Group> {
             }
             None => groups.push(Group::from_line(l)),
         }
+    }
+    for g in &mut groups {
+        g.align = align_of(&g.spans, g.em);
     }
     groups
 }
@@ -633,6 +667,35 @@ mod tests {
 
     fn l(t: &str, x: f32, y: f32, w: f32, h: f32) -> OLine {
         OLine::new(t, x, y, w, h)
+    }
+
+    #[test]
+    fn alignment_is_read_from_how_the_lines_end() {
+        let em = 20.0;
+        // 靠左：左边一条线，右边参差
+        assert_eq!(align_of(&[(10.0, 200.0), (10.0, 150.0), (11.0, 180.0)], em), 0);
+        // 居中：中线一条线，左右都不齐
+        assert_eq!(align_of(&[(60.0, 160.0), (40.0, 180.0), (80.0, 140.0)], em), 1);
+        // 靠右：右边一条线
+        assert_eq!(align_of(&[(10.0, 200.0), (60.0, 200.0), (100.0, 201.0)], em), 2);
+        // 单行没法判断，按靠左
+        assert_eq!(align_of(&[(50.0, 150.0)], em), 0);
+        assert_eq!(align_of(&[], em), 0);
+        // 什么都不齐：按靠左
+        assert_eq!(align_of(&[(10.0, 100.0), (50.0, 300.0), (90.0, 150.0)], em), 0);
+    }
+
+    #[test]
+    fn grouped_paragraph_remembers_its_alignment() {
+        // 三行居中的标题文字上下相连
+        let ls = vec![l("Welcome to the", 100.0, 10.0, 200.0, 20.0), l("ClearClip", 140.0, 34.0, 120.0, 20.0), l("translator app", 120.0, 58.0, 160.0, 20.0)];
+        let g = group_lines(&ls);
+        assert_eq!(g.len(), 1);
+        assert_eq!((g[0].lines, g[0].align), (3, 1));
+        // 左对齐的两行
+        let ls = vec![l("First line of text", 10.0, 10.0, 200.0, 20.0), l("second", 10.0, 34.0, 90.0, 20.0)];
+        let g = group_lines(&ls);
+        assert_eq!((g[0].lines, g[0].align), (2, 0));
     }
 
     #[test]

@@ -27,6 +27,7 @@ pub const EVT_BLOCKS: &str = "live://blocks";
 pub const EVT_STATE: &str = "live://state";
 pub const EVT_SUB: &str = "live://sub";
 pub const EVT_HIDDEN: &str = "live://hidden";
+pub const EVT_SHOT: &str = "live://shot";
 
 // ---------- 数据 ----------
 
@@ -60,6 +61,8 @@ pub struct OBlock {
     pub lines: usize,
     /// 居中排（字幕盖住原位用）
     pub center: bool,
+    /// 原文的对齐：0 靠左 / 1 居中 / 2 靠右（多行段落按各行端点判断，单行按靠左）
+    pub align: u8,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -285,6 +288,7 @@ pub fn blocks_from(groups: &[Group], trans: &[String], f: &Frame, live: &LiveSet
                 vertical: g.vertical,
                 lines: g.lines,
                 center: false,
+                align: g.align,
             }
         })
         .collect()
@@ -701,7 +705,7 @@ impl Runner {
         }
         emit_state(&self.app, "翻译中");
         let texts: Vec<String> = groups.iter().map(|g| g.text.clone()).collect();
-        let tr = livetx::translate(&self.app, &texts, lang, &self.target.title, &self.stop)?;
+        let tr = livetx::translate(&self.app, &texts, lang, &self.target.title, &self.target.exe, &self.stop)?;
         let blocks = blocks_from(&groups, &tr, frame, live);
         let hist: Vec<(String, String)> = blocks.iter().map(|b| (b.orig.clone(), b.text.clone())).collect();
         self.emit_blocks(mode, blocks, live, mode == "manga", lang, live.bilingual);
@@ -769,6 +773,7 @@ impl Runner {
                     vertical: false,
                     lines: 1,
                     center: true,
+                    align: 1,
                 });
                 continue;
             }
@@ -795,6 +800,7 @@ impl Runner {
                 vertical,
                 lines: 1,
                 center: true,
+                align: 1,
             });
         }
         if blocks.is_empty() {
@@ -830,7 +836,7 @@ impl Runner {
                 if live.skip_same && livecore::should_skip(&src, lang) {
                     return Ok(());
                 }
-                let tr = livetx::translate(&self.app, std::slice::from_ref(&src), lang, &self.target.title, &self.stop)?;
+                let tr = livetx::translate(&self.app, std::slice::from_ref(&src), lang, &self.target.title, &self.target.exe, &self.stop)?;
                 let t = tr.into_iter().next().unwrap_or_default();
                 self.history(live, "subtitle", &[(src.clone(), t.clone())]);
                 self.shown = true;
@@ -864,6 +870,7 @@ impl Runner {
                         vertical: false,
                         lines: 1,
                         center: true,
+                        align: 1,
                     };
                     self.emit_blocks("subtitle", vec![b], live, true, lang, live.sub_bilingual);
                 }
@@ -1097,6 +1104,9 @@ pub fn hotkey(app: &AppHandle, which: &str) {
             set_hidden(app, None);
         }
         "mode" => cycle_mode(app),
+        "shot" => {
+            let _ = shot_request(app);
+        }
         _ => {}
     }
 }
@@ -1237,6 +1247,68 @@ pub fn sc_overlay_state() -> Option<Value> {
     lock(&LAST_PAYLOAD).clone()
 }
 
+// ---------- 保存带译文的截图 ----------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShotFrame {
+    /// 取景区（屏幕物理像素 x, y, w, h），也就是贴字层窗口的位置
+    pub rect: [i32; 4],
+    /// 干净的画面（没有译文）：`data:image/png;base64,…`
+    pub png: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShotSaved {
+    pub path: String,
+    pub copied: bool,
+}
+
+/// 抓一帧取景区的画面。贴字层是“不进截图”的窗口，所以这一帧里没有译文，由贴字层自己叠上去。
+#[tauri::command]
+pub fn sc_shot_frame() -> AppResult<ShotFrame> {
+    let rect = *lock(&APPLIED);
+    if rect[2] <= 0 || rect[3] <= 0 {
+        return Err(AppError::invalid("还没有开始屏幕翻译，没有可以截的区域。"));
+    }
+    let f = livewin::grab_rect(rect[0], rect[1], rect[2] as u32, rect[3] as u32).map_err(AppError::msg)?;
+    let png = crate::scrcap::encode_png(&crate::scrcap::bgra_to_rgb(&f.bgra), f.w as u32, f.h as u32).map_err(AppError::msg)?;
+    Ok(ShotFrame { rect, png: format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)) })
+}
+
+/// 存合成好的截图：写到“下载文件夹/屏幕翻译截图”，同时放进剪贴板。
+#[tauri::command]
+pub fn sc_shot_save(app: AppHandle, state: St<'_>, data: String) -> AppResult<ShotSaved> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let bytes = crate::liveshot::png_from_data(&data)?;
+    let base = state.settings().download_dir.trim().to_string();
+    let dir = if base.is_empty() { std::env::temp_dir() } else { std::path::PathBuf::from(base) }.join("屏幕翻译截图");
+    std::fs::create_dir_all(&dir)?;
+    let path = crate::liveshot::shot_name(&dir, chrono::Local::now());
+    std::fs::write(&path, &bytes)?;
+    let copied =
+        crate::liveshot::png_to_rgba(&bytes).is_some_and(|(rgba, w, h)| app.clipboard().write_image(&tauri::image::Image::new_owned(rgba, w, h)).is_ok());
+    let shown = path.to_string_lossy().to_string();
+    emit_state(&app, &format!("已保存译图{}：{shown}", if copied { "（也已复制到剪贴板）" } else { "" }));
+    Ok(ShotSaved { path: shown, copied })
+}
+
+/// 请贴字层把译文叠到干净画面上，存成图片。贴字层不在（还没开始翻译）时返回 false。
+fn shot_request(app: &AppHandle) -> bool {
+    if app.get_webview_window(OV).is_none() {
+        emit_state(app, "还没有在翻译，先开始屏幕翻译再保存译图。");
+        return false;
+    }
+    let _ = app.emit_to(OV, EVT_SHOT, ());
+    true
+}
+
+#[tauri::command]
+pub fn sc_shot(app: AppHandle) -> bool {
+    shot_request(&app)
+}
+
 #[tauri::command]
 pub fn sc_ack_manga(state: St<'_>) {
     save_live(&state, |l| l.manga_ack = true);
@@ -1370,7 +1442,7 @@ mod tests {
             px.copy_from_slice(&[30, 30, 30, 255]);
         }
         let f = Frame { bgra, w, h };
-        let g = Group { text: "开始".into(), x: 10.0, y: 5.0, w: 40.0, h: 20.0, vertical: false, lines: 1, em: 20.0 };
+        let g = Group { text: "开始".into(), x: 10.0, y: 5.0, w: 40.0, h: 20.0, vertical: false, lines: 1, em: 20.0, ..Default::default() };
         let live = LiveSettings { font_scale: 150, ..Default::default() };
         let b = blocks_from(&[g.clone(), g], &["Start".into(), "  ".into()], &f, &live);
         assert_eq!(b.len(), 1, "空译文的不贴");

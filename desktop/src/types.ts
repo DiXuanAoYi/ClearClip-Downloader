@@ -2117,6 +2117,7 @@ export interface ScreenSettings {
   hotkeyPick: string
   hotkeyHide: string
   hotkeyMode: string
+  hotkeyShot: string
   floatButton: boolean
   mode: 'standard' | 'subtitle' | 'manga'
   ocr: 'system' | 'enhanced' | 'api' | 'vision'
@@ -2188,6 +2189,27 @@ export interface ScreenBlock {
   vertical: boolean
   lines: number
   center: boolean
+  /** 原文的对齐：0 靠左 / 1 居中 / 2 靠右 */
+  align?: number
+}
+
+export interface ScreenShotFrame {
+  rect: [number, number, number, number]
+  /** 干净的画面（没有译文）：data:image/png;base64,… */
+  png: string
+}
+
+export interface ScreenShotSaved {
+  path: string
+  copied: boolean
+}
+
+export interface AppGlossaryPack {
+  id: string
+  name: string
+  exes: string[]
+  count: number
+  installed: boolean
 }
 
 export interface ScreenPayload {
