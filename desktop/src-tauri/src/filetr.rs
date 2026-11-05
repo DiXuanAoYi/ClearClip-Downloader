@@ -768,7 +768,6 @@ async fn write_pdf_layout(
 }
 
 /// 扫描版 PDF：逐页渲染成图，让视觉模型识字、翻译并给出位置，再用背景色盖住原文写上译文。
-#[allow(clippy::too_many_arguments)]
 /// 扫描页上的一块：原文、译文和它在页面上的位置（PDF 坐标：左、下、右、上）。存成旁路文件，
 /// 这样“先预览、改译文、再生成”时不用重新识字和翻译，改过的译文也能用上。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -792,6 +791,7 @@ fn pdf_rect(px: (f32, f32, f32, f32), img: (usize, usize), page: (f32, f32)) -> 
     (left, page.1 - bottom, right, page.1 - top)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_pdf_scanned(
     ctx: &JobCtx,
     input: &Path,
