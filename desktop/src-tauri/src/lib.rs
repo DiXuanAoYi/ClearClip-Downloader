@@ -53,6 +53,7 @@ pub mod notify;
 pub mod ocr;
 pub mod ocr_paddle;
 pub mod organize;
+pub mod pdfx;
 pub mod phone;
 pub mod player;
 pub mod postprocess;
@@ -692,6 +693,10 @@ pub fn run() {
             videocache::videocache_clear,
             videocache::videocache_stats,
             videocache::videocache_open,
+            pdfx::pdfx_status,
+            pdfx::pdfx_install,
+            pdfx::pdfx_install_font,
+            pdfx::pdfx_remove,
             excerpts::excerpt_list,
             excerpts::excerpt_add,
             excerpts::excerpt_remove,

@@ -2263,6 +2263,14 @@ export interface FileTransView {
   failed: number
 }
 
+export interface PdfxStatus {
+  supported: boolean
+  installed: boolean
+  path: string
+  fontOk: boolean
+  note: string
+}
+
 export interface VideoCacheInfo {
   videoKey: string
   url: string
