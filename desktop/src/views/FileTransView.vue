@@ -5,7 +5,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
 import { useAppStore } from '../stores/app'
-import type { AiExpert, FileTransView, JobSnap, PdfxStatus } from '../types'
+import type { AiExpert, FileTransView, JobSnap, OcrStatus, PdfxStatus } from '../types'
 import { registerDrop } from '../utils/dropHub'
 import { TARGET_LANGS } from '../utils/langs'
 
@@ -24,6 +24,30 @@ const target = ref(app.settings?.ai.targetLang || '简体中文')
 const bilingual = ref(true)
 // PDF：译文写回原处 / 原页与译文页交替 / 只输出 TXT
 const pdfMode = ref<'inplace' | 'interleave' | 'txt'>('inplace')
+// 图片和扫描版 PDF 的识字方式：视觉模型 / 本机增强识字（PaddleOCR，开源）/ 在线识字接口
+const ocrEngine = ref<'vision' | 'enhanced' | 'api'>('vision')
+const ocrSt = ref<OcrStatus | null>(null)
+const ocrBusy = ref(false)
+async function ocrRefresh() {
+  ocrSt.value = await api.ocrStatus().catch(() => null)
+}
+async function ocrInstall() {
+  ocrBusy.value = true
+  try {
+    ocrSt.value = await api.ocrInstall()
+    ElMessage.success('增强识字已就绪')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    ocrBusy.value = false
+  }
+}
+const API_NAMES: Record<string, string> = { ocrspace: 'OCR.space', baidu: '百度高精度', google: 'Google Cloud Vision' }
+const apiProvider = computed(() => API_NAMES[app.settings?.live.ocrApi.provider ?? ''] ?? '')
+const apiReady = computed(() => !!app.settings?.live.ocrApi.key)
+// 先预览再生成：翻译完先在右边检查、改译文，满意后再生成文件
+const previewFirst = ref(true)
+const previews = ref<Record<number, boolean>>({}) // 任务编号 → 这个任务只翻译、没有生成文件
 const pdfx = ref<PdfxStatus | null>(null)
 const pdfxBusy = ref('')
 async function pdfxRefresh() {
@@ -40,7 +64,31 @@ async function pdfxDo(what: 'install' | 'font' | 'remove') {
     pdfxBusy.value = ''
   }
 }
-onMounted(() => void pdfxRefresh())
+onMounted(() => {
+  void pdfxRefresh()
+  void ocrRefresh()
+  try {
+    previewFirst.value = localStorage.getItem('cc-ft-preview') !== '0'
+    const e = localStorage.getItem('cc-ft-ocr')
+    if (e === 'enhanced' || e === 'api' || e === 'vision') ocrEngine.value = e
+  } catch {
+    /* 读不到就用默认 */
+  }
+})
+watch(previewFirst, (v) => {
+  try {
+    localStorage.setItem('cc-ft-preview', v ? '1' : '0')
+  } catch {
+    /* 记不住也不影响 */
+  }
+})
+watch(ocrEngine, (v) => {
+  try {
+    localStorage.setItem('cc-ft-ocr', v)
+  } catch {
+    /* 记不住也不影响 */
+  }
+})
 const experts = ref<AiExpert[]>([])
 const over = ref(false)
 let offs: UnlistenFn[] = []
@@ -128,10 +176,11 @@ async function addFiles(paths: string[]) {
   for (const p of ok) await start(p)
 }
 
-async function start(path: string) {
+async function start(path: string, preview = previewFirst.value) {
   try {
-    const id = await api.filetrStart(path, { bilingual: bilingual.value, target: target.value, pdfMode: pdfMode.value })
+    const id = await api.filetrStart(path, { bilingual: bilingual.value, target: target.value, pdfMode: pdfMode.value, ocr: ocrEngine.value, preview })
     files.value = { ...files.value, [id]: path }
+    previews.value = { ...previews.value, [id]: preview }
     cur.value = path
     page.value = 0
     await loadView()
@@ -151,10 +200,62 @@ async function pick(j: JobSnap) {
 async function retry() {
   if (cur.value) await start(cur.value) // 已译好的段落走缓存，只重翻失败的
 }
+/** 按阅读器里现在的译文（含你改过的）生成文件：已译的段落走缓存，很快。 */
+async function generate() {
+  if (cur.value) await start(cur.value, false)
+}
+const isPreviewJob = computed(() => !!curJob.value && !!previews.value[curJob.value.id])
+
+// ---------- 在阅读器里改译文 ----------
+const editing = ref<{ page: number; i: number } | null>(null)
+const draft = ref('')
+const busySeg = ref('')
+function beginEdit(i: number) {
+  if (!pg.value || curJob.value?.status === 'running') return
+  editing.value = { page: page.value, i }
+  draft.value = pg.value.trans[i] ?? ''
+}
+async function saveEdit() {
+  const e = editing.value
+  if (!e || !cur.value) return
+  editing.value = null
+  const p = pages.value[e.page]
+  if (!p || (p.trans[e.i] ?? '') === draft.value.trim()) return
+  try {
+    await api.filetrEdit(cur.value, target.value, e.page, e.i, draft.value)
+    p.trans[e.i] = draft.value.trim() || null
+  } catch (err) {
+    ElMessage.error(errorText(err))
+  }
+}
+function cancelEdit() {
+  editing.value = null
+}
+async function clearSeg(i: number) {
+  if (!cur.value) return
+  try {
+    await api.filetrEdit(cur.value, target.value, page.value, i, '')
+    if (pg.value) pg.value.trans[i] = null
+  } catch (err) {
+    ElMessage.error(errorText(err))
+  }
+}
+async function retranslateSeg(i: number) {
+  if (!cur.value || !pg.value) return
+  busySeg.value = `${page.value}:${i}`
+  try {
+    pg.value.trans[i] = await api.filetrRetranslate(cur.value, target.value, page.value, i)
+  } catch (err) {
+    ElMessage.error(errorText(err))
+  } finally {
+    busySeg.value = ''
+  }
+}
 async function cancel(j: JobSnap) {
   await api.mediaJobCancel(j.id).catch(() => {})
 }
 async function openOut() {
+  if (isPreviewJob.value) return
   const o = curJob.value?.output
   if (o) await api.revealFile(o).catch((e) => ElMessage.error(errorText(e)))
 }
@@ -226,6 +327,27 @@ function status(j: JobSnap): string {
             </el-select>
           </div>
           <div class="fld"><span>术语库</span><el-switch v-model="glossaryOn" size="small" /><small class="mute">按内容自动带入相关术语</small></div>
+          <div class="fld"><span>预览</span><el-switch v-model="previewFirst" size="small" /><small class="mute">先译完在右边检查、改译文，再点“生成文件”</small></div>
+          <div class="fld">
+            <span>识字</span>
+            <el-select v-model="ocrEngine" size="small" class="grow">
+              <el-option value="vision" label="视觉模型（默认）" />
+              <el-option value="enhanced" label="本机增强识字（开源 PaddleOCR）" />
+              <el-option value="api" label="在线识字接口（高精度）" />
+            </el-select>
+          </div>
+          <div v-if="ocrEngine !== 'vision'" class="pdfx">
+            <template v-if="ocrEngine === 'enhanced'">
+              <div class="row1"><b>增强识字</b><span :class="ocrSt?.installed ? 'okc' : 'mute'">{{ ocrSt?.installed ? '已安装' : ocrSt?.supported === false ? '这台电脑暂不支持' : '还没安装' }}</span></div>
+              <div class="row2"><el-button v-if="ocrSt?.supported !== false && !ocrSt?.installed" size="small" type="primary" :loading="ocrBusy" @click="ocrInstall">下载并安装（约 15 MB）</el-button></div>
+              <small class="mute">PaddleOCR 开源模型，中英日韩等常见语言，全程在本机运行，不上传页面。比视觉模型更稳、更便宜，位置也更准；手写、艺术字、特别复杂的版面仍可能出错。</small>
+            </template>
+            <template v-else>
+              <div class="row1"><b>在线识字接口</b><span :class="apiReady ? 'okc' : 'mute'">{{ apiReady ? apiProvider : '还没填密钥' }}</span></div>
+              <small class="mute">用“屏幕翻译 → 识字”里配好的接口（OCR.space、百度高精度、Google）。页面图片会发给这家服务；密钥没填的话先去那里填。</small>
+              <div class="row2"><el-button v-if="!apiReady" size="small" @click="app.view = 'screen'">去填密钥</el-button></div>
+            </template>
+          </div>
           <div class="fld">
             <span>输出</span>
             <div class="seg">
@@ -272,7 +394,7 @@ function status(j: JobSnap): string {
             <el-button size="small">导出 ▾</el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="file" :disabled="curJob?.status !== 'done'">在文件夹里显示译好的文件</el-dropdown-item>
+                <el-dropdown-item command="file" :disabled="curJob?.status !== 'done' || isPreviewJob">在文件夹里显示译好的文件</el-dropdown-item>
                 <el-dropdown-item command="txt" :disabled="!hasTrans">复制全文（纯文本）</el-dropdown-item>
                 <el-dropdown-item command="md" :disabled="!hasTrans">复制全文（Markdown）</el-dropdown-item>
               </el-dropdown-menu>
@@ -291,7 +413,25 @@ function status(j: JobSnap): string {
           </div>
           <div v-if="pg && show !== 'src'" class="pane">
             <div class="lab">译文</div>
-            <p v-for="(_s, i) in pg.src" :key="i" :class="{ miss: !pg.trans[i] }">{{ pg.trans[i] || (curJob && curJob.status !== 'done' && curJob.status !== 'failed' ? '翻译中…' : '（没有译文，已保留原文）') }}</p>
+            <div v-for="(_s, i) in pg.src" :key="i" class="seg1">
+              <el-input
+                v-if="editing && editing.page === page && editing.i === i"
+                v-model="draft"
+                type="textarea"
+                :autosize="{ minRows: 2, maxRows: 14 }"
+                autofocus
+                @blur="saveEdit"
+                @keydown.esc.prevent="cancelEdit"
+                @keydown.ctrl.enter.prevent="saveEdit"
+              />
+              <template v-else>
+                <p :class="{ miss: !pg.trans[i], ed: curJob?.status !== 'running' }" :title="curJob?.status === 'running' ? '' : '点一下可以直接改'" @click="beginEdit(i)">{{ pg.trans[i] || (curJob && curJob.status !== 'done' && curJob.status !== 'failed' ? '翻译中…' : '（没有译文，已保留原文；点一下可以自己写）') }}</p>
+                <span v-if="curJob?.status !== 'running'" class="acts">
+                  <el-button size="small" text :loading="busySeg === `${page}:${i}`" @click.stop="retranslateSeg(i)">重译</el-button>
+                  <el-button v-if="pg.trans[i]" size="small" text @click.stop="clearSeg(i)">去掉</el-button>
+                </span>
+              </template>
+            </div>
           </div>
           <div v-if="!pg" class="empty"><span class="mute">读取中…</span></div>
         </div>
@@ -302,7 +442,8 @@ function status(j: JobSnap): string {
           <span v-if="curJob?.note" class="mute">{{ curJob.note }}</span>
           <span class="sp" />
           <el-button size="small" :disabled="!cur || !failedSegs || curJob?.status === 'running'" @click="retry">重试失败段落{{ failedSegs && curJob?.status !== 'running' ? `（${failedSegs}）` : '' }}</el-button>
-          <el-button size="small" type="primary" :disabled="curJob?.status !== 'done'" @click="openOut">导出双语文件</el-button>
+          <el-button v-if="isPreviewJob" size="small" type="primary" :disabled="curJob?.status !== 'done'" @click="generate">生成文件</el-button>
+          <el-button v-else size="small" type="primary" :disabled="curJob?.status !== 'done'" @click="openOut">导出双语文件</el-button>
         </div>
       </section>
     </div>
@@ -360,6 +501,11 @@ function status(j: JobSnap): string {
 .pane p { margin: 0; line-height: 1.75; font-size: 13.5px; white-space: pre-wrap; word-break: break-word }
 .pane p.hl { background: var(--el-color-primary-light-9); border-radius: 6px; padding: 6px 8px; margin: -6px -8px }
 .pane p.miss { color: var(--el-text-color-secondary) }
+.seg1 { position: relative; display: flex; flex-direction: column; gap: 2px }
+.pane p.ed { cursor: text; border-radius: 6px; padding: 2px 6px; margin: -2px -6px }
+.pane p.ed:hover { background: var(--el-fill-color) }
+.seg1 .acts { display: none; position: absolute; right: -6px; top: -14px; background: var(--el-bg-color); border: 1px solid var(--el-border-color); border-radius: 6px; padding: 0 2px }
+.seg1:hover .acts { display: flex }
 .empty { flex: 1; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; padding: 24px; text-align: center }
 .st { display: flex; gap: 16px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--el-border-color); color: var(--el-text-color-secondary); font-size: 12.5px; flex-wrap: wrap }
 .st b { color: var(--el-text-color-primary) }
