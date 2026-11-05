@@ -298,12 +298,23 @@ pub fn fix_rules(cues: &[Cue]) -> Vec<Cue> {
 
 // ===================== 断句 =====================
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SegOpts {
     /// 中日韩每条字幕最多多少字
     pub max_cjk: usize,
     /// 英文等每条字幕最多多少字符
     pub max_latin: usize,
+}
+
+impl SegOpts {
+    /// 设置里的“字幕句长”：短适合视频字幕层，标准兼顾阅读，长接近完整句子。
+    pub fn for_length(name: &str) -> SegOpts {
+        match name {
+            "short" => SegOpts { max_cjk: 16, max_latin: 36 },
+            "long" => SegOpts { max_cjk: 32, max_latin: 72 },
+            _ => SegOpts::default(),
+        }
+    }
 }
 
 impl Default for SegOpts {
@@ -974,7 +985,7 @@ pub async fn run_subgen(ctx: &JobCtx, input: &Path, opts: GenOpts) -> AppResult<
         // 4) 断句
         let mut cues = fixed.cues;
         if opts.resegment.unwrap_or(true) {
-            let so = SegOpts::default();
+            let so = SegOpts::for_length(&settings.ai.cue_length);
             cues = match (opts.semantic.unwrap_or(false), mode != Mode::Rules) {
                 (true, true) => match ai::chat_endpoint_for(&ctx.st, &settings, Task::Edit) {
                     Ok(sep) => {

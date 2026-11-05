@@ -234,7 +234,7 @@ pub async fn transcribe_rotating(ep: &Endpoint, model: &str, language: &str, fil
     Err(AppError::new(last.kind, format!("{} 个语音转文字服务都失败了：{}", tried.len(), tried.join("；"))))
 }
 
-fn api_error(status: u16, body: &str) -> AppError {
+pub(crate) fn api_error(status: u16, body: &str) -> AppError {
     let msg = serde_json::from_str::<Value>(body)
         .ok()
         .and_then(|v| v.pointer("/error/message").or_else(|| v.get("message")).or_else(|| v.pointer("/error")).and_then(|m| m.as_str().map(str::to_string)))
@@ -1053,7 +1053,22 @@ async fn run_sensevoice_local(ctx: &JobCtx, ffmpeg: &Path, input: &Path, lang: &
     let wav = extract_wav16k(ffmpeg, input, work).await?;
     ctx.check()?;
     ctx.note("正在用 SenseVoice 识别（中文推荐，比 Whisper 快得多）…");
-    crate::ml::sensevoice::recognize(&files, &wav, lang, || ctx.canceled()).await
+    let cues = crate::ml::sensevoice::recognize(&files, &wav, lang, || ctx.canceled()).await?;
+    // SenseVoice 一段声音就是一条字幕，常常很长：统一在这里断开，视频字幕层、摘要文稿、字幕工坊都从这里拿结果
+    let settings = ctx.st.settings();
+    let so = crate::subgen::SegOpts::for_length(&settings.ai.cue_length);
+    let mut out = crate::subgen::resegment(&cues, so);
+    if settings.ai.cue_semantic {
+        if let Ok(ep) = chat_endpoint_for(&ctx.st, &settings, Task::Edit) {
+            ctx.note("正在用 AI 按语义断句…");
+            let prog = |_: usize, _: usize| -> AppResult<()> { ctx.check() };
+            match crate::subgen::resegment_ai(&ep, &settings.ai.model, &out, so, settings.ai.batch_size, &prog).await {
+                Ok((v, _)) => out = v,
+                Err(e) => log::warn!("semantic resegment failed: {e}"),
+            }
+        }
+    }
+    Ok(out)
 }
 
 async fn run_whisper_local(

@@ -953,6 +953,10 @@ pub struct AiSettings {
     pub correct_auto: bool,
     /// whisper.cpp 的 VAD 模型（ggml-silero-*.bin）；填了且 whisper-cli 支持时，只识别有人声的部分
     pub whisper_vad_model: String,
+    /// 语音转文字的字幕句长：`short` / `standard` / `long`
+    pub cue_length: String,
+    /// 句子仍然过长时，用 AI 按语义断句（多一次模型调用，结果缓存）
+    pub cue_semantic: bool,
 }
 
 impl Default for AiSettings {
@@ -980,6 +984,8 @@ impl Default for AiSettings {
             correct_mode: "conservative".into(),
             correct_auto: false,
             whisper_vad_model: String::new(),
+            cue_length: "standard".into(),
+            cue_semantic: false,
         }
     }
 }
@@ -1013,6 +1019,9 @@ impl AiSettings {
             self.stt_local_model = String::new();
         }
         self.whisper_vad_model = self.whisper_vad_model.trim().to_string();
+        if !matches!(self.cue_length.as_str(), "short" | "standard" | "long") {
+            self.cue_length = "standard".into();
+        }
         if !matches!(self.correct_mode.as_str(), "conservative" | "aggressive" | "rules") {
             self.correct_mode = "conservative".into();
         }

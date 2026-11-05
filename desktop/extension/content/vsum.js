@@ -803,7 +803,7 @@
         h('button', { class: 'rec', title: '把这句记成笔记', text: '＋', onclick: (e) => (e.stopPropagation(), addNote({ t: l.t, text: l.text })) })))
     })
     return h('div', {},
-      h('div', { class: 'stick' }, h('div', { class: 'tools' },
+      h('div', { class: 'stick' }, trackBar(d), h('div', { class: 'tools' },
         h('input', { type: 'text', id: 'tsearch', placeholder: '搜索文稿（/）', value: S.query, style: 'flex:1', oninput: (e) => ((S.query = e.target.value), (S.hit = 0), (S.keepFocus = true), (S.jumpHit = true), render()), onkeydown: (e) => e.key === 'Enter' && !e.isComposing && (e.preventDefault(), stepHit(e.shiftKey ? -1 : 1)) }),
         found.length > 0 && h('span', { class: 'mute', text: `${S.hit + 1}/${found.length}` }),
         S.query.trim() && !found.length && h('span', { class: 'mute', text: '没有' }),
@@ -816,6 +816,7 @@
         langSelect('翻译成哪种语言（任意语言互译，自动识别原文）', () => ((S.res.translated = null), render())),
         h('button', { class: 'sec', text: tr ? '重新翻译' : outLabel() ? `翻译成${outLabel()}` : '翻译（自动方向）', disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
         tr && sel([['both', '双语'], ['orig', '只看原文'], ['tr', '只看译文']], mode, (v) => ((S.prefs.view = v), savePrefs(), render()), '显示'),
+        h('button', { class: 'sec', text: '重新断句', title: '把太长的句子按标点和长度拆开（时间按字数分配）；不改字，也不用重新识别', disabled: S.busy, onclick: resegment }),
         h('button', { class: 'sec', text: d.raw ? '还原顺句前' : '顺句', title: d.raw ? '恢复识别出来的原样' : '给没有标点的字幕（自动识别）补标点、改同音错字，行数不变', disabled: S.busy, onclick: d.raw ? unpunctuate : punctuate }),
       )),
       h('div', { class: 'mute', text: '选中一段文字可以解释、存为笔记；鼠标移到一行上点 ＋ 记笔记。' }),
@@ -842,6 +843,15 @@
   }
 
 
+  function resegment() {
+    const d = S.data
+    const lines = V.resegmentLines(d.lines, d.durationMs, S.prefs.cueLevel || 'standard')
+    if (lines.length === d.lines.length) return toast(ui, '每一句都已经够短，不用拆')
+    setData({ ...d, lines, raw: d.raw || d.lines })
+    S.res.translated = null
+    toast(ui, `已重新断句：${d.lines.length} → ${lines.length} 句`)
+    render()
+  }
   async function punctuate() {
     const before = S.data.lines
     await task('punctuate', {}, (x) => {
@@ -1574,6 +1584,29 @@
       copy(md, ' Markdown')
       location.href = `obsidian://new?name=${encodeURIComponent(name)}&clipboard`
     } else location.href = url
+  }
+
+  /** 文稿顶部：当前原文是哪种语言、哪条字幕轨，轨道和视频语音对不上时给提示。 */
+  function trackBar(d) {
+    if (!d.lines?.length || d.site === 'html5' && !d.track) return null
+    const code = d.trackLang || ''
+    const name = code ? TL.label(TL.LANGS.find((l) => code.toLowerCase().startsWith(l.code.toLowerCase()))?.code || code, S.appLang).split(' · ')[0] : d.track || ''
+    const sample = d.lines.slice(0, 30).map((l) => l.text).join(' ')
+    const textScript = V.scriptOf(sample)
+    const titleScript = V.scriptOf(d.title)
+    const spoken = d.spoken || ''
+    const lang = (c) => String(c || '').toLowerCase().split(/[-_]/)[0]
+    const mismatch = (spoken && code && lang(spoken) !== lang(code)) || (!spoken && titleScript === 'latin' && textScript === 'zh')
+    const kind = d.trackAuto ? '自动字幕' : code ? '人工字幕' : ''
+    const en = d.tracks?.find((t) => lang(t.lang) === (lang(spoken) || 'en'))
+    return h('div', { class: 'mute', style: 'display:flex;flex-direction:column;gap:4px;padding:2px 0 6px' },
+      h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' },
+        h('span', { text: '原文' }), name && h('b', { text: name, style: 'color:inherit' }), kind && h('span', { class: 'chip', text: kind }),
+        spoken && !mismatch && h('span', { text: '· 与视频语音一致' }),
+        d.tracks?.length > 1 && sel(d.tracks.map((t) => [t.url, `${t.name}${t.auto ? '（自动）' : ''}`]), d.trackUrl || d.tracks[0].url, reloadTrack, '字幕轨')),
+      mismatch && h('div', { style: 'color:#b45309' },
+        `当前轨道（${name || d.track}）可能不是视频原语言，有可能是别人上传的翻译。`,
+        en && en.url !== d.trackUrl && h('button', { class: 'sec', text: `切换到 ${en.name}`, style: 'margin-left:6px', onclick: () => reloadTrack(en.url) })))
   }
 
   async function reloadTrack(url) {

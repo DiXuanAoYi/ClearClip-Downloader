@@ -79,6 +79,8 @@
 
     <section id="v-audio" class="view hidden">
       <label class="row spread"><span><b>响度标准化</b><br /><span class="mute">统一不同视频的音量，默认开启</span></span><input id="auOn" type="checkbox" /></label>
+      <label class="row spread"><span><b>在视频上显示音效按钮</b><br /><span class="mute">视频角上的“音效 -16 LUFS”小按钮。关掉后音效仍然生效，可在这里调整，或在视频页按 Alt+Shift+A 打开面板</span></span><input id="auPill" type="checkbox" /></label>
+      <label class="row spread"><span><b>只在鼠标移到视频时显示</b></span><input id="auPillHover" type="checkbox" /></label>
       <div id="auState" class="card"></div>
       <div id="auMeter" class="card">
         <div class="meterRow"><span class="mute">输入</span><div class="meterBar"><i id="auIn"></i></div><b id="auInV" class="mono"></b></div>

@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod ai_cmds;
 pub mod ai_pool;
+pub mod ai_probe;
 pub mod api;
 pub mod audiofx;
 pub mod backup;
@@ -609,6 +610,9 @@ pub fn run() {
             ai_cmds::ai_pool_presets,
             ai_cmds::ai_pool_reset,
             ai_cmds::ai_pool_test,
+            ai_probe::ai_probe_models,
+            ai_probe::ai_probe_test,
+            ai_probe::ai_pool_copy_key,
             glossary_cmds::glossary_state,
             glossary_cmds::glossary_save,
             glossary_cmds::glossary_delete,

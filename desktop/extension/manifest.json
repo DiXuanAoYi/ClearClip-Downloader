@@ -20,6 +20,7 @@
       "progress.js",
       "takeover.js",
       "sniff.js",
+      "media-sniff.js",
       "engines.js",
       "later.js",
       "capture-plan.js",

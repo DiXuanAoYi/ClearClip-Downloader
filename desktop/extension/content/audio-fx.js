@@ -304,6 +304,8 @@
     }
     pill.className = `layer apill ${s.cls}`
     pill.replaceChildren(h('span', { class: 'd' }), h('span', { text: s.text }))
+    // 关掉“在视频上显示音效按钮”时，按钮仍占着位置（给 Alt+Shift+A 的面板定位），只是看不见、点不到
+    pill.style.visibility = cfg.pillShow || panel ? '' : 'hidden'
     place()
   }
 
@@ -328,7 +330,7 @@
   function scheduleHide() {
     clearTimeout(hideTimer)
     hideTimer = setTimeout(() => {
-      if (panel) return
+      if (panel || (cfg.pillShow && !cfg.pillHover)) return
       hovered = null
       refreshPill()
     }, 2000)
@@ -351,6 +353,19 @@
       refreshPill()
     } else if (hovered) scheduleHide()
   }, { capture: true, passive: true })
+  // Alt+Shift+A：不显示视频上的按钮时，用快捷键打开同一个音效面板
+  document.addEventListener('keydown', (e) => {
+    if (!featOn || !e.altKey || !e.shiftKey || e.code !== 'KeyA' || e.ctrlKey || e.metaKey) return
+    const vids = [...document.querySelectorAll('video')].filter((v) => v.getBoundingClientRect().width >= 240)
+    const v = hovered || vids.find((x) => !x.paused) || vids[0]
+    if (!v) return
+    e.preventDefault()
+    ensureUi()
+    hovered = v
+    refreshPill()
+    togglePanel()
+    place()
+  }, true)
   addEventListener('scroll', () => hovered && place(), { capture: true, passive: true })
   addEventListener('resize', () => hovered && place())
 

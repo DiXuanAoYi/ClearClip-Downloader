@@ -41,9 +41,16 @@
   <div id="grid"></div>
   <div id="empty" class="mute hidden">这个页面里没有找到符合条件的内容。试试把“最小边长”调小。</div>
 
+  <div id="viewer" class="hidden" role="dialog" aria-label="查看原图">
+    <div id="vTop"><b id="vName"></b><span id="vPos" class="mute"></span><span id="vInfo" class="mute"></span><span id="vFmt" class="fmt" hidden></span><span class="grow"></span><span id="vMsg" class="mute"></span><button id="vClose" class="sec small" aria-label="关闭">✕</button></div>
+    <div id="vBody"><button id="vPrev" class="nav" aria-label="上一张">‹</button><div id="vStage"></div><button id="vNext" class="nav" aria-label="下一张">›</button></div>
+    <div id="vBar"><button id="vScale" class="sec small">适应 / 100%</button><button id="vCopyImg" class="sec small">复制图片</button><button id="vCopyUrl" class="sec small">复制地址</button><span class="grow"></span><button id="vSave" class="small">保存原图</button><span class="mute keys">← → 切换　空格 适应/100%　S 保存　Esc 关闭</span></div>
+  </div>
+
   <script src="shared.js"></script>
   <script src="takeover.js"></script>
   <script src="sniff.js"></script>
+  <script src="media-sniff.js"></script>
   <script src="engines.js"></script>
   <script src="overview.js"></script>
 </body>
