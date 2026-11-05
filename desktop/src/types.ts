@@ -277,7 +277,7 @@ export type ToolOp =
   | { op: 'gif'; startMs: number; durationMs: number; width: number; fps: number }
   | { op: 'landscape'; width: number; height: number; mode: 'blur' | 'black' }
   | { op: 'speed'; factor: number }
-  | { op: 'loudness'; target: number }
+  | { op: 'loudness'; target: number; tp?: number; lra?: number }
   | { op: 'audio_fx'; spec: AudioFxSpec }
   | { op: 'rotate'; mode: 'cw' | 'ccw' | 'flip180' | 'hflip' | 'vflip' }
   | { op: 'convert'; format: string; reencode: boolean }
@@ -310,6 +310,10 @@ export interface AudioFxSpec {
   reverb: ReverbSpec | null
   /** 目标响度（LUFS）；null 表示不做响度标准化 */
   normalize: number | null
+  /** 真峰值上限（dBTP），不填用 -1.5 */
+  normalizeTp?: number | null
+  /** 响度范围目标（LU），不填用 11 */
+  normalizeLra?: number | null
   preset?: string | null
 }
 
