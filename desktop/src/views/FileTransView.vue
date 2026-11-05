@@ -5,7 +5,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
 import { useAppStore } from '../stores/app'
-import type { AiExpert, FileTransView, JobSnap } from '../types'
+import type { AiExpert, FileTransView, JobSnap, PdfxStatus } from '../types'
 import { registerDrop } from '../utils/dropHub'
 import { TARGET_LANGS } from '../utils/langs'
 
@@ -22,6 +22,25 @@ const page = ref(0)
 const show = ref<'src' | 'both' | 'trans'>('both')
 const target = ref(app.settings?.ai.targetLang || '简体中文')
 const bilingual = ref(true)
+// PDF：译文写回原处 / 原页与译文页交替 / 只输出 TXT
+const pdfMode = ref<'inplace' | 'interleave' | 'txt'>('inplace')
+const pdfx = ref<PdfxStatus | null>(null)
+const pdfxBusy = ref('')
+async function pdfxRefresh() {
+  pdfx.value = await api.pdfxStatus().catch(() => null)
+}
+async function pdfxDo(what: 'install' | 'font' | 'remove') {
+  pdfxBusy.value = what
+  try {
+    pdfx.value = await (what === 'install' ? api.pdfxInstall() : what === 'font' ? api.pdfxInstallFont() : api.pdfxRemove())
+    ElMessage.success(what === 'remove' ? '已卸载 PDF 排版组件' : '已就绪')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    pdfxBusy.value = ''
+  }
+}
+onMounted(() => void pdfxRefresh())
 const experts = ref<AiExpert[]>([])
 const over = ref(false)
 let offs: UnlistenFn[] = []
@@ -111,7 +130,7 @@ async function addFiles(paths: string[]) {
 
 async function start(path: string) {
   try {
-    const id = await api.filetrStart(path, { bilingual: bilingual.value, target: target.value })
+    const id = await api.filetrStart(path, { bilingual: bilingual.value, target: target.value, pdfMode: pdfMode.value })
     files.value = { ...files.value, [id]: path }
     cur.value = path
     page.value = 0
@@ -214,8 +233,24 @@ function status(j: JobSnap): string {
               <span :class="{ on: !bilingual }" @click="bilingual = false">仅译文</span>
             </div>
           </div>
-          <div class="sw on"><i />保留排版：公式、表格、图片位置原样不动（只替换文字）</div>
-          <small class="mute">PDF 和图片输出为 TXT。扫描版 PDF 和图片会先交给视觉模型识字（需要支持看图的模型，一次最多 60 页，识别结果会缓存），识字准确度取决于模型。</small>
+          <div class="fld">
+            <span>PDF</span>
+            <div class="seg">
+              <span :class="{ on: pdfMode === 'inplace' }" title="译文写回原来的位置，版面、图片、页码不动" @click="pdfMode = 'inplace'">原处替换</span>
+              <span :class="{ on: pdfMode === 'interleave' }" title="每页原文后面跟一页译文" @click="pdfMode = 'interleave'">原页+译文页</span>
+              <span :class="{ on: pdfMode === 'txt' }" title="只取出文字，输出 TXT" @click="pdfMode = 'txt'">只要文字</span>
+            </div>
+          </div>
+          <div v-if="pdfMode !== 'txt'" class="pdfx">
+            <div class="row1"><b>PDF 排版组件</b><span :class="pdfx?.installed ? 'okc' : 'mute'">{{ pdfx?.note ?? '…' }}</span></div>
+            <div class="row2">
+              <el-button v-if="pdfx?.supported && !pdfx.installed" size="small" type="primary" :loading="pdfxBusy === 'install'" @click="pdfxDo('install')">安装 PDF 排版组件</el-button>
+              <el-button v-if="pdfx?.installed && !pdfx.fontOk" size="small" :loading="pdfxBusy === 'font'" @click="pdfxDo('font')">下载译文字体（约 10 MB）</el-button>
+              <el-button v-if="pdfx?.installed" size="small" text :loading="pdfxBusy === 'remove'" @click="pdfxDo('remove')">卸载</el-button>
+            </div>
+            <small class="mute">没装组件时 PDF 只输出 TXT。文字版 PDF 把译文放回原来的位置（放不下会缩小字号，最小 6 磅）；扫描版和图片先交给视觉模型识字并给出位置（需要支持看图的模型，一次最多 60 页）。公式、竖排、重叠的文字可能错位，输出后请抽查。</small>
+          </div>
+          <small v-else class="mute">只取出 PDF 里的文字，输出 TXT。</small>
         </div>
       </aside>
 
@@ -328,4 +363,8 @@ function status(j: JobSnap): string {
 .empty { flex: 1; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; padding: 24px; text-align: center }
 .st { display: flex; gap: 16px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--el-border-color); color: var(--el-text-color-secondary); font-size: 12.5px; flex-wrap: wrap }
 .st b { color: var(--el-text-color-primary) }
+.pdfx { border: 1px solid var(--el-border-color); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--el-fill-color-lighter) }
+.pdfx .row1 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline }
+.pdfx .row2 { display: flex; gap: 6px; flex-wrap: wrap }
+.pdfx .okc { color: var(--el-color-success); font-size: 12.5px }
 </style>

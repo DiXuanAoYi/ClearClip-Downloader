@@ -253,6 +253,10 @@
         out.tracks = []
       }
     }
+    // 视频自己说的语言：自动字幕（asr）一定是按语音识别出来的；没有就看默认音轨对应的字幕轨
+    const asr = out.tracks.find((t) => t.auto)
+    const di = text.match(/"defaultCaptionTrackIndex":(\d+)/)
+    out.spoken = asr?.lang || (di && out.tracks[Number(di[1])]?.lang) || ''
     const str = (key) => {
       const i = text.indexOf(`"${key}":"`)
       if (i < 0) return ''
@@ -276,16 +280,109 @@
   }
 
   /** 选字幕轨：优先 想要的语言（人工 > 自动），其次任何人工字幕，再其次自动字幕，最后第一条。 */
-  function pickTrack(tracks, prefer = []) {
+  /** 文字主要是哪种文字：zh / ja / ko / latin，看不出来返回空。 */
+  function scriptOf(text) {
+    const t = String(text || '')
+    const n = (re) => (t.match(re) || []).length
+    const kana = n(/[\u3040-\u30ff]/g)
+    const han = n(/[\u4e00-\u9fff]/g)
+    const hangul = n(/[\uac00-\ud7af]/g)
+    const latin = n(/[A-Za-z]/g)
+    if (kana > 0 && kana + han >= latin) return 'ja'
+    if (hangul > 0 && hangul >= latin) return 'ko'
+    if (han > 0 && han >= latin / 2) return 'zh'
+    return latin > 0 ? 'latin' : ''
+  }
+  const sameLang = (a, b) => !!a && !!b && String(a).toLowerCase().split(/[-_]/)[0] === String(b).toLowerCase().split(/[-_]/)[0]
+
+  /**
+   * 选字幕轨。hint：{ spoken: 视频语音的语言码, title: 标题 }。
+   * 知道视频说的是什么语言时，只在这种语言里选（人工字幕 > 自动字幕），不会把别的语言的轨道当成“原文”；
+   * 不知道时：标题是英文/拉丁字母就偏英文，是汉字就偏中文，再不行才看浏览器语言。
+   */
+  function pickTrack(tracks, prefer = [], hint = {}) {
     const list = tracks || []
     if (!list.length) return null
-    const langs = [...prefer, navigator?.language, 'zh', 'en'].filter(Boolean).map((l) => String(l).toLowerCase())
+    const titleScript = scriptOf(hint.title)
+    const spoken = hint.spoken || (titleScript === 'zh' ? 'zh' : titleScript === 'ja' ? 'ja' : titleScript === 'ko' ? 'ko' : '')
+    if (spoken) {
+      const m = list.find((t) => !t.auto && sameLang(t.lang, spoken)) || list.find((t) => sameLang(t.lang, spoken))
+      if (m) return m
+    } else if (titleScript === 'latin') {
+      const m = list.find((t) => !t.auto && sameLang(t.lang, 'en')) || list.find((t) => sameLang(t.lang, 'en'))
+      if (m) return m
+    }
+    const nav = hint.title ? [] : [navigator?.language]
+    const langs = [...prefer, ...nav, 'zh', 'en'].filter(Boolean).map((l) => String(l).toLowerCase())
     const match = (t, l) => t.lang.toLowerCase() === l || t.lang.toLowerCase().startsWith(l.split('-')[0])
     for (const l of langs) {
       const m = list.find((t) => !t.auto && match(t, l)) || list.find((t) => match(t, l))
       if (m) return m
     }
     return list.find((t) => !t.auto) || list[0]
+  }
+
+  // ---------- 重新断句 ----------
+
+  const CJK = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/
+  const SEG = { short: [16, 36], standard: [22, 48], long: [32, 72] }
+
+  /** 把过长的一行按标点 / 空格拆成不超过上限的几段。 */
+  function splitLong(text, maxCjk, maxLatin) {
+    const t = String(text || '').replace(/\s+/g, ' ').trim()
+    const cjk = CJK.test(t)
+    const limit = cjk ? maxCjk : maxLatin
+    if (t.length <= limit) return [t]
+    // 先按句末标点拆，再按逗号 / 空格拆，再贪心合并到上限内
+    const sentences = t.split(/(?<=[。！？!?；;…])|(?<=[.])\s+(?=[A-Z"'(])/).map((x) => x.trim()).filter(Boolean)
+    const atoms = []
+    for (const s of sentences) {
+      if (s.length <= limit) atoms.push(s)
+      else {
+        const parts = s.split(/(?<=[，,、：:])\s*|(?<=\s)(?=(?:and|but|so|because|which|that|when|while|then|or)\s)/i).map((x) => x.trim()).filter(Boolean)
+        for (const p of parts) {
+          if (p.length <= limit) atoms.push(p)
+          else if (cjk) for (let i = 0; i < p.length; i += limit) atoms.push(p.slice(i, i + limit))
+          else {
+            let cur = ''
+            for (const w of p.split(' ')) {
+              if (cur && (cur + ' ' + w).length > limit) (atoms.push(cur), (cur = w))
+              else cur = cur ? cur + ' ' + w : w
+            }
+            if (cur) atoms.push(cur)
+          }
+        }
+      }
+    }
+    const out = []
+    let cur = ''
+    for (const a of atoms) {
+      const joined = cur ? (cjk ? cur + a : cur + ' ' + a) : a
+      if (cur && joined.length > limit) (out.push(cur), (cur = a))
+      else cur = joined
+    }
+    if (cur) out.push(cur)
+    return out
+  }
+
+  /** 重新断句：[{t, text}] → [{t, text}]，一行拆成几行时开始时间按字数比例分配；已经够短的原样保留。 */
+  function resegmentLines(lines, durationMs = 0, level = 'standard') {
+    const [mc, ml] = SEG[level] || SEG.standard
+    const list = lines || []
+    const out = []
+    list.forEach((l, i) => {
+      const pieces = splitLong(l.text, mc, ml)
+      if (pieces.length <= 1) return out.push({ ...l, text: pieces[0] ?? l.text })
+      const next = list[i + 1]?.t ?? (durationMs > l.t ? durationMs : l.t + pieces.join('').length * 220)
+      const span = Math.max(next - l.t, pieces.length * 800)
+      const total = pieces.reduce((n, p) => n + p.length, 0) || 1
+      let acc = 0
+      for (const p of pieces) {
+        out.push({ ...l, t: Math.round(l.t + (span * acc) / total), text: p })
+        acc += p.length
+      }
+    })
+    return out
   }
 
   // ---------- 导图 ----------
@@ -732,9 +829,41 @@
     return t == null ? -1 : t
   }
 
-  const cmt = (author, text, likes, replies) => {
+  const cmt = (author, text, likes, replies, id = '') => {
     const t = String(text || '').replace(/\s+/g, ' ').trim()
-    return { author: String(author || '').replace(/^@/, '').slice(0, 40), text: t.slice(0, 600), likes: parseCount(likes), replies: parseCount(replies), t: commentTime(t) }
+    return { author: String(author || '').replace(/^@/, '').slice(0, 40), text: t.slice(0, 600), likes: parseCount(likes), replies: parseCount(replies), t: commentTime(t), id: String(id || '').slice(0, 80) }
+  }
+
+  /** 把一段文字压成可比较的形式：去掉空白和标点，转小写。 */
+  const cmKey = (s) => String(s || '').replace(/[\s\p{P}\p{S}]+/gu, '').toLowerCase()
+
+  /** 在读取到的评论里找出“这一条”：先按编号，再按作者 + 文字，最后按文字开头。找不到返回 null。 */
+  function findComment(list, q) {
+    if (!q) return null
+    const arr = list || []
+    if (q.id) {
+      const m = arr.find((c) => c.id === q.id)
+      if (m) return m
+    }
+    const k = cmKey(q.text)
+    if (!k) return null
+    const same = (c) => cmKey(c.text) === k
+    const byAuthor = q.author ? arr.find((c) => same(c) && c.author === q.author) : null
+    if (byAuthor) return byAuthor
+    const exact = arr.find(same)
+    if (exact) return exact
+    const head = k.slice(0, 24)
+    return arr.find((c) => {
+      const ck = cmKey(c.text)
+      return ck.startsWith(head) || (head.length >= 12 && ck.includes(head)) || (ck.length >= 8 && k.startsWith(ck))
+    }) || null
+  }
+
+  /** YouTube 评论的直达链接（官方的 lc 参数）；没有编号返回空串。 */
+  function commentLink(url, c) {
+    const v = videoIdOf(url)
+    if (v?.site === 'youtube' && c?.id) return `https://www.youtube.com/watch?v=${v.id}&lc=${encodeURIComponent(c.id)}`
+    return ''
   }
 
   /**
@@ -766,12 +895,12 @@
         if (!th) continue
         const old = th.comment?.commentRenderer
         if (old) {
-          out.items.push(cmt(text(old.authorText), text(old.contentText), old.voteCount?.simpleText || old.likeCount, th.replies?.commentRepliesRenderer?.moreText ? text(th.replies.commentRepliesRenderer.moreText).replace(/\D/g, '') : old.replyCount))
+          out.items.push(cmt(text(old.authorText), text(old.contentText), old.voteCount?.simpleText || old.likeCount, th.replies?.commentRepliesRenderer?.moreText ? text(th.replies.commentRepliesRenderer.moreText).replace(/\D/g, '') : old.replyCount, old.commentId))
           continue
         }
         const vm = th.commentViewModel?.commentViewModel || th.commentViewModel
         const p = entities[vm?.commentKey]
-        if (p) out.items.push(cmt(p.author?.displayName, p.properties?.content?.content, p.toolbar?.likeCountNotliked ?? p.toolbar?.likeCountA11y, p.toolbar?.replyCount))
+        if (p) out.items.push(cmt(p.author?.displayName, p.properties?.content?.content, p.toolbar?.likeCountNotliked ?? p.toolbar?.likeCountA11y, p.toolbar?.replyCount, p.properties?.commentId))
       }
     }
     return out
@@ -782,7 +911,7 @@
     const d = json?.data || {}
     const all = [...(d.top_replies || []), ...(d.replies || [])]
     return {
-      items: all.map((r) => cmt(r?.member?.uname, r?.content?.message, r?.like, r?.rcount)),
+      items: all.map((r) => cmt(r?.member?.uname, r?.content?.message, r?.like, r?.rcount, r?.rpid_str || r?.rpid)),
       next: d.cursor?.next ?? 0,
       end: !!d.cursor?.is_end || !all.length,
     }
@@ -816,8 +945,8 @@
 
   globalThis.ccVsum = {
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
-    parseCount, commentTime, parseYtComments, parseBiliComments, cleanComments, commentsToMarkdown,
-    videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
+    parseCount, commentTime, findComment, commentLink, cmKey, parseYtComments, parseBiliComments, cleanComments, commentsToMarkdown,
+    videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, scriptOf, splitLong, resegmentLines, outlineToTree, wrapText, layoutMindmap, mindmapSvg,
     searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, splitSummary, parsePoint, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
   }
 })()

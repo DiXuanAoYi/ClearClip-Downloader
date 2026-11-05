@@ -57,6 +57,40 @@ async function sendText(text, extra = {}) {
 }
 
 /** 一批要发送的项目：image 走 /api/grab，video 作为媒体发送，link / page 发送地址让清影解析。 */
+/** 读一个媒体地址开头的几百字节，认出真实格式和大小。读不到不报错，返回空结果。 */
+async function probeMedia(url, referrer = '') {
+  const out = { ok: false, ext: '', mime: '', size: 0 }
+  if (!/^https?:/i.test(String(url))) return out
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 8000)
+  try {
+    const r = await fetch(url, { headers: { Range: 'bytes=0-599' }, signal: ctl.signal, credentials: 'include', referrer: referrer || undefined, referrerPolicy: 'no-referrer-when-downgrade' })
+    out.mime = (r.headers.get('content-type') || '').split(';')[0].trim()
+    const range = r.headers.get('content-range')
+    out.size = Number((range && range.split('/')[1]) || r.headers.get('content-length')) || 0
+    const reader = r.body.getReader()
+    const chunks = []
+    let got = 0
+    while (got < 600) {
+      const { value, done } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      got += value.length
+    }
+    reader.cancel().catch(() => {})
+    const head = new Uint8Array(got)
+    let off = 0
+    for (const c of chunks) (head.set(c, off), (off += c.length))
+    out.ext = ccSniff.sniffExt(head.slice(0, 600)) || ccSniff.extOfMime(out.mime)
+    out.ok = r.ok
+  } catch {
+    // 网络或跨域限制：没有结果
+  } finally {
+    clearTimeout(timer)
+  }
+  return out
+}
+
 async function sendBatch(items, tab) {
   const page = tab?.url || ''
   let sent = 0
@@ -67,7 +101,8 @@ async function sendBatch(items, tab) {
     try {
       let p = false
       if (it.kind === 'image') {
-        const r = await grabUrl({ url: it.url, referrer: page })
+        const real = it.ext || (await probeMedia(it.url, page)).ext
+        const r = await grabUrl({ url: it.url, referrer: page, mime: it.mime || (real && ccSniff.MIME[real]) || '', filename: real ? ccSniff.fileNameFor(it.url, real) : '' })
         p = r.state === 'pending_pair'
       } else if (it.kind === 'video' && /^https?:/i.test(it.url) && it.url !== page) {
         p = await sendText(sniffedPayload({ url: it.url }, page, tab?.title))
@@ -212,9 +247,15 @@ const HANDLERS = {
   'cc-engines': async () => ({ engines: await getEngines() }),
   'cc-save': async (m) => {
     if (!/^https?:/i.test(String(m.url))) throw new Error('这张图片不能保存')
-    await api.downloads.download({ url: String(m.url), conflictAction: 'uniquify' })
+    // 地址没有后缀或后缀不对时，按真实格式命名（不再保存成 .bin）
+    const real = (await probeMedia(String(m.url), String(m.referrer || ''))).ext
+    const cur = ccSniff.extOfUrl(String(m.url))
+    const filename = real && real !== cur ? ccSniff.fileNameFor(String(m.url), real) : undefined
+    await api.downloads.download({ url: String(m.url), filename, conflictAction: 'uniquify' })
     return {}
   },
+  // 总览：探测图片的真实格式和大小
+  'cc-probe-media': async (m) => ({ ...(await probeMedia(String(m.url), String(m.referrer || ''))) }),
   'cc-search': async (m) => {
     await searchImage(m.url, m.engine)
     return {}
@@ -261,6 +302,13 @@ const HANDLERS = {
     return { lang: (await api.storage.local.get('appLang')).appLang || '' }
   },
   // 字幕学习：生词本（清影桌面端保存）
+  'cc-open-highlights': async () => (await api.tabs.create({ url: api.runtime.getURL('highlights.html') }), {}),
+  // 视频缓存：同步到清影 / 查询是否允许自动同步
+  'cc-videocache': async (m) => {
+    if (m.op === 'put') return { ...(await vcache.put(m.payload && typeof m.payload === 'object' ? m.payload : {})) }
+    if (m.op === 'info') return { ...(await vcache.info(String(m.url))) }
+    throw new Error('不支持的操作')
+  },
   'cc-vocab': async (m) => {
     const enc = encodeURIComponent
     switch (m.op) {
@@ -435,7 +483,16 @@ api.commands?.onCommand.addListener(async (cmd) => {
   }
 })
 
-api.runtime.onInstalled.addListener(() => {
+api.runtime.onInstalled.addListener(async (d) => {
+  // 升级上来的用户保持原来的样子：视频上的音效按钮继续显示（新安装默认不显示）
+  if (d?.reason === 'update') {
+    try {
+      const { audioCfg } = await api.storage.local.get('audioCfg')
+      if (!audioCfg || typeof audioCfg.pillShow !== 'boolean') await api.storage.local.set({ audioCfg: { ...(audioCfg || {}), pillShow: true } })
+    } catch {
+      // 读不到存储：按默认
+    }
+  }
   buildMenus().catch((e) => console.warn('menus failed', e))
   syncResident(true)
 })

@@ -1090,6 +1090,12 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
             with_entry(&st, id, |e| e.snap.warning = Some("章节没有拆分：需要安装 ffmpeg".into()));
         }
     }
+    // 地址没有后缀、服务器又没说类型时会落成 .bin：按文件内容认出真实格式再命名
+    if outcome.is_ok() && matches!(spec.primary().kind, AssetKind::File | AssetKind::Image | AssetKind::Cover) {
+        if let Some(fixed) = crate::grab::corrected_path(&final_part, &final_path) {
+            final_path = fixed;
+        }
+    }
     finish(&app, &st, id, outcome, &final_part, &final_path, &parts, &settings);
 }
 

@@ -7,6 +7,7 @@ const FEATURES = [
   { id: 'unlock', group: 'page', name: '解除复制 / 右键限制', desc: '只对你开启过的网站生效', tag: '常驻 · 主世界', def: true },
   { id: 'webtrans', group: 'page', name: '网页翻译（双语对照 / 悬停 / 划词 / 输入框）', desc: '用清影里设置的大模型，或免费的谷歌翻译；快捷键 Alt+A。设了“自动翻译的网站”才会常驻', tag: '按需 · 自动翻译的网站常驻', def: true },
   { id: 'writing', group: 'page', name: '写作浮窗（改写 / 语法检查 / 翻译 / 加入统计数据）', desc: '点进输入框时右下角出现小浮标，选动作和语气，先看差异再采用；用清影里设置的大模型（本地优先）；快捷键 Alt+J。不会出现在密码、支付、验证码框', tag: '常驻', def: true },
+  { id: 'selbar', group: 'page', name: '划词工具条（翻译 / 释义 / 朗读 / AI 搜索 / 总结 / 高亮）', desc: '选中网页上的文字，旁边出现工具条；结果在卡片里显示，可存笔记、加入生词本、继续追问。高亮永久保存，下次打开同一网页自动恢复；用清影里设置的大模型', tag: '常驻', def: true },
   { id: 'onDemand', group: 'page', name: '页面媒体总览 / 批量选取 / 截图 / 摘录', desc: '点了才注入，不常驻', tag: '按需', def: true },
   { id: 'vsum', group: 'video', name: '视频摘要 / 总结 / 问答 / 思维导图', desc: '读取字幕，交给清影调用你设置的大模型；点了才注入，不常驻（Alt+Shift+S）', tag: '按需', def: true },
   { id: 'subLayer', group: 'video', name: '页面字幕层（双语字幕 / 调字号位置 / 延迟 / 导出 SRT）', desc: '在任意网页的视频上叠字幕：读取站内字幕或让清影转写，用你设置的大模型翻译；点了才注入，不常驻', tag: '按需', def: true },
@@ -41,6 +42,7 @@ const RESIDENT_SCRIPTS = [
   // 解除限制：只在用户开启过的网站里注册（unlockAll 才是所有网站），在页面自己的环境（MAIN）里尽早运行
   // 网页翻译：只在用户设为“自动翻译”的网站里常驻；其他网站点了才注入
   { id: 'cc-trans', js: ['content/ui.js', 'trans-logic.js', 'content/webtrans.js'], need: (f) => f.webtrans, matches: (_rules, trans) => (trans ? ccTrans.autoMatches(trans) : []) },
+  { id: 'cc-selbar', js: ['content/ui.js', 'selbar-logic.js', 'content/selbar.js'], need: (f) => f.selbar },
   { id: 'cc-write', js: ['content/ui.js', 'writing-logic.js', 'content/writing.js'], need: (f) => f.writing },
   { id: 'cc-unlock', js: ['content/unlock.js'], need: (f) => f.unlock, world: 'MAIN', runAt: 'document_start', matches: (rules) => unlockMatches(rules) },
 ]

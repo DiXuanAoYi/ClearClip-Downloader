@@ -458,7 +458,7 @@ async fn read_head(sock: &mut TcpStream) -> Option<(Request, Option<u64>, Vec<u8
 
 /// 请求正文上限：普通接口 64 KB；已授权的视频摘要接口要带整篇文稿，放宽到 2 MiB；已授权的 `/api/send` 放宽到 16 MiB（便签）。
 fn body_limit(authorized: bool, path: &str) -> usize {
-    if authorized && path.starts_with("/api/v1/ai/") {
+    if authorized && (path.starts_with("/api/v1/ai/") || path.starts_with("/api/v1/videocache/")) {
         AI_BODY
     } else if authorized && path == "/api/send" {
         NOTE_BODY

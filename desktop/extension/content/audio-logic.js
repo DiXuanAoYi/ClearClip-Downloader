@@ -49,6 +49,8 @@
     reverb: { on: false, id: 'room', mix: null }, // mix 为 null 时用预设值
     eq: { on: false, id: 'voice' },
     notifyOff: false, // 不再提示“无法处理”
+    pillShow: false, // 视频上的“音效 -16 LUFS”小按钮；新安装默认不显示
+    pillHover: true, // 显示时只在鼠标移到视频上才出现
   }
 
   /** 把存储里的原始值整理成完整设置：缺的补默认，越界的夹回范围，不认识的预设退回自定义。 */
@@ -77,6 +79,8 @@
       },
       eq: { on: eq.on === true, id: EQS.some((x) => x.id === eq.id) ? eq.id : d.eq.id },
       notifyOff: r.notifyOff === true,
+      pillShow: typeof r.pillShow === 'boolean' ? r.pillShow : d.pillShow,
+      pillHover: typeof r.pillHover === 'boolean' ? r.pillHover : d.pillHover,
     }
   }
 

@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod ai_cmds;
 pub mod ai_pool;
+pub mod ai_probe;
 pub mod api;
 pub mod audiofx;
 pub mod backup;
@@ -19,6 +20,7 @@ pub mod ed2k;
 pub mod edit;
 pub mod engine;
 pub mod error;
+pub mod excerpts;
 pub mod experts;
 pub mod experts_cmds;
 pub mod filetr;
@@ -51,6 +53,7 @@ pub mod notify;
 pub mod ocr;
 pub mod ocr_paddle;
 pub mod organize;
+pub mod pdfx;
 pub mod phone;
 pub mod player;
 pub mod postprocess;
@@ -80,6 +83,7 @@ mod tray;
 pub mod upload;
 pub mod vault;
 pub mod vidcaps;
+pub mod videocache;
 pub mod vidnorm;
 pub mod vocab;
 pub mod vsum;
@@ -609,6 +613,9 @@ pub fn run() {
             ai_cmds::ai_pool_presets,
             ai_cmds::ai_pool_reset,
             ai_cmds::ai_pool_test,
+            ai_probe::ai_probe_models,
+            ai_probe::ai_probe_test,
+            ai_probe::ai_pool_copy_key,
             glossary_cmds::glossary_state,
             glossary_cmds::glossary_save,
             glossary_cmds::glossary_delete,
@@ -680,6 +687,21 @@ pub fn run() {
             vocab::vocab_remove,
             vocab::vocab_review,
             vocab::vocab_export,
+            videocache::videocache_infos,
+            videocache::videocache_get,
+            videocache::videocache_remove,
+            videocache::videocache_clear,
+            videocache::videocache_stats,
+            videocache::videocache_open,
+            pdfx::pdfx_status,
+            pdfx::pdfx_install,
+            pdfx::pdfx_install_font,
+            pdfx::pdfx_remove,
+            excerpts::excerpt_list,
+            excerpts::excerpt_add,
+            excerpts::excerpt_remove,
+            excerpts::excerpt_note,
+            excerpts::excerpt_markdown,
             edit::highlights::edit_highlights,
             edit::highlights::edit_highlights_llm,
             edit::analyze::edit_waveform,

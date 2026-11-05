@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../api'
-import type { AiSettings, PoolEntry, PoolPreset, PoolStatus } from '../types'
+import type { AiSettings, ModelInfo, PoolEntry, PoolPreset, PoolStatus, ProbeResult } from '../types'
 
 const ai = defineModel<AiSettings>({ required: true })
 const presets = ref<PoolPreset[]>([])
@@ -89,6 +89,64 @@ async function test(e: PoolEntry) {
     refresh()
   }
 }
+
+// ---------- 检测可用模型 ----------
+interface ProbeRow extends ModelInfo { picked: boolean; res?: ProbeResult; testing?: boolean }
+const CAP_LABEL: Record<string, string> = { chat: '对话', vision: '识图', stt: '语音', embed: '嵌入', image: '生图', tts: '朗读' }
+const probe = ref<{ e: PoolEntry; rows: ProbeRow[]; q: string; cap: string; loading: boolean; error: string; ms: number } | null>(null)
+const shown = computed(() => {
+  const p = probe.value
+  if (!p) return []
+  const q = p.q.trim().toLowerCase()
+  return p.rows.filter((r) => (!q || r.id.toLowerCase().includes(q)) && (!p.cap || r.caps.includes(p.cap)) && (p.cap || !r.caps.every((c) => c === 'embed' || c === 'image' || c === 'tts')))
+})
+const capCount = (c: string) => probe.value?.rows.filter((r) => r.caps.includes(c)).length ?? 0
+const pickedRows = computed(() => probe.value?.rows.filter((r) => r.picked) ?? [])
+async function openProbe(e: PoolEntry) {
+  probe.value = { e, rows: [], q: '', cap: '', loading: true, error: '', ms: 0 }
+  const t0 = Date.now()
+  try {
+    const list = await api.aiProbeModels(e.id, e.baseUrl, keys.value[e.id] || null)
+    probe.value.rows = list.map((m) => ({ ...m, picked: m.id === e.model }))
+    probe.value.ms = Date.now() - t0
+  } catch (err) {
+    if (probe.value) probe.value.error = errorText(err)
+  } finally {
+    if (probe.value) probe.value.loading = false
+  }
+}
+async function testRow(r: ProbeRow) {
+  const p = probe.value
+  if (!p) return
+  r.testing = true
+  try {
+    r.res = await api.aiProbeTest(p.e.id, p.e.baseUrl, keys.value[p.e.id] || null, r.id, r.caps.includes('vision'))
+  } catch (err) {
+    r.res = { ok: false, ms: 0, text: errorText(err), vision: null }
+  } finally {
+    r.testing = false
+  }
+}
+async function testPicked() {
+  for (const r of pickedRows.value) await testRow(r)
+}
+function applyProbe() {
+  const p = probe.value
+  if (!p) return
+  const rows = pickedRows.value.filter((r) => !r.res || r.res.ok)
+  if (!rows.length) return ElMessage.warning('请先勾选模型；测试失败的不会加入。')
+  const [first, ...rest] = rows
+  p.e.model = first.id
+  if (first.caps.includes('stt') && !p.e.tasks.includes('stt')) { p.e.tasks = ['stt']; p.e.sttModel = first.id }
+  for (const r of rest) {
+    const id = nextId(p.e.id.replace(/-\d+$/, ''))
+    const stt = r.caps.includes('stt')
+    ai.value.pool.push({ ...p.e, id, name: `${p.e.name} · ${r.id.split('/').pop()}`, model: r.id, tasks: stt ? ['stt'] : [...p.e.tasks], sttModel: stt ? r.id : p.e.sttModel, priority: p.e.priority + 1 })
+    api.aiPoolCopyKey(p.e.id, id).catch(() => {})
+  }
+  ElMessage.success(rest.length ? `已选用 ${first.id}，另外 ${rest.length} 个作为新条目加入（记得点右下角“保存”）` : `已选用 ${first.id}（记得点右下角“保存”）`)
+  probe.value = null
+}
 async function reset(e: PoolEntry) {
   await api.aiPoolReset(e.id)
   refresh()
@@ -129,7 +187,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
       <small v-if="status[e.id]?.lastError" class="err">最近错误：{{ status[e.id].lastError }}</small>
       <div class="grid">
         <div class="field"><label>接口地址</label><el-input v-model="e.baseUrl" size="small" class="mono" /></div>
-        <div class="field"><label>模型</label><el-input v-model="e.model" size="small" class="mono" /></div>
+        <div class="field"><label>模型 · <a href="#" @click.prevent="openProbe(e)">检测可用模型</a></label><el-input v-model="e.model" size="small" class="mono" /></div>
       </div>
       <div class="field">
         <label>API 密钥 <span v-if="status[e.id]?.hasKey" class="ok">已保存</span>
@@ -163,6 +221,46 @@ function state(e: PoolEntry): { text: string; cls: string } {
         <el-button size="small" @click="reset(e)">清除冷却和计数</el-button>
       </div>
     </div>
+
+
+    <el-dialog :model-value="!!probe" title="检测可用模型" width="880px" @close="probe = null">
+      <template v-if="probe">
+        <div class="pr-top mute">
+          <span>{{ probe.e.name }} · {{ probe.e.baseUrl }}</span>
+          <span v-if="probe.loading">正在读取模型列表…</span>
+          <span v-else-if="!probe.error" class="ok">已连通 · 读到 {{ probe.rows.length }} 个模型 · 用时 {{ (probe.ms / 1000).toFixed(1) }} 秒</span>
+        </div>
+        <small class="mute">密钥只在本机发出请求，不会上传。</small>
+        <el-alert v-if="probe.error" type="warning" :closable="false" show-icon :title="probe.error" />
+        <template v-else>
+          <div class="pr-bar">
+            <el-input v-model="probe.q" size="small" placeholder="搜索模型，例如 qwen、vl" clearable style="width: 240px" />
+            <el-button size="small" :type="probe.cap === '' ? 'primary' : 'default'" plain @click="probe.cap = ''">全部</el-button>
+            <el-button v-for="c in ['chat', 'vision', 'stt', 'embed']" :key="c" size="small" :type="probe.cap === c ? 'primary' : 'default'" plain @click="probe.cap = c">{{ CAP_LABEL[c] }} {{ capCount(c) }}</el-button>
+            <span class="grow" />
+            <el-button size="small" :disabled="!pickedRows.length" @click="testPicked">测试已勾选（{{ pickedRows.length }}）</el-button>
+          </div>
+          <div class="pr-list">
+            <div v-for="r in shown" :key="r.id" class="pr-row">
+              <el-checkbox v-model="r.picked" />
+              <b class="mono nm2">{{ r.id }}</b>
+              <span class="caps"><el-tag v-for="c in r.caps" :key="c" size="small" :type="c === 'vision' ? 'warning' : 'info'">{{ CAP_LABEL[c] || c }}</el-tag><el-tag v-if="r.free" size="small" type="success">免费</el-tag></span>
+              <span class="res">
+                <template v-if="r.testing">测试中…</template>
+                <template v-else-if="r.res"><span :class="r.res.ok ? 'ok' : 'bad'">{{ r.res.ok ? '✓ 可用' + (r.res.vision === true ? '，能看图' : r.res.vision === false ? '，不能看图' : '') : '✗ ' + r.res.text }}</span> <span class="mute">{{ (r.res.ms / 1000).toFixed(1) }} 秒</span></template>
+                <a v-else href="#" @click.prevent="testRow(r)">测试</a>
+              </span>
+            </div>
+            <div v-if="!shown.length" class="mute" style="padding: 14px">没有符合的模型。</div>
+          </div>
+        </template>
+      </template>
+      <template #footer>
+        <small class="mute" style="float: left">已勾选 {{ pickedRows.length }} 个；测试失败的不会加入。多选时第一个用于当前条目，其余新增条目。</small>
+        <el-button @click="probe = null">取消</el-button>
+        <el-button type="primary" :disabled="!pickedRows.length" @click="applyProbe">选用</el-button>
+      </template>
+    </el-dialog>
 
     <div class="adds">
       <el-dropdown trigger="click" @command="(id: string) => (id === 'custom' ? addCustom() : addPreset(presets.find((p) => p.id === id)!))">
@@ -219,4 +317,13 @@ h3 { margin: 0; font-size: 12px; color: var(--cc-mute); }
 .tag { margin-left: 8px; font-size: 11px; color: var(--cc-ok); }
 .empty { padding: 8px 0; }
 .supa { border-top: 1px solid var(--cc-border, rgba(128,128,128,.25)); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pr-top { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.pr-bar { display: flex; gap: 6px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+.pr-bar .grow { flex: 1; }
+.pr-list { border: 1px solid var(--cc-border, #dcdfe6); border-radius: 8px; max-height: 360px; overflow-y: auto; }
+.pr-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 190px 190px; gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--cc-border, #ebeef5); font-size: 13px; }
+.pr-row:first-child { border-top: 0; }
+.pr-row .nm2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-row .caps { display: flex; gap: 4px; flex-wrap: wrap; }
+.bad { color: var(--el-color-danger); font-weight: 600; }
 </style>

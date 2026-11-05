@@ -40,13 +40,16 @@
     out.durationMs = page.lengthSec * 1000
     out.chapters = V.parseDescriptionChapters(page.description)
     out.tracks = page.tracks
-    const pick = (wanted && page.tracks.find((t) => t.url === wanted)) || V.pickTrack(page.tracks)
+    out.spoken = page.spoken
+    const pick = (wanted && page.tracks.find((t) => t.url === wanted)) || V.pickTrack(page.tracks, [], { spoken: page.spoken, title: out.title })
     if (!pick) {
       out.note = '这个视频没有字幕'
       return out
     }
     out.track = pick.name || pick.lang
     out.trackUrl = pick.url
+    out.trackLang = pick.lang
+    out.trackAuto = !!pick.auto
     out.lines = V.normalizeLines(await fetchYouTubeTrack(pick.url))
     if (!out.lines.length) {
       out.note = 'YouTube 没有返回这条字幕的内容（常见于需要验证令牌的视频）'
@@ -118,7 +121,7 @@
       }
     }
     out.tracks = subs.map((s) => ({ url: s.subtitle_url.replace(/^\/\//, 'https://'), lang: s.lan, name: s.lan_doc, auto: !!s.ai_type }))
-    const pick = (wanted && out.tracks.find((t) => t.url === wanted)) || V.pickTrack(out.tracks)
+    const pick = (wanted && out.tracks.find((t) => t.url === wanted)) || V.pickTrack(out.tracks, [], { title: out.title })
     if (!pick) {
       out.note = '没有取到字幕（B 站的 AI 字幕需要登录后才返回；也可能这个视频没有字幕）'
       return out
@@ -143,7 +146,7 @@
     out.durationMs = Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : 0
     const list = [...video.textTracks].filter((t) => t.kind === 'subtitles' || t.kind === 'captions')
     out.tracks = list.map((t, i) => ({ url: `texttrack:${i}`, lang: t.language || '', name: t.label || t.language || `字幕 ${i + 1}`, auto: false }))
-    const pick = (wanted && out.tracks.find((t) => t.url === wanted)) || V.pickTrack(out.tracks)
+    const pick = (wanted && out.tracks.find((t) => t.url === wanted)) || V.pickTrack(out.tracks, [], { title: out.title })
     if (!pick) return out
     const tt = list[Number(pick.url.split(':')[1])]
     const prev = tt.mode

@@ -96,6 +96,16 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
       <template v-else>
         <small class="mute">全程不联网。模型和“设置 → 组件 → 语音识别”是同一个选择，在哪边改都一样。中文建议用 SenseVoice（快、准）；Whisper 适合多语种和要逐词时间的场景。</small>
         <SttLocal v-model="ai.sttLocalModel" />
+        <div class="field">
+          <label>字幕句长（SenseVoice 一段声音一条字幕，太长时按标点和长度拆开）</label>
+          <el-radio-group v-model="ai.cueLength" size="small">
+            <el-radio-button value="short">短（视频字幕层）</el-radio-button>
+            <el-radio-button value="standard">标准（推荐）</el-radio-button>
+            <el-radio-button value="long">长（只看文稿）</el-radio-button>
+          </el-radio-group>
+          <small class="mute">短：中文 16 字 / 英文 36 字符以内；标准：22 / 48；长：32 / 72。已经转写好的视频不会自动改，在视频摘要的文稿页点“重新断句”即可。</small>
+          <el-switch v-model="ai.cueSemantic" size="small" active-text="AI 语义断句（高质量）：只处理仍然超长的句子，多一次模型调用" />
+        </div>
         <el-collapse class="adv">
           <el-collapse-item title="高级：手动指定程序 / 模型文件（Whisper）" name="adv">
         <div class="field">

@@ -99,7 +99,7 @@ assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: 
   assert.equal(p.title, 'A "quoted" 标题')
   assert.equal(p.description, '0:00 开场\n1:00 中间\n2:00 结尾')
   assert.equal(p.lengthSec, 245)
-  assert.deepEqual(plain(V.parseYouTubePage('<html>没有字幕</html>')), { tracks: [], title: '', description: '', lengthSec: 0 })
+  assert.deepEqual(plain(V.parseYouTubePage('<html>没有字幕</html>')), { tracks: [], title: '', description: '', lengthSec: 0, spoken: '' })
   assert.deepEqual(plain(V.parseYouTubePage('"captionTracks":[broken')).tracks, [])
   assert.equal(V.sliceJson('x {"a":"}"} y', 2), '{"a":"}"}')
   assert.equal(V.sliceJson('abc', 0), null)
@@ -110,6 +110,34 @@ assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: 
   assert.equal(V.pickTrack(t, ['ja']).lang, 'zh-Hans', '其次浏览器语言（中文）')
   assert.equal(V.pickTrack([{ lang: 'fr', auto: true }, { lang: 'de', auto: false }], ['ja']).lang, 'de', '没有想要的语言就拿人工字幕')
   assert.equal(V.pickTrack([], ['en']), null)
+}
+
+{
+  // 英文视频有中文轨时，原文仍然选视频自己的语言
+  const tracks2 = [
+    { lang: 'zh-Hans', name: '中文（简体）', auto: false },
+    { lang: 'en', name: 'English (auto-generated)', auto: true },
+  ]
+  // 浏览器语言是中文也一样：已知视频语音是英文，就选英文轨
+  assert.equal(V.pickTrack(tracks2, [], { spoken: 'en', title: 'How attention works' }).lang, 'en')
+  // 不知道语音语言，标题是英文：偏英文
+  assert.equal(V.pickTrack(tracks2, [], { title: 'How attention works' }).lang, 'en')
+  // 标题是中文：偏中文
+  assert.equal(V.pickTrack(tracks2, [], { title: '注意力机制讲解' }).lang, 'zh-Hans')
+  // 有英文人工字幕时人工优先
+  const both = [...tracks2, { lang: 'en', name: 'English', auto: false }]
+  assert.equal(V.pickTrack(both, [], { spoken: 'en' }).auto, false)
+  assert.equal(V.scriptOf('Hello world'), 'latin')
+  assert.equal(V.scriptOf('你好，世界'), 'zh')
+  assert.equal(V.scriptOf('こんにちは世界'), 'ja')
+  assert.equal(V.scriptOf('안녕하세요'), 'ko')
+  assert.equal(V.scriptOf('123'), '')
+}
+
+{
+  // 语音语言取自动字幕轨
+  const html = '"captionTracks":[{"baseUrl":"https://x/a","languageCode":"zh-Hans","name":{"simpleText":"中文"}},{"baseUrl":"https://x/b","languageCode":"en","kind":"asr","name":{"simpleText":"English (auto-generated)"}}]'
+  assert.equal(V.parseYouTubePage(html).spoken, 'en')
 }
 
 // ---- 导图
@@ -324,3 +352,42 @@ assert.equal(V.commentTime('比例是 3:2 不是时间'), -1)
   assert.deepEqual(c.map((x) => x.text), ['a b', '好看'])
   assert.ok(V.commentsToMarkdown('T', { count: 2, sentiment: { pos: 1, neu: 1, neg: 1 }, verdict: 'v', themes: [{ name: '甲', count: 2, quotes: [] }] }).includes('## 主要观点'))
 }
+
+{
+  // 重新断句：长句按标点拆开，起点在原来的区间内，短句不动
+  const lines = [
+    { t: 12000, text: "So today we're going to talk about how attention actually works and why the scaling factor matters so much when you stack many layers together in a model." },
+    { t: 31000, text: 'The output is just a weighted sum.' },
+  ]
+  const out = V.resegmentLines(lines, 40000, 'standard')
+  assert.ok(out.length >= 4, `拆成多句：${out.length}`)
+  assert.ok(out.slice(0, -1).every((l) => l.text.length <= 48))
+  assert.equal(out[0].t, 12000)
+  assert.equal(out.at(-1).text, 'The output is just a weighted sum.')
+  assert.ok(out.slice(0, -1).every((l, i) => l.t < out[i + 1].t), '开始时间递增')
+  assert.ok(out.at(-2).t < 31000, '拆出的句子都在原来的区间里')
+  const zh = V.resegmentLines([{ t: 0, text: '今天我们来讲注意力到底是怎么工作的，以及为什么缩放因子在层数很多的时候特别重要。' }], 8000, 'short')
+  assert.ok(zh.length >= 2 && zh.every((l) => l.text.length <= 16), JSON.stringify(zh))
+  assert.deepEqual(plain(V.resegmentLines([{ t: 0, text: '短句' }], 0)), [{ t: 0, text: '短句' }])
+  assert.deepEqual(plain(V.splitLong('Pi is 3.14 today.', 22, 48)), ['Pi is 3.14 today.'], '小数点不拆')
+}
+
+{
+  // 评论定位：解析时保留编号；按编号 / 作者 + 文字 / 文字开头找回原评论
+  const yt = V.parseYtComments({
+    onResponseReceivedEndpoints: [{ reloadContinuationItemsCommand: { slot: 'RELOAD_CONTINUATION_SLOT_BODY', continuationItems: [
+      { commentThreadRenderer: { comment: { commentRenderer: { commentId: 'UgxABC', authorText: { simpleText: '@kenji_ml' }, contentText: { runs: [{ text: '第 2 步的维度写错了，应该是 d_k' }] }, voteCount: { simpleText: '640' } } } } },
+    ] } }],
+  })
+  assert.equal(yt.items[0].id, 'UgxABC')
+  const bili = V.parseBiliComments({ data: { replies: [{ rpid: 123456, rpid_str: '123456', member: { uname: 'lin' }, content: { message: '请问有代码实现吗？' }, like: 3, rcount: 0 }], cursor: { next: 2, is_end: false } } })
+  assert.equal(bili.items[0].id, '123456')
+  const list = [...yt.items, ...bili.items]
+  assert.equal(V.findComment(list, { id: 'UgxABC', text: '' }).author, 'kenji_ml')
+  assert.equal(V.findComment(list, { author: 'lin', text: '请问有代码实现吗' }).id, '123456', '标点不同也能对上')
+  assert.equal(V.findComment(list, { text: '第 2 步的维度写错了，应该是 d_k 而不是 d_model（AI 引用时多写了几个字）' }).id, 'UgxABC', '开头一致')
+  assert.equal(V.findComment(list, { text: '完全无关的话' }), null)
+  assert.equal(V.commentLink('https://www.youtube.com/watch?v=abc123XYZ_-', yt.items[0]), 'https://www.youtube.com/watch?v=abc123XYZ_-&lc=UgxABC')
+  assert.equal(V.commentLink('https://www.bilibili.com/video/BV1xx411c7mD', bili.items[0]), '')
+}
+

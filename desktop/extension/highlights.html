@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>网页高亮与摘录</title>
+<link rel="stylesheet" href="popup.css" />
+<style>
+  body.hl { width: auto; max-width: 860px; margin: 0 auto; padding: 0 20px 40px; }
+  .pg { border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 12px 14px; margin-top: 14px; }
+  .pg h3 { margin: 0 0 4px; font-size: 14px; }
+  .pg h3 a { color: inherit; }
+  .pg .u { color: var(--mute); font-size: 12px; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .it { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--line); }
+  .it mark { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 7px; padding: 0; }
+  .it .t { flex: 1; line-height: 1.6; }
+  .it button, .tb button { width: auto; margin: 0; padding: 3px 10px; font-size: 12px; }
+  .tb { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  #q { width: 100%; margin-top: 12px; }
+</style>
+</head>
+<body class="hl">
+  <header><span class="logo" aria-hidden="true"></span><b>网页高亮与摘录</b><span id="sum" class="mute" style="margin-left:12px"></span></header>
+  <input id="q" type="text" placeholder="搜索高亮的文字或网页标题" />
+  <div id="list"></div>
+  <div id="empty" class="mute hidden" style="margin-top:20px">还没有高亮。在网页上选中文字，点工具条里的彩色圆点就会保存在这里。</div>
+  <script src="shared.js"></script>
+  <script src="selbar-logic.js"></script>
+  <script src="highlights.js"></script>
+</body>
+</html>

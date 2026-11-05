@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText } from './api'
 import { useLanguage } from './i18n/useLanguage'
-import type { WritePending, WritingSettings } from './types'
+import type { Excerpt, WritePending, WritingSettings } from './types'
+import { isWord, speechLang } from './utils/selection'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ACTIONS, PRESETS, buildWriteRequest, presetById, type WriteAction } from './writePresets'
 
@@ -33,6 +34,12 @@ const MAIN_IDS = ['rewrite', 'reply', 'grammar', 'optimize', 'concise']
 const picked = ref(0)
 const issues = ref<{ from: string; to: string; reason: string }[]>([])
 const done = ref('')
+// 划词工具：对选中的文字做释义 / 朗读 / AI 搜索 / 总结 / 存入摘录（结果不能“替换原文”）
+const selMode = ref(false)
+const selTitle = ref('')
+const excerpts = ref<Excerpt[]>([])
+const showEx = ref(false)
+const speaking = ref(false)
 const recording = ref(false)
 const isReply = computed(() => action.value.id === 'reply')
 let jobId = 0
@@ -100,6 +107,7 @@ function saveExtra() {
 async function run() {
   if (!canRun.value) return
   saveExtra()
+  selMode.value = false
   busy.value = true
   error.value = ''
   outs.value = []
@@ -179,6 +187,98 @@ async function dictate() {
   } catch (e) {
     error.value = '无法使用麦克风：' + errorText(e)
   }
+}
+
+async function runSel(kind: 'define' | 'search' | 'summarize') {
+  if (!canRun.value) return
+  busy.value = true
+  error.value = ''
+  outs.value = []
+  issues.value = []
+  selMode.value = true
+  selTitle.value = kind === 'define' ? '释义' : kind === 'search' ? 'AI 搜索' : '总结'
+  progress.value = '正在处理…'
+  try {
+    const t = text.value.trim()
+    const word = kind === 'define' && isWord(t)
+    const req = word ? { kind: 'lookup', text: t, context: '', title: src.value?.app ?? '' } : kind === 'define' ? { kind: 'explain', text: t, context: '', title: src.value?.app ?? '' } : { kind: 'answer', format: kind === 'summarize' ? 'summarize' : 'search', text: t, context: '', title: src.value?.app ?? '' }
+    jobId = await api.writeRun(req)
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 450))
+      const j = await api.writeJob(jobId)
+      if (!j) throw new Error('任务已过期')
+      if (j.state === 'error') throw new Error(j.error ?? '处理失败')
+      if (j.state === 'done') {
+        const r = (j.result ?? {}) as Record<string, string>
+        const txt = word
+          ? r.offline
+            ? `清影里没有可用的 AI 模型，只能显示词汇等级：${r.level ?? ''}`
+            : [`${r.lemma || t}　${r.phonetic || ''}`.trim(), [r.pos, r.meaning].filter(Boolean).join(' '), r.context_meaning && `在这句话里：${r.context_meaning}`, r.note].filter(Boolean).join('\n')
+          : (r.text ?? '')
+        if (!txt) throw new Error('没有得到结果')
+        outs.value = [{ text: txt }]
+        picked.value = 0
+        break
+      }
+    }
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    busy.value = false
+    progress.value = ''
+  }
+}
+
+function translateSel() {
+  const t = ACTIONS.find((a) => a.id === 'translate')
+  if (!t) return
+  pickAction(t)
+  void run()
+}
+
+function speakText() {
+  try {
+    if (speaking.value) {
+      speechSynthesis.cancel()
+      speaking.value = false
+      return
+    }
+    const t = text.value.trim()
+    if (!t) return
+    const u = new SpeechSynthesisUtterance(t.slice(0, 2000))
+    u.lang = speechLang(t)
+    u.onend = () => (speaking.value = false)
+    u.onerror = () => (speaking.value = false)
+    speechSynthesis.cancel()
+    speechSynthesis.speak(u)
+    speaking.value = true
+  } catch {
+    error.value = '这台电脑不能朗读'
+  }
+}
+
+async function addExcerpt() {
+  const t = text.value.trim()
+  if (!t) return
+  try {
+    await api.excerptAdd(t, src.value?.app ?? '')
+    done.value = '已存入摘录'
+    excerpts.value = await api.excerptList()
+  } catch (e) {
+    error.value = errorText(e)
+  }
+}
+async function toggleEx() {
+  showEx.value = !showEx.value
+  if (showEx.value) excerpts.value = await api.excerptList().catch(() => [])
+}
+async function dropEx(e: Excerpt) {
+  await api.excerptRemove(e.id)
+  excerpts.value = excerpts.value.filter((x) => x.id !== e.id)
+}
+async function copyExAll() {
+  await navigator.clipboard.writeText(await api.excerptMarkdown())
+  done.value = '摘录已复制为 Markdown'
 }
 
 async function stop() {
@@ -327,6 +427,25 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
+        <section class="selrow">
+          <span class="sl">对选中的文字</span>
+          <button class="chip" :disabled="!canRun" @click="translateSel">翻译</button>
+          <button class="chip" :disabled="!canRun" @click="runSel('define')">释义</button>
+          <button class="chip" :class="{ on: speaking }" :disabled="!hasText" @click="speakText">{{ speaking ? '■ 停止朗读' : '朗读' }}</button>
+          <button class="chip" :disabled="!canRun" @click="runSel('search')">AI 搜索</button>
+          <button class="chip" :disabled="!canRun" @click="runSel('summarize')">总结</button>
+          <button class="chip" :disabled="!hasText" title="存入摘录（桌面端没法给别的软件里的文字画高亮）" @click="addExcerpt">存入摘录</button>
+          <button class="chip" :class="{ on: showEx }" @click="toggleEx">摘录列表</button>
+        </section>
+        <section v-if="showEx" class="exlist">
+          <div class="exhd"><b>摘录（{{ excerpts.length }}）</b><span class="sp" /><button class="lnk" :disabled="!excerpts.length" @click="copyExAll">复制为 Markdown</button></div>
+          <div v-if="!excerpts.length" class="hint">还没有摘录。选中文字，点“存入摘录”。</div>
+          <div v-for="e in excerpts.slice(0, 30)" :key="e.id" class="exit">
+            <div class="ext">{{ e.text.length > 120 ? e.text.slice(0, 120) + '…' : e.text }}</div>
+            <div class="exm"><span>{{ e.app }}</span><button class="lnk" @click="text = e.text">放回输入框</button><button class="lnk" @click="dropEx(e)">删除</button></div>
+          </div>
+        </section>
+
         <section class="opts">
           <select v-model="presetId" aria-label="场景">
             <option value="">场景：通用</option>
@@ -355,7 +474,7 @@ onBeforeUnmount(() => {
 
         <section v-if="outs.length" class="res">
           <div class="reshd">
-            <b>结果</b>
+            <b>{{ selMode ? selTitle : '结果' }}</b>
             <div v-if="outs.length > 1" class="vers">
               <button v-for="(_o, i) in outs" :key="i" class="vt" :class="{ on: picked === i }" :title="`Alt+${i + 1}`" @click="picked = i">{{ i + 1 }}</button>
             </div>
@@ -370,13 +489,13 @@ onBeforeUnmount(() => {
           </ul>
           <small v-else-if="action.grammar" class="hint">没有发现需要修改的地方</small>
           <div class="row">
-            <button v-if="src?.canReplace" class="go sm" @click="apply(true)">替换原文</button>
+            <button v-if="src?.canReplace && !selMode" class="go sm" @click="apply(true)">替换原文</button>
             <button class="ghost" @click="apply(false)">复制</button>
-            <button class="ghost" @click="run">再来一版</button>
-            <button class="ghost" :class="{ on: compare }" @click="compare = !compare">对比</button>
+            <button v-if="!selMode" class="ghost" @click="run">再来一版</button>
+            <button v-if="!selMode" class="ghost" :class="{ on: compare }" @click="compare = !compare">对比</button>
             <button class="ghost star" :class="{ on: faved }" :title="faved ? '取消收藏' : '收藏这个版本'" @click="toggleFav">{{ faved ? '★' : '☆' }}</button>
           </div>
-          <div v-if="done || canUndo || src?.canReplace" class="row after">
+          <div v-if="done || canUndo || (src?.canReplace && !selMode)" class="row after">
             <span v-if="done" class="ok">✓ {{ done }}</span>
             <button v-if="canUndo" class="lnk" @click="undo">撤销</button>
             <label v-if="src?.canReplace" class="auto"><input type="checkbox" :checked="autoClose" @change="toggleAuto" /> 写回后自动关闭</label>
@@ -506,4 +625,11 @@ kbd { font: 11px/1 ui-monospace, Consolas, monospace; }
 .rz-bl { left: 0; bottom: 0; width: 16px; height: 16px; cursor: nesw-resize; }
 .rz-tr { right: 0; top: 0; width: 16px; height: 16px; cursor: nesw-resize; }
 .rz-tl { left: 0; top: 0; width: 16px; height: 16px; cursor: nwse-resize; }
+.selrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 2px 0 }
+.selrow .sl { color: var(--mut); font-size: 12px; margin-right: 2px }
+.exlist { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--bg); display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow: auto }
+.exhd { display: flex; align-items: center; gap: 8px }
+.exit { border-top: 1px solid var(--line); padding-top: 5px }
+.ext { font-size: 12.5px; line-height: 1.5 }
+.exm { display: flex; gap: 10px; align-items: center; color: var(--mut); font-size: 11.5px }
 </style>

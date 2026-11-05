@@ -318,6 +318,10 @@ pub struct Settings {
     pub danmaku_ass: bool,
     /// 下载完成后用 ffmpeg 检查文件能否正常读取，损坏时自动重新下载一次
     pub verify_downloads: bool,
+    /// 视频缓存（扩展同步来的摘要和双语字幕）占用上限，MB
+    pub video_cache_mb: u64,
+    /// 收藏生词时自动把该视频的缓存同步到清影
+    pub video_cache_auto: bool,
     /// 媒体库：回收站、整理规则
     pub library: LibrarySettings,
     /// 弹幕转 ASS 时的样式
@@ -953,6 +957,10 @@ pub struct AiSettings {
     pub correct_auto: bool,
     /// whisper.cpp 的 VAD 模型（ggml-silero-*.bin）；填了且 whisper-cli 支持时，只识别有人声的部分
     pub whisper_vad_model: String,
+    /// 语音转文字的字幕句长：`short` / `standard` / `long`
+    pub cue_length: String,
+    /// 句子仍然过长时，用 AI 按语义断句（多一次模型调用，结果缓存）
+    pub cue_semantic: bool,
 }
 
 impl Default for AiSettings {
@@ -980,6 +988,8 @@ impl Default for AiSettings {
             correct_mode: "conservative".into(),
             correct_auto: false,
             whisper_vad_model: String::new(),
+            cue_length: "standard".into(),
+            cue_semantic: false,
         }
     }
 }
@@ -1013,6 +1023,9 @@ impl AiSettings {
             self.stt_local_model = String::new();
         }
         self.whisper_vad_model = self.whisper_vad_model.trim().to_string();
+        if !matches!(self.cue_length.as_str(), "short" | "standard" | "long") {
+            self.cue_length = "standard".into();
+        }
         if !matches!(self.correct_mode.as_str(), "conservative" | "aggressive" | "rules") {
             self.correct_mode = "conservative".into();
         }
@@ -1263,6 +1276,8 @@ impl Default for Settings {
             subtitle_convert: true,
             danmaku_ass: true,
             verify_downloads: true,
+            video_cache_mb: crate::videocache::DEFAULT_LIMIT_MB,
+            video_cache_auto: true,
             library: LibrarySettings::default(),
             danmaku: DanmakuStyle::default(),
             max_size_mb: 0,

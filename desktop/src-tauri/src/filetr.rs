@@ -457,11 +457,13 @@ pub struct Opts {
     pub bilingual: bool,
     /// 目标语言；留空用“设置 → AI”里的目标语言
     pub target: String,
+    /// PDF 的输出方式：`inplace` 译文写回原处 / `interleave` 原页和译文页交替 / `txt` 只输出文字
+    pub pdf_mode: String,
 }
 
 impl Default for Opts {
     fn default() -> Self {
-        Opts { bilingual: true, target: String::new() }
+        Opts { bilingual: true, target: String::new(), pdf_mode: "inplace".into() }
     }
 }
 
@@ -680,6 +682,121 @@ pub fn preview(path: &Path) -> AppResult<View> {
 }
 
 /// 翻译一份文件，返回输出文件路径。
+/// 文字版 PDF：把译文按块写回原位置，存成新的 PDF。`trans` 和各页的块按顺序一一对应。
+async fn write_pdf_layout(
+    ctx: &JobCtx,
+    input: &Path,
+    lib: &Path,
+    pages: &[crate::pdfx::PageInfo],
+    trans: &[Option<String>],
+    mode: crate::pdfx::Mode,
+    base: &str,
+) -> AppResult<PathBuf> {
+    use crate::pdfx::{Item, PagePlan};
+    let mut plans = vec![PagePlan::default(); pages.len()];
+    let mut at = 0usize;
+    for (pi, p) in pages.iter().enumerate() {
+        for b in &p.blocks {
+            if let Some(Some(t)) = trans.get(at) {
+                plans[pi].items.push(Item { remove: b.runs.clone(), rect: (b.l, b.b, b.r, b.t), size: b.size, rgb: b.rgb, bg: None, text: t.clone() });
+            }
+            at += 1;
+        }
+    }
+    let font = crate::pdfx::load_font(&ctx.st.data_dir)?;
+    let tag = if mode == crate::pdfx::Mode::Interleave { "双语" } else { "译文" };
+    let out = ai::out_beside(input, base, tag, "pdf");
+    ctx.note("正在把译文写回 PDF…");
+    let (lib2, inp, out2) = (lib.to_path_buf(), input.to_path_buf(), out.clone());
+    tokio::task::spawn_blocking(move || crate::pdfx::apply(&lib2, &font, &inp, &out2, &plans, mode, |_, _| {}))
+        .await
+        .map_err(|e| AppError::msg(e.to_string()))??;
+    Ok(out)
+}
+
+/// 扫描版 PDF：逐页渲染成图，让视觉模型识字、翻译并给出位置，再用背景色盖住原文写上译文。
+#[allow(clippy::too_many_arguments)]
+async fn run_pdf_scanned(
+    ctx: &JobCtx,
+    input: &Path,
+    opts: &Opts,
+    lib: &Path,
+    ep: &ai::Endpoint,
+    settings: &crate::settings::Settings,
+    target: &str,
+    pages: Vec<crate::pdfx::PageInfo>,
+) -> AppResult<PathBuf> {
+    use crate::pdfx::{contrast, png_of_rgba, sample_bg, Item, PagePlan};
+    use base64::Engine;
+    let total = pages.len().min(OCR_MAX_PAGES);
+    if pages.len() > OCR_MAX_PAGES {
+        ctx.note(format!("共 {} 页，只处理前 {OCR_MAX_PAGES} 页", pages.len()));
+    }
+    let mut plans = vec![PagePlan::default(); pages.len()];
+    let mut view = View { input: input.to_string_lossy().into_owned(), target: target.to_string(), bilingual: false, pages: vec![], failed: 0 };
+    let mut any = 0usize;
+    for (i, page) in pages.iter().enumerate().take(total) {
+        ctx.check()?;
+        ctx.note(format!("扫描页：识字并翻译 第 {} / {} 页", i + 1, total));
+        ctx.percent(90.0 * i as f64 / total as f64);
+        let (l2, in2) = (lib.to_path_buf(), input.to_path_buf());
+        let (w, h, rgba) =
+            tokio::task::spawn_blocking(move || crate::pdfx::render_page(&l2, &in2, i, 1500)).await.map_err(|e| AppError::msg(e.to_string()))??;
+        let png = png_of_rgba(w, h, &rgba)?;
+        let url = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&png));
+        let resp = match ai::chat_img(ep, &settings.ai.model, &crate::imgtrans::system(target), "Translate the text in this image.", &url).await {
+            Ok(r) => r,
+            Err(e) => {
+                let e = crate::imgtrans::vision_hint(e);
+                if i == 0 {
+                    return Err(e);
+                }
+                ctx.note(format!("第 {} 页识别失败，已跳过：{}", i + 1, e.message));
+                view.failed += 1;
+                view.pages.push(ViewPage::default());
+                continue;
+            }
+        };
+        let blocks = crate::imgtrans::parse_blocks(&resp).unwrap_or_default();
+        let mut vp = ViewPage::default();
+        for b in blocks {
+            if b.translation.trim().is_empty() {
+                continue;
+            }
+            vp.src.push(b.text.clone());
+            vp.trans.push(Some(b.translation.clone()));
+            let Some([x, y, bw, bh]) = b.rect else { continue };
+            let (pw, ph) = (page.w, page.h);
+            let (l, t) = (x as f32 * pw, ph - y as f32 * ph);
+            let (r, bt) = (l + bw as f32 * pw, t - bh as f32 * ph);
+            let px =
+                ((x * w as f64) as usize, (y * h as f64) as usize, (((x + bw) * w as f64) as usize).min(w - 1), (((y + bh) * h as f64) as usize).min(h - 1));
+            let bg = sample_bg(&rgba, w, h, px);
+            let n = b.translation.chars().count().max(1) as f32;
+            let size = ((r - l) * (t - bt) / (n * 1.4)).sqrt().clamp(6.5, 16.0);
+            plans[i].items.push(Item { remove: vec![], rect: (l, bt, r, t), size, rgb: contrast(bg), bg: Some(bg), text: b.translation });
+            any += 1;
+        }
+        view.pages.push(vp);
+    }
+    if any == 0 {
+        return Err(AppError::invalid("视觉模型没有从页面里识别出带位置的文字。确认选的模型支持看图，或页面是否清晰。"));
+    }
+    let data_dir = ctx.st.data_dir.clone();
+    save_cache(&cache_path(&data_dir, input, target), &view);
+    let font = crate::pdfx::load_font(&data_dir)?;
+    let mode = crate::pdfx::Mode::parse(&opts.pdf_mode);
+    let base = ai::strip_lang_suffix(&crate::ai::stem_of(input)).to_string();
+    let out = ai::out_beside(input, &base, if mode == crate::pdfx::Mode::Interleave { "双语" } else { "译文" }, "pdf");
+    ctx.note("正在把译文写回 PDF…");
+    let (l2, in2, out2) = (lib.to_path_buf(), input.to_path_buf(), out.clone());
+    tokio::task::spawn_blocking(move || crate::pdfx::apply(&l2, &font, &in2, &out2, &plans, mode, |_, _| {}))
+        .await
+        .map_err(|e| AppError::msg(e.to_string()))??;
+    ctx.percent(100.0);
+    Ok(out)
+}
+
 pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     let kind =
         kind_of(input).ok_or_else(|| AppError::invalid("支持 TXT、Markdown、PDF、SRT/VTT/ASS 字幕、Word(docx)、EPUB，以及图片（PNG / JPG / WebP）。"))?;
@@ -687,22 +804,54 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     let target = if opts.target.trim().is_empty() { settings.ai.target_lang.clone() } else { opts.target.trim().to_string() };
     let ep = ai::chat_endpoint_for(&ctx.st, &settings, Task::Translate)?;
 
+    // PDF 原处排版需要 PDFium 组件；没装就退回只输出 TXT
+    let layout_lib = if kind == Kind::Pdf && opts.pdf_mode != "txt" { crate::pdfx::find_lib(&ctx.st.data_dir) } else { None };
+    if kind == Kind::Pdf && opts.pdf_mode != "txt" && layout_lib.is_none() {
+        ctx.note("还没安装 PDF 排版组件，这次只输出 TXT；在“文件翻译”页点“安装 PDF 排版组件”后可以原处排版。");
+    }
+    let mut layout_pages: Option<Vec<crate::pdfx::PageInfo>> = None;
+
     // 1. 切片段
     let mut cues: Vec<Cue> = vec![];
     let mut parts: Vec<Part> = vec![];
     if kind == Kind::Sub {
         cues = crate::subtitle_tools::read(input)?;
     } else {
-        parts = match load(input, kind) {
-            Ok(p) => p,
-            Err(e) if kind == Kind::Img || (kind == Kind::Pdf && e.to_string().contains(SCANNED)) => {
-                ctx.note("没有可抽取的文字，改用视觉模型识字");
-                let raw = ocr_text(ctx, &ep, &settings.ai.model, input, kind).await?;
-                let slots = extract_plain(&raw, false);
-                vec![Part { name: String::new(), raw, slots }]
+        if let Some(lib) = &layout_lib {
+            let (lib2, inp) = (lib.clone(), input.to_path_buf());
+            ctx.note("正在读取 PDF 的版面…");
+            let pages = tokio::task::spawn_blocking(move || crate::pdfx::extract(&lib2, &inp)).await.map_err(|e| AppError::msg(e.to_string()))??;
+            if pages.iter().any(|p| !p.blocks.is_empty()) {
+                parts = pages
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| !p.blocks.is_empty())
+                    .map(|(i, p)| Part {
+                        name: format!("page:{i}"),
+                        raw: String::new(),
+                        slots: p.blocks.iter().map(|b| Slot { start: 0, end: 0, text: b.text.clone(), prefix: String::new() }).collect(),
+                    })
+                    .collect();
+                layout_pages = Some(pages);
+            } else if pages.iter().all(|p| !p.has_text) {
+                ctx.note("这份 PDF 是扫描版（没有文字层），改用视觉模型识字并按位置翻译");
+                return run_pdf_scanned(ctx, input, &opts, lib, &ep, &settings, &target, pages).await;
             }
-            Err(e) => return Err(e),
-        };
+        }
+        if layout_pages.is_some() {
+            // 已经按页面版面切好了
+        } else {
+            parts = match load(input, kind) {
+                Ok(p) => p,
+                Err(e) if kind == Kind::Img || (kind == Kind::Pdf && e.to_string().contains(SCANNED)) => {
+                    ctx.note("没有可抽取的文字，改用视觉模型识字");
+                    let raw = ocr_text(ctx, &ep, &settings.ai.model, input, kind).await?;
+                    let slots = extract_plain(&raw, false);
+                    vec![Part { name: String::new(), raw, slots }]
+                }
+                Err(e) => return Err(e),
+            };
+        }
     }
     let texts: Vec<String> = if kind == Kind::Sub {
         cues.iter().map(|c| c.lines.join(" ")).collect()
@@ -763,7 +912,9 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     let base = ai::strip_lang_suffix(&crate::ai::stem_of(input)).to_string();
 
     // 3. 写回
-    let out = if kind == Kind::Sub {
+    let out = if let (Some(pages), Some(lib)) = (&layout_pages, &layout_lib) {
+        write_pdf_layout(ctx, input, lib, pages, &t.texts, crate::pdfx::Mode::parse(&opts.pdf_mode), &base).await?
+    } else if kind == Kind::Sub {
         let d = if opts.bilingual { Display::OrigTop } else { Display::Trans };
         let out = ai::out_beside(input, &base, tag, "srt");
         std::fs::write(&out, subtitle::format_srt(&compose(&cues, &t.texts, d)))?;

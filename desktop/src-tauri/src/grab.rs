@@ -99,6 +99,91 @@ pub fn ext_from_mime(mime: &str) -> Option<&'static str> {
     })
 }
 
+/// 按文件开头的几个字节认出真实格式（地址里没有后缀、服务器又没说类型时用）。
+pub fn sniff_ext(head: &[u8]) -> Option<&'static str> {
+    let starts = |m: &[u8]| head.starts_with(m);
+    if starts(&[0xFF, 0xD8, 0xFF]) {
+        return Some("jpg");
+    }
+    if starts(&[0x89, b'P', b'N', b'G']) {
+        return Some("png");
+    }
+    if starts(b"GIF8") {
+        return Some("gif");
+    }
+    if head.len() >= 12 && &head[..4] == b"RIFF" {
+        match &head[8..12] {
+            b"WEBP" => return Some("webp"),
+            b"WAVE" => return Some("wav"),
+            _ => {}
+        }
+    }
+    if head.len() >= 12 && &head[4..8] == b"ftyp" {
+        return Some(match &head[8..12] {
+            b"avif" | b"avis" => "avif",
+            b"heic" | b"heix" | b"hevc" | b"mif1" | b"msf1" => "heic",
+            b"M4A " | b"M4B " => "m4a",
+            b"qt  " => "mov",
+            _ => "mp4",
+        });
+    }
+    if starts(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        return Some("webm");
+    }
+    if starts(b"BM") && head.len() > 14 {
+        return Some("bmp");
+    }
+    if starts(&[0, 0, 1, 0]) {
+        return Some("ico");
+    }
+    if starts(b"ID3") || (head.len() > 2 && head[0] == 0xFF && head[1] & 0xE0 == 0xE0) {
+        return Some("mp3");
+    }
+    if starts(b"OggS") {
+        return Some("ogg");
+    }
+    if starts(b"fLaC") {
+        return Some("flac");
+    }
+    if starts(b"%PDF") {
+        return Some("pdf");
+    }
+    if starts(b"PK\x03\x04") {
+        return Some("zip");
+    }
+    let text = String::from_utf8_lossy(&head[..head.len().min(512)]).to_ascii_lowercase();
+    let t = text.trim_start_matches('\u{feff}').trim_start();
+    if t.starts_with("<svg") || (t.starts_with("<?xml") && t.contains("<svg")) {
+        return Some("svg");
+    }
+    None
+}
+
+fn is_media_ext(e: &str) -> bool {
+    matches!(
+        e,
+        "jpg" | "jpeg" | "png" | "gif" | "webp" | "avif" | "heic" | "bmp" | "ico" | "svg" | "mp4" | "webm" | "mov" | "m4a" | "mp3" | "ogg" | "flac" | "wav"
+    )
+}
+
+/// 下载完成后按文件内容纠正扩展名：后缀是 bin / 没有后缀，或者图片、音视频的后缀和真实格式对不上（如 .jpg 实际是 AVIF）时换成真实格式。
+/// 返回新的目标路径；不需要改就返回 None。
+pub fn corrected_path(file: &std::path::Path, wanted: &std::path::Path) -> Option<std::path::PathBuf> {
+    use std::io::Read;
+    let mut head = [0u8; 600];
+    let n = std::fs::File::open(file).ok()?.read(&mut head).ok()?;
+    let real = sniff_ext(&head[..n])?;
+    let cur = wanted.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let cur_norm = if cur == "jpeg" || cur == "jfif" { "jpg" } else { cur.as_str() };
+    let wrong = cur.is_empty() || cur == "bin" || cur == "tmp" || (is_media_ext(cur_norm) && cur_norm != real && is_media_ext(real) && !(real == "zip"));
+    // 容器类（mp4/mov/m4a）之间不强改，避免把正常的 .m4a 改成 .mp4
+    let container = |e: &str| matches!(e, "mp4" | "mov" | "m4a");
+    if !wrong || (container(cur_norm) && container(real)) {
+        return None;
+    }
+    Some(wanted.with_extension(real))
+}
+
 pub(crate) fn url_name(url: &Url) -> String {
     let last = url.path_segments().and_then(|mut s| s.rfind(|x| !x.is_empty())).unwrap_or("");
     let decoded = percent_decode(last);
@@ -314,6 +399,7 @@ mod tests {
     }
 
     use super::*;
+    use std::path::Path;
 
     fn req(url: &str, filename: &str) -> GrabRequest {
         GrabRequest { url: url.into(), filename: filename.into(), ..Default::default() }
@@ -383,5 +469,34 @@ mod tests {
     #[test]
     fn display_url_hides_query() {
         assert_eq!(display_url("https://a.com/x/y.zip?token=secret#f"), "https://a.com/x/y.zip");
+    }
+
+    #[test]
+    fn sniffing_finds_the_real_format() {
+        assert_eq!(sniff_ext(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0]), Some("jpg"));
+        assert_eq!(sniff_ext(b"\x89PNG\r\n\x1a\n"), Some("png"));
+        assert_eq!(sniff_ext(b"RIFF\x00\x00\x00\x00WEBPVP8 "), Some("webp"));
+        assert_eq!(sniff_ext(b"\x00\x00\x00\x20ftypavif\x00\x00"), Some("avif"));
+        assert_eq!(sniff_ext(b"\x00\x00\x00\x20ftypisom\x00\x00"), Some("mp4"));
+        assert_eq!(sniff_ext(b"<?xml version=\"1.0\"?><svg xmlns=\"x\"/>"), Some("svg"));
+        assert_eq!(sniff_ext(b"GIF89a.."), Some("gif"));
+        assert_eq!(sniff_ext(b"hello world"), None);
+    }
+
+    #[test]
+    fn extension_is_corrected_only_when_it_is_wrong() {
+        let dir = std::env::temp_dir().join(format!("cc-sniff-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("a.part");
+        std::fs::write(&png, b"\x89PNG\r\n\x1a\n0000").unwrap();
+        assert_eq!(corrected_path(&png, Path::new("/x/pic.bin")), Some(Path::new("/x/pic.png").to_path_buf()));
+        assert_eq!(corrected_path(&png, Path::new("/x/pic")), Some(Path::new("/x/pic.png").to_path_buf()));
+        assert_eq!(corrected_path(&png, Path::new("/x/pic.png")), None);
+        assert_eq!(corrected_path(&png, Path::new("/x/pic.jpg")), Some(Path::new("/x/pic.png").to_path_buf()), "图片后缀对不上真实格式");
+        assert_eq!(corrected_path(&png, Path::new("/x/readme.txt")), None, "不是媒体后缀不乱改");
+        let mp4 = dir.join("b.part");
+        std::fs::write(&mp4, b"\x00\x00\x00\x20ftypM4A \x00\x00").unwrap();
+        assert_eq!(corrected_path(&mp4, Path::new("/x/song.mp4")), None, "容器之间不强改");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

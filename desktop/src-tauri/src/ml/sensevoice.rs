@@ -169,9 +169,9 @@ pub fn args(f: &Files, wav: &Path, lang: &str, threads: usize) -> Vec<String> {
     vec![
         format!("--silero-vad-model={}", f.vad.display()),
         "--silero-vad-threshold=0.5".into(),
-        "--silero-vad-min-silence-duration=0.4".into(),
+        "--silero-vad-min-silence-duration=0.35".into(),
         "--silero-vad-min-speech-duration=0.25".into(),
-        "--silero-vad-max-speech-duration=18".into(),
+        "--silero-vad-max-speech-duration=10".into(),
         format!("--sense-voice-model={}", f.model.display()),
         format!("--tokens={}", f.tokens.display()),
         "--sense-voice-use-itn=true".into(),

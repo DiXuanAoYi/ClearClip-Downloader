@@ -22,3 +22,24 @@ body.ov #pageInfo { margin-left: 12px; overflow: hidden; text-overflow: ellipsis
 #streamList .it { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); }
 #streamList .it span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #streamList .it button { margin: 0; width: auto; padding: 3px 10px; font-size: 12px; }
+
+.cell .fmt { position: absolute; right: 6px; top: 32px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 9px; background: #10201acc; color: #fff; }
+.cell .fmt.warn, #vFmt.warn { background: #c2570c; color: #fff; }
+#vFmt { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 9px; background: #ffffff26; color: #fff; }
+body.noscroll { overflow: hidden; }
+#viewer { position: fixed; inset: 0; z-index: 20; background: #0b1512f2; color: #fff; display: flex; flex-direction: column; }
+#viewer.hidden { display: none; }
+#vTop, #vBar { display: flex; gap: 12px; align-items: center; padding: 10px 16px; }
+#vTop .grow, #vBar .grow { flex: 1; }
+#vTop b { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#vTop .mute, #vBar .mute { color: #b6c4bf; }
+#vBody { flex: 1; min-height: 0; display: flex; align-items: stretch; gap: 8px; padding: 0 8px; }
+#vStage { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: auto; }
+#vStage img, #vStage video { max-width: 100%; max-height: 100%; object-fit: contain; }
+#vStage.full { align-items: flex-start; justify-content: flex-start; }
+#vStage.full img { max-width: none; max-height: none; }
+#viewer .nav { width: 48px; font-size: 32px; background: transparent; color: #fff; border: 0; cursor: pointer; margin: 0; }
+#viewer .nav:hover { background: #ffffff1a; }
+#viewer button.sec { background: #ffffff1f; color: #fff; border-color: #ffffff33; width: auto; margin: 0; }
+#viewer button.small { width: auto; margin: 0; }
+#viewer .keys { font-size: 12px; }

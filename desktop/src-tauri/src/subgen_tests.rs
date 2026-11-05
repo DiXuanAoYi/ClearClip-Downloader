@@ -268,3 +268,18 @@ fn word_timing_snaps_split_boundaries_to_real_pauses() {
     assert_eq!(snap_to_words(&cues, &words[..1]), cues);
     assert!(parse_whisper_words("not json").is_empty());
 }
+
+#[test]
+fn cue_length_presets_and_long_sensevoice_segment_is_split() {
+    assert_eq!(SegOpts::for_length("short").max_cjk, 16);
+    assert_eq!(SegOpts::for_length("long").max_latin, 72);
+    assert_eq!(SegOpts::for_length("anything"), SegOpts::default());
+    let text = "So today we're going to talk about how attention actually works and why the scaling factor matters so much when you stack many layers together in a model.";
+    let c = Cue { start: 12_000, end: 31_000, lines: vec![text.to_string()] };
+    let out = resegment(std::slice::from_ref(&c), SegOpts::for_length("standard"));
+    assert!(out.len() >= 3, "{out:?}");
+    assert!(out.iter().all(|x| x.lines.join(" ").chars().count() <= 60), "每条不超过上限附近：{out:?}");
+    assert_eq!(out.first().unwrap().start, 12_000);
+    assert_eq!(out.last().unwrap().end, 31_000, "起止时间保持不变");
+    assert!(out.windows(2).all(|w| w[0].end <= w[1].start + 1), "时间不重叠");
+}

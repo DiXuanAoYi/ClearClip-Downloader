@@ -707,6 +707,10 @@ export interface AiSettings {
   correctMode: 'conservative' | 'aggressive' | 'rules'
   correctAuto: boolean
   whisperVadModel: string
+  /** 语音转文字的字幕句长 */
+  cueLength: 'short' | 'standard' | 'long'
+  /** 仍然过长的句子用 AI 按语义断句 */
+  cueSemantic: boolean
   /** 本机识别用哪个模型："" 自动 | whisper_tiny | whisper_base | whisper_small | sensevoice */
   sttLocalModel: string
 }
@@ -1024,6 +1028,8 @@ export interface Settings {
   subtitleConvert: boolean
   danmakuAss: boolean
   verifyDownloads: boolean
+  videoCacheMb: number
+  videoCacheAuto: boolean
   library: LibrarySettings
   danmaku: DanmakuStyle
   maxSizeMb: number
@@ -2255,4 +2261,50 @@ export interface FileTransView {
   bilingual: boolean
   pages: FileTransPage[]
   failed: number
+}
+
+export interface PdfxStatus {
+  supported: boolean
+  installed: boolean
+  path: string
+  fontOk: boolean
+  note: string
+}
+
+export interface VideoCacheInfo {
+  videoKey: string
+  url: string
+  title: string
+  hasSummary: boolean
+  hasSubs: boolean
+  lines: number
+  srcLang: string
+  dstLang: string
+  bytes: number
+  updated: number
+}
+export interface VideoCacheFull {
+  info: VideoCacheInfo
+  summary: { data?: { res?: Record<string, unknown>; title?: string; lang?: string } } | null
+  subs: { lines?: { t: number; text: string }[]; trans?: string[] } | null
+}
+
+export interface Excerpt {
+  id: string
+  text: string
+  app: string
+  note: string
+  created: number
+}
+
+export interface ModelInfo {
+  id: string
+  caps: string[]
+  free: boolean
+}
+export interface ProbeResult {
+  ok: boolean
+  ms: number
+  text: string
+  vision: boolean | null
 }

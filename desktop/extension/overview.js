@@ -58,10 +58,15 @@ function render() {
     const tick = document.createElement('div')
     tick.className = 'tick'
     tick.textContent = '✓'
+    const fmt = document.createElement('div')
+    fmt.className = 'fmt'
+    paintFormat(fmt, it)
+    it._fmtEl = fmt
     const meta = document.createElement('div')
     meta.className = 'meta'
     const dim = document.createElement('span')
-    dim.textContent = [it.w && it.h ? `${it.w}×${it.h}` : '', KIND_LABEL[it.kind]].filter(Boolean).join(' · ')
+    dim.textContent = [it.w && it.h ? `${it.w}×${it.h}` : '', it.size ? fmtSize(it.size) : KIND_LABEL[it.kind]].filter(Boolean).join(' · ')
+    it._dimEl = dim
     const open = document.createElement('a')
     open.href = it.url
     open.target = '_blank'
@@ -70,7 +75,8 @@ function render() {
     open.onclick = (e) => e.stopPropagation()
     meta.append(dim, open)
     cell.title = it.url
-    cell.append(pic, tick, meta)
+    cell.append(pic, tick, fmt, meta)
+    cell.ondblclick = (e) => (e.preventDefault(), openViewer(it))
     cell.onclick = () => {
       picked.has(it.url) ? picked.delete(it.url) : picked.add(it.url)
       cell.classList.toggle('on', picked.has(it.url))
@@ -79,6 +85,7 @@ function render() {
     $('grid').append(cell)
   }
   updateBar()
+  probeAll(list)
 }
 
 function chosen() {
@@ -109,6 +116,150 @@ function renderStreams() {
     $('streamList').append(row)
   }
 }
+
+
+const S = globalThis.ccSniff
+const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
+
+/** 格式徽标：显示探测出的真实格式；和地址后缀对不上时变橙并写明。 */
+function paintFormat(el, it) {
+  if (!el) return
+  const real = it.fmt || ''
+  const url = S.extOfUrl(it.url)
+  const mismatch = real && url && url !== real && (S.MIME[url] || S.MIME[real])
+  el.textContent = real ? (S.FORMAT_LABEL[real] || real.toUpperCase()) + (mismatch ? ` ≠ .${url}` : '') : it.probing ? '…' : ''
+  el.classList.toggle('warn', !!mismatch)
+  el.title = mismatch ? `地址后缀是 .${url}，实际内容是 ${S.FORMAT_LABEL[real] || real}。保存时按真实格式命名。` : ''
+  el.hidden = !el.textContent
+}
+
+let probeToken = 0
+/** 逐个探测当前列表里还不知道格式的项目（同时 4 个），探测到就更新卡片，不重画整个网格。 */
+async function probeAll(list) {
+  const token = ++probeToken
+  const todo = list.filter((it) => it.kind !== 'audio' && !it.fmt && !it.probed)
+  let i = 0
+  const worker = async () => {
+    while (i < todo.length && token === probeToken) {
+      const it = todo[i++]
+      it.probing = true
+      paintFormat(it._fmtEl, it)
+      const r = await chrome_send({ type: 'cc-probe-media', url: it.url, referrer: data.page })
+      it.probing = false
+      it.probed = true
+      if (r.ext) it.fmt = r.ext
+      if (r.mime) it.mime = r.mime
+      if (r.size) it.size = r.size
+      paintFormat(it._fmtEl, it)
+      if (it._dimEl && r.size) it._dimEl.textContent = [it.w && it.h ? `${it.w}×${it.h}` : '', fmtSize(r.size)].filter(Boolean).join(' · ')
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker()])
+}
+
+// ---------- 双击查看原图 ----------
+let vIdx = 0
+let vList = []
+let vScale = 'fit'
+function openViewer(it) {
+  vList = visible().filter((x) => x.kind === 'image' || x.kind === 'video')
+  vIdx = Math.max(0, vList.indexOf(it))
+  $('viewer').classList.remove('hidden')
+  document.body.classList.add('noscroll')
+  showViewer()
+}
+function closeViewer() {
+  $('viewer').classList.add('hidden')
+  document.body.classList.remove('noscroll')
+  $('vStage').innerHTML = ''
+}
+function showViewer() {
+  const it = vList[vIdx]
+  if (!it) return closeViewer()
+  vScale = 'fit'
+  const stage = $('vStage')
+  stage.innerHTML = ''
+  stage.classList.remove('full')
+  let el
+  if (it.kind === 'video') {
+    el = document.createElement('video')
+    el.controls = true
+    el.src = it.url
+  } else {
+    el = document.createElement('img')
+    el.referrerPolicy = 'no-referrer'
+    el.src = it.url
+    el.onload = () => {
+      it.w = it.w || el.naturalWidth
+      it.h = it.h || el.naturalHeight
+      infoLine(it)
+    }
+    el.onerror = () => (stage.textContent = '原图加载失败（可能需要登录，或地址已失效）')
+  }
+  stage.append(el)
+  $('vName').textContent = ccSniff.fileNameFor(it.url, it.fmt || S.extOfUrl(it.url))
+  $('vPos').textContent = `${vIdx + 1} / ${vList.length}`
+  infoLine(it)
+  paintFormat($('vFmt'), it)
+  if (!it.fmt && it.kind === 'image' && !it.probed) {
+    chrome_send({ type: 'cc-probe-media', url: it.url, referrer: data.page }).then((r) => {
+      it.probed = true
+      if (r.ext) it.fmt = r.ext
+      if (r.size) it.size = r.size
+      if (vList[vIdx] === it) (infoLine(it), paintFormat($('vFmt'), it), ($('vName').textContent = ccSniff.fileNameFor(it.url, it.fmt || S.extOfUrl(it.url))))
+    })
+  }
+}
+function infoLine(it) {
+  $('vInfo').textContent = [it.fmt ? S.FORMAT_LABEL[it.fmt] || it.fmt : '', it.w && it.h ? `${it.w}×${it.h}` : '', it.size ? fmtSize(it.size) : ''].filter(Boolean).join(' · ')
+}
+function stepViewer(d) {
+  if (!vList.length) return
+  vIdx = (vIdx + d + vList.length) % vList.length
+  showViewer()
+}
+function toggleScale() {
+  vScale = vScale === 'fit' ? 'full' : 'fit'
+  $('vStage').classList.toggle('full', vScale === 'full')
+}
+async function saveViewer() {
+  const it = vList[vIdx]
+  if (!it) return
+  const r = await chrome_send({ type: 'cc-save', url: it.url, referrer: data.page })
+  $('vMsg').textContent = r.ok ? '已保存' : r.error || '保存失败'
+}
+async function copyViewerImage() {
+  const it = vList[vIdx]
+  try {
+    const blob = await (await fetch(it.url)).blob()
+    const png = blob.type === 'image/png' ? blob : await new Promise((ok) => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const c = document.createElement('canvas')
+        c.width = img.naturalWidth
+        c.height = img.naturalHeight
+        c.getContext('2d').drawImage(img, 0, 0)
+        c.toBlob(ok, 'image/png')
+      }
+      img.src = URL.createObjectURL(blob)
+    })
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+    $('vMsg').textContent = '已复制图片'
+  } catch {
+    $('vMsg').textContent = '这张图不能复制（跨域限制），可以用“复制地址”'
+  }
+}
+document.addEventListener('keydown', (e) => {
+  if ($('viewer').classList.contains('hidden')) return
+  if (e.key === 'Escape') closeViewer()
+  else if (e.key === 'ArrowLeft') stepViewer(-1)
+  else if (e.key === 'ArrowRight') stepViewer(1)
+  else if (e.key === ' ') (e.preventDefault(), toggleScale())
+  else if (e.key.toLowerCase() === 's') saveViewer()
+  else return
+  e.preventDefault()
+})
 
 async function sendItems(items) {
   msg('发送中…')
@@ -172,3 +323,12 @@ $('rescan').onclick = async () => {
 }
 
 load()
+
+$('vClose').onclick = closeViewer
+$('vPrev').onclick = () => stepViewer(-1)
+$('vNext').onclick = () => stepViewer(1)
+$('vScale').onclick = toggleScale
+$('vSave').onclick = saveViewer
+$('vCopyImg').onclick = copyViewerImage
+$('vCopyUrl').onclick = () => navigator.clipboard.writeText(vList[vIdx]?.url || '').then(() => ($('vMsg').textContent = '已复制地址'))
+$('viewer').addEventListener('click', (e) => e.target === $('vBody') && closeViewer())

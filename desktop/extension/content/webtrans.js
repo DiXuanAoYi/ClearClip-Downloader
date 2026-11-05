@@ -467,7 +467,7 @@
   }
 
   document.addEventListener('mouseup', (e) => {
-    if (!S.cfg.select) return
+    if (!S.cfg.select || globalThis.ccSelbarOn) return
     if (e.composedPath().some((n) => n === S.ui?.host)) return
     setTimeout(() => {
       closeSel()

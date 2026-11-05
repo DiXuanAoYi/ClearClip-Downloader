@@ -572,7 +572,8 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 25] = [
+    const KINDS: [&str; 26] = [
+        "answer",
         "write",
         "style",
         "grammar",
@@ -710,6 +711,24 @@ fn explain_system(lang: &str) -> String {
         "You explain a piece of text the user selected from a video transcript. Be extremely concise: 1-3 sentences at most, in {lang}. \
          For a word or term give a short definition; for a phrase or claim explain it in context. No preamble such as \"This refers to...\"; use plain language. \
          The transcript may be machine-generated and contain homophone errors: infer the intended word and mention the correct spelling in your answer."
+    )
+}
+
+/// AI 搜索：把选中的文字当作问题或话题，用模型自己的知识作答；不确定的要说明，不编造来源。
+fn answer_system(lang: &str) -> String {
+    format!(
+        "You are a research assistant. The user selected a piece of text on a web page and wants to know more about it. \
+         If the text is a question, answer it directly. Otherwise explain what it means, give the key background facts, and say why it matters. \
+         Answer in {lang}, in at most 6 short sentences or bullet points. Be accurate: if you are not sure, say so plainly. \
+         Never invent sources, URLs, quotes or statistics, and you cannot browse the web, so do not claim to have searched."
+    )
+}
+
+/// 划词总结：把选中的一段话压成几个要点，不添加原文没有的内容。
+fn summarize_sel_system(lang: &str) -> String {
+    format!(
+        "Summarize the text the user selected on a web page into 2-5 short bullet points (one line each), in {lang}. \
+         Use only what the text says; do not add outside facts or opinions. Start with the main point. If the text is already very short, give a single sentence."
     )
 }
 
@@ -1365,6 +1384,15 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             let out: Vec<Value> =
                 cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
             Ok(json!({"lines": out, "failed": t.failed}))
+        }
+        "answer" => {
+            progress(0, 1)?;
+            let ctx = if req.context.trim().is_empty() { "None" } else { req.context.trim() };
+            let user = format!("PAGE TITLE: {}\nSELECTED TEXT:\n{}\n\nSURROUNDING TEXT:\n{}", req.title.trim(), req.text.trim(), ctx);
+            let system = if req.format == "summarize" { summarize_sel_system(lang) } else { answer_system(lang) };
+            let text = chat(ep, model, &pick_system(req, system), &user).await?;
+            progress(1, 1)?;
+            Ok(json!({"text": text.trim()}))
         }
         "explain" => {
             progress(0, 1)?;
