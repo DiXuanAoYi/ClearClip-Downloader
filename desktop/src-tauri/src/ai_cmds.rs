@@ -125,6 +125,13 @@ pub fn ai_pool_reset(state: St<'_>, id: String) {
 pub async fn ai_pool_test(state: St<'_>, id: String) -> AppResult<String> {
     let settings = state.settings();
     let ep = ai::entry_endpoint(&state, &settings, &id)?;
+    // 机器翻译服务：真的译一句，看接口、密钥和区域是否可用
+    if ep.cands.first().is_some_and(|c| c.kind.is_mt()) {
+        let sys = ai::translate_system(&settings.ai.target_lang);
+        let reply = ai::chat(&ep, "", &sys, "[\"Hello, world!\"]").await?;
+        let first = ai::parse_array(&reply, 1).and_then(|v| v.into_iter().next()).unwrap_or(reply);
+        return Ok(format!("Hello, world! → {first}").chars().take(80).collect());
+    }
     let reply = ai::chat(&ep, "", "You are a connectivity test. Answer with the single word: OK", "ping").await?;
     Ok(reply.chars().take(80).collect())
 }
@@ -213,6 +220,13 @@ pub fn filetr_view(state: St<'_>, path: String, target: Option<String>) -> AppRe
     let p = existing_file(&path)?;
     let t = target.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).unwrap_or_else(|| state.settings().ai.target_lang.clone());
     Ok(crate::filetr::view_for(&state.data_dir, &p, &t))
+}
+
+/// 文件翻译：把译文画到原页上，返回原页和译文页两张图（版面预览）。
+#[tauri::command]
+pub async fn filetr_page_preview(state: St<'_>, path: String, target: String, ocr: Option<String>, page: usize) -> AppResult<crate::filetr::PagePreview> {
+    let p = existing_file(&path)?;
+    crate::filetr::page_preview(&state, &p, target.trim(), ocr.as_deref().unwrap_or("vision"), page).await
 }
 
 /// 文件翻译：阅读器里改了一段译文（空白 = 去掉这段译文）。

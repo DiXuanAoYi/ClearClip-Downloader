@@ -70,3 +70,9 @@ a.lnk { color: var(--accd); cursor: pointer; text-decoration: underline; }
 #auState::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
 #auState.warn::before { background: #d9a441; } #auState.off::before { background: var(--mute); }
 #v-audio input[type=range] { padding: 0; accent-color: var(--acc); }
+
+button { transition: filter .12s, transform .08s, box-shadow .12s; }
+button:hover:not(:disabled) { filter: brightness(1.08); }
+button:active:not(:disabled) { transform: translateY(1px) scale(.985); }
+button.pressed { box-shadow: 0 0 0 3px #2f8a5766; }
+.toast { position: fixed; right: 12px; bottom: 12px; background: #1d2420; color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; box-shadow: 0 6px 18px #0004; z-index: 50; }

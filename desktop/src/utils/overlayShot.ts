@@ -23,24 +23,31 @@ export function startFont(b: ScreenBlock, p: ScreenPayload, v: View): number {
   return Math.max(p.fontMin, b.font * v.sy)
 }
 
+/** 译文框比原文的框四周多出来的边（CSS 像素）：OCR 的框贴着字，译文的字体比原文大一点或行高不同就会被裁、偏下，所以框往外扩一圈，底色也能把原文盖严。 */
+export function padOf(b: ScreenBlock, p: ScreenPayload, v: View): number {
+  return Math.min(7, Math.max(2, startFont(b, p, v) * 0.18))
+}
+
 /** 一块译文的全部样式。`font` 是按框缩过之后的字号（CSS 像素）。 */
 export function blockStyle(b: ScreenBlock, p: ScreenPayload, v: View, font: number): Record<string, string> {
+  const pad = padOf(b, p, v)
   const o: Record<string, string> = {
     position: 'absolute',
     'box-sizing': 'border-box',
-    overflow: 'hidden',
+    overflow: 'visible',
     padding: b.vertical ? '3px 1px' : '1px 3px',
     'border-radius': '3px',
     'font-family': p.fontFamily ? `${p.fontFamily}` : FONT_STACK,
     'font-weight': '600',
-    'line-height': b.vertical ? '1.15' : '1.22',
+    'line-height': b.vertical ? '1.15' : '1.2',
     'word-break': 'break-word',
     'overflow-wrap': 'anywhere',
     display: 'flex',
-    left: `${b.x * v.sx}px`,
-    top: `${b.y * v.sy}px`,
-    width: `${b.w * v.sx}px`,
-    height: `${b.h * v.sy}px`,
+    left: `${b.x * v.sx - pad}px`,
+    top: `${b.y * v.sy - pad}px`,
+    width: `${b.w * v.sx + pad * 2}px`,
+    // 用 min-height：放不下时框自己长高，不再把字裁掉
+    'min-height': `${b.h * v.sy + pad * 2}px`,
     color: b.fg,
     background: b.bg,
     opacity: String(Math.max(0.3, p.opacity / 100)),
@@ -55,7 +62,8 @@ export function blockStyle(b: ScreenBlock, p: ScreenPayload, v: View, font: numb
   o['flex-direction'] = 'column'
   // 字幕盖在原位：上下左右都居中；其余按原文的对齐方式摆
   const align = b.center ? 1 : (b.align ?? 0)
-  o['justify-content'] = b.center ? 'center' : 'flex-start'
+  // 单行（按钮、菜单项、标题）上下居中，原文在框里本来就是居中的；多行段落从上往下排
+  o['justify-content'] = b.center || (b.lines ?? 1) <= 1 ? 'center' : 'flex-start'
   o['align-items'] = align === 1 ? 'center' : align === 2 ? 'flex-end' : 'flex-start'
   o['text-align'] = align === 1 ? 'center' : align === 2 ? 'right' : 'left'
   return o

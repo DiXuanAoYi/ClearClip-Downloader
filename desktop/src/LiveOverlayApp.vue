@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText } from './api'
 import type { ScreenBlock, ScreenPayload } from './types'
-import { ORIG_STYLE, blockStyle, overlaySvg, startFont, trStyle, viewOf } from './utils/overlayShot'
+import { ORIG_STYLE, blockStyle, overlaySvg, padOf, startFont, trStyle, viewOf } from './utils/overlayShot'
 
 /** 实时屏幕翻译的贴字层：透明、点击穿透。坐标是物理像素，按窗口实际大小换算成 CSS 像素（不依赖系统报的缩放比例，
  *  多个显示器缩放不同也对得上）；字号按框自动缩到放得下。竖排原文 → 竖排译文，横排 → 横排，原文居中 / 靠右的译文也跟着排。
@@ -27,11 +27,13 @@ function style(b: ScreenBlock, p: ScreenPayload, i: number) {
   return blockStyle(b, p, view(), fonts.value[i] ?? startFont(b, p, view()))
 }
 
-/** 字号从起始值往下缩，直到内容不溢出框；不低于最小字号。返回缩好的字号。 */
+/** 字号从起始值往下缩，直到框没有被撑大（框设的是最小高度，放不下会长高）；不低于最小字号。返回缩好的字号。 */
 function fit(el: HTMLElement, b: ScreenBlock, p: ScreenPayload): number {
-  let size = startFont(b, p, view())
+  const v = view()
+  const pad = padOf(b, p, v)
+  let size = startFont(b, p, v)
   el.style.fontSize = `${size}px`
-  const over = () => (b.vertical ? el.scrollWidth > el.clientWidth + 1 : el.scrollHeight > el.clientHeight + 1)
+  const over = () => (b.vertical ? el.offsetWidth > b.w * v.sx + pad * 2 + 1 : el.offsetHeight > b.h * v.sy + pad * 2 + 1)
   let guard = 40
   while (over() && size > p.fontMin && guard-- > 0) {
     size = Math.max(p.fontMin, size - Math.max(0.5, size * 0.06))

@@ -654,6 +654,8 @@ export interface CommunityGlossary {
 export interface PoolEntry {
   id: string
   preset: string
+  /** '' / openai = 对话模型；google / microsoft / deepl / deeplx = 机器翻译 */
+  kind: string
   name: string
   baseUrl: string
   model: string
@@ -666,6 +668,7 @@ export interface PoolEntry {
 
 export interface PoolPreset {
   id: string
+  kind: string
   name: string
   baseUrl: string
   model: string

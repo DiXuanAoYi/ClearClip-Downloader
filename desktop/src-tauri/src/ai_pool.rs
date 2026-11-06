@@ -50,6 +50,8 @@ impl Task {
 #[serde(rename_all = "camelCase")]
 pub struct Preset {
     pub id: &'static str,
+    /// 服务类型：`openai`（兼容 OpenAI 的对话模型）/ `google` / `microsoft` / `deepl` / `deeplx`（机器翻译）
+    pub kind: &'static str,
     pub name: &'static str,
     pub base_url: &'static str,
     pub model: &'static str,
@@ -70,6 +72,7 @@ pub struct Preset {
 pub const PRESETS: &[Preset] = &[
     Preset {
         id: "hunyuan",
+        kind: "openai",
         name: "腾讯混元",
         base_url: "https://api.hunyuan.cloud.tencent.com/v1",
         model: "hunyuan-lite",
@@ -82,6 +85,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "siliconflow",
+        kind: "openai",
         name: "硅基流动",
         base_url: "https://api.siliconflow.cn/v1",
         model: "Qwen/Qwen2.5-7B-Instruct",
@@ -94,6 +98,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "zhipu",
+        kind: "openai",
         name: "智谱 GLM",
         base_url: "https://open.bigmodel.cn/api/paas/v4",
         model: "glm-4-flash",
@@ -106,6 +111,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "deepseek",
+        kind: "openai",
         name: "DeepSeek",
         base_url: "https://api.deepseek.com/v1",
         model: "deepseek-chat",
@@ -118,6 +124,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "dashscope",
+        kind: "openai",
         name: "阿里云百炼（通义）",
         base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         model: "qwen-plus",
@@ -130,6 +137,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "gemini",
+        kind: "openai",
         name: "Google Gemini",
         base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
         model: "gemini-2.0-flash",
@@ -142,6 +150,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "groq",
+        kind: "openai",
         name: "Groq",
         base_url: "https://api.groq.com/openai/v1",
         model: "llama-3.3-70b-versatile",
@@ -154,6 +163,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "openrouter",
+        kind: "openai",
         name: "OpenRouter",
         base_url: "https://openrouter.ai/api/v1",
         model: "deepseek/deepseek-chat-v3-0324:free",
@@ -166,6 +176,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "openai",
+        kind: "openai",
         name: "OpenAI",
         base_url: "https://api.openai.com/v1",
         model: "gpt-4o-mini",
@@ -178,6 +189,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "ollama",
+        kind: "openai",
         name: "本机 Ollama",
         base_url: "http://127.0.0.1:11434/v1",
         model: "qwen2.5:7b",
@@ -189,7 +201,60 @@ pub const PRESETS: &[Preset] = &[
         tasks: &[],
     },
     Preset {
+        id: "google-mt",
+        kind: "google",
+        name: "Google 翻译（Cloud Translation）",
+        base_url: "https://translation.googleapis.com",
+        model: "",
+        signup_url: "https://cloud.google.com/translate",
+        key_url: "https://console.cloud.google.com/apis/credentials",
+        note: "机器翻译，不是对话模型；每月前 50 万字符免费，需在 Google Cloud 开通 Cloud Translation API 并创建 API 密钥",
+        free: true,
+        local: false,
+        tasks: &["translate"],
+    },
+    Preset {
+        id: "microsoft-mt",
+        kind: "microsoft",
+        name: "微软翻译（Azure Translator）",
+        base_url: "https://api.cognitive.microsofttranslator.com",
+        model: "",
+        signup_url: "https://azure.microsoft.com/products/ai-services/ai-translator",
+        key_url: "https://portal.azure.com/#create/Microsoft.CognitiveServicesTextTranslation",
+        note: "机器翻译；F0 免费层每月 200 万字符。下面“区域”填资源所在区域（如 eastasia），全球资源可留空",
+        free: true,
+        local: false,
+        tasks: &["translate"],
+    },
+    Preset {
+        id: "deepl",
+        kind: "deepl",
+        name: "DeepL",
+        base_url: "",
+        model: "",
+        signup_url: "https://www.deepl.com/pro-api",
+        key_url: "https://www.deepl.com/account/summary",
+        note: "机器翻译；免费版每月 50 万字符（密钥以 :fx 结尾，自动走 api-free），付费版自动走 api.deepl.com",
+        free: true,
+        local: false,
+        tasks: &["translate"],
+    },
+    Preset {
+        id: "deeplx",
+        kind: "deeplx",
+        name: "DeepLX（自建 / 本机）",
+        base_url: "http://127.0.0.1:1188/translate",
+        model: "",
+        signup_url: "https://github.com/OwO-Network/DeepLX",
+        key_url: "https://github.com/OwO-Network/DeepLX",
+        note: "开源的 DeepL 转发服务，自己部署；地址填完整接口。密钥没设就留空",
+        free: true,
+        local: true,
+        tasks: &["translate"],
+    },
+    Preset {
         id: "custom",
+        kind: "openai",
         name: "自定义（兼容 OpenAI）",
         base_url: "",
         model: "",
@@ -391,7 +456,9 @@ pub struct Cand {
 }
 
 pub fn from_entry(e: &PoolEntry, usable: bool) -> Cand {
-    Cand { id: e.id.clone(), priority: e.priority, daily_limit: e.daily_limit, tasks: e.tasks.clone(), usable: usable && e.enabled }
+    // 机器翻译服务只参与翻译
+    let tasks = if crate::mt::Kind::parse(&e.kind).is_mt() { vec!["translate".to_string()] } else { e.tasks.clone() };
+    Cand { id: e.id.clone(), priority: e.priority, daily_limit: e.daily_limit, tasks, usable: usable && e.enabled }
 }
 
 /// 按规则排出可以依次尝试的服务（返回 `cands` 的下标）。

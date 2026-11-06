@@ -346,7 +346,10 @@
 
   async function loadLines() {
     setStatus('正在读取字幕…')
-    const d = await globalThis.ccVsumSource.load()
+    // 视频摘要读到文稿后会把它直接交过来，不用再读一遍
+    const seed = globalThis.ccSubLayerSeed
+    delete globalThis.ccSubLayerSeed
+    const d = seed?.lines?.length ? { lines: seed.lines, track: seed.track } : await globalThis.ccVsumSource.load()
     S.data = d
     S.lines = (d.lines || []).map((l) => ({ t: l.t, text: l.text }))
     S.trans = []
@@ -1035,7 +1038,18 @@
     ui.remove()
     delete globalThis.ccSubLayerRun
   }
-  globalThis.ccSubLayerRun = { destroy: api_destroy }
+  /** 视频摘要里换了文稿（选了别的字幕轨、转写完成、重新断句）：字幕层跟着换，译文重新来（有缓存的直接用）。 */
+  function setLines(lines, track) {
+    S.data = { ...(S.data || {}), lines, track }
+    S.lines = lines.map((l) => ({ t: l.t, text: l.text }))
+    S.trans = []
+    cap.dataset.k = ''
+    setStatus(`已载入文稿 ${S.lines.length} 句${track ? `（${track}）` : ''}`)
+    translateAll()
+    refreshMarks()
+    paint()
+  }
+  globalThis.ccSubLayerRun = { destroy: api_destroy, setLines }
 
   ;(async () => {
     loadClips()

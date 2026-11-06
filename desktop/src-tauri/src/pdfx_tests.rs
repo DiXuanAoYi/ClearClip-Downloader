@@ -257,11 +257,17 @@ fn pdfium_roundtrip_reads_blocks_and_writes_the_translation_in_place() {
     assert!(after[0].blocks.iter().all(|b| b.t <= 800.0 && b.l >= 60.0), "译文在页面里");
     // 交替模式：页数翻倍
     let out2 = dir.join("out2.pdf");
+    let plan2 = plan.clone();
     apply(&lib, &font, &src, &out2, &[plan], Mode::Interleave, |_, _| {}).unwrap();
     assert_eq!(extract(&lib, &out2).unwrap().len(), 2);
     // 渲染一页做扫描识字用
     let (w, h, rgba) = render_page(&lib, &src, 0, 400).unwrap();
     assert_eq!((w, rgba.len()), (400, w * h * 4));
     assert!(png_of_rgba(w, h, &rgba).unwrap().starts_with(&[0x89, b'P', b'N', b'G']));
+    // 版面预览：只渲染一页的译文效果，和原页不一样，且不动原文件
+    let (tw, th, trgba) = render_translated(&lib, &font, &src, 0, &plan2, 400).unwrap();
+    assert_eq!((tw, th), (w, h));
+    assert_ne!(trgba, rgba, "译文页要和原页不同");
+    assert_eq!(render_page(&lib, &src, 0, 400).unwrap().2, rgba, "原文件不变");
     let _ = std::fs::remove_dir_all(&dir);
 }

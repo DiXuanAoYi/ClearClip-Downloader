@@ -26,6 +26,12 @@ const REASON: Record<string, string> = { quota: '额度用完', rate: '请求太
 
 const addable = computed(() => presets.value.filter((p) => !ai.value.pool.some((e) => e.preset === p.id)))
 const presetOf = (e: PoolEntry) => presets.value.find((p) => p.id === e.preset)
+// 机器翻译服务（Google / 微软 / DeepL / DeepLX）：不是对话模型，没有“模型名”，只用于翻译
+const isMt = (e: PoolEntry) => ['google', 'microsoft', 'deepl', 'deeplx'].includes(e.kind)
+const baseLabel = (e: PoolEntry) => (!isMt(e) ? '接口地址' : e.kind === 'deeplx' ? '接口地址（完整，必填）' : '接口地址（留空 = 官方）')
+const basePlaceholder = (e: PoolEntry) => (e.kind === 'deeplx' ? 'http://127.0.0.1:1188/translate' : isMt(e) ? '官方地址' : '')
+const chatPresets = computed(() => addable.value.filter((p) => !['google', 'microsoft', 'deepl', 'deeplx'].includes(p.kind)))
+const mtPresets = computed(() => addable.value.filter((p) => ['google', 'microsoft', 'deepl', 'deeplx'].includes(p.kind)))
 
 async function refresh() {
   const list = await api.aiPoolStatus().catch(() => [] as PoolStatus[])
@@ -45,10 +51,10 @@ function nextId(base: string) {
   return id
 }
 function addPreset(p: PoolPreset) {
-  ai.value.pool.push({ id: nextId(p.id), preset: p.id, name: p.name, baseUrl: p.baseUrl, model: p.model, sttModel: STT_MODELS[p.id] || '', enabled: true, tasks: [...p.tasks], priority: 10, dailyLimit: 0 })
+  ai.value.pool.push({ id: nextId(p.id), preset: p.id, kind: p.kind === 'openai' ? '' : p.kind, name: p.name, baseUrl: p.baseUrl, model: p.model, sttModel: STT_MODELS[p.id] || '', enabled: true, tasks: [...p.tasks], priority: 10, dailyLimit: 0 })
 }
 function addCustom() {
-  ai.value.pool.push({ id: nextId('custom'), preset: 'custom', name: '自定义服务', baseUrl: '', model: '', sttModel: '', enabled: true, tasks: [], priority: 20, dailyLimit: 0 })
+  ai.value.pool.push({ id: nextId('custom'), preset: 'custom', kind: '', name: '自定义服务', baseUrl: '', model: '', sttModel: '', enabled: true, tasks: [], priority: 20, dailyLimit: 0 })
 }
 function remove(e: PoolEntry) {
   api.secretSet(`ai.pool.${e.id}`, '').catch(() => {})
@@ -155,7 +161,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
   const s = status.value[e.id]
   if (!e.enabled) return { text: '已停用', cls: 'mute' }
   if (!s) return { text: '—', cls: 'mute' }
-  if (!s.hasKey && !presetOf(e)?.local) return { text: '未填密钥', cls: 'bad' }
+  if (!s.hasKey && !presetOf(e)?.local && e.kind !== 'deeplx') return { text: '未填密钥', cls: 'bad' }
   if (s.badKey) return { text: '密钥无效', cls: 'bad' }
   if (s.coolingSecs > 0) {
     const m = Math.ceil(s.coolingSecs / 60)
@@ -185,9 +191,20 @@ function state(e: PoolEntry): { text: string; cls: string } {
       </div>
       <small v-if="presetOf(e)?.note" class="mute">{{ presetOf(e)?.note }}</small>
       <small v-if="status[e.id]?.lastError" class="err">最近错误：{{ status[e.id].lastError }}</small>
+      <small v-if="isMt(e)" class="mute mtnote">机器翻译服务：只用于翻译字幕 / 网页 / 文件 / 屏幕，不能做摘要和问答；不支持术语库和 AI 专家（要术语一致时把对话模型排在它前面）。</small>
       <div class="grid">
-        <div class="field"><label>接口地址</label><el-input v-model="e.baseUrl" size="small" class="mono" /></div>
-        <div class="field"><label>模型 · <a href="#" @click.prevent="openProbe(e)">检测可用模型</a></label><el-input v-model="e.model" size="small" class="mono" /></div>
+        <div class="field">
+          <label>{{ baseLabel(e) }}</label>
+          <el-input v-model="e.baseUrl" size="small" class="mono" :placeholder="basePlaceholder(e)" />
+        </div>
+        <div v-if="!isMt(e)" class="field">
+          <label>模型 · <a href="#" @click.prevent="openProbe(e)">检测可用模型</a></label>
+          <el-input v-model="e.model" size="small" class="mono" />
+        </div>
+        <div v-else-if="e.kind === 'microsoft'" class="field">
+          <label>区域（Azure 资源所在区域，如 eastasia；全球资源留空）</label>
+          <el-input v-model="e.model" size="small" class="mono" placeholder="eastasia" />
+        </div>
       </div>
       <div class="field">
         <label>API 密钥 <span v-if="status[e.id]?.hasKey" class="ok">已保存</span>
@@ -197,7 +214,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
           </template>
         </label>
         <div class="keyrow">
-          <el-input v-model="keys[e.id]" size="small" type="password" show-password :placeholder="presetOf(e)?.local ? '本机服务可留空' : status[e.id]?.hasKey ? '输入新密钥可替换' : '粘贴 API 密钥'" />
+          <el-input v-model="keys[e.id]" size="small" type="password" show-password :placeholder="presetOf(e)?.local || e.kind === 'deeplx' ? '没设密钥可留空' : status[e.id]?.hasKey ? '输入新密钥可替换' : '粘贴 API 密钥'" />
           <el-button size="small" :disabled="!(keys[e.id] || '').trim()" @click="saveKey(e)">保存</el-button>
           <el-button v-if="status[e.id]?.hasKey" size="small" @click="keys[e.id] = ''; saveKey(e)">清除</el-button>
         </div>
@@ -205,7 +222,8 @@ function state(e: PoolEntry): { text: string; cls: string } {
       <div class="grid">
         <div class="field">
           <label>适用任务（不选 = 全部）</label>
-          <el-select v-model="e.tasks" multiple size="small" collapse-tags placeholder="全部任务"><el-option v-for="t in TASKS" :key="t.v" :value="t.v" :label="t.l" /></el-select>
+          <el-select v-if="!isMt(e)" v-model="e.tasks" multiple size="small" collapse-tags placeholder="全部任务"><el-option v-for="t in TASKS" :key="t.v" :value="t.v" :label="t.l" /></el-select>
+          <el-input v-else size="small" model-value="翻译（固定）" disabled />
         </div>
         <div v-if="e.tasks.includes('stt')" class="field">
           <label>语音转文字模型（云端字幕识别用）</label>
@@ -267,7 +285,8 @@ function state(e: PoolEntry): { text: string; cls: string } {
         <el-button size="small" type="primary">添加服务</el-button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item v-for="p in addable" :key="p.id" :command="p.id">{{ p.name }}<span v-if="p.free" class="tag">有免费额度</span><span v-if="p.local" class="tag">本机</span></el-dropdown-item>
+            <el-dropdown-item v-for="p in chatPresets" :key="p.id" :command="p.id">{{ p.name }}<span v-if="p.free" class="tag">有免费额度</span><span v-if="p.local" class="tag">本机</span></el-dropdown-item>
+            <el-dropdown-item v-for="(p, i) in mtPresets" :key="p.id" :command="p.id" :divided="i === 0">{{ p.name }}<span class="tag">机器翻译</span><span v-if="p.free" class="tag">有免费额度</span></el-dropdown-item>
             <el-dropdown-item command="custom" divided>自定义（兼容 OpenAI 的接口）</el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -316,6 +335,7 @@ h3 { margin: 0; font-size: 12px; color: var(--cc-mute); }
 .err { color: var(--cc-err); word-break: break-all; }
 .tag { margin-left: 8px; font-size: 11px; color: var(--cc-ok); }
 .empty { padding: 8px 0; }
+.mtnote { display: block }
 .supa { border-top: 1px solid var(--cc-border, rgba(128,128,128,.25)); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .pr-top { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
 .pr-bar { display: flex; gap: 6px; align-items: center; margin: 10px 0; flex-wrap: wrap; }

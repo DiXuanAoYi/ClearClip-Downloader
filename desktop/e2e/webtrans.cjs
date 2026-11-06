@@ -252,6 +252,34 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     await page.close()
   }
 
+  // ---- 翻译窗：页面上的悬浮小窗
+  {
+    const { page } = await open('https://news.test/', { cfg: { target: 'ja', compare: false } })
+    await page.evaluate(() => window.__cmd('box', { text: 'Hello world' }))
+    const box = () => page.evaluate(() => { const r = window.__roots.find((x) => x.querySelector('.tbox')); return r ? { txt: r.querySelector('.tbox').innerText, ta: r.querySelector('textarea').value, pos: r.querySelector('.tbox').getBoundingClientRect().toJSON() } : null })
+    await page.waitForFunction(() => window.__roots?.some((x) => x.querySelector('.tbox .res .txt')?.textContent.includes('Hello')), null, { timeout: 8000 })
+    const b = await box()
+    ok('Alt+D：页面上出现悬浮翻译窗并带入文字', b && b.ta === 'Hello world')
+    ok('自动翻译出结果', /译:Hello world/.test(b.txt), b.txt)
+    ok('翻译窗用的是设置里的目标语言', await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-tr').target === 'ja'))
+    // 改文字再翻译
+    await page.evaluate(() => { const r = window.__roots.find((x) => x.querySelector('.tbox')); const t = r.querySelector('textarea'); t.value = 'Good morning'; [...r.querySelectorAll('button')].find((x) => x.textContent === '翻译').click() })
+    await page.waitForFunction(() => window.__roots?.some((x) => x.querySelector('.tbox')?.innerText.includes('Good morning')), null, { timeout: 8000 })
+    ok('改了文字重新翻译', (await box()).txt.includes('译:Good morning'))
+    // 拖动标题栏
+    const p0 = (await box()).pos
+    await page.mouse.move(p0.x + 40, p0.y + 14)
+    await page.mouse.down()
+    await page.mouse.move(p0.x - 160, p0.y + 124, { steps: 4 })
+    await page.mouse.up()
+    const p1 = (await box()).pos
+    ok('可以拖动', Math.abs(p1.x - (p0.x - 200)) < 6 && Math.abs(p1.y - (p0.y + 110)) < 6, JSON.stringify([p0.x, p0.y, p1.x, p1.y]))
+    // 关闭
+    await page.evaluate(() => { const r = window.__roots.find((x) => x.querySelector('.tbox')); [...r.querySelectorAll('.hd button')][0].click() })
+    ok('点 ✕ 关闭', (await box()) === null)
+    await page.close()
+  }
+
   // ---- 悬停：按住 Ctrl 不松手，鼠标扫过哪一段就翻译哪一段
   {
     const { page } = await open('https://news.test/', { cfg: { target: 'ja' } })
