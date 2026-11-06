@@ -593,6 +593,51 @@ impl Mode {
     }
 }
 
+/// 把一页的译文写上去（删旧文字、盖底色、按框换行写译文）。
+fn edit_page(page: &mut PdfPage, font: PdfFontToken, plan: &PagePlan) {
+    // 先删旧文字（序号大的先删，前面的序号才不会错位）
+    let mut gone: Vec<usize> = plan.items.iter().flat_map(|it| it.remove.iter().copied()).collect();
+    gone.sort_unstable_by(|a, b| b.cmp(a));
+    gone.dedup();
+    for i in gone {
+        let _ = page.objects_mut().remove_object_at_index(i);
+    }
+    for it in &plan.items {
+        let (l, b, r, t) = it.rect;
+        if let Some(bg) = it.bg {
+            let rect = PdfRect::new(PdfPoints::new(b - 1.5), PdfPoints::new(l - 1.5), PdfPoints::new(t + 1.5), PdfPoints::new(r + 1.5));
+            let _ = page.objects_mut().create_path_object_rect(rect, None, None, Some(PdfColor::new(bg[0], bg[1], bg[2], 255)));
+        }
+        let f = fit(&it.text, (r - l).max(it.size * 2.0), t - b, it.size, 6.0);
+        let color = PdfColor::new(it.rgb[0], it.rgb[1], it.rgb[2], 255);
+        for (n, line) in f.lines.iter().enumerate() {
+            if line.is_empty() {
+                continue;
+            }
+            let y = t - f.size * 0.95 - n as f32 * f.leading;
+            if let Ok(mut o) = page.objects_mut().create_text_object(PdfPoints::new(l), PdfPoints::new(y), line, font, PdfPoints::new(f.size)) {
+                let _ = o.set_fill_color(color);
+            }
+        }
+    }
+}
+
+/// 只渲染一页的译文效果（不存文件）：给“版面预览”用。
+pub fn render_translated(lib: &Path, font_bytes: &[u8], input: &Path, index: usize, plan: &PagePlan, target_w: i32) -> AppResult<(usize, usize, Vec<u8>)> {
+    let pdfium = bind(lib)?;
+    let mut doc = pdfium.load_pdf_from_file(input, None).map_err(perr)?;
+    let font = doc.fonts_mut().load_true_type_from_bytes(font_bytes, true).map_err(|e| AppError::msg(format!("译文字体嵌入失败：{e}")))?;
+    let mut page = doc.pages().get(index as PdfPageIndex).map_err(perr)?;
+    edit_page(&mut page, font, plan);
+    let bmp = page.render_with_config(&PdfRenderConfig::new().set_target_width(target_w)).map_err(perr)?;
+    let (w, h) = (bmp.width() as usize, bmp.height() as usize);
+    let mut rgba = Vec::with_capacity(w * h * 4);
+    for px in bmp.as_raw_bytes().chunks_exact(4) {
+        rgba.extend_from_slice(&[px[2], px[1], px[0], 255]);
+    }
+    Ok((w, h, rgba))
+}
+
 /// 按计划改写 PDF 并存到 `out`。`plans` 和页一一对应（可以比页数少）。
 pub fn apply(lib: &Path, font_bytes: &[u8], input: &Path, out: &Path, plans: &[PagePlan], mode: Mode, mut progress: impl FnMut(usize, usize)) -> AppResult<()> {
     let pdfium = bind(lib)?;
@@ -605,31 +650,7 @@ pub fn apply(lib: &Path, font_bytes: &[u8], input: &Path, out: &Path, plans: &[P
             continue;
         }
         let mut page = doc.pages().get(pi as PdfPageIndex).map_err(perr)?;
-        // 先删旧文字（序号大的先删，前面的序号才不会错位）
-        let mut gone: Vec<usize> = plan.items.iter().flat_map(|it| it.remove.iter().copied()).collect();
-        gone.sort_unstable_by(|a, b| b.cmp(a));
-        gone.dedup();
-        for i in gone {
-            let _ = page.objects_mut().remove_object_at_index(i);
-        }
-        for it in &plan.items {
-            let (l, b, r, t) = it.rect;
-            if let Some(bg) = it.bg {
-                let rect = PdfRect::new(PdfPoints::new(b - 1.5), PdfPoints::new(l - 1.5), PdfPoints::new(t + 1.5), PdfPoints::new(r + 1.5));
-                let _ = page.objects_mut().create_path_object_rect(rect, None, None, Some(PdfColor::new(bg[0], bg[1], bg[2], 255)));
-            }
-            let f = fit(&it.text, (r - l).max(it.size * 2.0), t - b, it.size, 6.0);
-            let color = PdfColor::new(it.rgb[0], it.rgb[1], it.rgb[2], 255);
-            for (n, line) in f.lines.iter().enumerate() {
-                if line.is_empty() {
-                    continue;
-                }
-                let y = t - f.size * 0.95 - n as f32 * f.leading;
-                if let Ok(mut o) = page.objects_mut().create_text_object(PdfPoints::new(l), PdfPoints::new(y), line, font, PdfPoints::new(f.size)) {
-                    let _ = o.set_fill_color(color);
-                }
-            }
-        }
+        edit_page(&mut page, font, plan);
     }
     progress(total, total);
     match mode {

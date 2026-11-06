@@ -1,0 +1,279 @@
+//! 机器翻译服务（Google Cloud Translation / 微软 Azure Translator / DeepL / DeepLX）。
+//!
+//! 它们不是对话接口，不能用“兼容 OpenAI”那一栏填。这里把它们接进模型池：翻译字幕、网页翻译、文件翻译、
+//! 屏幕翻译走池子时，如果挑中的是机器翻译服务，就改调它们各自的接口；摘要、问答这类需要“理解”的任务不会用到它们。
+//! 机器翻译用不上术语库和 AI 专家（接口不支持提示词），需要术语一致时把对话模型排在它前面。
+
+use std::time::Duration;
+
+use serde_json::{json, Value};
+
+use crate::error::{AppError, AppResult};
+
+/// 池条目的服务类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// 兼容 OpenAI 的对话接口（默认）
+    Chat,
+    Google,
+    Microsoft,
+    DeepL,
+    DeepLX,
+}
+
+impl Kind {
+    pub fn parse(s: &str) -> Kind {
+        match s {
+            "google" => Kind::Google,
+            "microsoft" => Kind::Microsoft,
+            "deepl" => Kind::DeepL,
+            "deeplx" => Kind::DeepLX,
+            _ => Kind::Chat,
+        }
+    }
+
+    pub fn is_mt(self) -> bool {
+        self != Kind::Chat
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Chat => "对话模型",
+            Kind::Google => "Google 翻译",
+            Kind::Microsoft => "微软翻译",
+            Kind::DeepL => "DeepL",
+            Kind::DeepLX => "DeepLX",
+        }
+    }
+}
+
+/// 各家的目标语言代码：(Google, 微软, DeepL)。空串 = 这家不支持。
+fn codes(tag: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    Some(match tag {
+        "zh" => ("zh-CN", "zh-Hans", "ZH-HANS"),
+        "zh-Hant" => ("zh-TW", "zh-Hant", "ZH-HANT"),
+        "en" => ("en", "en", "EN-US"),
+        "ja" => ("ja", "ja", "JA"),
+        "ko" => ("ko", "ko", "KO"),
+        "fr" => ("fr", "fr", "FR"),
+        "de" => ("de", "de", "DE"),
+        "es" => ("es", "es", "ES"),
+        "ru" => ("ru", "ru", "RU"),
+        "pt" => ("pt", "pt", "PT-BR"),
+        "it" => ("it", "it", "IT"),
+        "ar" => ("ar", "ar", "AR"),
+        "th" => ("th", "th", ""),
+        "vi" => ("vi", "vi", ""),
+        "id" => ("id", "id", "ID"),
+        "tr" => ("tr", "tr", "TR"),
+        "pl" => ("pl", "pl", "PL"),
+        "nl" => ("nl", "nl", "NL"),
+        "uk" => ("uk", "uk", "UK"),
+        "hi" => ("hi", "hi", ""),
+        _ => return None,
+    })
+}
+
+/// 目标语言（“简体中文”“English”…）→ 这家服务认的代码。
+pub fn target_code(kind: Kind, lang: &str) -> AppResult<&'static str> {
+    let tag = crate::ai::lang_tag(lang);
+    let (g, m, d) = codes(tag).ok_or_else(|| AppError::invalid(format!("机器翻译服务不认识目标语言“{lang}”，请选常见语言，或把对话模型排在前面。")))?;
+    let c = match kind {
+        Kind::Google => g,
+        Kind::Microsoft => m,
+        Kind::DeepL | Kind::DeepLX => d,
+        Kind::Chat => "",
+    };
+    if c.is_empty() {
+        return Err(AppError::invalid(format!("{} 不支持翻译成“{lang}”。", kind.label())));
+    }
+    Ok(c)
+}
+
+/// 池子发来的请求如果是“把一个 JSON 数组里的文字译成某种语言”，取出目标语言；其他请求（术语提取、摘要、看图）返回 None。
+/// 翻译字幕 / 网页翻译 / 屏幕翻译的系统提示词都含 “into {lang}” 和 “JSON array”。
+pub fn translate_request(system: &str, user: &Value) -> Option<(String, Vec<String>)> {
+    if !system.contains("JSON array") {
+        return None;
+    }
+    let lang = system.split(" into ").nth(1)?;
+    let end = lang.find([';', '.', '\n']).unwrap_or(lang.len());
+    let lang = lang[..end].trim().trim_end_matches(',').to_string();
+    if lang.is_empty() || lang.chars().count() > 40 {
+        return None;
+    }
+    let texts: Vec<String> = serde_json::from_str(user.as_str()?).ok()?;
+    if texts.is_empty() {
+        return None;
+    }
+    Some((lang, texts))
+}
+
+fn strip_slash(s: &str) -> &str {
+    s.trim_end_matches('/')
+}
+
+/// 填了完整地址就用，没填用官方地址。
+fn base_or<'a>(base: &'a str, default: &'a str) -> &'a str {
+    if base.trim().is_empty() {
+        default
+    } else {
+        strip_slash(base.trim())
+    }
+}
+
+pub(crate) fn http_error(kind: Kind, status: u16, body: &str) -> AppError {
+    let mut e = crate::ai::api_error(status, body);
+    if kind == Kind::DeepL && status == 456 {
+        e = AppError::new(crate::error::ErrorKind::RateLimited, "DeepL 本月免费字数用完了（456）。");
+    }
+    if status == 403 && kind == Kind::Google {
+        e = AppError::new(
+            crate::error::ErrorKind::NeedLogin,
+            format!("Google 翻译密钥无效，或没有开通 Cloud Translation API（403）：{}", body.chars().take(160).collect::<String>()),
+        );
+    }
+    e
+}
+
+async fn send_json(client: &reqwest::Client, kind: Kind, req: reqwest::RequestBuilder) -> AppResult<Value> {
+    let resp = req
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await
+        .map_err(|e| AppError::new(crate::error::ErrorKind::Network, format!("无法连接{}：{e}", kind.label())))?;
+    let _ = client;
+    let status = resp.status().as_u16();
+    let text = resp.text().await.map_err(|e| AppError::new(crate::error::ErrorKind::Network, format!("读取响应失败：{e}")))?;
+    if !(200..300).contains(&status) {
+        return Err(http_error(kind, status, &text));
+    }
+    serde_json::from_str(&text).map_err(|_| AppError::parser(format!("{} 返回的不是有效的 JSON。", kind.label())))
+}
+
+/// 一批文字译成目标语言；返回条数和输入一致。`base` 空 = 官方地址，`region` 只有微软用（Azure 资源所在区域）。
+pub async fn translate(
+    client: &reqwest::Client,
+    kind: Kind,
+    base: &str,
+    key: Option<&str>,
+    region: &str,
+    lang: &str,
+    texts: &[String],
+) -> AppResult<Vec<String>> {
+    let to = target_code(kind, lang)?;
+    let need_key = || key.filter(|k| !k.is_empty()).ok_or_else(|| AppError::invalid(format!("请先填写 {} 的密钥。", kind.label())));
+    let out: Vec<String> = match kind {
+        Kind::Google => {
+            let key = need_key()?;
+            let url = format!("{}/language/translate/v2", base_or(base, "https://translation.googleapis.com"));
+            let v = send_json(client, kind, client.post(url).query(&[("key", key)]).json(&json!({"q": texts, "target": to, "format": "text"}))).await?;
+            v.pointer("/data/translations")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().map(|t| html_unescape(t.get("translatedText").and_then(Value::as_str).unwrap_or(""))).collect())
+                .ok_or_else(|| AppError::parser("Google 翻译没有返回译文。"))?
+        }
+        Kind::Microsoft => {
+            let key = need_key()?;
+            let url = format!("{}/translate", base_or(base, "https://api.cognitive.microsofttranslator.com"));
+            let body: Vec<Value> = texts.iter().map(|t| json!({"Text": t})).collect();
+            let mut req = client.post(url).query(&[("api-version", "3.0"), ("to", to)]).header("Ocp-Apim-Subscription-Key", key).json(&body);
+            if !region.trim().is_empty() {
+                req = req.header("Ocp-Apim-Subscription-Region", region.trim());
+            }
+            let v = send_json(client, kind, req).await?;
+            v.as_array()
+                .map(|a| a.iter().map(|t| t.pointer("/translations/0/text").and_then(Value::as_str).unwrap_or("").to_string()).collect())
+                .ok_or_else(|| AppError::parser("微软翻译没有返回译文。"))?
+        }
+        Kind::DeepL => {
+            let key = need_key()?;
+            // 免费版密钥以 :fx 结尾，走 api-free；付费版走 api
+            let default = if key.ends_with(":fx") { "https://api-free.deepl.com" } else { "https://api.deepl.com" };
+            let url = format!("{}/v2/translate", base_or(base, default));
+            let v = send_json(
+                client,
+                kind,
+                client.post(url).header("Authorization", format!("DeepL-Auth-Key {key}")).json(&json!({"text": texts, "target_lang": to})),
+            )
+            .await?;
+            v.get("translations")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().map(|t| t.get("text").and_then(Value::as_str).unwrap_or("").to_string()).collect())
+                .ok_or_else(|| AppError::parser("DeepL 没有返回译文。"))?
+        }
+        Kind::DeepLX => {
+            // DeepLX 一次只译一段：地址填完整接口，如 http://127.0.0.1:1188/translate
+            if base.trim().is_empty() {
+                return Err(AppError::invalid("DeepLX 需要填接口地址，例如 http://127.0.0.1:1188/translate。"));
+            }
+            let mut out = Vec::with_capacity(texts.len());
+            for t in texts {
+                let mut req = client.post(base.trim()).json(&json!({"text": t, "source_lang": "auto", "target_lang": to.split('-').next().unwrap_or(to)}));
+                if let Some(k) = key.filter(|k| !k.is_empty()) {
+                    req = req.header("Authorization", format!("Bearer {k}"));
+                }
+                let v = send_json(client, kind, req).await?;
+                let tr = v.get("data").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or_else(|| {
+                    AppError::parser(format!("DeepLX 没有返回译文：{}", v.get("message").and_then(Value::as_str).unwrap_or("请检查接口地址")))
+                })?;
+                out.push(tr.to_string());
+            }
+            out
+        }
+        Kind::Chat => return Err(AppError::invalid("不是机器翻译服务。")),
+    };
+    if out.len() != texts.len() {
+        return Err(AppError::parser(format!("{} 返回的条数不对（要 {}，给了 {}）。", kind.label(), texts.len(), out.len())));
+    }
+    Ok(out)
+}
+
+/// Google v2 即使 `format=text` 也会把 `'` `&` 等写成 HTML 实体。
+fn html_unescape(s: &str) -> String {
+    s.replace("&#39;", "'").replace("&quot;", "\"").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn picks_the_target_language_out_of_our_translation_prompts() {
+        let sys = crate::ai::translate_system("简体中文");
+        let (lang, texts) = translate_request(&sys, &json!("[\"Hello\",\"World\"]")).unwrap();
+        assert_eq!(lang, "简体中文");
+        assert_eq!(texts, ["Hello", "World"]);
+        let web = crate::vsum::webtrans_system("English");
+        assert_eq!(translate_request(&web, &json!("[\"你好\"]")).unwrap().0, "English");
+        // 术语提取、摘要、看图都不是“译一批文字”，机器翻译不接
+        assert!(translate_request("You extract terms. Reply with a JSON array.", &json!("some page text")).is_none());
+        assert!(translate_request(&sys, &json!([{"type": "image_url"}])).is_none());
+        assert!(translate_request("Summarize the video", &json!("[\"x\"]")).is_none());
+    }
+
+    #[test]
+    fn maps_language_names_to_each_providers_code() {
+        assert_eq!(target_code(Kind::Google, "简体中文").unwrap(), "zh-CN");
+        assert_eq!(target_code(Kind::Microsoft, "简体中文").unwrap(), "zh-Hans");
+        assert_eq!(target_code(Kind::DeepL, "简体中文").unwrap(), "ZH-HANS");
+        assert_eq!(target_code(Kind::Microsoft, "繁体中文").unwrap(), "zh-Hant");
+        assert_eq!(target_code(Kind::DeepL, "English").unwrap(), "EN-US");
+        assert_eq!(target_code(Kind::Google, "日语").unwrap(), "ja");
+        assert!(target_code(Kind::DeepL, "泰语").is_err(), "DeepL 不支持泰语");
+        assert!(target_code(Kind::Google, "克林贡语").is_err());
+    }
+
+    #[test]
+    fn parses_kinds() {
+        assert_eq!(Kind::parse("deepl"), Kind::DeepL);
+        assert_eq!(Kind::parse(""), Kind::Chat);
+        assert!(Kind::parse("google").is_mt());
+        assert!(!Kind::parse("openai").is_mt());
+    }
+
+    #[test]
+    fn unescapes_google_entities() {
+        assert_eq!(html_unescape("It&#39;s &quot;ok&quot; &amp; fine"), "It's \"ok\" & fine");
+    }
+}

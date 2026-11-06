@@ -44,6 +44,8 @@ pub struct Candidate {
     pub key: Option<String>,
     pub model: String,
     pub client: reqwest::Client,
+    /// 机器翻译服务类型；`Chat` = 普通对话模型
+    pub kind: crate::mt::Kind,
 }
 
 impl Endpoint {
@@ -75,12 +77,23 @@ pub fn chat_endpoint_for(st: &AppState, settings: &Settings, task: Task) -> AppR
         base: String,
         model: String,
         key: Option<String>,
+        kind: crate::mt::Kind,
     }
     let mut rows: Vec<Row> = Vec::new();
     let mut cands: Vec<ai_pool::Cand> = Vec::new();
     for e in &ai.pool {
         let key = st.vault.get(&ai_pool::key_name(&e.id)).filter(|k| !k.is_empty());
-        let usable = !e.base_url.is_empty() && !e.model.is_empty() && (key.is_some() || is_local_url(&e.base_url));
+        let kind = crate::mt::Kind::parse(&e.kind);
+        let usable = if kind.is_mt() {
+            // 机器翻译：要密钥（DeepLX 自建的可以没有，但要有地址）
+            if kind == crate::mt::Kind::DeepLX {
+                !e.base_url.is_empty()
+            } else {
+                key.is_some()
+            }
+        } else {
+            !e.base_url.is_empty() && !e.model.is_empty() && (key.is_some() || is_local_url(&e.base_url))
+        };
         cands.push(ai_pool::from_entry(e, usable));
         rows.push(Row {
             id: e.id.clone(),
@@ -88,13 +101,14 @@ pub fn chat_endpoint_for(st: &AppState, settings: &Settings, task: Task) -> AppR
             base: e.base_url.clone(),
             model: e.model.clone(),
             key,
+            kind,
         });
     }
     if !ai.base_url.is_empty() && !ai.model.is_empty() {
         let key = st.vault.get(KEY_CHAT).filter(|k| !k.is_empty());
         let usable = key.is_some() || is_local_url(&ai.base_url);
         cands.push(ai_pool::Cand { id: "default".into(), priority: 500, daily_limit: 0, tasks: vec![], usable });
-        rows.push(Row { id: "default".into(), name: "默认".into(), base: ai.base_url.clone(), model: ai.model.clone(), key });
+        rows.push(Row { id: "default".into(), name: "默认".into(), base: ai.base_url.clone(), model: ai.model.clone(), key, kind: crate::mt::Kind::Chat });
     }
     if ai.pool.is_empty() {
         // 没有用池：保持原来的行为和提示
@@ -119,8 +133,10 @@ pub fn chat_endpoint_for(st: &AppState, settings: &Settings, task: Task) -> AppR
     let mut out = Vec::new();
     for i in order {
         let r = &rows[i];
-        let client = st.net.clients_for(&settings.network, &r.base)?.download;
-        out.push(Candidate { id: r.id.clone(), name: r.name.clone(), base: r.base.clone(), key: r.key.clone(), model: r.model.clone(), client });
+        // 机器翻译服务用官方地址时 base 是空的，按官方域名选网络通道
+        let host = if r.base.is_empty() { "https://api.deepl.com" } else { r.base.as_str() };
+        let client = st.net.clients_for(&settings.network, host)?.download;
+        out.push(Candidate { id: r.id.clone(), name: r.name.clone(), base: r.base.clone(), key: r.key.clone(), model: r.model.clone(), client, kind: r.kind });
     }
     let attempts = if out.len() == 1 { 3 } else { 1 };
     let first = &out[0];
@@ -162,6 +178,7 @@ pub fn stt_pool_endpoint(st: &AppState, settings: &Settings) -> Option<Endpoint>
             key,
             model: e.stt_model.clone(),
             client: clients.download,
+            kind: crate::mt::Kind::Chat,
         });
     }
     if cands.is_empty() {
@@ -180,6 +197,7 @@ pub fn stt_pool_endpoint(st: &AppState, settings: &Settings) -> Option<Endpoint>
             key: r.key.clone(),
             model: r.model.clone(),
             client: r.client.clone(),
+            kind: crate::mt::Kind::Chat,
         });
     }
     let first = out.first()?;
@@ -282,21 +300,37 @@ pub(crate) async fn send(ep: &Endpoint, path: &str, content_type: &str, body: Ve
 /// 只用池里指定的一个服务（测试按钮用）；`default` 表示原来的默认设置。
 pub fn entry_endpoint(st: &AppState, settings: &Settings, id: &str) -> AppResult<Endpoint> {
     let ai = &settings.ai;
-    let (name, base, model, key) = if id == "default" {
-        ("默认".to_string(), ai.base_url.clone(), ai.model.clone(), st.vault.get(KEY_CHAT))
+    let (name, base, model, key, kind) = if id == "default" {
+        ("默认".to_string(), ai.base_url.clone(), ai.model.clone(), st.vault.get(KEY_CHAT), crate::mt::Kind::Chat)
     } else {
         let e = ai.pool.iter().find(|e| e.id == id).ok_or_else(|| AppError::not_found("池里没有这个服务。"))?;
-        (if e.name.is_empty() { e.id.clone() } else { e.name.clone() }, e.base_url.clone(), e.model.clone(), st.vault.get(&ai_pool::key_name(&e.id)))
+        (
+            if e.name.is_empty() { e.id.clone() } else { e.name.clone() },
+            e.base_url.clone(),
+            e.model.clone(),
+            st.vault.get(&ai_pool::key_name(&e.id)),
+            crate::mt::Kind::parse(&e.kind),
+        )
     };
-    if base.is_empty() || model.is_empty() {
-        return Err(AppError::invalid("请先填写接口地址和模型名称。"));
-    }
     let key = key.filter(|k| !k.is_empty());
-    if key.is_none() && !is_local_url(&base) {
-        return Err(AppError::invalid("请先填写 API 密钥。"));
+    if kind.is_mt() {
+        if key.is_none() && kind != crate::mt::Kind::DeepLX {
+            return Err(AppError::invalid("请先填写 API 密钥。"));
+        }
+        if kind == crate::mt::Kind::DeepLX && base.is_empty() {
+            return Err(AppError::invalid("请先填写 DeepLX 的接口地址。"));
+        }
+    } else {
+        if base.is_empty() || model.is_empty() {
+            return Err(AppError::invalid("请先填写接口地址和模型名称。"));
+        }
+        if key.is_none() && !is_local_url(&base) {
+            return Err(AppError::invalid("请先填写 API 密钥。"));
+        }
     }
-    let client = st.net.clients_for(&settings.network, &base)?.download;
-    let cand = Candidate { id: id.to_string(), name, base: base.clone(), key: key.clone(), model, client: client.clone() };
+    let host = if base.is_empty() { "https://api.deepl.com" } else { base.as_str() };
+    let client = st.net.clients_for(&settings.network, host)?.download;
+    let cand = Candidate { id: id.to_string(), name, base: base.clone(), key: key.clone(), model, client: client.clone(), kind };
     Ok(Endpoint { base, key, client, retry_ms: 1000, attempts: 1, cands: vec![cand], pool: Some(st.ai_pool.clone()) })
 }
 
@@ -323,6 +357,31 @@ async fn chat_msg(ep: &Endpoint, model: &str, system: &str, user: Value) -> AppR
     let mut tried: Vec<String> = Vec::new();
     let mut last: Option<AppError> = None;
     for c in &ep.cands {
+        if c.kind.is_mt() {
+            // 机器翻译服务：只接“把一批文字译成某种语言”的请求，其他（术语提取、看图、摘要）跳过换下一家
+            let Some((lang, texts)) = crate::mt::translate_request(system, &user) else { continue };
+            if let Err(e) = crate::mt::target_code(c.kind, &lang) {
+                tried.push(format!("{}：{}", c.name, e.message));
+                last = Some(e);
+                continue;
+            }
+            match crate::mt::translate(&c.client, c.kind, &c.base, c.key.as_deref(), &c.model, &lang, &texts).await {
+                Ok(v) => {
+                    if let Some(p) = &ep.pool {
+                        p.record_ok(&c.id, now());
+                    }
+                    return Ok(serde_json::to_string(&v)?);
+                }
+                Err(e) => {
+                    if let Some(p) = &ep.pool {
+                        p.record_fail(&c.id, &e, now());
+                    }
+                    tried.push(format!("{}：{}", c.name, e.message));
+                    last = Some(e);
+                    continue;
+                }
+            }
+        }
         let one = Endpoint {
             base: c.base.clone(),
             key: c.key.clone(),
@@ -348,8 +407,12 @@ async fn chat_msg(ep: &Endpoint, model: &str, system: &str, user: Value) -> AppR
             }
         }
     }
-    let last = last.unwrap_or_else(|| AppError::msg("没有可用的服务"));
-    if tried.len() == 1 {
+    let last = last.unwrap_or_else(|| {
+        AppError::invalid(
+            "池里排在前面的都是机器翻译服务，它们只能翻译文字；这个请求（摘要、问答、看图、术语提取等）需要对话模型，请在模型池里再添加或启用一个对话模型。",
+        )
+    });
+    if tried.len() <= 1 {
         return Err(last);
     }
     Err(AppError::new(last.kind, format!("模型池里的 {} 个服务都失败了：{}", tried.len(), tried.join("；"))))

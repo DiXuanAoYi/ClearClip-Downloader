@@ -50,6 +50,7 @@ pub mod media_server;
 pub mod media_tools;
 pub mod ml;
 pub mod model;
+pub mod mt;
 pub mod naming;
 pub mod net;
 pub mod notify;
@@ -648,6 +649,7 @@ pub fn run() {
             ai_cmds::filetr_start,
             ai_cmds::filetr_preview,
             ai_cmds::filetr_view,
+            ai_cmds::filetr_page_preview,
             ai_cmds::filetr_edit,
             ai_cmds::filetr_retranslate,
             subedit::subtitle_tracks,

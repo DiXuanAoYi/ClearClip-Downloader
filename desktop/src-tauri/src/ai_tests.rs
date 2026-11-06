@@ -361,6 +361,7 @@ async fn cloud_stt_rotates_to_next_service_when_one_fails() {
         key: Some("k".into()),
         model: model.into(),
         client: client.clone(),
+        kind: crate::mt::Kind::Chat,
     };
     let pool = Arc::new(crate::ai_pool::AiPool::default());
     let mut e = ep(&limited);
@@ -438,6 +439,7 @@ fn cand_for(id: &str, base: &str, model: &str) -> Candidate {
         key: Some("k".into()),
         model: model.into(),
         client: reqwest::Client::builder().no_proxy().build().unwrap(),
+        kind: crate::mt::Kind::Chat,
     }
 }
 
@@ -546,4 +548,118 @@ async fn subgen_correction_wrong_line_count_keeps_original() {
     let r = correct_cues(Some(&ep(&base)), "m", &cues, Mode::Conservative, "", &[], 20, &|_, _| Ok(())).await.unwrap();
     assert_eq!(r.cues.len(), 2);
     assert_eq!(r.cues[1].lines, cues[1].lines);
+}
+
+// ---------- 机器翻译服务（Google / 微软 / DeepL / DeepLX）接进模型池 ----------
+
+fn mt_cand(id: &str, kind: crate::mt::Kind, base: &str, key: Option<&str>, region: &str) -> Candidate {
+    Candidate {
+        id: id.into(),
+        name: id.into(),
+        base: base.into(),
+        key: key.map(str::to_string),
+        model: region.into(),
+        client: reqwest::Client::builder().no_proxy().build().unwrap(),
+        kind,
+    }
+}
+
+#[tokio::test]
+async fn each_machine_translation_provider_speaks_its_own_protocol() {
+    use crate::mt::{translate, Kind};
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let texts = vec!["Hello".to_string(), "It's fine".to_string()];
+
+    // Google：key 走查询参数，目标 zh-CN，返回里的 HTML 实体要还原
+    let seen = Arc::new(Mutex::new(String::new()));
+    let s = seen.clone();
+    let g = mock(Arc::new(move |path, body, _| {
+        *s.lock().unwrap() = format!("{path} {}", String::from_utf8_lossy(body));
+        (200, r#"{"data":{"translations":[{"translatedText":"你好"},{"translatedText":"It&#39;s 没问题"}]}}"#.into())
+    }))
+    .await;
+    let out = translate(&client, Kind::Google, &g, Some("gk"), "", "简体中文", &texts).await.unwrap();
+    assert_eq!(out, ["你好", "It's 没问题"]);
+    let sent = seen.lock().unwrap().clone();
+    assert!(sent.starts_with("/language/translate/v2?key=gk"), "{sent}");
+    assert!(sent.contains(r#""target":"zh-CN""#) && sent.contains(r#""q":["Hello","It's fine"]"#), "{sent}");
+
+    // 微软：数组体，目标 zh-Hans，区域写进请求头
+    let seen = Arc::new(Mutex::new(String::new()));
+    let s = seen.clone();
+    let m = mock(Arc::new(move |path, body, _| {
+        *s.lock().unwrap() = format!("{path} {}", String::from_utf8_lossy(body));
+        (200, r#"[{"translations":[{"text":"你好","to":"zh-Hans"}]},{"translations":[{"text":"没问题","to":"zh-Hans"}]}]"#.into())
+    }))
+    .await;
+    let out = translate(&client, Kind::Microsoft, &m, Some("mk"), "eastasia", "简体中文", &texts).await.unwrap();
+    assert_eq!(out, ["你好", "没问题"]);
+    let sent = seen.lock().unwrap().clone();
+    assert!(sent.contains("api-version=3.0") && sent.contains("to=zh-Hans") && sent.contains(r#"[{"Text":"Hello"},{"Text":"It's fine"}]"#), "{sent}");
+
+    // DeepL：免费版密钥（:fx）在没填地址时走 api-free；这里填了本机地址，检查体和结果
+    let seen = Arc::new(Mutex::new(String::new()));
+    let s = seen.clone();
+    let d = mock(Arc::new(move |path, body, _| {
+        *s.lock().unwrap() = format!("{path} {}", String::from_utf8_lossy(body));
+        (200, r#"{"translations":[{"text":"你好"},{"text":"没问题"}]}"#.into())
+    }))
+    .await;
+    let out = translate(&client, Kind::DeepL, &d, Some("dk:fx"), "", "简体中文", &texts).await.unwrap();
+    assert_eq!(out, ["你好", "没问题"]);
+    let sent = seen.lock().unwrap().clone();
+    assert!(sent.starts_with("/v2/translate") && sent.contains(r#""target_lang":"ZH-HANS""#), "{sent}");
+
+    // DeepLX：一次一段，地址就是完整接口
+    let calls = Arc::new(Mutex::new(0usize));
+    let c = calls.clone();
+    let x = mock(Arc::new(move |path, body, _| {
+        assert_eq!(path, "/translate");
+        *c.lock().unwrap() += 1;
+        let v: Value = serde_json::from_slice(body).unwrap();
+        assert_eq!(v["target_lang"], "ZH");
+        (200, format!(r#"{{"code":200,"data":"译:{}"}}"#, v["text"].as_str().unwrap()))
+    }))
+    .await;
+    let out = translate(&client, Kind::DeepLX, &format!("{x}/translate"), None, "", "简体中文", &texts).await.unwrap();
+    assert_eq!(out, ["译:Hello", "译:It's fine"]);
+    assert_eq!(*calls.lock().unwrap(), 2);
+
+    // 缺密钥 / 不支持的语言：本地就报错，不发请求
+    assert!(translate(&client, Kind::Google, &g, None, "", "简体中文", &texts).await.unwrap_err().message.contains("密钥"));
+    assert!(translate(&client, Kind::DeepL, &d, Some("k"), "", "泰语", &texts).await.is_err());
+}
+
+#[tokio::test]
+async fn pool_routes_translation_to_machine_translation_but_skips_it_for_other_requests() {
+    use crate::mt::Kind;
+    let dl = mock(Arc::new(|_, _, _| (200, r#"{"translations":[{"text":"你好"},{"text":"世界"}]}"#.into()))).await;
+    let chat_srv = mock(Arc::new(|_, _, _| (200, reply("SUMMARY")))).await;
+    let pool = Arc::new(AiPool::default());
+    let ep = pooled(vec![mt_cand("deepl", Kind::DeepL, &dl, Some("k"), ""), cand_for("llm", &chat_srv, "m")], pool.clone());
+
+    // 翻译一批文字：机器翻译直接答，返回合法的 JSON 数组，map_cues_g 能照常解析
+    let cues = vec![Cue { start: 0, end: 1, lines: vec!["Hello".into()] }, Cue { start: 1, end: 2, lines: vec!["World".into()] }];
+    let t = translate_cues_g(&ep, "", "简体中文", &cues, 20, &[], &|_, _| Ok(())).await.unwrap();
+    assert_eq!(t.texts, [Some("你好".to_string()), Some("世界".to_string())]);
+    assert_eq!(pool.snapshot(crate::db::now())["deepl"].ok, 1);
+
+    // 摘要这类不是“译一批文字”的请求：跳过机器翻译，交给后面的对话模型
+    let out = chat(&ep, "", "Summarize the video.", "long transcript").await.unwrap();
+    assert_eq!(out, "SUMMARY");
+    assert!(!pool.snapshot(crate::db::now()).contains_key("deepl") || pool.snapshot(crate::db::now())["deepl"].fail == 0, "跳过不算失败");
+
+    // 池里只有机器翻译时，摘要给出明确的提示而不是乱译
+    let only = pooled(vec![mt_cand("deepl", Kind::DeepL, &dl, Some("k"), "")], Arc::new(AiPool::default()));
+    let err = chat(&only, "", "Summarize the video.", "x").await.unwrap_err();
+    assert!(err.message.contains("机器翻译"), "{}", err.message);
+
+    // 机器翻译额度用完（456 / 429）→ 冷却并换对话模型继续译
+    let dead = mock(Arc::new(|_, _, _| (456, r#"{"message":"Quota exceeded"}"#.into()))).await;
+    let llm = mock(Arc::new(|_, _, _| (200, reply(r#"["你好","世界"]"#)))).await;
+    let pool2 = Arc::new(AiPool::default());
+    let ep2 = pooled(vec![mt_cand("deepl", Kind::DeepL, &dead, Some("k"), ""), cand_for("llm", &llm, "m")], pool2.clone());
+    let t = translate_cues_g(&ep2, "", "简体中文", &cues, 20, &[], &|_, _| Ok(())).await.unwrap();
+    assert_eq!(t.texts[0].as_deref(), Some("你好"));
+    assert!(pool2.snapshot(crate::db::now())["deepl"].fail >= 1);
 }

@@ -886,6 +886,9 @@ pub struct PoolEntry {
     pub name: String,
     pub base_url: String,
     pub model: String,
+    /// 服务类型：空 / `openai` = 兼容 OpenAI 的对话模型；`google` / `microsoft` / `deepl` / `deeplx` = 机器翻译服务（只用于翻译）。
+    /// 机器翻译服务里，`model` 不是模型名：微软填 Azure 资源所在区域（如 eastasia），其余留空。
+    pub kind: String,
     /// 语音转文字模型；填了并且“适用任务”里勾了 stt，才会参与云端字幕识别的轮换
     pub stt_model: String,
     pub enabled: bool,
@@ -905,6 +908,7 @@ impl Default for PoolEntry {
             name: String::new(),
             base_url: String::new(),
             model: String::new(),
+            kind: String::new(),
             stt_model: String::new(),
             enabled: true,
             tasks: vec![],
@@ -1055,9 +1059,15 @@ impl AiSettings {
             }
             let u = e.base_url.trim().trim_end_matches('/');
             e.base_url = if u.starts_with("http://") || u.starts_with("https://") { u.to_string() } else { String::new() };
+            if crate::mt::Kind::parse(e.kind.trim()).is_mt() {
+                // 机器翻译只用于翻译
+                e.tasks = vec!["translate".into()];
+                e.stt_model.clear();
+            }
             e.model = e.model.trim().to_string();
             e.name = e.name.trim().chars().filter(|c| !c.is_control()).take(40).collect();
             e.preset = e.preset.trim().to_string();
+            e.kind = if crate::mt::Kind::parse(e.kind.trim()).is_mt() { e.kind.trim().to_string() } else { String::new() };
             e.tasks.retain(|t| matches!(t.as_str(), "translate" | "summary" | "chat" | "edit" | "stt"));
             e.stt_model = e.stt_model.trim().to_string();
             e.tasks.dedup();
