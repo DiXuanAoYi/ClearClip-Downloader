@@ -5,6 +5,7 @@
   const { mount, h, send, toast, api } = globalThis.ccUI
   const V = globalThis.ccVsum
   const Src = globalThis.ccVsumSource
+  const VS = globalThis.ccVSession
 
   const CSS = `
     .panel { top: 0; right: 0; width: 400px; max-width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #fbfaf8; color: #1d2420; border-left: 1px solid #cfd5d1; box-shadow: -8px 0 28px #0002; }
@@ -571,6 +572,43 @@
     }
   }
 
+  /**
+   * 翻译文稿：和字幕层共用视频会话里的同一份译文（同一种任务、同一份缓存）。字幕层已经翻好就直接拿来；
+   * 自己写了翻译提示词的，还是单独提交（结果也放进会话，字幕层跟着用）。
+   */
+  async function translateDoc(d) {
+    if (S.prefs.prompts?.translate?.trim() || !isVideo()) return task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || '')))
+    if (S.busy) return toast(ui, '上一个任务还在进行', true)
+    if (!d?.lines.length) return toast(ui, '还没有文稿', true)
+    S.busy = true
+    let cancelled = false
+    const job = { id: 0, kind: 'translate', tag: '', done: 0, total: d.lines.length, note: '正在翻译文稿', cancel: () => (cancelled = true) }
+    S.job ||= job
+    render()
+    try {
+      await ensureReady()
+      VS.setLines(d.lines, d.track || '', 'vsum')
+      const arr = await VS.translate(outLang(), {
+        stop: () => cancelled || S.closed || S.data !== d,
+        onProgress: (done, total) => {
+          job.done = done
+          job.total = total
+          if (S.job === job && !S.closed) render()
+        },
+      })
+      if (S.data !== d) return
+      S.res.translated = arr
+      S.restored = 0
+      persist()
+    } catch (e) {
+      if (!S.closed && e.message !== '已取消') toast(ui, e.message, true, 5200)
+    } finally {
+      if (S.job === job) S.job = null
+      S.busy = false
+      if (!S.closed) render()
+    }
+  }
+
   // ---------- 各个标签页 ----------
 
   const noData = () => {
@@ -813,13 +851,13 @@
         isVideo() && h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.follow, onchange: (e) => ((S.prefs.follow = e.target.checked), savePrefs()) }), ' 跟随播放'),
         isVideo() && h('label', { class: 'mute', title: '读到字幕后，把文稿同时作为字幕层叠在视频上（双语、调字号位置、导出）' }, h('input', { type: 'checkbox', checked: S.prefs.autoSub !== false, onchange: (e) => ((S.prefs.autoSub = e.target.checked), savePrefs(), e.target.checked ? syncSubLayer(S.data) : globalThis.ccSubLayerRun?.destroy()) }), ' 显示在视频上'),
         langSelect('翻译成哪种语言（任意语言互译，自动识别原文）', () => ((S.res.translated = null), render())),
-        h('button', { class: 'sec', text: tr ? '重新翻译' : outLabel() ? `翻译成${outLabel()}` : '翻译（自动方向）', disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
+        h('button', { class: 'sec', text: tr ? '重新翻译' : outLabel() ? `翻译成${outLabel()}` : '翻译（自动方向）', disabled: S.busy, onclick: () => translateDoc(d) }),
         sel([['orig', '原文'], ['tr', '译文'], ['both', '双语']], tr ? mode : 'orig', (v) => {
           S.prefs.view = v
           savePrefs()
           render()
           // 还没有译文就选了译文 / 双语：直接去翻译（原文永远保留，不会被译文替换）
-          if (v !== 'orig' && !S.res.translated && !S.busy) task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || '')))
+          if (v !== 'orig' && !S.res.translated && !S.busy) translateDoc(d)
         }, '文稿显示：原文 / 译文 / 双语'),
         h('button', { class: 'sec', text: '重新断句', title: '把太长的句子按标点和长度拆开（时间按字数分配）；不改字，也不用重新识别', disabled: S.busy, onclick: resegment }),
         h('button', { class: 'sec', text: d.raw ? '还原顺句前' : '顺句', title: d.raw ? '恢复识别出来的原样' : '给没有标点的字幕（自动识别）补标点、改同音错字，行数不变', disabled: S.busy, onclick: d.raw ? unpunctuate : punctuate }),
@@ -1799,7 +1837,7 @@
     if (!S.job) return
     const pct = S.job.total ? Math.round((S.job.done / S.job.total) * 100) : 5
     el.append(
-      h('div', { class: 'mute' }, `${S.job.note || '清影正在处理…'}${S.job.total ? (S.job.kind === 'transcribe' ? ` ${S.job.done}%` : ` ${S.job.done}/${S.job.total}`) : ''} `, h('button', { class: 'sec', text: '取消', onclick: () => send({ type: 'cc-ai-cancel', id: S.job.id }) })),
+      h('div', { class: 'mute' }, `${S.job.note || '清影正在处理…'}${S.job.total ? (S.job.kind === 'transcribe' ? ` ${S.job.done}%` : ` ${S.job.done}/${S.job.total}`) : ''} `, h('button', { class: 'sec', text: '取消', onclick: () => (S.job.cancel ? S.job.cancel() : send({ type: 'cc-ai-cancel', id: S.job.id })) })),
       h('div', { class: 'bar' }, h('i', { style: `width:${pct}%` })),
     )
   }
@@ -1931,16 +1969,26 @@
   let subOpenAt = 0
   function syncSubLayer(d) {
     if (!isVideo() || !d.lines.length) return
-    const lines = d.lines.map((l) => ({ t: l.t, text: l.text }))
-    const run = globalThis.ccSubLayerRun
-    if (run?.setLines) return run.setLines(lines, d.track || '')
+    // 文稿放进视频会话：字幕层开着的话订阅了会话，自己跟着换
+    VS.setLines(d.lines, d.track || '', 'vsum')
+    if (globalThis.ccSubLayerRun) return
     if (S.prefs.autoSub === false) return
-    // 正在打开的这几秒里不再重复发（再注入一次会把字幕层关掉）
-    if (Date.now() - subOpenAt < 4000) return void (globalThis.ccSubLayerSeed = { lines, track: d.track || '' })
+    // 正在打开的这几秒里不再重复发（再注入一次会把字幕层关掉）；字幕层打开后从会话里取文稿
+    if (Date.now() - subOpenAt < 4000) return
     subOpenAt = Date.now()
-    globalThis.ccSubLayerSeed = { lines, track: d.track || '' }
     send({ type: 'cc-sublayer-open' })
   }
+
+  // 字幕层翻好的译文（同一份文稿、同一种语言）直接显示在文稿里
+  const unsubSession = VS.subscribe((what) => {
+    if (what !== 'trans' || S.closed || !S.data?.lines.length || S.res.translated) return
+    if (VS.fingerprint(S.data.lines.map((l) => ({ t: l.t, text: l.text }))) !== VS.fingerprint(VS.current().lines)) return
+    const have = VS.translations(outLang())
+    if (have && have.length === S.data.lines.length) {
+      S.res.translated = have
+      render()
+    }
+  })
 
   function setData(d) {
     S.data = d
@@ -2033,6 +2081,7 @@
     document.removeEventListener('keydown', onKey, true)
     // 正在生成的任务不取消：清影继续跑，重新打开后自动接上（要取消请点进度条上的“取消”）
     S.closed = true
+    unsubSession()
     saveSession().catch(() => {})
     ui.remove()
     delete globalThis.__ccVsum

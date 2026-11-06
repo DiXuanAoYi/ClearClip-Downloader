@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
+const FILES = ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -191,7 +191,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const meta = await text(page, '.meta')
     ok('读到字幕：3 段、轨道名', /3 段/.test(meta) && /English/.test(meta), meta)
     ok('标题取自页面数据', (await text(page, '.hd')).includes('Demo "video"'))
-    ok('读到字幕后自动打开字幕层（把文稿交过去）', await page.evaluate(() => window.__calls.some((c) => c.type === 'cc-sublayer-open') && window.__sub?.length === 3 || (globalThis.ccSubLayerSeed?.lines?.length === 3)), '')
+    ok('读到字幕后自动打开字幕层（文稿放进视频会话）', await page.evaluate(() => window.__calls.some((c) => c.type === 'cc-sublayer-open') && globalThis.ccVSession?.current().lines.length === 3), '')
     await clickText(page, '生成摘要')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('这个视频介绍了 Rust')), null, { timeout: 8000 })
     const run = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-ai-run').req)

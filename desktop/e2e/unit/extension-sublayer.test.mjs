@@ -72,5 +72,7 @@ import { readFileSync } from 'node:fs'
   assert.ok(/\.cap \.w \{ font: inherit;/.test(src), '词的样式要继承字幕字号')
   assert.ok(/\.bub \{[^}]*width: 400px/.test(src), '查词浮窗宽度 400')
   assert.ok(/\.bub \.row2 button \{ white-space: nowrap/.test(src), '按钮不换行')
-  assert.ok(src.includes("'本视频'") && src.includes("'例句'"), '例句：本视频其他句 + 模型例句')
+  const card = readFileSync(new URL('../../extension/content/wordcard.js', import.meta.url), 'utf8')
+  assert.ok(src.includes("'本视频'") && card.includes("'例句'"), '例句：本视频其他句 + 模型例句（共用词卡）')
+  assert.ok(!/\.wcard \{[^}]*display:/.test(card), '词卡样式不能自带 display（字幕层的浮窗靠 display 开关）')
 }

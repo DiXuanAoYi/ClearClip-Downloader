@@ -25,10 +25,12 @@
     .card .ask { display: flex; gap: 6px; margin-top: 8px; }
     .card .ask input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: var(--card); color: var(--fg); }
     .card .err { color: var(--bad); }
+    .card .body.wcard { display: flex; white-space: normal; line-height: 1.5 }
+    .card .body.wcard .hd { font-weight: 400; align-items: baseline }
     .menu2 { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px #0003; padding: 4px; min-width: 140px; }
     .menu2 button { display: block; width: 100%; text-align: left; background: transparent; color: inherit; font-weight: 400; }
     .menu2 button:hover { background: #d9762b24; }
-  `
+  ` + (globalThis.ccWordCard?.CSS || '')
   let ui = null
   const uiRoot = () => (ui ||= mount(CSS))
 
@@ -244,21 +246,26 @@
   })
 
   const doDefine = () => {
-    if (SEL.isWord(st.text)) {
-      return openCard('释义', async (set) => {
-        const res = await pollJob({ kind: 'lookup', text: st.text, context: st.sentence, title: document.title })
-        if (res.offline) return set('清影里没有可用的 AI 模型，只能显示词汇等级：' + (res.level || ''))
-        const lines = [`${res.lemma || st.text}　${res.phonetic || ''}`.trim(), [res.pos, res.meaning].filter(Boolean).join(' '), res.context_meaning && `在这句话里：${res.context_meaning}`, res.note].filter(Boolean)
-        st.lookup = res
-        set(lines.join('\n'))
-      }, (ft) => {
-        const b = h('button', { text: '加入生词本', onclick: async () => {
-          const res = st.lookup || {}
-          const r = await send({ type: 'cc-vocab', op: 'add', word: { word: res.lemma || st.text, phonetic: res.phonetic || '', pos: res.pos || '', meaning: res.meaning || '', ctxMeaning: res.context_meaning || '', sentence: st.sentence, sourceTitle: document.title, sourceUrl: location.href, timeSec: 0 } })
-          b.textContent = r.ok ? '已加入生词本' : r.error || '失败'
-          b.disabled = !!r.ok
-        } })
-        ft.prepend(b)
+    if (SEL.isWord(st.text) && globalThis.ccWordCard) {
+      const WC = globalThis.ccWordCard
+      // 和字幕层的查词浮窗是同一张词卡（释义、本句意思、本句、例句、加入生词本）
+      return openCard('释义', async (set, bodyEl) => {
+        const me = ++st.job
+        const res = await WC.lookup(st.text, st.sentence, { stop: () => st.job !== me || !st.card })
+        set([`${res.lemma || st.text}　${res.phonetic || ''}`.trim(), [res.pos, res.meaning].filter(Boolean).join(' '), res.context_meaning && `在这句话里：${res.context_meaning}`].filter(Boolean).join('\n'))
+        const { nodes } = WC.render({
+          h,
+          word: st.text,
+          sentence: st.sentence,
+          res,
+          onSave: async (lemma) => {
+            const r = await WC.save(lemma, res, { sentence: st.sentence })
+            if (!r.ok) toast(uiRoot(), r.error || '加入生词本失败', true)
+            return !!r.ok
+          },
+        })
+        bodyEl.classList.add('wcard')
+        bodyEl.replaceChildren(...nodes)
       })
     }
     return openCard('释义', async (set) => {

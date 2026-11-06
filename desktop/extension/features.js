@@ -43,7 +43,7 @@ const RESIDENT_SCRIPTS = [
   // 解除限制：只在用户开启过的网站里注册（unlockAll 才是所有网站），在页面自己的环境（MAIN）里尽早运行
   // 网页翻译：只在用户设为“自动翻译”的网站里常驻；其他网站点了才注入
   { id: 'cc-trans', js: ['content/ui.js', 'trans-logic.js', 'content/webtrans.js'], need: (f) => f.webtrans, matches: (_rules, trans) => (trans ? ccTrans.autoMatches(trans) : []) },
-  { id: 'cc-selbar', js: ['content/ui.js', 'selbar-logic.js', 'content/selbar.js'], need: (f) => f.selbar },
+  { id: 'cc-selbar', js: ['content/ui.js', 'selbar-logic.js', 'content/wordcard.js', 'content/selbar.js'], need: (f) => f.selbar },
   { id: 'cc-write', js: ['content/ui.js', 'writing-logic.js', 'content/writing.js'], need: (f) => f.writing },
   { id: 'cc-unlock', js: ['content/unlock.js'], need: (f) => f.unlock, world: 'MAIN', runAt: 'document_start', matches: (rules) => unlockMatches(rules) },
 ]

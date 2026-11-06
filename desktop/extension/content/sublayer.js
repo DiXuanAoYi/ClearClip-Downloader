@@ -10,6 +10,8 @@
   const { api, mount, h, send, toast } = globalThis.ccUI
   const L = globalThis.ccSubLayer
   const V = globalThis.ccVsum
+  const VS = globalThis.ccVSession
+  const WC = globalThis.ccWordCard
 
   const store = {
     async get(k, d) {
@@ -66,21 +68,8 @@
     .cap .w.sv { border-bottom: 2px solid #6fcf97 }
     .bub { position: fixed; display: none; width: 400px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 14px 16px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 6px }
     .bub.open { display: flex }
-    .bub .hd { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap }
-    .bub .hd b { font-size: 17px; color: #fff }
-    .bub .ph { color: #9aa6a2; font-size: 12px }
-    .bub .lv { margin-left: auto; font-size: 11px; padding: 0 7px; border-radius: 9px; border: 1px solid #f08a3c; color: #f08a3c }
-    .bub .ms { line-height: 1.55 }
-    .bub .ms i { font-style: normal; color: #9aa6a2; margin-right: 6px }
-    .bub .cx { padding: 6px 8px; border-radius: 8px; background: #14181a; color: #e7ecea; font-size: 12.5px; line-height: 1.5 }
-    .bub .tip { color: #9aa6a2; font-size: 12px; line-height: 1.5 }
-    .bub .row2 { display: flex; gap: 6px; margin-top: 2px; flex-wrap: wrap }
+    .bub.wcard { --wc-fg: #e7ecea; --wc-head: #fff; --wc-mute: #9aa6a2; --wc-soft: #14181a; --wc-acc: #f0a064; --wc-tag: #3a2c20; --wc-line: #4a5a60; --wc-ok: #6cc08a }
     .bub .row2 button { white-space: nowrap; flex: none }
-    .bub .ex { padding: 6px 8px; border-left: 3px solid #4a5a60; background: #14181a; border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.55 }
-    .bub .ex .tr { color: #9aa6a2; display: block; margin-top: 2px }
-    .bub .ex .tag { float: right; font-size: 10.5px; padding: 0 6px; border-radius: 8px; background: #26343a; color: #8fb4c4; margin-left: 6px }
-    .bub .ex a { color: inherit; cursor: pointer; text-decoration: underline dotted }
-    .bub .ex mark { background: transparent; color: #f0a064; font-weight: 600 }
     .bub .row2 button, .ls button, .dr button.b { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #2f383c; background: #14181a; color: #e7ecea; font-weight: 400; font-size: 12.5px }
     .bub .row2 button.p, .ls button.p { background: #f08a3c; border-color: #f08a3c; color: #14181a; font-weight: 600 }
     .ls { position: fixed; display: none; width: 420px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 8px }
@@ -104,14 +93,6 @@
     .ls .prog .pr { display: flex; gap: 8px; font-size: 12px; color: #9aa6a2; cursor: pointer; padding: 1px 0 }
     .ls .prog .pr.cur { color: #f0a064 }
     .ls .prog .pr span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-    .bub .heart { margin-left: 6px; border: 0; background: transparent; color: #9aa6a2; font-size: 18px; line-height: 1; padding: 0 2px; cursor: pointer }
-    .bub .heart.on { color: #f0a064 }
-    .bub .hd .sp { flex: 1 }
-    .bub .lab { color: #9aa6a2; font-size: 11.5px }
-    .bub .quote { padding: 6px 8px; border-left: 3px solid #f0a064; background: #14181a; border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.55 }
-    .bub .quote mark { background: transparent; color: #f0a064; font-weight: 600 }
-    .bub .quote .tag { float: right; font-size: 10.5px; padding: 0 6px; border-radius: 8px; background: #3a2c20; color: #f0a064; margin-left: 6px }
-    .bub .saved { color: #6cc08a; font-size: 12px }
     .dr { position: fixed; display: none; width: 340px; max-height: 70vh; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 8px }
     .dr.open { display: flex }
     .dr input { height: 28px; border: 1px solid #2f383c; border-radius: 8px; background: #14181a; color: #e7ecea; padding: 0 8px }
@@ -122,7 +103,7 @@
     .dr .it2 .ac { display: flex; gap: 10px; font-size: 12px }
     .dr .it2 .ac a { color: #f08a3c; cursor: pointer; text-decoration: underline }
     .dr .ft { display: flex; gap: 6px; flex-wrap: wrap }
-  `
+  ` + globalThis.ccWordCard.CSS
   const ui = mount(CSS)
   const S = {
     prefs: L.clampPrefs(null),
@@ -245,7 +226,7 @@
     layout()
     paint()
   }
-  const bub = h('div', { class: 'bub' })
+  const bub = h('div', { class: 'bub wcard' })
   const lsEl = h('div', { class: 'ls' })
   const drEl = h('div', { class: 'dr' })
   ui.add(cap)
@@ -352,10 +333,8 @@
 
   async function loadLines() {
     setStatus('正在读取字幕…')
-    // 视频摘要读到文稿后会把它直接交过来，不用再读一遍
-    const seed = globalThis.ccSubLayerSeed
-    delete globalThis.ccSubLayerSeed
-    const d = seed?.lines?.length ? { lines: seed.lines, track: seed.track } : await globalThis.ccVsumSource.load()
+    // 视频会话：视频摘要已经读到的文稿直接用，不再读一遍
+    const d = await VS.load({ source: 'sublayer' })
     S.data = d
     S.lines = (d.lines || []).map((l) => ({ t: l.t, text: l.text }))
     S.trans = []
@@ -367,48 +346,40 @@
     return true
   }
 
-  async function transKey() {
-    const vk = V.videoKey(location.href)
-    return L.cacheKey(vk, S.target, S.pv)
-  }
-
+  /** 译文来自视频会话：和摘要面板的“译文”是同一份，谁先翻好另一个直接用。 */
   async function translateAll() {
     if (S.busy || !S.lines.length) return
     S.busy = true
+    const lines = S.lines
     try {
-      const key = await transKey()
-      const saved = (await store.get('subLayerTrans', {}))[key]
-      if (saved && saved.length === S.lines.length) {
-        S.trans = saved
-        setStatus('已载入保存的译文')
+      const have = VS.translations(S.target)
+      if (have && have.length === lines.length) {
+        S.trans = have
+        setStatus(`已翻译成${S.target}，共 ${lines.length} 句`)
         return
       }
-      S.trans = new Array(S.lines.length).fill('')
-      const idx = L.missing(S.lines, S.trans)
-      const groups = L.chunk(idx, 40)
-      let done = 0
-      for (const g of groups) {
-        if (S.closed) return
-        const r = await send({ type: 'cc-tr', texts: g.map((i) => S.lines[i].text), target: S.target, engine: 'clearclip' })
-        if (!r.ok) throw new Error(r.error || '翻译失败')
-        g.forEach((i, k) => (S.trans[i] = String(r.texts?.[k] || '')))
-        done += g.length
-        setStatus(`正在翻译 ${done}/${idx.length}…`)
-        cap.dataset.k = ''
-        paint()
-      }
-      const all = await store.get('subLayerTrans', {})
-      all[key] = S.trans
-      // 只留最近的 12 份，避免占满存储
-      const keys = Object.keys(all)
-      for (const k of keys.slice(0, Math.max(0, keys.length - 12))) delete all[k]
-      await store.set('subLayerTrans', all)
-      setStatus(`已翻译成${S.target}，共 ${S.lines.length} 句`)
+      S.trans = new Array(lines.length).fill('')
+      const arr = await VS.translate(S.target, {
+        stop: () => S.closed || S.lines !== lines,
+        onProgress: (done, total, part) => {
+          if (S.lines !== lines) return
+          S.trans = part.slice()
+          setStatus(`正在翻译 ${done}/${total}…`)
+          cap.dataset.k = ''
+          paint()
+        },
+      })
+      if (S.lines !== lines) return
+      S.trans = arr
+      setStatus(`已翻译成${S.target}，共 ${lines.length} 句`)
     } catch (e) {
+      if (e.message === '已取消') return
       setStatus(e.message)
       toast(ui, e.message, true, 6000)
     } finally {
       S.busy = false
+      cap.dataset.k = ''
+      paint()
     }
   }
 
@@ -423,8 +394,11 @@
         { kind: 'transcribe', url: location.href, title: document.title },
         { interval: 800, stop: () => S.closed, onProgress: (j) => setStatus(`${j.note || '清影正在转写…'}${j.total ? ` ${j.done}%` : ''}`) },
       )
-      S.lines = (res.lines || []).map((l) => ({ t: l.t, text: l.text }))
-      if (!S.lines.length) throw new Error('没有识别出任何语音')
+      const got = (res.lines || []).map((l) => ({ t: l.t, text: l.text }))
+      if (!got.length) throw new Error('没有识别出任何语音')
+      // 放进视频会话：摘要面板开着的话也会用上这份转写
+      VS.setLines(got, '清影转写', 'sublayer')
+      S.lines = got
       S.trans = []
     } catch (e) {
       setStatus(e.message)
@@ -484,14 +458,7 @@
     S.ver++
   }
 
-  async function lookup(word, sentence) {
-    const key = `${LN.norm(word)}|${sentence.slice(0, 80)}`
-    if (S.lk.has(key)) return S.lk.get(key)
-    const res = await globalThis.ccUI.aiRun({ kind: 'lookup', text: word, context: sentence, title: document.title, lang: S.target }, { interval: 350, stop: () => S.closed, timeoutMs: 30000 })
-    S.lk.set(key, res)
-    if (S.lk.size > 200) S.lk.delete(S.lk.keys().next().value)
-    return res
-  }
+  const lookup = (word, sentence) => WC.lookup(word, sentence, { lang: S.target, stop: () => S.closed })
 
   const speak = (t) => {
     try {
@@ -565,30 +532,10 @@
       return
     }
     if (bubFor !== id) return
-    const lemma = res.lemma && LN.norm(res.lemma) !== LN.norm(word) ? res.lemma : word
-    const have = S.saved.has(LN.norm(lemma)) || S.saved.has(LN.norm(word))
-    const parts = [
-      h('div', { class: 'hd' }, h('b', { text: lemma }), res.phonetic ? h('span', { class: 'ph', text: res.phonetic }) : null, res.level ? h('span', { class: 'lv', text: res.level }) : null),
-    ]
-    if (res.offline) {
-      parts.push(h('div', { class: 'tip', text: '清影里没有可用的 AI 模型，只能显示词汇等级。到“设置 → AI”配置后就能看到释义和本句意思。' }))
-    } else {
-      if (res.meaning) parts.push(h('div', { class: 'ms' }, res.pos ? h('i', { text: res.pos }) : null, document.createTextNode(res.meaning)))
-      if (res.context_meaning) parts.push(h('div', { class: 'lab', text: '在这句话里：' }), h('div', { class: 'cx', text: res.context_meaning }))
-      if (res.note) parts.push(h('div', { class: 'tip', text: res.note }))
-    }
-    const heart = h('button', { class: `heart${have ? ' on' : ''}`, text: have ? '♥' : '♡', title: have ? '已在生词本' : '加入生词本', onclick: () => saveWord(lemma, res, li, heart, saveLine) })
-    const saveLine = h('div', { class: 'saved', text: have ? '已加入生词本' : '' })
-    parts[0].append(h('span', { class: 'sp' }), heart)
-    if (sentence) {
-      const quote = h('div', { class: 'quote' }, h('span', { class: 'tag', text: '本句' }))
-      const idx = sentence.toLowerCase().indexOf(String(word).toLowerCase())
-      if (idx >= 0) quote.append(document.createTextNode(`“${sentence.slice(0, idx)}`), h('mark', { text: sentence.slice(idx, idx + String(word).length) }), document.createTextNode(`${sentence.slice(idx + String(word).length)}”`))
-      else quote.append(document.createTextNode(`“${sentence}”`))
-      parts.push(quote)
-    }
-    // 例句（除了本句）：① 本视频里别的句子（点一下跳过去）② 模型给的 2 个例句（带译文）
-    const lw = String(lemma).toLowerCase()
+    const guess = res.lemma && LN.norm(res.lemma) !== LN.norm(word) ? res.lemma : word
+    const have = S.saved.has(LN.norm(guess)) || S.saved.has(LN.norm(word))
+    // 例句先放本视频里别的句子（点时间跳过去），模型给的例句由词卡接在后面
+    const lw = String(guess).toLowerCase()
     const hit = (t) => String(t || '').toLowerCase().includes(lw) || String(t || '').toLowerCase().includes(String(word).toLowerCase())
     const others = []
     for (let d = 1; d < S.lines.length && others.length < 2; d++) {
@@ -596,31 +543,19 @@
         if (others.length < 2 && j >= 0 && j < S.lines.length && hit(S.lines[j].text)) others.push(j)
       }
     }
-    const markIn = (txt, w) => {
-      const k = String(txt).toLowerCase().indexOf(String(w).toLowerCase())
-      return k < 0 ? [document.createTextNode(txt)] : [document.createTextNode(txt.slice(0, k)), h('mark', { text: txt.slice(k, k + w.length) }), document.createTextNode(txt.slice(k + w.length))]
-    }
-    for (const j of others) {
+    const extraExamples = others.map((j) => {
       const txt = String(S.lines[j].text || '')
-      parts.push(h('div', { class: 'ex' }, h('span', { class: 'tag', text: '本视频' }), ...markIn(txt, hit(txt) && txt.toLowerCase().includes(lw) ? lemma : word), document.createTextNode(' '), h('a', { text: LN.fmtTime(S.lines[j].t || 0), title: '跳到这句', onclick: () => seekLine(j, true) })))
-    }
-    for (const ex of (Array.isArray(res.examples) ? res.examples : []).slice(0, 2)) {
-      if (!ex || !ex.text) continue
-      parts.push(h('div', { class: 'ex' }, h('span', { class: 'tag', text: '例句' }), ...markIn(String(ex.text), lemma), ex.tr ? h('span', { class: 'tr', text: String(ex.tr) }) : null))
-    }
+      return h('div', { class: 'ex' }, h('span', { class: 'tag', text: '本视频' }), ...WC.markIn(h, txt, txt.toLowerCase().includes(lw) ? guess : word), document.createTextNode(' '), h('a', { text: LN.fmtTime(S.lines[j].t || 0), title: '跳到这句', onclick: () => seekLine(j, true) }))
+    })
     const t0 = S.lines[li]?.t || 0
-    parts.push(
-      h(
-        'div',
-        { class: 'row2' },
-        h('button', { class: 'p', text: `跳到这句 ${LN.fmtTime(t0)}`, onclick: () => seekLine(li, true) }),
-        h('button', { text: '播放原声', onclick: () => playClip(li) }),
-        h('button', { text: '朗读', onclick: () => speak(lemma) }),
-        h('button', { text: '复制', onclick: () => navigator.clipboard?.writeText(lemma).catch(() => {}) }),
-        h('button', { text: clipKeyHas(lemma) ? '♪ 已录原声' : '录原声（Anki）', title: '录下这一句的原声，导出 Anki 时带上', onclick: (e) => recordClip(lemma, li, e.target) }),
-      ),
-      saveLine,
-    )
+    const actions = [
+      h('button', { class: 'p', text: `跳到这句 ${LN.fmtTime(t0)}`, onclick: () => seekLine(li, true) }),
+      h('button', { text: '播放原声', onclick: () => playClip(li) }),
+      h('button', { text: '朗读', onclick: () => speak(guess) }),
+      h('button', { text: '复制', onclick: () => navigator.clipboard?.writeText(guess).catch(() => {}) }),
+      h('button', { text: clipKeyHas(guess) ? '♪ 已录原声' : '录原声（Anki）', title: '录下这一句的原声，导出 Anki 时带上', onclick: (e) => recordClip(guess, li, e.target) }),
+    ]
+    const { nodes: parts } = WC.render({ h, word, sentence, res, saved: have, onSave: (lemma) => saveWord(lemma, res, li), extraExamples, actions })
     bub.replaceChildren(...parts)
     placeBubble(r)
   }
@@ -703,21 +638,18 @@
     }
   }
 
-  async function saveWord(lemma, res, li, btn, statusEl) {
+  async function saveWord(lemma, res, li) {
     const line = S.lines[li] || { t: 0, text: '' }
-    const r = await send({
-      type: 'cc-vocab',
-      op: 'add',
-      word: { word: lemma, phonetic: res.phonetic || '', pos: res.pos || '', meaning: res.meaning || '', ctxMeaning: res.context_meaning || '', sentence: line.text, sourceTitle: document.title, sourceUrl: location.href, timeSec: (line.t || 0) / 1000 },
-    })
-    if (!r.ok) return toast(ui, r.error || '收藏失败', true)
+    const r = await WC.save(lemma, res, { sentence: line.text, timeSec: (line.t || 0) / 1000 })
+    if (!r.ok) {
+      toast(ui, r.error || '收藏失败', true)
+      return false
+    }
     S.saved.add(LN.norm(lemma))
     S.ver++
-    btn.textContent = '♥'
-    btn.classList.add('on')
-    if (statusEl) statusEl.textContent = '已加入生词本'
     toast(ui, `已收藏“${lemma}”，可以在清影的“生词本”里复习`)
     syncCache(false)
+    return true
   }
 
   /** 把这个视频的摘要会话和双语字幕同步到清影，生词本里就能看到、也能在别的浏览器恢复。 */
@@ -735,7 +667,7 @@
         title: document.title,
         site: V.videoIdOf(location.href)?.site || '',
         summary: sess ? { key: sess.key, ts: sess.ts, vk: sess.vk, url: sess.url, data: sess.data } : null,
-        subs: trans ? { key: await transKey(), target: S.target, lines: S.lines.map((l) => ({ t: l.t, text: l.text })), trans } : null,
+        subs: trans ? { key: L.cacheKey(V.videoKey(location.href), S.target, S.pv), target: S.target, lines: S.lines.map((l) => ({ t: l.t, text: l.text })), trans } : null,
         srcLang: '',
         dstLang: S.target || '',
       }
@@ -1006,19 +938,33 @@
     clearInterval(S.timer)
     window.removeEventListener('resize', layout)
     ui.remove()
+    unsub()
     delete globalThis.ccSubLayerRun
   }
-  /** 视频摘要里换了文稿（选了别的字幕轨、转写完成、重新断句）：字幕层跟着换，译文重新来（有缓存的直接用）。 */
+  /** 视频会话里的文稿换了（摘要里选了别的字幕轨、转写完成、单页应用切换了视频）：字幕层跟着换，译文重新来（有缓存的直接用）。 */
   function setLines(lines, track) {
     S.data = { ...(S.data || {}), lines, track }
     S.lines = lines.map((l) => ({ t: l.t, text: l.text }))
     S.trans = []
+    S.busy = false
     cap.dataset.k = ''
     setStatus(`已载入文稿 ${S.lines.length} 句${track ? `（${track}）` : ''}`)
     translateAll()
     refreshMarks()
     paint()
   }
+  const unsub = VS.subscribe((what, snap) => {
+    if (S.closed) return
+    if (what === 'lines' && snap.lines.length && snap.source !== 'sublayer') setLines(snap.lines, snap.track)
+    if (what === 'trans' && !S.trans.some(Boolean)) {
+      const have = VS.translations(S.target)
+      if (have && have.length === S.lines.length) {
+        S.trans = have
+        cap.dataset.k = ''
+        paint()
+      }
+    }
+  })
   globalThis.ccSubLayerRun = { destroy: api_destroy, setLines }
 
   ;(async () => {
@@ -1029,6 +975,7 @@
     learnSel.value = S.learn.on ? String(S.learn.level) : 'off'
     const st = await send({ type: 'cc-ai-status' })
     S.pv = st.ok ? String(st.promptVersion || '') : ''
+    VS.setPromptVersion(S.pv)
     S.target = S.prefs.target || (st.ok && st.lang) || '简体中文'
     if (![...langSel.options].some((o) => o.value === S.target)) langSel.append(h('option', { value: S.target, text: S.target }))
     S.video = pickVideo()
