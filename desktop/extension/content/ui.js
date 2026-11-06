@@ -31,12 +31,28 @@
     const style = document.createElement('style')
     style.textContent = BASE + css
     root.append(style)
-    const place = () => {
-      const parent = document.fullscreenElement || document.documentElement
-      if (host.parentNode !== parent) parent.append(host)
+    // 模态对话框（<dialog>.showModal()）打开时，对话框外面的东西都是“惰性”的，点不了、打不了字：放进对话框里
+    const modal = () => {
+      try {
+        return document.querySelector('dialog:modal')
+      } catch {
+        return null
+      }
     }
+    /** `preferred`：想放进去的容器（网页里的对话框 / 焦点陷阱）。放进去后如果容器有 transform，fixed 定位会错位，就退回到最外层。 */
+    const place = (preferred) => {
+      const el = preferred instanceof Element ? preferred : null
+      const parent = document.fullscreenElement || el || modal() || document.documentElement
+      if (host.parentNode !== parent) parent.append(host)
+      if (parent !== document.documentElement && parent !== document.fullscreenElement && parent !== modal()) {
+        const r = host.getBoundingClientRect()
+        if (Math.abs(r.left) > 1 || Math.abs(r.top) > 1) document.documentElement.append(host)
+      }
+    }
+    const auto = () => place()
     place()
-    document.addEventListener('fullscreenchange', place)
+    document.addEventListener('fullscreenchange', auto)
+    document.addEventListener('close', auto, true)
     try {
       void Promise.resolve(api.storage?.local?.get('vsumPrefs'))
         .then((r) => {
@@ -51,8 +67,10 @@
       host,
       root,
       add: (n) => root.append(n),
+      place,
       remove: () => {
-        document.removeEventListener('fullscreenchange', place)
+        document.removeEventListener('fullscreenchange', auto)
+        document.removeEventListener('close', auto, true)
         host.remove()
       },
     }
