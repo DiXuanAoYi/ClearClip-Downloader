@@ -117,6 +117,33 @@ async function trCustom(texts, target, context = '') {
   return out
 }
 
+/** DeepLX（自己部署或别人提供）和 DeepL 官方 API 的兼容写法：POST {text, source_lang:'auto', target_lang}，回 {data} 或 {translations:[{text}]}。 */
+async function trDeeplx(texts, target) {
+  const s = (await getTransCfg()).services?.deeplx || {}
+  if (!s.url) throw new Error('DeepLX 还没填好：在“设置 → 翻译”里填接口地址')
+  const out = new Array(texts.length)
+  let next = 0
+  const worker = async () => {
+    while (next < texts.length) {
+      const i = next++
+      let r
+      try {
+        r = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(s.key ? { Authorization: `Bearer ${s.key}` } : {}) }, body: JSON.stringify({ text: texts[i], source_lang: 'auto', target_lang: ccTrans.deeplLang(target) }) })
+      } catch {
+        throw new Error(`连不上 DeepLX（${s.url}）`)
+      }
+      if (r.status === 429) throw new Error('DeepLX 限流了（HTTP 429），稍后再试')
+      if (!r.ok) throw new Error(`DeepLX 返回了错误（HTTP ${r.status}）`)
+      const j = await r.json().catch(() => null)
+      const t = j?.data ?? j?.translations?.[0]?.text
+      if (typeof t !== 'string' || !t) throw new Error('DeepLX 没有返回译文')
+      out[i] = t
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(3, texts.length) }, worker))
+  return out
+}
+
 /** 长文本按句子切成不超过 1500 字的几段（谷歌这个接口用 GET，太长会被拒）。 */
 function trSplit(text, max = 1500) {
   if (text.length <= max) return [text]
@@ -234,6 +261,7 @@ async function translateTexts(texts, { target, engine, page = null, domain = fal
     let res
     if (engine === 'google') res = await trGoogle(src, target)
     else if (engine === 'custom') res = await trCustom(src, target, ctx)
+    else if (engine === 'deeplx') res = await trDeeplx(src, target)
     else {
       await trSlot()
       try {

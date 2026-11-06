@@ -198,10 +198,12 @@
 
   const MODES = ['bilingual', 'replace']
   const STYLES = ['card', 'dim', 'underline', 'highlight', 'plain']
-  const ENGINES = ['clearclip', 'google', 'custom']
+  const ENGINES = ['clearclip', 'google', 'custom', 'deeplx']
+  /** 默认关着、要自己填接口才能用的服务 */
+  const OPT_IN = ['custom', 'deeplx']
   const HOVER_KEYS = ['off', 'Control', 'Alt', 'Shift']
   /** 对比翻译时每个服务的显示名 */
-  const ENGINE_NAMES = { clearclip: '清影（大模型）', google: '谷歌翻译', custom: '自定义接口' }
+  const ENGINE_NAMES = { clearclip: '清影（大模型）', google: '谷歌翻译', custom: '自定义接口', deeplx: 'DeepLX / DeepL' }
   /** 按住修饰键多少毫秒算“按住”：0 = 只认单击 */
   const clampHold = (v) => {
     const n = Math.round(Number(v))
@@ -240,13 +242,13 @@
       const v = r[eng] && typeof r[eng] === 'object' ? r[eng] : {}
       const e = {}
       // 清影和谷歌默认开着，自定义接口默认关着（要填了地址和模型再打开）
-      if (eng === 'custom' ? v.enabled === true : v.enabled === false) e.enabled = eng === 'custom'
+      if (OPT_IN.includes(eng) ? v.enabled === true : v.enabled === false) e.enabled = OPT_IN.includes(eng)
       if (typeof v.target === 'string' && v.target.trim()) e.target = v.target.trim()
       if ((eng === 'clearclip' || eng === 'custom') && typeof v.prompt === 'string' && v.prompt.trim()) e.prompt = v.prompt.trim().slice(0, 500)
-      if (eng === 'custom') {
+      if (eng === 'custom' || eng === 'deeplx') {
         if (str(v.url, 300)) e.url = str(v.url, 300)
         if (str(v.key, 300)) e.key = str(v.key, 300)
-        if (str(v.model, 100)) e.model = str(v.model, 100)
+        if (eng === 'custom' && str(v.model, 100)) e.model = str(v.model, 100)
       }
       if (Object.keys(e).length) out[eng] = e
     }
@@ -258,9 +260,14 @@
     const c = cfg?.services?.custom
     return !!(c && c.enabled === true && c.url && c.model)
   }
+  const deeplxReady = (cfg) => {
+    const c = cfg?.services?.deeplx
+    return !!(c && c.enabled === true && c.url)
+  }
   const activeEngines = (cfg) => {
-    const on = ENGINES.filter((e) => (e === 'custom' ? customReady(cfg) : cfg?.services?.[e]?.enabled !== false))
-    return on.length ? on : ENGINES.filter((e) => e !== 'custom')
+    const ready = { custom: customReady, deeplx: deeplxReady }
+    const on = ENGINES.filter((e) => (ready[e] ? ready[e](cfg) : cfg?.services?.[e]?.enabled !== false))
+    return on.length ? on : ENGINES.filter((e) => !OPT_IN.includes(e))
   }
   /** 当前真正用的服务：设置里选的被关掉了，就换第一个还开着的 */
   const pickEngine = (cfg) => {
@@ -270,6 +277,16 @@
   /** 某个服务翻成什么语言：它自己的设置优先 */
   const engineTarget = (cfg, engine) => cfg?.services?.[engine]?.target || cfg?.target
   const enginePrompt = (cfg, engine) => cfg?.services?.[engine]?.prompt || ''
+
+  /** 语言代码 → DeepL 的目标语言代码（大写；繁体中文 ZH-HANT，其余取前两位）。 */
+  function deeplLang(code) {
+    const c = String(code || '').trim()
+    if (/^zh-(tw|hk|hant)/i.test(c)) return 'ZH-HANT'
+    if (/^zh/i.test(c)) return 'ZH'
+    if (/^pt-br/i.test(c)) return 'PT-BR'
+    if (/^en-gb/i.test(c)) return 'EN-GB'
+    return c.slice(0, 2).toUpperCase() || 'EN'
+  }
 
   // ---------- 自定义接口（OpenAI 兼容）----------
 
@@ -490,7 +507,7 @@
 
   globalThis.ccTrans = {
     LANGS, NAMES, uiLang, label, byCode, promptName, nameOf, scriptCounts, inTarget, worthTranslating, pageInTarget, batchPlan,
-    DEFAULT_CFG, MODES, STYLES, ENGINES, ENGINE_NAMES, normalizeServices, activeEngines, pickEngine, engineTarget, enginePrompt, customReady, chatUrl, splitBatches, parseArrayReply, customSystem, normalizeExclude, excludeFor, cleanCss, HOVER_KEYS, normalizeCfg, normalizeSites, parseSites, formatSites, effectiveCfg, hostList, shouldAuto, autoMatches, listed,
+    DEFAULT_CFG, MODES, STYLES, ENGINES, ENGINE_NAMES, normalizeServices, activeEngines, pickEngine, engineTarget, enginePrompt, customReady, deeplxReady, deeplLang, chatUrl, splitBatches, parseArrayReply, customSystem, normalizeExclude, excludeFor, cleanCss, HOVER_KEYS, normalizeCfg, normalizeSites, parseSites, formatSites, effectiveCfg, hostList, shouldAuto, autoMatches, listed,
     googleUrl, parseGoogle, cacheKey, pruneCache,
   }
 })()

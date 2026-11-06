@@ -238,6 +238,7 @@ const HANDLERS = {
     else if (m.action === 'shot') await startShot(tab)
     else if (m.action === 'batch-links') return await sendPageVideoLinks(tab)
     else if (m.action === 'webtrans') await webTransDo(tab, String(m.mode || 'toggle'))
+    else if (m.action === 'excludepick') await injectFiles(tab.id, ['content/ui.js', 'content/excludepick.js'])
     else throw new Error('未知操作')
     return {}
   },

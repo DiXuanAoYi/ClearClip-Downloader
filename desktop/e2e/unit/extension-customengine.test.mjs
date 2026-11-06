@@ -129,3 +129,19 @@ test('后台引擎：模型没按数组回就逐条重来，不会错位；没�
   const unauth = load(store, async () => ({ ok: false, status: 401, text: async () => 'no' }))
   await assert.rejects(vm.runInContext('translateTexts(["Hi"], { target: "zh-CN", engine: "custom" })', unauth.ctx), /密钥/)
 })
+
+test('DeepLX：默认关；POST 目标语言代码；兼容两种返回', async () => {
+  const { T } = load()
+  assert.deepEqual(plain(T.activeEngines(T.normalizeCfg({ services: { deeplx: { enabled: true } } }))), ['clearclip', 'google'], '没填地址不算')
+  assert.ok(T.activeEngines(T.normalizeCfg({ services: { deeplx: { enabled: true, url: 'http://x/translate' } } })).includes('deeplx'))
+  assert.deepEqual(['zh-CN', 'zh-TW', 'ja', 'pt-BR', 'en'].map(T.deeplLang), ['ZH', 'ZH-HANT', 'JA', 'PT-BR', 'EN'])
+  const store = { transCfg: { services: { deeplx: { enabled: true, url: 'http://localhost:1188/translate', key: 'k' } } } }
+  const { ctx, calls } = load(store, async (_u, init) => {
+    const first = JSON.parse(init.body).text === 'Hello'
+    return { ok: true, status: 200, json: async () => (first ? { data: '你好' } : { translations: [{ text: '世界' }] }), text: async () => '' }
+  })
+  const r = await vm.runInContext('translateTexts(["Hello","World"], { target: "zh-CN", engine: "deeplx" })', ctx)
+  assert.deepEqual(plain(r.texts), ['你好', '世界'])
+  assert.equal(calls[0].body.target_lang, 'ZH')
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer k')
+})

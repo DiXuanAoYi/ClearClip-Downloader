@@ -539,7 +539,7 @@ async function loadTransCfg() {
   $('trCompare').checked = c.compare
   for (const eng of ccTrans.ENGINES) {
     const sv = c.services[eng] || {}
-    $(`svcOn_${eng}`).checked = eng === 'custom' ? sv.enabled === true : sv.enabled !== false
+    $(`svcOn_${eng}`).checked = eng === 'custom' || eng === 'deeplx' ? sv.enabled === true : sv.enabled !== false
     const sel = $(`svcLang_${eng}`)
     fillLangs(sel, sv.target || c.target)
     const keep = document.createElement('option')
@@ -549,6 +549,8 @@ async function loadTransCfg() {
     sel.value = sv.target || ''
   }
   $('svcPrompt_clearclip').value = c.services.clearclip?.prompt || ''
+  $('svcUrl_deeplx').value = c.services.deeplx?.url || ''
+  $('svcKey_deeplx').value = c.services.deeplx?.key || ''
   $('svcUrl_custom').value = c.services.custom?.url || ''
   $('svcKey_custom').value = c.services.custom?.key || ''
   $('svcModel_custom').value = c.services.custom?.model || ''
@@ -589,6 +591,7 @@ $('saveTrans').onclick = async () => {
           enabled: $(`svcOn_${eng}`).checked,
           target: $(`svcLang_${eng}`).value,
           prompt: eng === 'clearclip' ? $('svcPrompt_clearclip').value : eng === 'custom' ? $('svcPrompt_custom').value : '',
+          ...(eng === 'deeplx' ? { url: $('svcUrl_deeplx').value, key: $('svcKey_deeplx').value } : {}),
           ...(eng === 'custom' ? { url: $('svcUrl_custom').value, key: $('svcKey_custom').value, model: $('svcModel_custom').value } : {}),
         },
       ]),
@@ -893,6 +896,7 @@ async function runOnPage(action) {
 }
 $('openOverview').onclick = () => runOnPage('overview')
 $('startPick').onclick = () => runOnPage('picker')
+$('pickExclude').onclick = () => runOnPage('excludepick')
 $('batchLinks').onclick = async () => {
   const tab = await currentTab()
   if (!tab?.url?.startsWith('http')) return msg('当前页面不能使用这个功能', 'err')

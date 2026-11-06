@@ -227,6 +227,31 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     await page.close()
   }
 
+  // ---- 点选不翻译的区域
+  {
+    const { page } = await open('https://news.test/', { cfg: { target: 'ja' } })
+    await page.addScriptTag({ path: path.join(EXT, 'content/excludepick.js') })
+    const r = await page.evaluate(() => { const b = document.getElementById('p1').getBoundingClientRect(); return { x: b.x + 20, y: b.y + 6 } })
+    await page.mouse.move(r.x, r.y)
+    await page.mouse.click(r.x, r.y)
+    await settle(page, 200)
+    const shown = await page.evaluate(() => window.__roots.map((x) => x.querySelector('code')?.textContent).find(Boolean))
+    ok('点一下锁定元素并给出选择器', shown === '#p1', String(shown))
+    ok('点选时不触发页面自己的点击', await page.evaluate(() => location.hash === ''))
+    await page.evaluate(() => { const root = window.__roots.find((x) => x.querySelector('code')); [...root.querySelectorAll('button')].find((b) => b.textContent === '加入排除').click() })
+    await settle(page, 300)
+    const ex = await page.evaluate(() => window.__store.transCfg?.exclude)
+    ok('加入设置：只对这个网站', JSON.stringify(ex) === JSON.stringify(['news.test | #p1']), JSON.stringify(ex))
+    // 退出（再次注入）后，设置里的排除生效
+    await page.addScriptTag({ path: path.join(EXT, 'content/excludepick.js') })
+    await page.evaluate(() => window.__setCfg(window.__store.transCfg))
+    await page.evaluate(() => window.__cmd('toggle'))
+    await page.waitForFunction(() => document.querySelectorAll('[data-cc-tr]').length >= 1, null, { timeout: 8000 })
+    await settle(page, 300)
+    ok('排除的区域不翻译，别处照常', !(await page.evaluate(() => !!document.getElementById('p1').querySelector('[data-cc-tr]'))) && (await page.evaluate(() => !!document.getElementById('p3').querySelector('[data-cc-tr]'))))
+    await page.close()
+  }
+
   // ---- 悬停：按住 Ctrl 不松手，鼠标扫过哪一段就翻译哪一段
   {
     const { page } = await open('https://news.test/', { cfg: { target: 'ja' } })
