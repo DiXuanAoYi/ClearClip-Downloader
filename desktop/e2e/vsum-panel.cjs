@@ -51,6 +51,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
         sendMessage: async (m) => {
           window.__calls.push(m)
           if (m.type === 'cc-app-lang') return { ok: true, lang: 'zh' }
+          if (m.type === 'cc-tr') return { ok: true, texts: (m.texts || []).map((t) => '译:' + t), cached: 0 }
           if (m.type === 'cc-ai-status') return { ok: true, ready: o.ready !== false, model: 'm', lang: '中文', transcribe: true, subtitles: true, maxChars: 600000 }
           if (m.type === 'cc-ai-run') {
             window.__job = m.req
@@ -173,6 +174,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const meta = await text(page, '.meta')
     ok('读到字幕：3 段、轨道名', /3 段/.test(meta) && /English/.test(meta), meta)
     ok('标题取自页面数据', (await text(page, '.hd')).includes('Demo "video"'))
+    ok('读到字幕后自动打开字幕层（把文稿交过去）', await page.evaluate(() => window.__calls.some((c) => c.type === 'cc-sublayer-open') && window.__sub?.length === 3 || (globalThis.ccSubLayerSeed?.lines?.length === 3)), '')
     await clickText(page, '生成摘要')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('这个视频介绍了 Rust')), null, { timeout: 8000 })
     const run = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-ai-run').req)
@@ -192,6 +194,13 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '文稿')
     if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-transcript.png' })
     ok('文稿列出 3 行', (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 3)
+    // 文稿里鼠标停在一句上：旁边出现小悬浮窗，给出这句的译文
+    await page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln')).find(Boolean); el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false })) })
+    await page.waitForFunction(() => window.__roots.some((r) => r.querySelector('.hov .out')?.textContent.includes('译:')), null, { timeout: 8000 }).catch(() => {})
+    ok('文稿里鼠标停在一句上出现小悬浮窗并给出译文', await page.evaluate(() => window.__roots.some((r) => /译:/.test(r.querySelector('.hov .out')?.textContent || ''))))
+    await page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln')).find(Boolean); el.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false })) })
+    await settle(page, 500)
+    ok('鼠标移开后小悬浮窗消失', await page.evaluate(() => !window.__roots.some((r) => r.querySelector('.hov'))))
     await page.evaluate(() => {
       const i = window.__roots.map((r) => r.querySelector('input#tsearch')).find(Boolean)
       i.value = 'rust'

@@ -28,6 +28,11 @@
     .vcard .vf { margin-top: 4px; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; margin: 6px 0; }
     .chip { background: #d9762b1f; color: #8a3f0c; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+    .hov { position: fixed; z-index: 3; width: min(340px, calc(100vw - 16px)); background: #fff; color: #1d2420; border: 1px solid #cfd5d1; border-radius: 10px; box-shadow: 0 10px 28px #0003; padding: 8px 10px; font-size: 13px; line-height: 1.6; }
+    .hov .src { color: #5d6862; font-size: 12px; margin-bottom: 4px; }
+    .hov .out { white-space: pre-wrap; word-break: break-word; }
+    .hov .bar { display: flex; gap: 6px; margin-top: 6px; }
+    .hov button { padding: 1px 8px; font-size: 12px; }
     .ln { position: relative; display: grid; grid-template-columns: 48px 1fr; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; }
     .ln:hover { background: #d9762b14; }
     .ln.cur { background: #d9762b1f; }
@@ -797,7 +802,7 @@
     const body = h('div', { id: 'lines', onmouseup: onSelect })
     d.lines.forEach((l, i) => {
       const [main, sub] = V.viewLine(l.text, tr?.[i], mode)
-      body.append(h('div', { class: `ln${hits?.has(i) ? ' hit' : ''}${i === nowIdx ? ' now' : ''}`, 'data-i': i, onclick: () => !getSel() && seek(l.t) },
+      body.append(h('div', { class: `ln${hits?.has(i) ? ' hit' : ''}${i === nowIdx ? ' now' : ''}`, 'data-i': i, onclick: () => !getSel() && seek(l.t), onmouseenter: (e) => hovIn(l, i, e.currentTarget), onmouseleave: hovOut },
         isVideo() && h('span', { class: 'tm', text: V.fmtClock(l.t) }),
         h('span', { style: 'flex:1' }, ...marks(main), sub ? h('span', { class: 'tr' }, ...marks(sub)) : null),
         h('button', { class: 'rec', title: '把这句记成笔记', text: '＋', onclick: (e) => (e.stopPropagation(), addNote({ t: l.t, text: l.text })) })))
@@ -813,6 +818,7 @@
       h('div', { class: 'tools' },
         S.detached && S.prefs.follow && isVideo() && h('button', { text: '回到当前句', onclick: () => ((S.detached = false), tick(true)) }),
         isVideo() && h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.follow, onchange: (e) => ((S.prefs.follow = e.target.checked), savePrefs()) }), ' 跟随播放'),
+        isVideo() && h('label', { class: 'mute', title: '读到字幕后，把文稿同时作为字幕层叠在视频上（双语、调字号位置、导出）' }, h('input', { type: 'checkbox', checked: S.prefs.autoSub !== false, onchange: (e) => ((S.prefs.autoSub = e.target.checked), savePrefs(), e.target.checked ? syncSubLayer(S.data) : globalThis.ccSubLayerRun?.destroy()) }), ' 显示在视频上'),
         langSelect('翻译成哪种语言（任意语言互译，自动识别原文）', () => ((S.res.translated = null), render())),
         h('button', { class: 'sec', text: tr ? '重新翻译' : outLabel() ? `翻译成${outLabel()}` : '翻译（自动方向）', disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
         tr && sel([['both', '双语'], ['orig', '只看原文'], ['tr', '只看译文']], mode, (v) => ((S.prefs.view = v), savePrefs(), render()), '显示'),
@@ -831,6 +837,45 @@
   /** 把文字里的搜索词用 <mark> 标出来。 */
   function marks(text) {
     return V.splitMarks(text, S.query).map((p) => (p.hit ? h('mark', { text: p.s }) : p.s))
+  }
+
+  // 文稿里鼠标停在一句上：旁边出现小悬浮窗，给出这一句的译文（可复制、可在翻译窗里继续）
+  let hovCard = null
+  let hovTimer = 0
+  let hovHide = 0
+  function hovClose() {
+    clearTimeout(hovTimer)
+    clearTimeout(hovHide)
+    hovCard?.remove()
+    hovCard = null
+  }
+  function hovOut() {
+    clearTimeout(hovTimer)
+    clearTimeout(hovHide)
+    hovHide = setTimeout(hovClose, 260)
+  }
+  function hovIn(l, i, el) {
+    clearTimeout(hovHide)
+    clearTimeout(hovTimer)
+    if (getSel()?.toString()) return
+    hovTimer = setTimeout(async () => {
+      hovClose()
+      const known = S.res.translated?.[i]
+      const out = h('div', { class: 'out', text: known || '正在翻译…' })
+      const copy = h('button', { class: 'sec', text: '复制', onclick: () => navigator.clipboard?.writeText(out.textContent).then(() => (copy.textContent = '已复制'), () => (copy.textContent = '复制失败')) })
+      const card = h('div', { class: 'hov', onmouseenter: () => clearTimeout(hovHide), onmouseleave: hovOut }, h('div', { class: 'src', text: l.text }), out, h('div', { class: 'bar' }, copy, h('button', { class: 'sec', text: '翻译窗', onclick: () => (hovClose(), send({ type: 'cc-open-transbox', text: l.text })) })))
+      hovCard = card
+      ui.add(card)
+      const r = el.getBoundingClientRect()
+      const w = Math.min(340, innerWidth - 16)
+      card.style.left = `${r.left - w - 8 >= 8 ? r.left - w - 8 : Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`
+      card.style.top = `${Math.max(8, Math.min(r.top, innerHeight - 150))}px`
+      if (known) return
+      const target = S.prefs.lang.trim() || S.status?.lang || '简体中文'
+      const res = await send({ type: 'cc-tr', texts: [l.text], target, engine: 'clearclip' })
+      if (hovCard !== card) return
+      out.textContent = res.ok ? res.texts?.[0] || '' : res.error || '翻译失败了'
+    }, 450)
   }
 
   function stepHit(d) {
@@ -1860,6 +1905,21 @@
     }
   }
 
+  /** 读到字幕后，同时把文稿作为字幕层叠在视频上（已经开着就换成新文稿）；可在文稿页关掉。 */
+  let subOpenAt = 0
+  function syncSubLayer(d) {
+    if (!isVideo() || !d.lines.length) return
+    const lines = d.lines.map((l) => ({ t: l.t, text: l.text }))
+    const run = globalThis.ccSubLayerRun
+    if (run?.setLines) return run.setLines(lines, d.track || '')
+    if (S.prefs.autoSub === false) return
+    // 正在打开的这几秒里不再重复发（再注入一次会把字幕层关掉）
+    if (Date.now() - subOpenAt < 4000) return void (globalThis.ccSubLayerSeed = { lines, track: d.track || '' })
+    subOpenAt = Date.now()
+    globalThis.ccSubLayerSeed = { lines, track: d.track || '' }
+    send({ type: 'cc-sublayer-open' })
+  }
+
   function setData(d) {
     S.data = d
     S.res = {}
@@ -1869,6 +1929,7 @@
     S.restored = 0
     render()
     if (!d.lines.length) return
+    syncSubLayer(d)
     // 同一份文稿以前生成的所有结果和对话直接带出来（不需要大模型）；会话里没有的摘要再去缓存里找
     restoreSession(d)
       .then(async () => {

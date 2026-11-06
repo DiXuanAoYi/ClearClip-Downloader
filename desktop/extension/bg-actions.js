@@ -363,7 +363,9 @@ const HANDLERS = {
     )
     return { results, engines: ccTrans.activeEngines(cfg), names: ccTrans.ENGINE_NAMES }
   },
-  'cc-open-transbox': async () => (await openTransBox(null), {}),
+  'cc-open-transbox': async (m, sender) => (await openTransBox(sender?.tab || null, String(m.text || '').slice(0, 5000)), {}),
+  // 视频摘要读到字幕后，把文稿作为字幕层叠在视频上
+  'cc-sublayer-open': async (_m, sender) => (sender?.tab && (await startSubLayer(sender.tab)), {}),
   'cc-tr-clear': async () => (await clearTransCache(), {}),
   // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）
   'cc-note': async (m) => {
