@@ -102,6 +102,36 @@
     }
   }
 
+  /**
+   * 统一的 AI 调用：交给清影，等结果。所有内容脚本都用它，不再各写一套轮询。
+   * opts：interval 查询间隔（毫秒）；stop() 返回真就放弃并通知清影取消（keepOnStop 时不取消，清影继续跑）；
+   * onProgress(job) 进度；onSubmit(id)；timeoutMs 超时；id 接上一个已经在跑的任务（不再提交）。
+   */
+  async function aiRun(req, opts = {}) {
+    const sub = opts.id ? { ok: true, id: opts.id } : await send({ type: 'cc-ai-run', req })
+    if (!sub.ok) throw new Error(sub.error || '提交失败')
+    opts.onSubmit?.(sub.id)
+    const deadline = opts.timeoutMs ? Date.now() + opts.timeoutMs : Infinity
+    const cancel = () => send({ type: 'cc-ai-cancel', id: sub.id })
+    for (;;) {
+      await new Promise((r) => setTimeout(r, opts.interval || 500))
+      if (opts.stop?.()) {
+        if (!opts.keepOnStop) cancel()
+        throw new Error('已取消')
+      }
+      if (Date.now() > deadline) {
+        cancel()
+        throw new Error('等太久了，已取消')
+      }
+      const j = await send({ type: 'cc-ai-job', id: sub.id })
+      if (!j.ok) throw new Error(j.error || '查询失败')
+      opts.onProgress?.(j)
+      if (j.state === 'done') return j.result || {}
+      if (j.state === 'error') throw new Error(j.error || '失败了')
+      if (j.state === 'cancelled' || j.state === 'canceled') throw new Error('已取消')
+    }
+  }
+
   async function siteRules() {
     try {
       const { siteRules: r } = await api.storage.local.get('siteRules')
@@ -138,5 +168,5 @@
     return t
   }
 
-  globalThis.ccUI = { api, mount, h, send, siteRules, hostOff, onSettings, toast, listed }
+  globalThis.ccUI = { api, mount, h, send, aiRun, siteRules, hostOff, onSettings, toast, listed }
 })()

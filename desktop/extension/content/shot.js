@@ -250,19 +250,7 @@
     const engLabel = () => (engine === 'two' ? '识别：视觉识字 + 翻译模型 ▾' : '识别：视觉模型 ▾')
     bEng.textContent = engLabel()
     // 提交一个后台任务并等结果
-    const runAi = async (req) => {
-      const sub = await send({ type: 'cc-ai-run', req })
-      if (!sub.ok) throw new Error(sub.error || '提交失败')
-      for (let n = 0; n < 240; n++) {
-        await wait(500)
-        if (!globalThis.__ccShotStop) throw new Error('已取消')
-        const j = await send({ type: 'cc-ai-job', id: sub.id })
-        if (!j.ok) throw new Error(j.error || '任务失败')
-        if (j.state === 'error') throw new Error(j.error || '翻译失败')
-        if (j.state === 'done') return j.result || {}
-      }
-      throw new Error('翻译超时')
-    }
+    const runAi = (req) => globalThis.ccUI.aiRun(req, { interval: 500, stop: () => !globalThis.__ccShotStop, timeoutMs: 120000 })
     const retrans = async (texts) => {
       const res = await runAi({ kind: 'webtrans', lang: cap.lang, title: document.title, context: location.hostname, lines: texts.map((t, i) => ({ t: i, text: t })) })
       const out = new Map((res.lines || []).map((l) => [l.t, l.text]))
@@ -350,35 +338,33 @@
       }, 'image/jpeg', 0.92)
     }
 
-    const sub = await send({ type: 'cc-ai-run', req: { kind: 'imgtrans', image: cap.dataUrl, lang: cap.lang, title: document.title } })
-    if (!sub.ok) return fail(sub.error || '提交失败')
-    jobId = sub.id
-    for (let n = 0; n < 240; n++) {
-      await wait(500)
+    let result
+    try {
+      result = await globalThis.ccUI.aiRun(
+        { kind: 'imgtrans', image: cap.dataUrl, lang: cap.lang, title: document.title },
+        { interval: 500, stop: () => !globalThis.__ccShotStop, timeoutMs: 120000, onSubmit: (id) => (jobId = id) },
+      )
+    } catch (e) {
+      jobId = ''
       if (!globalThis.__ccShotStop) return
-      const j = await send({ type: 'cc-ai-job', id: jobId })
-      if (!j.ok) return fail(j.error)
-      if (j.state === 'error') return fail(j.error || '翻译失败')
-      if (j.state === 'done') {
-        blocks = (j.result?.blocks || []).filter((b) => b && b.translation)
-        jobId = ''
-        if (!blocks.length) return fail('没有识别到文字')
-        if (engine === 'two') {
-          status.textContent = '正在用翻译模型重新翻译……'
-          try {
-            const trs = await retrans(blocks.map((b) => b.text))
-            blocks.forEach((b, i) => trs[i] && (b.translation = trs[i]))
-          } catch {
-            /* 失败就保留视觉模型给的译文 */
-          }
-        }
-        status.remove()
-        draw()
-        renderList()
-        return
+      return fail(e.message || '翻译失败')
+    }
+    jobId = ''
+    blocks = (result.blocks || []).filter((b) => b && b.translation)
+    if (!blocks.length) return fail('没有识别到文字')
+    if (engine === 'two') {
+      status.textContent = '正在用翻译模型重新翻译……'
+      try {
+        const trs = await retrans(blocks.map((b) => b.text))
+        blocks.forEach((b, i) => trs[i] && (b.translation = trs[i]))
+      } catch {
+        /* 失败就保留视觉模型给的译文 */
       }
     }
-    fail('翻译超时')
+    status.remove()
+    draw()
+    renderList()
+    return
 
     function fail(msg) {
       jobId = ''

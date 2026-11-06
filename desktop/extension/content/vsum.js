@@ -431,39 +431,29 @@
         if (j.ok && (j.state === 'running' || j.state === 'done')) id = old.id
       }
     }
-    if (!id) {
-      const sub = await send({ type: 'cc-ai-run', req })
-      if (!sub.ok) throw new Error(sub.error)
-      id = sub.id
-    }
-    if (tag) await setJobRec(tag, { id, kind, page, ts: Date.now() })
     const job = { id, kind, tag, done: 0, total: 0, note: '' }
-    if (!S.job) S.job = job // 同时有多个后台任务时，进度条只显示最先开始的那个
-    renderProgress()
     let finished = false
     try {
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 700))
-        if (S.closed) throw new Error('已取消')
-        const j = await send({ type: 'cc-ai-job', id })
-        if (!j.ok) throw new Error(j.error)
-        job.done = j.done
-        job.total = j.total
-        job.note = j.note || ''
-        renderProgress()
-        if (j.state === 'done') {
-          finished = true
-          return j.result
-        }
-        if (j.state === 'error') {
-          finished = true
-          throw new Error(j.error || '失败了')
-        }
-        if (j.state === 'cancelled') {
-          finished = true
-          throw new Error('已取消')
-        }
-      }
+      // 关掉面板不取消：清影继续跑，重新打开后接上（keepOnStop）
+      return await globalThis.ccUI.aiRun(req, {
+        id,
+        interval: 700,
+        keepOnStop: true,
+        stop: () => S.closed,
+        onSubmit: async (x) => {
+          job.id = x
+          if (tag) await setJobRec(tag, { id: x, kind, page, ts: Date.now() })
+          if (!S.job) S.job = job // 同时有多个后台任务时，进度条只显示最先开始的那个
+          renderProgress()
+        },
+        onProgress: (j) => {
+          job.done = j.done
+          job.total = j.total
+          job.note = j.note || ''
+          if (j.state !== 'running') finished = true
+          renderProgress()
+        },
+      })
     } catch (e) {
       finished = finished || !S.closed
       throw e

@@ -199,18 +199,8 @@
   const clip = (s, n) => (s.length > n ? `${s.slice(0, n)}…` : s)
 
   async function pollJob(req) {
-    const sub = await send({ type: 'cc-ai-run', req })
-    if (!sub.ok) throw new Error(sub.error || '提交失败')
     const me = ++st.job
-    st.job = me
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 500))
-      if (st.job !== me || !st.card) throw new Error('已取消')
-      const j = await send({ type: 'cc-ai-job', id: sub.id })
-      if (!j.ok) throw new Error(j.error || '查询失败')
-      if (j.state === 'done') return j.result
-      if (j.state === 'error' || j.state === 'canceled') throw new Error(j.error || '失败了')
-    }
+    return globalThis.ccUI.aiRun(req, { interval: 500, stop: () => st.job !== me || !st.card })
   }
 
   /** 打开结果卡片。run(setBody) 负责产生内容；extra(ft, getText) 往底部加按钮。 */

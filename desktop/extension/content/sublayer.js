@@ -419,23 +419,13 @@
       const st = await send({ type: 'cc-ai-status' })
       if (!st.ok) throw new Error(st.error)
       if (st.transcribe === false) throw new Error('清影里还没有配置语音转文字：到“设置 → AI”选择本机 whisper.cpp，或在模型池里勾选云端语音转文字')
-      const sub = await send({ type: 'cc-ai-run', req: { kind: 'transcribe', url: location.href, title: document.title } })
-      if (!sub.ok) throw new Error(sub.error)
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 800))
-        if (S.closed) return
-        const j = await send({ type: 'cc-ai-job', id: sub.id })
-        if (!j.ok) throw new Error(j.error)
-        setStatus(`${j.note || '清影正在转写…'}${j.total ? ` ${j.done}%` : ''}`)
-        if (j.state === 'error') throw new Error(j.error || '转写失败')
-        if (j.state === 'cancelled') throw new Error('已取消')
-        if (j.state === 'done') {
-          S.lines = (j.result?.lines || []).map((l) => ({ t: l.t, text: l.text }))
-          if (!S.lines.length) throw new Error('没有识别出任何语音')
-          S.trans = []
-          break
-        }
-      }
+      const res = await globalThis.ccUI.aiRun(
+        { kind: 'transcribe', url: location.href, title: document.title },
+        { interval: 800, stop: () => S.closed, onProgress: (j) => setStatus(`${j.note || '清影正在转写…'}${j.total ? ` ${j.done}%` : ''}`) },
+      )
+      S.lines = (res.lines || []).map((l) => ({ t: l.t, text: l.text }))
+      if (!S.lines.length) throw new Error('没有识别出任何语音')
+      S.trans = []
     } catch (e) {
       setStatus(e.message)
       toast(ui, e.message, true, 6000)
@@ -497,21 +487,10 @@
   async function lookup(word, sentence) {
     const key = `${LN.norm(word)}|${sentence.slice(0, 80)}`
     if (S.lk.has(key)) return S.lk.get(key)
-    const sub = await send({ type: 'cc-ai-run', req: { kind: 'lookup', text: word, context: sentence, title: document.title, lang: S.target } })
-    if (!sub.ok) throw new Error(sub.error || '查询失败')
-    for (let n = 0; n < 80; n++) {
-      await new Promise((r) => setTimeout(r, 350))
-      if (S.closed) throw new Error('已关闭')
-      const j = await send({ type: 'cc-ai-job', id: sub.id })
-      if (!j.ok) throw new Error(j.error)
-      if (j.state === 'error') throw new Error(j.error || '查询失败')
-      if (j.state === 'done') {
-        S.lk.set(key, j.result || {})
-        if (S.lk.size > 200) S.lk.delete(S.lk.keys().next().value)
-        return j.result || {}
-      }
-    }
-    throw new Error('查询超时')
+    const res = await globalThis.ccUI.aiRun({ kind: 'lookup', text: word, context: sentence, title: document.title, lang: S.target }, { interval: 350, stop: () => S.closed, timeoutMs: 30000 })
+    S.lk.set(key, res)
+    if (S.lk.size > 200) S.lk.delete(S.lk.keys().next().value)
+    return res
   }
 
   const speak = (t) => {

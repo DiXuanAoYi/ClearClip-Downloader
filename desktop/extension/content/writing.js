@@ -646,26 +646,11 @@
 
   // ---- 运行
   async function job(req) {
-    const sub = await send({ type: 'cc-ai-run', req })
-    if (!sub.ok) throw new Error(sub.error || '提交失败')
-    st.job = sub.id
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 600))
-      if (!st || st.job !== sub.id) throw new Error('已取消')
-      const j = await send({ type: 'cc-ai-job', id: sub.id })
-      if (!j.ok) throw new Error(j.error || '查询失败')
-      if (j.state === 'done') {
-        st.job = 0
-        return j.result
-      }
-      if (j.state === 'error') {
-        st.job = 0
-        throw new Error(j.error || '失败了')
-      }
-      if (j.state === 'cancelled') {
-        st.job = 0
-        throw new Error('已取消')
-      }
+    let id = 0
+    try {
+      return await globalThis.ccUI.aiRun(req, { interval: 600, onSubmit: (x) => ((id = x), st && (st.job = x)), stop: () => !st || st.job !== id })
+    } finally {
+      if (st && st.job === id) st.job = 0
     }
   }
 
