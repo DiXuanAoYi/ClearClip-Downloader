@@ -16,10 +16,17 @@ const pay = (o = {}) => ({ seq: 1, mode: 'standard', rect: [0, 0, 1000, 500], bl
 {
   const v = { sx: 0.5, sy: 0.5 }
   const s = O.blockStyle(blk(), pay(), v, 14)
-  assert.equal(s.left, '50px')
-  assert.equal(s.top, '25px')
-  assert.equal(s.width, '100px')
-  assert.equal(s.height, '20px')
+  const pad = O.padOf(blk(), pay(), v)
+  assert.ok(pad >= 2 && pad <= 7)
+  // 框往外扩一圈（不再贴着原文裁字），高度是最小高度、放不下会自己长
+  assert.equal(s.left, `${50 - pad}px`)
+  assert.equal(s.top, `${25 - pad}px`)
+  assert.equal(s.width, `${100 + pad * 2}px`)
+  assert.equal(s['min-height'], `${20 + pad * 2}px`)
+  assert.equal(s.height, undefined)
+  assert.equal(s.overflow, 'visible')
+  assert.equal(s['justify-content'], 'center', '单行上下居中')
+  assert.equal(O.blockStyle(blk({ lines: 3 }), pay(), v, 14)['justify-content'], 'flex-start', '多行从上往下排')
   assert.equal(s['font-size'], '14px')
   assert.equal(O.startFont(blk({ font: 10 }), pay(), v), 12, '起始字号不低于最小字号 12')
   assert.equal(O.startFont(blk({ font: 40 }), pay(), v), 20)
