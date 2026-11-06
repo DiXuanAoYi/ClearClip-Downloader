@@ -287,6 +287,10 @@
     status()
     const r = await send({ type: 'cc-tr', texts: batch.map((b) => b.text), target: T.engineTarget(S.cfg, T.pickEngine(S.cfg)), engine: T.pickEngine(S.cfg), page: pageInfo() })
     S.inflight--
+    if (r.ok && r.fallback && !S.fallbackTold) {
+      S.fallbackTold = true
+      globalThis.ccUI.toast(uiRoot(), `清影没开，这一页先用 ${T.ENGINE_NAMES[r.fallback] || r.fallback} 备用翻译（不带术语库）`, false, 5000)
+    }
     if (!r.ok) {
       S.err = r.error || '翻译失败了'
       for (const it of batch) markFail(it.id)

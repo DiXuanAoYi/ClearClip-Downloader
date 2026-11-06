@@ -27,6 +27,7 @@ pub mod experts;
 pub mod experts_cmds;
 pub mod datareg;
 pub mod filetr;
+pub mod tm;
 pub mod glossary;
 pub mod glossary_cmds;
 pub mod grab;

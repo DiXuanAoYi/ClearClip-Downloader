@@ -181,7 +181,7 @@
     <h2>网页翻译</h2>
     <p class="mute">整页双语对照、单击 Ctrl 翻译鼠标指着的段落、选中文字点“译”、输入框里连按三次空格翻译。只翻译看得见的段落，翻过的内容会缓存在本机。</p>
     <label>翻译引擎</label>
-    <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option><option value="deeplx">DeepLX / DeepL（要先在下面填好）</option><option value="custom">自定义接口（OpenAI 兼容：DeepSeek、通义、Ollama 等；要先在下面填好）</option></select>
+    <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option><option value="deeplx">DeepLX / DeepL（要先在下面填好；选“清影”时，清影没开会自动用它备用）</option><option value="custom">自定义接口（OpenAI 兼容；建议在清影的模型池里加，这里留作清影没开时的备用）</option></select>
     <div class="rowBtns">
       <div class="col"><label>目标语言</label><select id="trTarget2"></select></div>
       <div class="col"><label>译文样式</label><select id="trStyle"><option value="card">底色块（醒目）</option><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>

@@ -989,11 +989,20 @@ async fn run_pdf_scanned(
     Ok(out)
 }
 
-/// 翻译用的系统提示词和术语（和网页翻译同款：术语库 + AI 专家）。
-fn trans_setup(st: &crate::AppState, settings: &crate::settings::Settings, target: &str) -> (String, Vec<crate::glossary::Term>) {
+/// 翻译用的系统提示词和术语（术语库 + AI 专家）。字幕文件用字幕档案（和工具箱、摘要面板一样），其余用文档档案。
+fn trans_setup(st: &crate::AppState, settings: &crate::settings::Settings, target: &str, profile: crate::tm::Profile) -> (String, Vec<crate::glossary::Term>) {
     let terms = if settings.ai.glossary_on { st.glossary.terms_for("", ai::lang_tag(target)) } else { vec![] };
     let guide = st.experts.resolve(&settings.ai.expert, settings.ai.expert_auto, "").map(|e| crate::experts::guide_block(&e)).unwrap_or_default();
-    (format!("{}{}", crate::vsum::webtrans_system(target), guide), terms)
+    let base = if profile == crate::tm::Profile::Subtitle { ai::translate_system(target) } else { crate::vsum::webtrans_system(target) };
+    (format!("{base}{guide}"), terms)
+}
+
+fn profile_of(kind: Kind) -> crate::tm::Profile {
+    if kind == Kind::Sub {
+        crate::tm::Profile::Subtitle
+    } else {
+        crate::tm::Profile::Document
+    }
 }
 
 /// 翻译一批文字；返回和输入等长，失败的那条是 None。
@@ -1005,7 +1014,7 @@ async fn translate_texts(
     texts: &[String],
     check: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
 ) -> AppResult<ai::Translated> {
-    let (system, terms) = trans_setup(st, settings, target);
+    let (system, terms) = trans_setup(st, settings, target, crate::tm::Profile::Document);
     let work: Vec<Cue> = texts.iter().enumerate().map(|(k, t)| Cue { start: k as u64, end: k as u64 + 1, lines: vec![t.clone()] }).collect();
     ai::map_cues_g(ep, &settings.ai.model, &system, &work, settings.ai.batch_size.clamp(8, 30), &terms, check).await
 }
@@ -1190,8 +1199,13 @@ pub async fn page_preview(st: &crate::AppState, input: &Path, target: &str, ocr:
 pub fn edit_seg(data_dir: &Path, input: &Path, target: &str, page: usize, index: usize, text: &str) -> AppResult<()> {
     let cp = cache_path(data_dir, input, target);
     let mut v = load_cache(&cp).ok_or_else(|| AppError::not_found("这个文件还没有译文，先翻译。"))?;
+    let src = v.pages.get(page).and_then(|p| p.src.get(index)).cloned().unwrap_or_default();
     let slot = v.pages.get_mut(page).and_then(|p| p.trans.get_mut(index)).ok_or_else(|| AppError::not_found("找不到这一段。"))?;
     let t = text.trim();
+    // 人工改过的译文进翻译记忆：以后在网页、字幕、别的文件里遇到同一句也用它
+    if let Some(kind) = kind_of(input) {
+        crate::tm::store_edited(data_dir, profile_of(kind), target, &src, t);
+    }
     *slot = if t.is_empty() { None } else { Some(t.to_string()) };
     v.failed = v.pages.iter().map(|p| p.trans.iter().filter(|t| t.is_none()).count()).sum();
     save_cache(&cp, &v);
@@ -1295,13 +1309,25 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     ctx.note(format!("共 {} 段、{} 页，译成{}；已有 {} 段译文可直接用", texts.len(), sizes.len(), target, cached));
 
     // 2. 翻译（术语库 + AI 专家 + 网页翻译同款提示词），一页一页地译，每页译完就存缓存
-    let (system, terms) = trans_setup(&ctx.st, &settings, &target);
+    let profile = profile_of(kind);
+    let (system, terms) = trans_setup(&ctx.st, &settings, &target, profile);
+    let tv = crate::tm::terms_version(&ctx.st);
     let mut view = View { input: input.to_string_lossy().into_owned(), target: target.clone(), bilingual: opts.bilingual, pages: vec![], failed: 0 };
     let mut at = 0usize;
     let mut failed = 0usize;
     for (pi, n) in sizes.iter().enumerate() {
         ctx.check()?;
-        let todo: Vec<usize> = (at..at + n).filter(|i| trans[*i].is_none()).collect();
+        let mut todo: Vec<usize> = (at..at + n).filter(|i| trans[*i].is_none()).collect();
+        // 翻译记忆：别处（网页、字幕、别的文件）译过的句子、人工改过的译文直接用
+        if !todo.is_empty() {
+            let src: Vec<String> = todo.iter().map(|i| texts[*i].clone()).collect();
+            for (i, hit) in todo.iter().zip(crate::tm::lookup(&ctx.st.data_dir, profile, &target, &tv, &src)) {
+                if hit.is_some() {
+                    trans[*i] = hit;
+                }
+            }
+            todo.retain(|i| trans[*i].is_none());
+        }
         if !todo.is_empty() {
             let have = trans.iter().filter(|t| t.is_some()).count();
             ctx.note(format!("共 {} 页 · 正在译第 {} 页 · 已缓存 {} 段", sizes.len(), pi + 1, have));
@@ -1311,6 +1337,8 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
             for (k, i) in todo.iter().enumerate() {
                 trans[*i] = t.texts.get(k).cloned().flatten().filter(|x| !x.trim().is_empty());
             }
+            let pairs: Vec<(String, String)> = todo.iter().filter_map(|i| trans[*i].clone().map(|t| (texts[*i].clone(), t))).collect();
+            crate::tm::store(&ctx.st.data_dir, profile, &target, &tv, "pool", &pairs);
         }
         failed += (at..at + n).filter(|i| trans[*i].is_none()).count();
         view.pages.push(ViewPage { src: texts[at..at + n].to_vec(), trans: trans[at..at + n].to_vec() });

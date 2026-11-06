@@ -227,7 +227,10 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
 /// 执行准备好的请求。`progress` 返回错误就中止（取消）。
 async fn execute(p: Prepared, progress: Progress<'_>) -> AppResult<Value> {
     let Prepared { st, ep, model, default_lang, batch, req, auto_extract, extract_text } = p;
-    let out = process(&ep, &model, &default_lang, batch, &req, progress).await;
+    let out = match tm_profile(&req) {
+        Some(profile) => translate_with_tm(&st, profile, &ep, &model, &default_lang, batch, &req, progress).await,
+        None => process(&ep, &model, &default_lang, batch, &req, progress).await,
+    };
     if let (Some(url), Some(text), true) = (auto_extract, extract_text, out.is_ok()) {
         let lang = if req.lang.trim().is_empty() { default_lang.clone() } else { req.lang.trim().to_string() };
         if let Ok(found) = crate::glossary::extract(&ep, &model, &lang, &text).await {
@@ -236,6 +239,64 @@ async fn execute(p: Prepared, progress: Progress<'_>) -> AppResult<Value> {
         }
     }
     out
+}
+
+/// 哪些请求走翻译记忆：字幕翻译、网页翻译（屏幕翻译的网址是 `app:软件名`，算“界面文字”）。
+fn tm_profile(req: &Req) -> Option<crate::tm::Profile> {
+    use crate::tm::Profile;
+    match req.kind.as_str() {
+        "translate" if req.system.trim().is_empty() => Some(Profile::Subtitle),
+        "webtrans" if req.system.trim().is_empty() => Some(if req.url.starts_with("app:") { Profile::Ui } else { Profile::Web }),
+        _ => None,
+    }
+}
+
+/// 先查翻译记忆，只把没命中的句子交给模型，译完写回记忆。结果格式和直接翻译一样。
+#[allow(clippy::too_many_arguments)]
+async fn translate_with_tm(
+    st: &crate::AppState,
+    profile: crate::tm::Profile,
+    ep: &Endpoint,
+    model: &str,
+    default_lang: &str,
+    batch: usize,
+    req: &Req,
+    progress: Progress<'_>,
+) -> AppResult<Value> {
+    let target = if !req.lang.trim().is_empty() {
+        req.lang.trim().to_string()
+    } else if req.kind == "translate" && is_chinese(&req.lines) {
+        "English".to_string()
+    } else {
+        default_lang.to_string()
+    };
+    let tv = crate::tm::terms_version(st);
+    let lines: Vec<&Line> = req.lines.iter().filter(|l| !l.text.trim().is_empty()).collect();
+    let texts: Vec<String> = lines.iter().map(|l| l.text.trim().to_string()).collect();
+    let hits = crate::tm::lookup(&st.data_dir, profile, &target, &tv, &texts);
+    let rest: Vec<Line> = lines.iter().zip(&hits).filter(|(_, h)| h.is_none()).map(|(l, _)| (*l).clone()).collect();
+    let mut got: std::collections::HashMap<u64, String> = std::collections::HashMap::new();
+    let mut failed = 0;
+    if !rest.is_empty() {
+        let sub = Req { lines: rest.clone(), ..req.clone() };
+        let out = process(ep, model, default_lang, batch, &sub, progress).await?;
+        failed = out["failed"].as_u64().unwrap_or(0);
+        for l in out["lines"].as_array().into_iter().flatten() {
+            if let (Some(t), Some(text)) = (l["t"].as_u64(), l["text"].as_str()) {
+                got.insert(t, text.to_string());
+            }
+        }
+        let pairs: Vec<(String, String)> = rest.iter().filter_map(|l| got.get(&l.t).map(|tr| (l.text.trim().to_string(), tr.clone()))).collect();
+        crate::tm::store(&st.data_dir, profile, &target, &tv, "pool", &pairs);
+    } else {
+        progress(1, 1)?;
+    }
+    let out: Vec<Value> = lines
+        .iter()
+        .zip(hits)
+        .map(|(l, h)| json!({"t": l.t, "text": h.or_else(|| got.get(&l.t).cloned()).unwrap_or_else(|| l.text.trim().to_string())}))
+        .collect();
+    Ok(json!({"lines": out, "failed": failed}))
 }
 
 /// 桌面端内部直接调用（屏幕翻译、截图翻译等）：不进任务表、不用轮询，直接等结果。`stop` 置位就中止。
