@@ -898,6 +898,8 @@ pub struct PoolEntry {
     pub priority: u32,
     /// 每天最多请求多少次（0 = 不限），用来避开免费额度
     pub daily_limit: u32,
+    /// 每月最多翻译多少字符（0 = 不限）。机器翻译的免费额度按字符算，按次数挡不住超额
+    pub monthly_chars: u64,
 }
 
 impl Default for PoolEntry {
@@ -914,6 +916,7 @@ impl Default for PoolEntry {
             tasks: vec![],
             priority: 10,
             daily_limit: 0,
+            monthly_chars: 0,
         }
     }
 }

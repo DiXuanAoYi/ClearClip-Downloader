@@ -145,16 +145,26 @@ fn new_job() -> (u64, Arc<AtomicBool>) {
     (id, cancel)
 }
 
-/// 校验请求并在后台开始处理，返回任务编号。
-pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
+/// 准备好的一次 AI 请求：选好的服务、模型、默认语言、术语和专家都已经放进请求里。
+pub struct Prepared {
+    st: Arc<crate::AppState>,
+    ep: ai::Endpoint,
+    model: String,
+    default_lang: String,
+    batch: usize,
+    req: Req,
+    auto_extract: Option<String>,
+    extract_text: Option<String>,
+}
+
+enum Prep {
+    Ready(Box<Prepared>),
+    /// 不用调模型就有结果（没有模型时查词退回离线词频表）
+    Done(Value),
+}
+
+fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
     use tauri::Manager;
-    check(&req)?;
-    if req.kind == "tracks" {
-        return start_tracks(app, req);
-    }
-    if req.kind == "transcribe" || req.kind == "subtitles" {
-        return start_transcribe(app, req);
-    }
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
     let task = match req.kind.as_str() {
@@ -165,15 +175,7 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
     let mut ep = match ai::chat_endpoint_for(&st, &settings, task) {
         Ok(ep) => ep,
         // 查词没有可用模型时，退到离线词频表（只有词汇等级，没有释义）
-        Err(_) if req.kind == "lookup" => {
-            let (id, _) = new_job();
-            with_job(id, |j| {
-                j.done = 1;
-                j.total = 1;
-                j.result = Some(crate::vocab::offline_lookup(req.text.trim()));
-            });
-            return Ok(id);
-        }
+        Err(_) if req.kind == "lookup" => return Ok(Prep::Done(crate::vocab::offline_lookup(req.text.trim()))),
         Err(e) => return Err(e),
     };
     if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
@@ -219,32 +221,82 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
             req.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n")
         }
     });
-    let st2 = st.clone();
-    let (id, cancel) = new_job();
-    tauri::async_runtime::spawn(async move {
-        let progress = move |done: usize, total: usize| -> AppResult<()> {
-            if cancel.load(Ordering::Relaxed) {
-                return Err(AppError::msg("已取消"));
-            }
-            with_job(id, |j| {
-                j.done = done;
-                j.total = total.max(1);
-            });
-            Ok(())
-        };
-        let out = process(&ep, &model, &default_lang, batch, &req, &progress).await;
-        if let (Some(url), Some(text), true) = (auto_extract, extract_text, out.is_ok()) {
-            let lang = if req.lang.trim().is_empty() { default_lang.clone() } else { req.lang.trim().to_string() };
-            if let Ok(found) = crate::glossary::extract(&ep, &model, &lang, &text).await {
-                let host = url::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or(url);
-                let _ = crate::glossary::file_found(&st2.glossary, found, &host, crate::db::now());
-            }
+    Ok(Prep::Ready(Box::new(Prepared { st, ep, model, default_lang, batch, req, auto_extract, extract_text })))
+}
+
+/// 执行准备好的请求。`progress` 返回错误就中止（取消）。
+async fn execute(p: Prepared, progress: Progress<'_>) -> AppResult<Value> {
+    let Prepared { st, ep, model, default_lang, batch, req, auto_extract, extract_text } = p;
+    let out = process(&ep, &model, &default_lang, batch, &req, progress).await;
+    if let (Some(url), Some(text), true) = (auto_extract, extract_text, out.is_ok()) {
+        let lang = if req.lang.trim().is_empty() { default_lang.clone() } else { req.lang.trim().to_string() };
+        if let Ok(found) = crate::glossary::extract(&ep, &model, &lang, &text).await {
+            let host = url::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or(url);
+            let _ = crate::glossary::file_found(&st.glossary, found, &host, crate::db::now());
         }
-        with_job(id, |j| match out {
-            Ok(v) => j.result = Some(v),
-            Err(e) => j.error = Some(e.message),
-        });
-    });
+    }
+    out
+}
+
+/// 桌面端内部直接调用（屏幕翻译、截图翻译等）：不进任务表、不用轮询，直接等结果。`stop` 置位就中止。
+pub async fn run_now(app: &tauri::AppHandle, req: Req, stop: &AtomicBool) -> AppResult<Value> {
+    check(&req)?;
+    if matches!(req.kind.as_str(), "tracks" | "transcribe" | "subtitles") {
+        return Err(AppError::invalid("这类请求要走后台任务"));
+    }
+    match prepare(app, req)? {
+        Prep::Done(v) => Ok(v),
+        Prep::Ready(p) => {
+            let progress = |_: usize, _: usize| -> AppResult<()> {
+                if stop.load(Ordering::Relaxed) {
+                    return Err(AppError::msg("已停止"));
+                }
+                Ok(())
+            };
+            execute(*p, &progress).await
+        }
+    }
+}
+
+/// 校验请求并在后台开始处理，返回任务编号（给浏览器扩展、HTTP 接口用：它们拿编号来轮询）。
+pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
+    check(&req)?;
+    if req.kind == "tracks" {
+        return start_tracks(app, req);
+    }
+    if req.kind == "transcribe" || req.kind == "subtitles" {
+        return start_transcribe(app, req);
+    }
+    let prep = prepare(app, req)?;
+    let (id, cancel) = new_job();
+    match prep {
+        Prep::Done(v) => {
+            with_job(id, |j| {
+                j.done = 1;
+                j.total = 1;
+                j.result = Some(v);
+            });
+        }
+        Prep::Ready(p) => {
+            tauri::async_runtime::spawn(async move {
+                let progress = move |done: usize, total: usize| -> AppResult<()> {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Err(AppError::msg("已取消"));
+                    }
+                    with_job(id, |j| {
+                        j.done = done;
+                        j.total = total.max(1);
+                    });
+                    Ok(())
+                };
+                let out = execute(*p, &progress).await;
+                with_job(id, |j| match out {
+                    Ok(v) => j.result = Some(v),
+                    Err(e) => j.error = Some(e.message),
+                });
+            });
+        }
+    }
     Ok(id)
 }
 

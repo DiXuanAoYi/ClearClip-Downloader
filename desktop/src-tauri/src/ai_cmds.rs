@@ -81,6 +81,8 @@ pub struct PoolStatus {
     pub cool_reason: String,
     pub bad_key: bool,
     pub last_error: String,
+    /// 本月已翻译的字符（机器翻译额度）
+    pub chars_used: u64,
 }
 
 /// 模型池里每个服务（含“默认”）今天用了多少次、是否在冷却、最近的错误。
@@ -103,6 +105,7 @@ pub fn ai_pool_status(state: St<'_>) -> Vec<PoolStatus> {
                 cool_reason: if r.cool_until > now { r.cool_reason } else { String::new() },
                 bad_key: r.bad_key,
                 last_error: r.last_error,
+                chars_used: state.ai_pool.chars_used(&id, now),
                 id,
             }
         })

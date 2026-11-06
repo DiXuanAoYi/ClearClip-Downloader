@@ -414,7 +414,11 @@ pub fn run() {
                 subs: subs::SubsState::default(),
                 live: live::LiveState::default(),
                 media_jobs: media_tools::MediaJobs::default(),
-                ai_pool: Arc::new(ai_pool::AiPool::default()),
+                ai_pool: {
+                    let p = Arc::new(ai_pool::AiPool::default());
+                    p.load_chars(&data_dir);
+                    p
+                },
                 glossary: Arc::new(glossary::Store::open(&data_dir)),
                 experts: Arc::new(experts::Store::open(&data_dir)),
                 vault,

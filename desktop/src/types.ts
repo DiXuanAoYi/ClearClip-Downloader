@@ -669,6 +669,8 @@ export interface PoolEntry {
   tasks: string[]
   priority: number
   dailyLimit: number
+  /** 每月字符上限（0 = 不限），机器翻译用 */
+  monthlyChars: number
 }
 
 export interface PoolPreset {
@@ -695,6 +697,7 @@ export interface PoolStatus {
   coolReason: string
   badKey: boolean
   lastError: string
+  charsUsed: number
 }
 
 export interface AiSettings {
