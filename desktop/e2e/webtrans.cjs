@@ -198,7 +198,7 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
 
   // ---- 不翻译的区域 / 最短字数 / 自定义 CSS
   {
-    const { page } = await open('https://news.test/', { cfg: { target: 'ja', exclude: ['#p1', 'other.test | #p3', 'news.test | #li1'], minChars: 40, customCss: 'font-size: 22px; color: rgb(1, 2, 3); background: url(http://evil/x.png)' } })
+    const { page } = await open('https://news.test/', { cfg: { target: 'ja', exclude: ['#p1', 'other.test | #p3', 'news.test | #li1'], customCss: 'font-size: 22px; color: rgb(1, 2, 3); background: url(http://evil/x.png)' } })
     await page.evaluate(() => window.__cmd('toggle'))
     await page.waitForFunction(() => document.querySelectorAll('[data-cc-tr]').length >= 1, null, { timeout: 8000 })
     await settle(page, 400)
@@ -212,7 +212,7 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     ok('自定义 CSS 作用在译文上', css.size === '22px' && css.color === 'rgb(1, 2, 3)', JSON.stringify(css))
     ok('自定义 CSS 里的 url() 被去掉', !/evil/.test(css.bg), css.bg)
     // 改设置后立刻生效：取消排除 p1 之外的、去掉自定义 CSS
-    await page.evaluate(() => window.__setCfg({ target: 'ja', exclude: [], minChars: 0, customCss: '' }))
+    await page.evaluate(() => window.__setCfg({ target: 'ja', exclude: [], customCss: '' }))
     await settle(page, 600)
     ok('去掉自定义 CSS 后样式也去掉', await page.evaluate(() => !document.getElementById('cc-tr-css')))
     await page.close()

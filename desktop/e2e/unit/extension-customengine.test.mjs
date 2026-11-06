@@ -90,8 +90,6 @@ test('不翻译的区域：全局的 + 只对某个网站的；自定义 CSS 去
   assert.equal(T.cleanCss('font-size:15px; </style><script>x</script>'), 'font-size:15px; <script>x</script>'.replace('<script>x</script>', '<script>x</script>'), '只去掉 style 标签')
   assert.ok(!/@import|url\(/i.test(T.cleanCss('@import "x.css"; background: url(http://e/x.png); color: red')))
   assert.equal(T.cleanCss('a'.repeat(5000)).length, 3000)
-  assert.equal(T.normalizeCfg({ minChars: 999 }).minChars, 200)
-  assert.equal(T.normalizeCfg({ minChars: -3 }).minChars, 0)
 })
 
 test('后台引擎：批量发 JSON 数组，带密钥，译文对上号并进缓存', async () => {

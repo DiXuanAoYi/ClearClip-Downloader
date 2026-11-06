@@ -229,7 +229,6 @@
     domain: true, // 翻译前先判断网页领域，按领域选词（只对“清影（大模型）”有效）
     customCss: '', // 译文的自定义 CSS（作用在译文上，如 `font-size:15px; color:#2563eb`）
     exclude: [], // 不翻译的区域：CSS 选择器，每条一个；`域名 | 选择器` 只对该网站生效
-    minChars: 0, // 段落少于这么多字就不翻译；0 = 用内置规则
   }
 
   /** 各翻译服务单独设置：enabled 默认开；target 留空沿用全局；prompt 只对大模型有效，作为额外要求。 */
@@ -431,7 +430,6 @@
       domain: r.domain !== false,
       customCss: cleanCss(r.customCss),
       exclude: normalizeExclude(r.exclude),
-      minChars: Math.min(200, Math.max(0, Math.round(Number(r.minChars) || 0))),
     }
   }
 

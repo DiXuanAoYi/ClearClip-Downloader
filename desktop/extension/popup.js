@@ -554,7 +554,6 @@ async function loadTransCfg() {
   $('svcModel_custom').value = c.services.custom?.model || ''
   $('svcPrompt_custom').value = c.services.custom?.prompt || ''
   $('trExclude').value = (c.exclude || []).join('\n')
-  $('trMinChars').value = String(c.minChars || 0)
   $('trCss').value = c.customCss || ''
   $('trSelect').checked = c.select
   $('trInput').checked = c.input
@@ -600,7 +599,6 @@ $('saveTrans').onclick = async () => {
     domain: $('trDomain').checked,
     skipTarget: $('trSkip').checked,
     exclude: $('trExclude').value,
-    minChars: Number($('trMinChars').value),
     customCss: $('trCss').value,
     auto: ccTrans.hostList($('trAuto').value),
     never: ccTrans.hostList($('trNever').value),

@@ -144,7 +144,7 @@
         } else continue
       }
       const { text, last } = textOf(b)
-      if (!text || (S.cfg.minChars > 0 && text.length < S.cfg.minChars) || !T.worthTranslating(text, S.cfg.target) && S.cfg.skipTarget) continue
+      if (!text || !T.worthTranslating(text, S.cfg.target) && S.cfg.skipTarget) continue
       if (!visible(b)) continue
       S.blocks.set(b, { text, last, state: 'new', node: null })
       added++
