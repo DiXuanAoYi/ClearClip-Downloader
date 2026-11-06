@@ -344,12 +344,10 @@ pub async fn sensevoice_install(app: AppHandle, state: St<'_>) -> AppResult<Sens
 
 /// 装好后把“本地语音模型”设成 SenseVoice，并让语音转文字走本机。
 fn select_in_settings(state: &AppState) {
-    let mut s = state.settings_raw();
-    s.ai.stt_local_model = MODEL_ID.into();
-    s.ai.stt_engine = "local".into();
-    if s.save(&state.settings_path).is_ok() {
-        *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
-    }
+    let _ = state.update_settings(|s| {
+        s.ai.stt_local_model = MODEL_ID.into();
+        s.ai.stt_engine = "local".into();
+    });
 }
 
 #[tauri::command]
@@ -358,13 +356,11 @@ pub fn sensevoice_remove(state: St<'_>) -> AppResult<SenseVoiceStatus> {
     for f in [MODEL_FILE, TOKENS_FILE, VAD_FILE] {
         let _ = std::fs::remove_file(d.join(f));
     }
-    let mut s = state.settings_raw();
-    if s.ai.stt_local_model == MODEL_ID {
-        s.ai.stt_local_model = String::new();
-        if s.save(&state.settings_path).is_ok() {
-            *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+    let _ = state.update_settings(|s| {
+        if s.ai.stt_local_model == MODEL_ID {
+            s.ai.stt_local_model = String::new();
         }
-    }
+    });
     Ok(status_of(&state.data_dir))
 }
 

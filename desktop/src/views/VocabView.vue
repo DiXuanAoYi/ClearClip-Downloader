@@ -71,7 +71,7 @@ async function loadCaches() {
 }
 async function saveCacheSettings() {
   const s = await api.getSettings()
-  await api.saveSettings({ ...s, videoCacheAuto: autoSync.value, videoCacheMb: Math.max(10, Number(limitMb.value) || 500) })
+  await api.saveSettings({ ...s, videoCacheAuto: autoSync.value, videoCacheMb: Math.max(10, Number(limitMb.value) || 500) }, s)
 }
 /** 用默认浏览器打开出处：跳到那一秒；装了扩展会定位到那一句并高亮这个词。 */
 async function openSource(w: VocabWord, restore = false) {

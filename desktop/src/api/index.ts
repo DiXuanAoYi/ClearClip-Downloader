@@ -154,7 +154,8 @@ import type {
 export const api = {
   appInfo: () => invoke<AppInfo>('get_app_info'),
   getSettings: () => invoke<Settings>('get_settings'),
-  saveSettings: (settings: Settings) => invoke<SaveSettingsResult>('save_settings', { settings }),
+  /** base：表单打开时的那份设置；带上它后端做三方合并，不会覆盖别处的改动 */
+  saveSettings: (settings: Settings, base?: Settings | null) => invoke<SaveSettingsResult>('save_settings', { settings, base: base ?? null }),
 
   detectLinks: (text: string) => invoke<DetectedLink[]>('detect_links', { text }),
   resolve: (text: string) => invoke<MediaInfo>('resolve_link', { text }),
@@ -546,6 +547,8 @@ export const events = {
   onLibraryProgress: (cb: (p: { task: string; done: number; total: number }) => void): Promise<UnlistenFn> =>
     listen<{ task: string; done: number; total: number }>('library://progress', (e) => cb(e.payload)),
   onTrackProgress: (cb: (p: { id: number; percent: number }) => void): Promise<UnlistenFn> => listen<{ id: number; percent: number }>('edit://track', (e) => cb(e.payload)),
+  /** 设置在别处（写作窗、屏幕翻译、托盘、另一个窗口）被改了 */
+  onSettingsChanged: (cb: (s: Settings) => void): Promise<UnlistenFn> => listen<Settings>('settings-changed', (e) => cb(e.payload)),
   onMediaJobs: (cb: (jobs: JobSnap[]) => void): Promise<UnlistenFn> => listen<JobSnap[]>('media://jobs', (e) => cb(e.payload)),
   onLibraryChanged: (cb: () => void): Promise<UnlistenFn> => listen('library://changed', () => cb()),
   onLock: (cb: (locked: boolean) => void): Promise<UnlistenFn> => listen<{ locked: boolean }>('security://lock', (e) => cb(e.payload.locked)),

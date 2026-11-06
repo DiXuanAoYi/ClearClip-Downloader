@@ -321,8 +321,9 @@ pub fn migrate_default(st: &crate::AppState) {
     });
     s.ai.base_url.clear();
     s.ai.model.clear();
-    if s.save(&st.settings_path).is_ok() {
-        *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+    // 启动时跑一次：把整理好的 ai 分区写回（只动 ai，别的分区以锁里的最新值为准）
+    let ai = s.ai;
+    if st.update_settings(|cur| cur.ai = ai).is_ok() {
         log::info!("已把旧的默认 AI 服务并进模型池");
     }
 }

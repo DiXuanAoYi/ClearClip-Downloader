@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../api'
+import { useAppStore } from '../stores/app'
 import type { Settings, TrackerStatus } from '../types'
 
 const form = defineModel<Settings>({ required: true })
@@ -34,7 +35,7 @@ async function updateNow() {
   updating.value = true
   try {
     // 先保存当前填的来源，再更新
-    await api.saveSettings(form.value)
+    await useAppStore().save(form.value)
     status.value = await api.btUpdateTrackers()
     ElMessage.success(`已更新：共 ${status.value.listCount} 个 tracker`)
   } catch (e) {

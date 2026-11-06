@@ -7,10 +7,22 @@ import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
 import type { AppGlossaryPack, OcrStatus, ScreenEntry, ScreenSettings, ScreenStatus, ScreenTarget, ScreenTry, ScreenWindow } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
+import { clone, merge3 } from '../utils/merge3'
 
 /** 实时屏幕翻译：翻译别的软件和游戏画面上的文字。控制在这里，也可以用悬浮钮、托盘和快捷键。 */
 const app = useAppStore()
 const form = ref<ScreenSettings>(JSON.parse(JSON.stringify(app.settings!.live)) as ScreenSettings)
+// 最近一次同步的整份设置：只把“屏幕翻译”这一块当作自己的修改交给后端合并（框选位置、程序配置等由后端写，不会被覆盖）
+let baseAll = clone(app.settings!)
+watch(
+  () => app.settingsRev,
+  () => {
+    if (!app.settings) return
+    const merged = merge3(baseAll.live, form.value, app.settings.live) as ScreenSettings
+    baseAll = clone(app.settings)
+    if (JSON.stringify(merged) !== JSON.stringify(form.value)) form.value = merged
+  },
+)
 const st = ref<ScreenStatus>({ supported: true, running: false, mode: 'standard', target: null, hidden: false, paused: false, msg: '', audio: false })
 const wins = ref<ScreenWindow[]>([])
 const winPick = ref<number | ''>('')
@@ -54,10 +66,8 @@ watch(
 
 async function save() {
   try {
-    // 记在程序里的几项（框选位置、程序配置、确认标记）由后端写，保存时以最新的为准
-    const cur = await api.getSettings()
-    const live: ScreenSettings = { ...form.value, subBar: cur.live.subBar, profiles: cur.live.profiles, mangaAck: cur.live.mangaAck || form.value.mangaAck }
-    await app.save({ ...cur, live })
+    await app.save({ ...baseAll, live: form.value }, baseAll)
+    baseAll = clone(app.settings!)
   } catch (e) {
     ElMessage.error(errorText(e))
   }

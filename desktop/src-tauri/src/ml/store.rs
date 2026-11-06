@@ -197,15 +197,12 @@ fn autofill_whisper(state: &AppState, d: &ModelDef, target: &Path) {
     if d.kind != "whisper" {
         return;
     }
-    let mut s = state.settings_raw();
-    let cur = s.ai.whisper_model.trim();
-    if !cur.is_empty() && Path::new(cur).is_file() {
-        return;
-    }
-    s.ai.whisper_model = target.to_string_lossy().into_owned();
-    if s.save(&state.settings_path).is_ok() {
-        *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
-    }
+    let _ = state.update_settings(|s| {
+        let cur = s.ai.whisper_model.trim();
+        if cur.is_empty() || !Path::new(cur).is_file() {
+            s.ai.whisper_model = target.to_string_lossy().into_owned();
+        }
+    });
 }
 
 /// 模型文件的前几个字节没有固定魔数，只能挡住最明显的错误：太小、或者是网页（下载到了错误页）。

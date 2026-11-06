@@ -417,12 +417,10 @@ pub fn close_subbar(app: &AppHandle) {
 }
 
 fn save_live(st: &AppState, f: impl FnOnce(&mut LiveSettings)) {
-    let mut s = st.settings_raw();
-    f(&mut s.live);
-    s.live.sanitize();
-    if s.save(&st.settings_path).is_ok() {
-        *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
-    }
+    let _ = st.update_settings(|s| {
+        f(&mut s.live);
+        s.live.sanitize();
+    });
 }
 
 // ---------- 小悬浮钮 ----------

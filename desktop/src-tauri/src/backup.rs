@@ -46,6 +46,11 @@ fn scrub_settings(mut v: serde_json::Value) -> serde_json::Value {
             phone.insert("host".into(), "".into());
             phone.insert("receiveDir".into(), "".into());
         }
+        // 这台电脑上的窗口位置、暂停时间是运行状态，不带到别的电脑
+        if let Some(w) = obj.get_mut("writing").and_then(|p| p.as_object_mut()) {
+            w.remove("win");
+            w.remove("pausedUntil");
+        }
     }
     v
 }

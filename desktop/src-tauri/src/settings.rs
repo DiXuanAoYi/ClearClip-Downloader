@@ -1579,3 +1579,58 @@ mod tests {
         assert_eq!(s.live.mode, "standard");
     }
 }
+
+/// 三方合并：`base` 是界面打开表单时的那份，`ours` 是界面要保存的，`theirs` 是现在后端的。
+/// 界面没改的字段用后端最新的（别处的改动保留）；界面改了的用界面的；对象逐层合并，数组和值整体比较。
+pub fn merge3(base: &serde_json::Value, ours: &serde_json::Value, theirs: &serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    if ours == base {
+        return theirs.clone();
+    }
+    if theirs == base {
+        return ours.clone();
+    }
+    match (base, ours, theirs) {
+        (Value::Object(b), Value::Object(o), Value::Object(t)) => {
+            let mut out = serde_json::Map::new();
+            let keys: std::collections::BTreeSet<&String> = b.keys().chain(o.keys()).chain(t.keys()).collect();
+            for k in keys {
+                let null = Value::Null;
+                let (bv, ov, tv) = (b.get(k).unwrap_or(&null), o.get(k).unwrap_or(&null), t.get(k).unwrap_or(&null));
+                let v = merge3(bv, ov, tv);
+                if !(v.is_null() && !o.contains_key(k) && !t.contains_key(k)) {
+                    out.insert(k.clone(), v);
+                }
+            }
+            Value::Object(out)
+        }
+        // 两边都改了同一个值：以界面这次保存的为准（这是用户刚刚明确做的修改）
+        _ => ours.clone(),
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::merge3;
+    use serde_json::json;
+
+    #[test]
+    fn keeps_changes_made_elsewhere_while_the_page_was_open() {
+        let base = json!({"ai": {"model": "a", "pool": [1]}, "writing": {"hotkey": "Alt+J", "pausedUntil": 0, "win": [0, 0, 0, 0]}, "theme": "system"});
+        // 设置页：改了模型和主题
+        let ours = json!({"ai": {"model": "b", "pool": [1]}, "writing": {"hotkey": "Alt+J", "pausedUntil": 0, "win": [0, 0, 0, 0]}, "theme": "dark"});
+        // 期间写作窗记住了位置、托盘暂停了写作
+        let theirs = json!({"ai": {"model": "a", "pool": [1]}, "writing": {"hotkey": "Alt+J", "pausedUntil": 99, "win": [1, 2, 3, 4]}, "theme": "system"});
+        let m = merge3(&base, &ours, &theirs);
+        assert_eq!(m["ai"]["model"], "b");
+        assert_eq!(m["theme"], "dark");
+        assert_eq!(m["writing"]["pausedUntil"], 99, "别处的改动保留");
+        assert_eq!(m["writing"]["win"], json!([1, 2, 3, 4]));
+        // 两边改了同一个值：用界面的
+        let ours2 = json!({"ai": {"model": "c", "pool": [1]}});
+        let theirs2 = json!({"ai": {"model": "d", "pool": [2]}});
+        let m2 = merge3(&json!({"ai": {"model": "a", "pool": [1]}}), &ours2, &theirs2);
+        assert_eq!(m2["ai"]["model"], "c");
+        assert_eq!(m2["ai"]["pool"], json!([2]), "数组整体比较：界面没改就用后端的");
+    }
+}

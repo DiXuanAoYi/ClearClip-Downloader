@@ -84,10 +84,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             }
             "wpause" => {
                 let st = app.state::<Arc<AppState>>();
-                let mut s = st.settings_raw();
-                s.writing.paused_until = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) + 3600;
-                if s.save(&st.settings_path).is_ok() {
-                    *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+                let until = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) + 3600;
+                if st.update_settings(|s| s.writing.paused_until = until).is_ok() {
                     crate::writebadge::hide(app);
                 }
             }

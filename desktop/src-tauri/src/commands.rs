@@ -111,17 +111,30 @@ pub struct SaveSettingsResult {
 }
 
 #[tauri::command]
-pub async fn save_settings(app: AppHandle, state: St<'_>, settings: Settings) -> AppResult<SaveSettingsResult> {
-    let mut s = settings;
-    s.normalize();
-    let old = state.settings_raw();
-    // 旧版明文 Cookie 字段不再写回
-    s.cookies.clear();
-    s.cookie_updated_at.clear();
-    // 手机发送的令牌和已配对设备只通过专门的命令修改，避免被设置页的旧数据覆盖
-    s.phone = old.phone.clone();
-    s.save(&state.settings_path)?;
-    *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s.clone();
+pub async fn save_settings(app: AppHandle, state: St<'_>, settings: Settings, base: Option<Settings>) -> AppResult<SaveSettingsResult> {
+    // 在一把写锁里完成合并和存盘。带了 base（界面打开表单时的那份设置）就做三方合并：
+    // 只有界面上真的改过的字段才覆盖，界面打开期间别处（写作窗、屏幕翻译、托盘……）做的改动保留。
+    let (old, s) = {
+        let mut g = state.settings.write().unwrap_or_else(|e| e.into_inner());
+        let old = g.clone();
+        let mut s = match base {
+            Some(base) => {
+                let merged = crate::settings::merge3(&serde_json::to_value(&base)?, &serde_json::to_value(&settings)?, &serde_json::to_value(&old)?);
+                serde_json::from_value::<Settings>(merged).unwrap_or(settings)
+            }
+            None => settings,
+        };
+        s.normalize();
+        // 旧版明文 Cookie 字段不再写回
+        s.cookies.clear();
+        s.cookie_updated_at.clear();
+        // 手机发送的令牌和已配对设备只通过专门的命令修改，避免被设置页的旧数据覆盖
+        s.phone = old.phone.clone();
+        s.save(&state.settings_path)?;
+        *g = s.clone();
+        (old, s)
+    };
+    crate::settings_changed(&s);
     providers::wechat::set_enabled(s.wechat_on);
     if old.shortcut != s.shortcut
         || old.security.panic_shortcut != s.security.panic_shortcut

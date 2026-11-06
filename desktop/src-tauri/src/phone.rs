@@ -259,10 +259,7 @@ pub fn ensure_paired(app: &AppHandle, device: &str, name: &str, peer: &SocketAdd
 }
 
 fn update_phone_settings(app: &AppHandle, f: impl FnOnce(&mut crate::settings::PhoneSettings)) -> AppResult<()> {
-    let state = st(app);
-    let mut s = state.settings.write().unwrap_or_else(|e| e.into_inner());
-    f(&mut s.phone);
-    s.save(&state.settings_path)
+    st(app).update_settings(|s| f(&mut s.phone))
 }
 
 /// 开启或关闭手机发送。

@@ -108,6 +108,16 @@ use crate::db::Db;
 use crate::download::DownloadManager;
 use crate::settings::Settings;
 
+/// 设置变了就通知所有窗口（主窗口、贴字层、写作窗、截图窗），界面把别处的改动合进自己正在编辑的表单。
+static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+pub fn settings_changed(s: &Settings) {
+    if let Some(app) = APP_HANDLE.get() {
+        use tauri::Emitter;
+        let _ = app.emit("settings-changed", s);
+    }
+}
+
 pub struct AppState {
     pub settings: RwLock<Settings>,
     pub settings_path: PathBuf,
@@ -166,6 +176,24 @@ impl AppState {
     /// 保存的设置原样（不含省流量模式的临时调整）。
     pub fn settings_raw(&self) -> Settings {
         self.settings.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// 后端改设置的唯一入口：在一把写锁里完成“读、改、存盘”，改完通知所有窗口。
+    /// 以前各处是“复制一份、改、整份写回”，两处同时改、或设置页开着时，会把别人的改动覆盖掉。
+    pub fn update_settings<R>(&self, f: impl FnOnce(&mut Settings) -> R) -> crate::error::AppResult<R> {
+        let (r, snap) = {
+            let mut g = self.settings.write().unwrap_or_else(|e| e.into_inner());
+            let mut s = g.clone();
+            let r = f(&mut s);
+            if s == *g {
+                return Ok(r);
+            }
+            s.save(&self.settings_path)?;
+            *g = s.clone();
+            (r, s)
+        };
+        settings_changed(&snap);
+        Ok(r)
     }
 
     /// 解析用的上下文；开启“录制样本”时附带样本目录。
@@ -303,6 +331,7 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            let _ = APP_HANDLE.set(app.handle().clone());
             let handle = app.handle().clone();
             let (config_dir, data_dir) = match portable_dir() {
                 Some(p) => (p.clone(), p),

@@ -70,15 +70,12 @@ pub fn whisper_cli_status(state: St<'_>) -> WhisperCliStatus {
 
 /// 装好后、“设置 → AI”里的程序路径还是空（或文件没了）就自动填上。
 fn autofill(state: &AppState, bin: &Path) {
-    let mut s = state.settings_raw();
-    let cur = s.ai.whisper_bin.trim();
-    if !cur.is_empty() && Path::new(cur).is_file() {
-        return;
-    }
-    s.ai.whisper_bin = bin.to_string_lossy().into_owned();
-    if s.save(&state.settings_path).is_ok() {
-        *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
-    }
+    let _ = state.update_settings(|s| {
+        let cur = s.ai.whisper_bin.trim();
+        if cur.is_empty() || !Path::new(cur).is_file() {
+            s.ai.whisper_bin = bin.to_string_lossy().into_owned();
+        }
+    });
 }
 
 /// 从发布列表（GitHub API 返回的 JSON）里找最新一个带 `whisper-bin-x64.zip` 的下载地址。

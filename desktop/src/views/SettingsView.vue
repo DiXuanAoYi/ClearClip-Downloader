@@ -6,6 +6,7 @@ import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
 import type { Settings, ShotEntry, UpdateInfo } from '../types'
 import { previewFilename } from '../utils/format'
+import { clone, merge3 } from '../utils/merge3'
 import AccountsPanel from '../components/AccountsPanel.vue'
 import NetworkPanel from '../components/NetworkPanel.vue'
 import ComponentsPanel from '../components/ComponentsPanel.vue'
@@ -24,6 +25,17 @@ import { LANGUAGES } from '../i18n'
 
 const app = useAppStore()
 const form = ref<Settings>(JSON.parse(JSON.stringify(app.settings!)))
+// 表单打开时（或上次同步时）的那份设置：保存时给后端做三方合并；别处改了设置就把改动合进表单
+let formBase: Settings = clone(app.settings!)
+watch(
+  () => app.settingsRev,
+  () => {
+    if (!app.settings) return
+    const merged = merge3(formBase, form.value, app.settings)
+    formBase = clone(app.settings)
+    if (JSON.stringify(merged) !== JSON.stringify(form.value)) form.value = merged
+  },
+)
 const saving = ref(false)
 const update = ref<UpdateInfo | null>(null)
 const checking = ref(false)
@@ -90,7 +102,8 @@ watch(
 async function save() {
   saving.value = true
   try {
-    await app.save(form.value)
+    await app.save(form.value, formBase)
+    formBase = clone(app.settings!)
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
