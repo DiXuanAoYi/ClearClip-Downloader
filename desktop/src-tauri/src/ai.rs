@@ -1174,6 +1174,30 @@ async fn run_whisper_local(
     }
 }
 
+/// 用本机 whisper.cpp 识别一小段 16 kHz 单声道 WAV（实时听写用，不走任务队列）。返回文字，识别不出来返回空串。
+pub async fn whisper_segment(settings: &Settings, wav: &Path, language: &str, work: &Path) -> AppResult<String> {
+    let bin = find_whisper_bin(settings).ok_or_else(|| AppError::invalid("找不到 whisper.cpp（whisper-cli）。请在“设置 → AI”里指定它的位置。"))?;
+    let model = find_whisper_model(settings).ok_or_else(|| AppError::invalid("请在“设置 → AI”里选择 whisper.cpp 的模型文件，或在“设置 → 组件”下载一个。"))?;
+    let prefix = work.join(format!("seg-{}", wav.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()));
+    let mut cmd = tokio::process::Command::new(&bin);
+    cmd.args(whisper_args(&model.to_string_lossy(), wav, &prefix, language))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
+    let mut child = cmd.spawn().map_err(|e| AppError::new(ErrorKind::NeedUpdate, format!("无法运行 whisper.cpp：{e}")))?;
+    match tokio::time::timeout(Duration::from_secs(90), child.wait()).await {
+        Ok(Ok(st)) if st.success() => {}
+        Ok(_) => return Err(AppError::msg("whisper.cpp 运行失败")),
+        Err(_) => return Err(AppError::msg("whisper.cpp 识别超时")),
+    }
+    let srt = std::fs::read_to_string(prefix.with_extension("srt")).unwrap_or_default();
+    let _ = std::fs::remove_file(prefix.with_extension("srt"));
+    Ok(subtitle::parse_srt(&srt).iter().flat_map(|c| c.lines.iter()).map(|l| l.trim()).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" "))
+}
+
 /// 把若干段 SRT 按各自的起点偏移合并。
 pub fn merge_srt_parts(parts: Vec<(String, u64)>) -> Vec<Cue> {
     let mut out: Vec<Cue> = vec![];

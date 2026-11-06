@@ -2714,4 +2714,11 @@ export const en: Record<string, string> = {
   "去掉": "Remove",
   "点一下可以直接改": "Click to edit",
   "（没有译文，已保留原文；点一下可以自己写）": "(No translation; the original is kept. Click to write your own)",
+  "实时听写 · {0}": "Live dictation · {0}",
+  "听写：跟随设置": "Dictation: follow settings",
+  "本机开源模型": "Local open-source model",
+  "听写用哪个识别引擎：跟随设置，或临时指定本机开源模型 / 在线接口": "Which recognition engine dictation uses: follow the settings, or pick a local open-source model / an online API for now",
+  "正在收尾…": "Finishing…",
+  "没有听清，请再说一次": "Could not hear clearly, please say it again",
+  "无法使用麦克风：{0}": "Cannot use the microphone: {0}",
 }

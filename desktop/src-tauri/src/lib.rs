@@ -16,6 +16,7 @@ pub mod console;
 pub mod cookies;
 pub mod db;
 pub mod diagnostics;
+pub mod dictate;
 pub mod download;
 pub mod ed2k;
 pub mod edit;
@@ -803,6 +804,9 @@ pub fn run() {
             writeassist::write_run,
             writeassist::write_job,
             writeassist::write_dictate,
+            dictate::write_dictate_start,
+            dictate::write_dictate_push,
+            dictate::write_dictate_stop,
             writeassist::write_cancel,
             writeassist::write_apply,
             writeassist::write_close,
