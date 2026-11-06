@@ -450,7 +450,7 @@ fn write_zip(src: &Path, dst: &Path, replaced: &std::collections::HashMap<String
     Ok(())
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Opts {
     /// true：原文 + 译文对照；false：只留译文

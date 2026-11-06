@@ -51,6 +51,11 @@ fn scrub_settings(mut v: serde_json::Value) -> serde_json::Value {
 }
 
 pub fn export(db: &Db, settings: &crate::settings::Settings, app_version: &str, dest: &Path) -> AppResult<()> {
+    export_with(db, settings, app_version, dest, None)
+}
+
+/// `data_dir` 有值时，把数据清单（[`crate::datareg`]）里的用户数据一起放进备份：生词本、原声、术语库、AI 专家、摘录、翻译记忆。
+pub fn export_with(db: &Db, settings: &crate::settings::Settings, app_version: &str, dest: &Path, data_dir: Option<&Path>) -> AppResult<()> {
     if let Some(dir) = dest.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -67,6 +72,15 @@ pub fn export(db: &Db, settings: &crate::settings::Settings, app_version: &str, 
         zip.start_file(DB_NAME, opts).map_err(|e| AppError::msg(format!("写入备份失败：{e}")))?;
         let mut f = std::fs::File::open(&snap)?;
         std::io::copy(&mut f, &mut zip)?;
+        if let Some(dir) = data_dir {
+            let tmp = dest.with_extension("data.tmp");
+            for f in crate::datareg::user_files(dir) {
+                let bytes = crate::datareg::read_for_backup(&f, &tmp)?;
+                zip.start_file(format!("{}{}", crate::datareg::BACKUP_PREFIX, f.rel), opts).map_err(|e| AppError::msg(format!("写入备份失败：{e}")))?;
+                zip.write_all(&bytes)?;
+            }
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
         zip.finish().map_err(|e| AppError::msg(format!("写入备份失败：{e}")))?;
         Ok(())
     })();
@@ -100,9 +114,26 @@ pub fn stage_import(src: &Path, data_dir: &Path) -> AppResult<BackupInfo> {
     std::fs::create_dir_all(&pending)?;
     let write = (|| -> AppResult<()> {
         std::fs::write(pending.join(SETTINGS_NAME), &settings)?;
-        let mut db_entry = zip.by_name(DB_NAME).map_err(|_| AppError::invalid("备份里没有数据库。"))?;
-        let mut out = std::fs::File::create(pending.join(DB_NAME))?;
-        std::io::copy(&mut db_entry, &mut out)?;
+        {
+            let mut db_entry = zip.by_name(DB_NAME).map_err(|_| AppError::invalid("备份里没有数据库。"))?;
+            let mut out = std::fs::File::create(pending.join(DB_NAME))?;
+            std::io::copy(&mut db_entry, &mut out)?;
+        }
+        // 用户数据（1.8 起的备份才有）：只认数据清单里登记过的名字
+        let names: Vec<String> = zip.file_names().map(str::to_string).collect();
+        for name in names {
+            let Some(rel) = name.strip_prefix(crate::datareg::BACKUP_PREFIX) else { continue };
+            if !crate::datareg::restorable(rel) {
+                continue;
+            }
+            let target = pending.join("data").join(rel);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut entry = zip.by_name(&name).map_err(|e| AppError::msg(e.to_string()))?;
+            let mut out = std::fs::File::create(&target)?;
+            std::io::copy(&mut (&mut entry).take(512 * 1024 * 1024), &mut out)?;
+        }
         Ok(())
     })();
     if let Err(e) = write {
@@ -116,6 +147,36 @@ pub fn stage_import(src: &Path, data_dir: &Path) -> AppResult<BackupInfo> {
         return Err(AppError::invalid(format!("备份里的数据库无法使用：{e}")));
     }
     Ok(BackupInfo { app_version: m.app_version, created_at: m.created_at, size })
+}
+
+/// 把备份里的用户数据放回数据目录：备份里有的才替换，原来的留一份 `.before-restore`；目录（如原声）整个换掉。
+fn restore_user_data(from: &Path, data_dir: &Path) -> std::io::Result<()> {
+    if !from.is_dir() {
+        return Ok(());
+    }
+    for it in crate::datareg::ITEMS.iter().filter(|i| i.class == crate::datareg::Class::User) {
+        let src = from.join(it.path);
+        if !src.exists() {
+            continue;
+        }
+        let dst = data_dir.join(it.path);
+        let keep = dst.with_file_name(format!("{}.before-restore", it.path));
+        if dst.exists() {
+            if it.dir {
+                let _ = std::fs::remove_dir_all(&keep);
+            } else {
+                let _ = std::fs::remove_file(&keep);
+            }
+            std::fs::rename(&dst, &keep)?;
+        }
+        if it.sqlite {
+            for ext in ["db-wal", "db-shm"] {
+                let _ = std::fs::remove_file(dst.with_extension(ext));
+            }
+        }
+        std::fs::rename(&src, &dst)?;
+    }
+    Ok(())
 }
 
 pub fn has_pending(data_dir: &Path) -> bool {
@@ -140,6 +201,7 @@ pub fn apply_pending(data_dir: &Path, settings_path: &Path) -> bool {
             let _ = std::fs::remove_file(db_path.with_extension(ext));
         }
         std::fs::rename(&new_db, &db_path).or_else(|_| std::fs::copy(&new_db, &db_path).map(|_| ()))?;
+        restore_user_data(&pending.join("data"), data_dir)?;
         if let Ok(bytes) = std::fs::read(pending.join(SETTINGS_NAME)) {
             if let Ok(mut incoming) = serde_json::from_slice::<serde_json::Value>(&bytes) {
                 // 手机配对、临时文件目录等和本机有关的内容保留当前的
@@ -228,8 +290,14 @@ mod tests {
             phone: crate::settings::PhoneSettings { token: "SECRET".into(), enabled: true, ..Default::default() },
             ..Default::default()
         };
+        // 用户数据：生词本（SQLite）、术语库、原声；缓存和密钥不进备份
+        std::fs::write(data.join("glossaries.json"), r#"{"glossaries":[1]}"#).unwrap();
+        std::fs::create_dir_all(data.join("vocab-clips")).unwrap();
+        std::fs::write(data.join("vocab-clips/clearclip_hello.webm"), "AUDIO").unwrap();
+        rusqlite::Connection::open(data.join("vocab.db")).unwrap().execute_batch("CREATE TABLE w(x TEXT); INSERT INTO w VALUES('ephemeral');").unwrap();
+        std::fs::write(data.join("vault.bin"), "KEY").unwrap();
         let zip = dir.join("b.zip");
-        export(&db, &settings, "9.9.9", &zip).unwrap();
+        export_with(&db, &settings, "9.9.9", &zip, Some(&data)).unwrap();
         // 备份里没有敏感字段
         let mut z = zip::ZipArchive::new(std::fs::File::open(&zip).unwrap()).unwrap();
         let text = String::from_utf8(read_entry(&mut z, SETTINGS_NAME, 1 << 20).unwrap()).unwrap();
@@ -250,6 +318,7 @@ mod tests {
         {
             let other = Db::open(&data2.join(DB_NAME)).unwrap();
             add(&other, "旧数据");
+            std::fs::write(data2.join("glossaries.json"), "OLD").unwrap();
         }
         let info = stage_import(&zip, &data2).unwrap();
         assert_eq!(info.app_version, "9.9.9");
@@ -266,6 +335,13 @@ mod tests {
         assert_eq!(s.concurrency, 5, "settings come from the backup");
         assert_eq!(s.download_dir, "/new/dir", "machine specific path stays");
         assert_eq!(s.phone.token, "LOCALTOKEN", "pairing token stays local");
+        // 用户数据也回来了，原来的留一份
+        assert_eq!(std::fs::read_to_string(data2.join("glossaries.json")).unwrap(), r#"{"glossaries":[1]}"#);
+        assert_eq!(std::fs::read_to_string(data2.join("glossaries.json.before-restore")).unwrap(), "OLD");
+        assert_eq!(std::fs::read_to_string(data2.join("vocab-clips/clearclip_hello.webm")).unwrap(), "AUDIO");
+        let w: String = rusqlite::Connection::open(data2.join("vocab.db")).unwrap().query_row("SELECT x FROM w", [], |r| r.get(0)).unwrap();
+        assert_eq!(w, "ephemeral");
+        assert!(!data2.join("vault.bin").exists(), "密钥不进备份");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

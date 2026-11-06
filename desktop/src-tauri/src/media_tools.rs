@@ -895,6 +895,66 @@ pub struct JobSnap {
     pub error: Option<String>,
     pub note: Option<String>,
     pub finished_at: Option<i64>,
+    /// 稳定的类型编号（filetr / dictation / export …），界面按它筛选，不要用显示用的 `op`
+    pub kind: String,
+    /// 交互 / AI / 重任务
+    pub lane: Lane,
+    /// 输入文件（有的话）
+    pub input: Option<String>,
+    /// 任务参数（各类型自己定）
+    pub params: serde_json::Value,
+}
+
+/// 任务分三条队列：交互型的（听写、剪辑预览）不能排在导出后面。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Lane {
+    /// 听写、剪辑预览、解密查看：用户在等着看，几乎立即执行
+    Interactive,
+    /// 翻译、摘要、纠错：主要花在等模型，按服务限流
+    Ai,
+    /// 导出、规范化、转写、上传：吃 CPU / 磁盘，最多同时 2 个
+    Heavy,
+}
+
+impl Lane {
+    /// 老的调用点只给了显示标签：按标签归类。
+    pub fn of_label(op: &str) -> Lane {
+        match op {
+            "听写" | "剪辑预览" | "解密查看" => Lane::Interactive,
+            "翻译字幕" | "摘要与章节" | "字幕纠错" | "文件翻译" | "取在线字幕" => Lane::Ai,
+            _ => Lane::Heavy,
+        }
+    }
+}
+
+/// 显示标签 → 稳定的类型编号。
+pub fn kind_of_label(op: &str) -> &'static str {
+    match op {
+        "听写" => "dictation",
+        "剪辑预览" => "edit_preview",
+        "解密查看" => "safebox_view",
+        "解密导出" => "safebox_export",
+        "加密入库" => "safebox_import",
+        "翻译字幕" => "sub_translate",
+        "摘要与章节" => "summary",
+        "字幕纠错" => "sub_correct",
+        "生成字幕" => "subgen",
+        "文件翻译" => "filetr",
+        "取在线字幕" => "page_subs",
+        "视频转写" => "page_transcribe",
+        "语音转文字" => "transcribe",
+        "上传" => "upload",
+        _ => "media",
+    }
+}
+
+/// 任务的类型、输入和参数（界面靠它恢复状态）。
+#[derive(Debug, Clone, Default)]
+pub struct JobMeta {
+    pub kind: Option<&'static str>,
+    pub input: Option<String>,
+    pub params: serde_json::Value,
 }
 
 struct Entry {
@@ -906,12 +966,21 @@ struct Entry {
 pub struct MediaJobs {
     next: AtomicU64,
     list: Mutex<Vec<Entry>>,
-    sem: Arc<Semaphore>,
+    /// 三条队列各自的并发上限
+    interactive: Arc<Semaphore>,
+    ai: Arc<Semaphore>,
+    heavy: Arc<Semaphore>,
 }
 
 impl Default for MediaJobs {
     fn default() -> Self {
-        MediaJobs { next: AtomicU64::new(1), list: Mutex::new(vec![]), sem: Arc::new(Semaphore::new(2)) }
+        MediaJobs {
+            next: AtomicU64::new(1),
+            list: Mutex::new(vec![]),
+            interactive: Arc::new(Semaphore::new(6)),
+            ai: Arc::new(Semaphore::new(3)),
+            heavy: Arc::new(Semaphore::new(2)),
+        }
     }
 }
 
@@ -930,11 +999,35 @@ impl MediaJobs {
         }
     }
 
-    fn add(&self, title: String, op: &str) -> (u64, Arc<AtomicBool>, Arc<Notify>) {
+    pub fn sem(&self, lane: Lane) -> Arc<Semaphore> {
+        match lane {
+            Lane::Interactive => self.interactive.clone(),
+            Lane::Ai => self.ai.clone(),
+            Lane::Heavy => self.heavy.clone(),
+        }
+    }
+
+    fn add(&self, title: String, op: &str, meta: JobMeta) -> (u64, Arc<AtomicBool>, Arc<Notify>) {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (cancel, wake) = (Arc::new(AtomicBool::new(false)), Arc::new(Notify::new()));
+        let kind = meta.kind.unwrap_or_else(|| kind_of_label(op)).to_string();
+        let lane = Lane::of_label(op);
         self.lock().push(Entry {
-            snap: JobSnap { id, title, op: op.into(), status: "queued".into(), percent: 0.0, output: None, error: None, note: None, finished_at: None },
+            snap: JobSnap {
+                id,
+                title,
+                op: op.into(),
+                status: "queued".into(),
+                percent: 0.0,
+                output: None,
+                error: None,
+                note: None,
+                finished_at: None,
+                kind,
+                lane,
+                input: meta.input,
+                params: meta.params,
+            },
             cancel: cancel.clone(),
             wake: wake.clone(),
         });
@@ -1094,13 +1187,23 @@ where
     F: FnOnce(JobCtx) -> Fut + Send + 'static,
     Fut: std::future::Future<Output = AppResult<PathBuf>> + Send + 'static,
 {
+    spawn_job_meta(app, title, label, JobMeta::default(), f)
+}
+
+/// 同 [`spawn_job`]，另外记下类型、输入和参数（界面切走再回来能恢复）。队列按标签归类。
+pub fn spawn_job_meta<F, Fut>(app: &tauri::AppHandle, title: String, label: &str, meta: JobMeta, f: F) -> u64
+where
+    F: FnOnce(JobCtx) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = AppResult<PathBuf>> + Send + 'static,
+{
     use tauri::Manager;
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
-    let (id, cancel, wake) = st.media_jobs.add(title, label);
+    let sem = st.media_jobs.sem(Lane::of_label(label));
+    let (id, cancel, wake) = st.media_jobs.add(title, label, meta);
     let ctx = JobCtx { app: app.clone(), st: st.clone(), id, cancel: cancel.clone(), wake, last_emit: Arc::new(Mutex::new(std::time::Instant::now())) };
     ctx.emit();
     tauri::async_runtime::spawn(async move {
-        let permit = st.media_jobs.sem.clone().acquire_owned().await;
+        let permit = sem.acquire_owned().await;
         if cancel.load(Ordering::Relaxed) {
             st.media_jobs.update(id, |s| {
                 s.status = "canceled".into();

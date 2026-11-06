@@ -439,7 +439,7 @@ pub async fn library_export(state: St<'_>, format: String, dest: String, ids: Op
 pub async fn backup_export(app: AppHandle, state: St<'_>, dest: String) -> AppResult<()> {
     let st = state.inner().clone();
     let version = app.package_info().version.to_string();
-    tokio::task::spawn_blocking(move || backup::export(&st.db, &st.settings(), &version, Path::new(&dest))).await.map_err(|e| AppError::msg(e.to_string()))?
+    tokio::task::spawn_blocking(move || backup::export_with(&st.db, &st.settings(), &version, Path::new(&dest), Some(&st.data_dir))).await.map_err(|e| AppError::msg(e.to_string()))?
 }
 
 #[tauri::command]

@@ -661,10 +661,21 @@
     S.video.currentTime = Math.max(0, sp.start / 1000)
     S.video.play().catch(() => {})
   }
+  // 录下的原声存在清影桌面端（浏览器本地存储只有 10 MB，存不了几段）；这里只记“哪些词录过”
   const clipCache = {}
-  const clipKeyHas = (w) => !!clipCache[LN.norm(w)]
+  const clipKey = (w) => String(w || '').trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 60)
+  const clipKeyHas = (w) => !!clipCache[clipKey(w)]
   async function loadClips() {
-    Object.assign(clipCache, await store.get('vocabClips', {}))
+    // 以前存在浏览器里的原声：搬到清影，搬完删掉
+    const old = await store.get('vocabClips', {})
+    const left = {}
+    for (const [w, data] of Object.entries(old || {})) {
+      const r = await send({ type: 'cc-vocab', op: 'clip', word: w, data })
+      if (!r.ok) left[w] = data
+    }
+    if (Object.keys(old || {}).length) await store.set('vocabClips', left)
+    const r = await send({ type: 'cc-vocab', op: 'clips' })
+    if (r.ok) for (const k of r.words || []) clipCache[k] = true
   }
   /** 把这一句的原声录下来（播放一遍，用 captureStream 录；跨域或受保护的视频录不了）。 */
   async function recordClip(word, li, btn) {
@@ -703,8 +714,9 @@
         fr.onerror = () => bad(new Error('读取录音失败'))
         fr.readAsDataURL(blob)
       })
-      clipCache[LN.norm(word)] = data
-      await store.set('vocabClips', clipCache)
+      const saved = await send({ type: 'cc-vocab', op: 'clip', word, data })
+      if (!saved.ok) throw new Error(`原声没有保存：${saved.error || '连不上清影'}（原声存在清影里，先把应用开着）`)
+      clipCache[clipKey(word)] = true
       btn.textContent = '♪ 已录原声'
     } catch (e) {
       btn.textContent = '录下原声（Anki 用）'
@@ -827,40 +839,6 @@
       }),
     )
   }
-  const crcTable = (() => {
-    const t = new Uint32Array(256)
-    for (let n = 0; n < 256; n++) {
-      let c = n
-      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-      t[n] = c >>> 0
-    }
-    return t
-  })()
-  const crc32 = (u8) => {
-    let c = 0xffffffff
-    for (let i = 0; i < u8.length; i++) c = crcTable[(c ^ u8[i]) & 255] ^ (c >>> 8)
-    return (c ^ 0xffffffff) >>> 0
-  }
-  /** 不压缩的 zip（Anki 的媒体文件本来就是压缩过的音频）。files: [{name, data: Uint8Array}] */
-  function zipStore(files) {
-    const enc = new TextEncoder()
-    const chunks = []
-    const cen = []
-    let off = 0
-    const u16 = (n) => [n & 255, (n >> 8) & 255]
-    const u32 = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]
-    for (const f of files) {
-      const nm = enc.encode(f.name)
-      const crc = crc32(f.data)
-      const head = new Uint8Array([0x50, 0x4b, 3, 4, 20, 0, 0, 8, 0, 0, 0, 0, 0, 0, ...u32(crc), ...u32(f.data.length), ...u32(f.data.length), ...u16(nm.length), 0, 0])
-      chunks.push(head, nm, f.data)
-      cen.push(new Uint8Array([0x50, 0x4b, 1, 2, 20, 0, 20, 0, 0, 8, 0, 0, 0, 0, 0, 0, ...u32(crc), ...u32(f.data.length), ...u32(f.data.length), ...u16(nm.length), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...u32(off)]), nm)
-      off += head.length + nm.length + f.data.length
-    }
-    const cenLen = cen.reduce((n, c) => n + c.length, 0)
-    const end = new Uint8Array([0x50, 0x4b, 5, 6, 0, 0, 0, 0, ...u16(files.length), ...u16(files.length), ...u32(cenLen), ...u32(off), 0, 0])
-    return new Blob([...chunks, ...cen, end], { type: 'application/zip' })
-  }
   const dataToBytes = (d) => Uint8Array.from(atob(d.split(',')[1] || ''), (c) => c.charCodeAt(0))
   function download(blob, name) {
     const a = h('a', { href: URL.createObjectURL(blob), download: name })
@@ -871,33 +849,16 @@
   async function exportVocab(format) {
     const r = await send({ type: 'cc-vocab', op: 'export', format })
     if (!r.ok) return toast(ui, r.error || '导出失败', true)
-    await loadClips()
-    if (format === 'anki' && Object.keys(clipCache).length) {
-      // 把录下的原声作为媒体一起打包：卡片背面追加 [sound:xxx]
-      const files = []
-      const lines = String(r.text)
-        .split('\n')
-        .map((ln) => {
-          const cols = ln.split('\t')
-          const w = (cols[1] || '').match(/<b>(.*?)<\/b>/)?.[1]
-          const clip = w && clipCache[LN.norm(w)]
-          if (!clip) return ln
-          const name = `clearclip_${LN.norm(w).replace(/[^\p{L}\p{N}]+/gu, '_')}.webm`
-          if (!files.some((f) => f.name === name)) files.push({ name, data: dataToBytes(clip) })
-          cols[1] += ` [sound:${name}]`
-          return cols.join('\t')
-        })
-        .join('\n')
-      if (files.length) {
-        files.unshift({ name: '生词本.txt', data: new TextEncoder().encode(lines) })
-        download(zipStore(files), '生词本-anki.zip')
-        return toast(ui, `已导出 Anki 包：卡片 + ${files.length - 1} 段原声。把 .webm 复制到 Anki 的 collection.media，再导入 .txt`, false, 6000)
-      }
+    if (format === 'anki' && r.zip) {
+      // 清影把卡片和录过的原声打成了一个 zip
+      download(new Blob([dataToBytes(`data:application/zip;base64,${r.zip}`)], { type: 'application/zip' }), '生词本-anki.zip')
+      return toast(ui, `已导出 Anki 包：卡片 + ${r.clips || 0} 段原声。把音频复制到 Anki 的 collection.media，再导入 .txt`, false, 6000)
     }
     const name = `生词本.${r.ext}`
     download(new Blob([r.text], { type: 'text/plain;charset=utf-8' }), name)
     toast(ui, `已导出 ${name}`)
   }
+
 
   // ---------- 精听 ----------
 

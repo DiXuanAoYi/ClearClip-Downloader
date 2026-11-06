@@ -512,6 +512,11 @@ export interface JobSnap {
   error: string | null
   note: string | null
   finishedAt: number | null
+  /** 稳定的类型编号（filetr / dictation …）；按它筛选，不要用显示用的 op */
+  kind: string
+  lane: 'interactive' | 'ai' | 'heavy'
+  input: string | null
+  params: Record<string, unknown> | null
 }
 
 export interface MediaInfoLite {

@@ -325,6 +325,10 @@ const HANDLERS = {
         return { ...(await call('/api/v1/vocab/unfamiliar', { words: Array.isArray(m.words) ? m.words.slice(0, 400) : [], minRank: Number(m.minRank) || 0 })) }
       case 'export':
         return { ...(await call(`/api/v1/vocab/export?format=${enc(String(m.format || 'csv'))}`)) }
+      case 'clip':
+        return { ...(await call('/api/v1/vocab/clip', { word: String(m.word || '').slice(0, 80), data: String(m.data || '') })) }
+      case 'clips':
+        return { ...(await call('/api/v1/vocab/clips')) }
       default:
         throw new Error('不支持的操作')
     }
@@ -539,6 +543,15 @@ api.runtime.onInstalled.addListener(async (d) => {
       if (features && typeof features === 'object' && typeof features.videoMaster !== 'boolean') {
         const was = features.speed !== false || features.speedMemory !== false || features.seek !== false || features.videoTools === true || features.videoAdvanced === true
         await api.storage.local.set({ features: { ...features, videoMaster: was } })
+      }
+      // 1.18 起“解除复制 / 右键限制”默认只对开启过的网站生效。以前默认是所有网站，升级时改掉一次并提示（还能在设置里改回来）
+      const { siteRules, unlockMigrated } = await api.storage.local.get(['siteRules', 'unlockMigrated'])
+      if (!unlockMigrated) {
+        if (!siteRules || siteRules.unlockAll !== false) {
+          await api.storage.local.set({ siteRules: { ...(siteRules || {}), unlockAll: false } })
+          notify('解除复制限制改为按网站开启', '以前对所有网站生效，会影响在线文档、设计工具的右键和拖放。现在只对你开启过的网站生效：在弹窗“工具”里对当前网站打开，或在设置里改回“所有网站”。')
+        }
+        await api.storage.local.set({ unlockMigrated: true })
       }
       const { audioCfg } = await api.storage.local.get('audioCfg')
       if (!audioCfg || typeof audioCfg.pillShow !== 'boolean') await api.storage.local.set({ audioCfg: { ...(audioCfg || {}), pillShow: true } })

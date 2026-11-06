@@ -16,7 +16,8 @@ const EXTS = ['png', 'jpg', 'jpeg', 'webp', 'pdf', 'epub', 'txt', 'md', 'markdow
 const FORMATS = ['PDF', 'EPUB', 'DOCX', 'TXT', 'MD', 'SRT / ASS', '图片']
 
 const jobs = ref<JobSnap[]>([])
-const files = ref<Record<number, string>>({}) // 任务编号 → 源文件路径
+// 任务编号 → 源文件路径：从任务快照里来（后端记了输入），页面切走再回来也认得出
+const files = computed<Record<number, string>>(() => Object.fromEntries(jobs.value.filter((j) => j.kind === 'filetr' && j.input).map((j) => [j.id, j.input as string])))
 const cur = ref<string>('') // 当前查看的源文件路径
 const view = ref<FileTransView | null>(null)
 const page = ref(0)
@@ -48,7 +49,8 @@ const apiProvider = computed(() => API_NAMES[app.settings?.live.ocrApi.provider 
 const apiReady = computed(() => !!app.settings?.live.ocrApi.key)
 // 先预览再生成：翻译完先在右边检查、改译文，满意后再生成文件
 const previewFirst = ref(true)
-const previews = ref<Record<number, boolean>>({}) // 任务编号 → 这个任务只翻译、没有生成文件
+// 任务编号 → 这个任务只翻译、没有生成文件（同样来自任务快照的参数）
+const previews = computed<Record<number, boolean>>(() => Object.fromEntries(jobs.value.filter((j) => j.kind === 'filetr').map((j) => [j.id, !!j.params?.preview])))
 const pdfx = ref<PdfxStatus | null>(null)
 const pdfxBusy = ref('')
 async function pdfxRefresh() {
@@ -95,7 +97,7 @@ const over = ref(false)
 let offs: UnlistenFn[] = []
 let release: (() => void) | null = null
 
-const mine = computed(() => jobs.value.filter((j) => j.op === '文件翻译').sort((a, b) => b.id - a.id))
+const mine = computed(() => jobs.value.filter((j) => j.kind === 'filetr').sort((a, b) => b.id - a.id))
 const curJob = computed(() => mine.value.find((j) => files.value[j.id] === cur.value))
 const pages = computed(() => view.value?.pages ?? [])
 // 版面画布：PDF 才有，译文放回原来的位置，可切换原文 / 译文 / 对比 / 导出效果、缩放平移、直接改译文
@@ -125,6 +127,12 @@ const glossaryOn = computed({
 
 onMounted(async () => {
   jobs.value = await api.mediaJobs().catch(() => [])
+  // 从别的页面切回来：接着看最近一个文件翻译任务
+  const last = mine.value.find((j) => j.input)
+  if (!cur.value && last?.input) {
+    cur.value = last.input
+    void loadView()
+  }
   experts.value = (await api.expertsState().catch(() => null))?.experts ?? []
   offs = [
     await events.onMediaJobs((l) => {
@@ -185,11 +193,10 @@ async function addFiles(paths: string[]) {
 
 async function start(path: string, preview = previewFirst.value) {
   try {
-    const id = await api.filetrStart(path, { bilingual: bilingual.value, target: target.value, pdfMode: pdfMode.value, ocr: ocrEngine.value, preview })
-    files.value = { ...files.value, [id]: path }
-    previews.value = { ...previews.value, [id]: preview }
+    await api.filetrStart(path, { bilingual: bilingual.value, target: target.value, pdfMode: pdfMode.value, ocr: ocrEngine.value, preview })
     cur.value = path
     page.value = 0
+    jobs.value = await api.mediaJobs().catch(() => jobs.value)
     await loadView()
   } catch (e) {
     ElMessage.error(errorText(e))

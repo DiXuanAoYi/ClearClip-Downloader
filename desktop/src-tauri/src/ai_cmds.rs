@@ -204,7 +204,9 @@ pub fn filetr_start(app: AppHandle, path: String, opts: crate::filetr::Opts) -> 
     if crate::filetr::kind_of(&p).is_none() {
         return Err(AppError::invalid("支持 TXT、Markdown、PDF、SRT / VTT / ASS 字幕、Word(docx)、EPUB，以及图片（PNG / JPG / WebP）。"));
     }
-    Ok(media_tools::spawn_job(&app, title_of(&p), "文件翻译", move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
+    // 记下源文件和选项：文件翻译页切走再回来，靠它认出“这个任务是哪个文件、是不是只预览”
+    let meta = media_tools::JobMeta { kind: Some("filetr"), input: Some(p.to_string_lossy().into_owned()), params: serde_json::to_value(&opts).unwrap_or_default() };
+    Ok(media_tools::spawn_job_meta(&app, title_of(&p), "文件翻译", meta, move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
 }
 
 /// 文件翻译：不翻译，只把文件切成页，给阅读器先看原文。

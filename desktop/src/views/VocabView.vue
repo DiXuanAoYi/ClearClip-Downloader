@@ -193,8 +193,9 @@ async function exportAs(f: (typeof FORMATS)[number]) {
   const path = await save({ defaultPath: `生词本.${f[2]}`, filters: [{ name: f[1], extensions: [f[2]] }] })
   if (!path) return
   try {
-    await api.vocabExport(f[0], path)
-    ElMessage.success(`已导出到 ${path}`)
+    // Anki 而且录过原声时，后端存成 .zip（卡片 + 原声），返回实际写入的路径
+    const out = await api.vocabExport(f[0], path)
+    ElMessage.success(`已导出到 ${out}`)
   } catch (e) {
     ElMessage.error(errorText(e))
   }

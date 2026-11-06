@@ -1373,6 +1373,14 @@
     const exportAnki = async () => {
       const r = await send({ type: 'cc-vocab', op: 'export', format: 'anki' })
       if (!r?.ok) return toast(ui, r?.error || '导出失败', true)
+      if (r.zip) {
+        // 录过原声：清影把卡片和原声打成了 zip
+        const a = h('a', { href: `data:application/zip;base64,${r.zip}`, download: '生词本-anki.zip' })
+        document.body.append(a)
+        a.click()
+        a.remove()
+        return toast(ui, `已导出 Anki 包：卡片 + ${r.clips || 0} 段原声`)
+      }
       saveFile(`生词本.${r.ext}`, r.text)
     }
     return h('div', {},

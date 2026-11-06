@@ -25,6 +25,7 @@ pub mod error;
 pub mod excerpts;
 pub mod experts;
 pub mod experts_cmds;
+pub mod datareg;
 pub mod filetr;
 pub mod glossary;
 pub mod glossary_cmds;

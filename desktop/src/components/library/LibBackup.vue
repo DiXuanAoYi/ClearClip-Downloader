@@ -70,7 +70,7 @@ async function restore() {
   try {
     const info = await api.backupImport(src)
     await ElMessageBox.confirm(
-      `这是清影 ${info.appVersion} 的备份（${formatBytes(info.size)}）。还原会用备份里的媒体库记录、标签、订阅、直播间和设置替换现在的内容（现在的数据会保留一份 .before-restore 副本）。需要重启清影才能生效，现在重启？`,
+      `这是清影 ${info.appVersion} 的备份（${formatBytes(info.size)}）。还原会用备份里的媒体库记录、标签、订阅、直播间、设置，以及生词本、术语库、AI 专家、摘录、翻译记忆替换现在的内容（现在的数据会保留一份 .before-restore 副本）。需要重启清影才能生效，现在重启？`,
       '还原备份',
       { confirmButtonText: '重启并还原', cancelButtonText: '稍后重启', type: 'warning' },
     )
@@ -103,7 +103,7 @@ async function restore() {
     </section>
     <section>
       <h4>备份与还原</h4>
-      <p class="mute">备份包含媒体库记录、标签、评分、订阅、直播间、解析历史、收到的链接和设置；不包含下载的文件本身，也不包含登录 Cookie 和手机配对令牌（换电脑后需要重新登录、重新配对）。</p>
+      <p class="mute">备份包含媒体库记录、标签、评分、订阅、直播间、解析历史、收到的链接、设置，以及生词本（含复习记录和原声）、术语库、AI 专家、摘录、翻译记忆；不包含下载的文件本身、各种缓存，也不包含登录 Cookie、API 密钥和手机配对令牌（换电脑后需要重新登录、重新填密钥、重新配对）。</p>
       <div class="row">
         <el-button size="small" @click="backup">创建备份…</el-button>
         <el-button size="small" @click="restore">从备份还原…</el-button>
