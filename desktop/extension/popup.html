@@ -48,7 +48,7 @@
         <button id="startSubLayer" class="sec" title="在当前页面的视频上叠一层字幕：双语、调字号和位置、延迟、导出 SRT；没有字幕可让清影转写">视频字幕层（双语 / 转写 / 导出）</button>
       </div>
       <div id="transTools">
-        <div class="rowBtns"><button id="startTrans" class="sec">翻译此页面 / 还原（Alt+A）</button></div>
+        <div class="rowBtns"><button id="startTrans" class="sec">翻译此页面 / 还原（Alt+A）</button><button id="openTransBox" class="sec" title="输入或粘贴一段文字，几个翻译服务并排对比；先在网页里选中文字再按 Alt+D 会自动带进去">翻译窗（Alt+D）</button></div>
         <div class="rowBtns">
           <div class="col"><label>翻译成</label><select id="trTarget"></select></div>
           <div class="col"><label>显示</label><select id="trMode"><option value="bilingual">双语对照</option><option value="replace">只显示译文</option></select></div>
@@ -182,7 +182,7 @@
     <h2>网页翻译</h2>
     <p class="mute">整页双语对照、单击 Ctrl 翻译鼠标指着的段落、选中文字点“译”、输入框里连按三次空格翻译。只翻译看得见的段落，翻过的内容会缓存在本机。</p>
     <label>翻译引擎</label>
-    <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option></select>
+    <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option><option value="custom">自定义接口（OpenAI 兼容：DeepSeek、通义、Ollama 等；要先在下面填好）</option></select>
     <div class="rowBtns">
       <div class="col"><label>目标语言</label><select id="trTarget2"></select></div>
       <div class="col"><label>译文样式</label><select id="trStyle"><option value="card">底色块（醒目）</option><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>
@@ -199,8 +199,21 @@
     <div class="row"><label class="row"><input id="svcOn_clearclip" type="checkbox" /> 清影（大模型）</label><select id="svcLang_clearclip"></select></div>
     <textarea id="svcPrompt_clearclip" rows="2" placeholder="给大模型的额外要求，如：保留专有名词原文；语气口语化（最多 500 字，可留空）"></textarea>
     <div class="row"><label class="row"><input id="svcOn_google" type="checkbox" /> 谷歌翻译</label><select id="svcLang_google"></select></div>
+    <div class="row"><label class="row"><input id="svcOn_custom" type="checkbox" /> 自定义接口（OpenAI 兼容）</label><select id="svcLang_custom"></select></div>
+    <input id="svcUrl_custom" type="text" placeholder="接口地址，如 https://api.deepseek.com 或 http://localhost:11434/v1" />
+    <input id="svcKey_custom" type="password" autocomplete="off" placeholder="密钥（本机 Ollama 之类可留空；只存在这个浏览器里）" />
+    <input id="svcModel_custom" type="text" placeholder="模型名，如 deepseek-chat / gpt-4o-mini / qwen2.5:7b" />
+    <textarea id="svcPrompt_custom" rows="2" placeholder="给这个模型的额外要求（可留空，最多 500 字）"></textarea>
+    <div class="mute">不用开着清影桌面端也能翻译；页面文字会直接发给你填的这个地址。本机 Ollama 需要设置环境变量 OLLAMA_ORIGINS=* 才允许浏览器扩展访问。</div>
     <label class="row"><input id="trCompare" type="checkbox" /> 划词翻译时并排显示所有翻译服务的结果（清影大模型 + 谷歌）；关掉则只用上面的引擎，卡片里可以临时“对比其他服务”</label>
-    <label class="row"><input id="trInput" type="checkbox" /> 输入框里连按三次空格，翻译成上面的语言</label>
+    <label class="row"><input id="trInput" type="checkbox" /> 输入框里连按三次空格（或按 Alt+I），翻译成上面的语言</label>
+    <label>不翻译这些区域（CSS 选择器，每行一条；写成「域名 | 选择器」只对那个网站生效）</label>
+    <textarea id="trExclude" rows="3" class="mono" placeholder=".ad, .comment-list&#10;github.com | .markdown-body pre&#10;news.example.com | #sidebar"></textarea>
+    <div class="rowBtns">
+      <div class="col"><label>少于几个字的段落不翻译（0 = 用内置规则）</label><input id="trMinChars" type="number" min="0" max="200" /></div>
+    </div>
+    <label>译文的自定义 CSS（可留空，如 font-size: 15px; color: #2563eb; 不能引入外部资源）</label>
+    <textarea id="trCss" rows="2" class="mono" placeholder="font-size: 15px; color: #2563eb;"></textarea>
     <label class="row"><input id="trDomain" type="checkbox" /> 翻译前先判断网页领域，按领域选词（更准，多一次模型调用；只对“清影（大模型）”有效）</label>
     <label class="row"><input id="trLazy" type="checkbox" /> 只翻译看得见（和快要看见）的段落</label>
     <label class="row"><input id="trSkip" type="checkbox" /> 本来就是目标语言的段落 / 页面不翻译</label>

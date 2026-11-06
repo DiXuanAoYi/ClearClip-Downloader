@@ -70,6 +70,12 @@
         "default": "Alt+A"
       },
       "description": "翻译 / 还原当前网页"
+    },
+    "open-transbox": {
+      "suggested_key": {
+        "default": "Alt+D"
+      },
+      "description": "打开翻译窗（把选中的文字带进去）"
     }
   },
   "browser_specific_settings": {

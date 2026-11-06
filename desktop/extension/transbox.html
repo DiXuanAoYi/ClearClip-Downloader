@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>翻译窗</title>
+<link rel="stylesheet" href="popup.css" />
+<link rel="stylesheet" href="transbox.css" />
+</head>
+<body class="wide">
+  <header><span class="logo" aria-hidden="true"></span><b>翻译窗</b><span class="mute">Alt+D 随时打开；先在网页里选中文字再按，会自动带进来</span></header>
+  <textarea id="src" rows="6" placeholder="在这里输入或粘贴要翻译的文字（Ctrl+Enter 翻译）"></textarea>
+  <div class="bar">
+    <label class="inline">翻译成 <select id="target"></select></label>
+    <span id="engines" class="engines"></span>
+    <span class="grow"></span>
+    <button id="go" class="small">翻译</button>
+  </div>
+  <div id="msg"></div>
+  <div id="out"></div>
+  <script src="shared.js"></script>
+  <script src="trans-logic.js"></script>
+  <script src="transbox.js"></script>
+</body>
+</html>

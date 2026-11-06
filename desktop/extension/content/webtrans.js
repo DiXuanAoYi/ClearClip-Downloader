@@ -70,6 +70,13 @@
   const ours = (el) => !!el.closest?.(`[${ATTR}]`)
 
   function skippable(el) {
+    if (S.exclSel && el?.closest) {
+      try {
+        if (el.closest(S.exclSel)) return true
+      } catch {
+        // 选择器有问题：当没写
+      }
+    }
     for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
       if (SKIP_TAGS.has(e.tagName?.toUpperCase?.())) return true
       if (e.isContentEditable || e.getAttribute?.('translate') === 'no' || e.classList?.contains('notranslate')) return true
@@ -137,7 +144,7 @@
         } else continue
       }
       const { text, last } = textOf(b)
-      if (!text || !T.worthTranslating(text, S.cfg.target) && S.cfg.skipTarget) continue
+      if (!text || (S.cfg.minChars > 0 && text.length < S.cfg.minChars) || !T.worthTranslating(text, S.cfg.target) && S.cfg.skipTarget) continue
       if (!visible(b)) continue
       S.blocks.set(b, { text, last, state: 'new', node: null })
       added++
@@ -599,6 +606,16 @@
     }
   }, true)
 
+  // Alt+I：把当前输入框里的字译成“输入框语言”（和连按三次空格一样，用在不想连按空格的时候）
+  document.addEventListener('keydown', (e) => {
+    if (!S.cfg.input || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.key.toLowerCase() !== 'i' || e.isComposing) return
+    const el = document.activeElement
+    const editable = el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|)$/i.test(el.type)) || el.isContentEditable)
+    if (!editable) return
+    e.preventDefault()
+    translateInput(el)
+  }, true)
+
   const textOfInput = (el) => (el.isContentEditable ? el.innerText : el.value)
 
   async function translateInput(el) {
@@ -639,6 +656,31 @@
     } catch {
       S.cfg = T.normalizeCfg()
     }
+    applyCfgExtras()
+  }
+
+  /** 设置里“不翻译的区域”和“自定义 CSS”：每次设置变了都重新算。写错的选择器跳过，不影响别的。 */
+  function applyCfgExtras() {
+    const ok = []
+    for (const sel of T.excludeFor(S.cfg, location.hostname)) {
+      try {
+        document.createDocumentFragment().querySelector(sel)
+        ok.push(sel)
+      } catch {
+        // 选择器写错了
+      }
+    }
+    S.exclSel = ok.join(',')
+    const css = T.cleanCss(S.cfg.customCss)
+    let el = document.getElementById('cc-tr-css')
+    if (!css) return void el?.remove()
+    ensureStyle() // 内置样式先放进去，自定义的接在后面、选择器更具体，才压得过内置的
+    if (!el) {
+      el = document.createElement('style')
+      el.id = 'cc-tr-css'
+    }
+    ;(document.head || document.documentElement).append(el)
+    el.textContent = `[${ATTR}][data-style] { ${css} }`
   }
 
   function reinit() {
@@ -664,6 +706,7 @@
       if (area !== 'local' || !ch.transCfg) return
       const was = S.cfg
       S.cfg = T.effectiveCfg(T.normalizeCfg(ch.transCfg.newValue), location.hostname)
+      applyCfgExtras()
       if (S.on && (was.mode !== S.cfg.mode || was.style !== S.cfg.style || was.blur !== S.cfg.blur)) restyle()
       // 目标语言 / 引擎变了：已经翻好的作废，重新来
       if (S.on && (was.target !== S.cfg.target || was.engine !== S.cfg.engine || JSON.stringify(was.services) !== JSON.stringify(S.cfg.services))) {

@@ -198,10 +198,10 @@
 
   const MODES = ['bilingual', 'replace']
   const STYLES = ['card', 'dim', 'underline', 'highlight', 'plain']
-  const ENGINES = ['clearclip', 'google']
+  const ENGINES = ['clearclip', 'google', 'custom']
   const HOVER_KEYS = ['off', 'Control', 'Alt', 'Shift']
   /** 对比翻译时每个服务的显示名 */
-  const ENGINE_NAMES = { clearclip: '清影（大模型）', google: '谷歌翻译' }
+  const ENGINE_NAMES = { clearclip: '清影（大模型）', google: '谷歌翻译', custom: '自定义接口' }
   /** 按住修饰键多少毫秒算“按住”：0 = 只认单击 */
   const clampHold = (v) => {
     const n = Math.round(Number(v))
@@ -217,7 +217,7 @@
     hover: 'Control', // 单击一下这个键，翻译鼠标指着的段落；off 关闭
     holdMs: 450, // 按住上面这个键超过这么久也会翻译（不用松手）；0 = 只认单击
     compare: false, // 划词翻译时把所有翻译服务的结果并排显示
-    services: {}, // 各翻译服务单独的设置：{ clearclip|google: { enabled?, target?, prompt? } }
+    services: {}, // 各翻译服务单独的设置：{ clearclip|google|custom: { enabled?, target?, prompt?, url?, key?, model? } }
     select: true, // 选中文字后出现“译”按钮
     input: true, // 输入框里连按三次空格，翻译成下面的语言
     inputLang: 'en',
@@ -227,26 +227,41 @@
     lazy: true, // 只翻译看得见（和快要看见）的段落
     skipTarget: true, // 本来就是目标语言的段落 / 页面不翻译
     domain: true, // 翻译前先判断网页领域，按领域选词（只对“清影（大模型）”有效）
+    customCss: '', // 译文的自定义 CSS（作用在译文上，如 `font-size:15px; color:#2563eb`）
+    exclude: [], // 不翻译的区域：CSS 选择器，每条一个；`域名 | 选择器` 只对该网站生效
+    minChars: 0, // 段落少于这么多字就不翻译；0 = 用内置规则
   }
 
   /** 各翻译服务单独设置：enabled 默认开；target 留空沿用全局；prompt 只对大模型有效，作为额外要求。 */
   function normalizeServices(raw) {
     const out = {}
     const r = raw && typeof raw === 'object' ? raw : {}
+    const str = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '')
     for (const eng of ENGINES) {
       const v = r[eng] && typeof r[eng] === 'object' ? r[eng] : {}
       const e = {}
-      if (v.enabled === false) e.enabled = false
+      // 清影和谷歌默认开着，自定义接口默认关着（要填了地址和模型再打开）
+      if (eng === 'custom' ? v.enabled === true : v.enabled === false) e.enabled = eng === 'custom'
       if (typeof v.target === 'string' && v.target.trim()) e.target = v.target.trim()
-      if (eng === 'clearclip' && typeof v.prompt === 'string' && v.prompt.trim()) e.prompt = v.prompt.trim().slice(0, 500)
+      if ((eng === 'clearclip' || eng === 'custom') && typeof v.prompt === 'string' && v.prompt.trim()) e.prompt = v.prompt.trim().slice(0, 500)
+      if (eng === 'custom') {
+        if (str(v.url, 300)) e.url = str(v.url, 300)
+        if (str(v.key, 300)) e.key = str(v.key, 300)
+        if (str(v.model, 100)) e.model = str(v.model, 100)
+      }
       if (Object.keys(e).length) out[eng] = e
     }
     return out
   }
   /** 参与翻译 / 对比的服务；全被关掉时退回全部，免得什么都翻不了 */
+  /** 自定义接口：打开了，并且填了地址和模型 */
+  const customReady = (cfg) => {
+    const c = cfg?.services?.custom
+    return !!(c && c.enabled === true && c.url && c.model)
+  }
   const activeEngines = (cfg) => {
-    const on = ENGINES.filter((e) => cfg?.services?.[e]?.enabled !== false)
-    return on.length ? on : ENGINES.slice()
+    const on = ENGINES.filter((e) => (e === 'custom' ? customReady(cfg) : cfg?.services?.[e]?.enabled !== false))
+    return on.length ? on : ENGINES.filter((e) => e !== 'custom')
   }
   /** 当前真正用的服务：设置里选的被关掉了，就换第一个还开着的 */
   const pickEngine = (cfg) => {
@@ -256,6 +271,96 @@
   /** 某个服务翻成什么语言：它自己的设置优先 */
   const engineTarget = (cfg, engine) => cfg?.services?.[engine]?.target || cfg?.target
   const enginePrompt = (cfg, engine) => cfg?.services?.[engine]?.prompt || ''
+
+  // ---------- 自定义接口（OpenAI 兼容）----------
+
+  /** 接口地址 → 聊天补全地址：写到 /v1 或域名就补 /chat/completions，已经写全的不动。 */
+  function chatUrl(base) {
+    const u = String(base || '').trim().replace(/\/+$/, '')
+    if (!u) return ''
+    if (/\/chat\/completions$/i.test(u) || /\/completions$/i.test(u)) return u
+    return /\/v\d+(beta)?$/i.test(u) ? `${u}/chat/completions` : `${u}/v1/chat/completions`
+  }
+
+  /** 把一批原文按字数和条数切成几次请求。单条超长也自成一批，不拆。 */
+  function splitBatches(texts, maxChars = 2500, maxItems = 20) {
+    const out = []
+    let cur = []
+    let n = 0
+    texts.forEach((t, i) => {
+      const len = String(t).length
+      if (cur.length && (n + len > maxChars || cur.length >= maxItems)) {
+        out.push(cur)
+        cur = []
+        n = 0
+      }
+      cur.push(i)
+      n += len
+    })
+    if (cur.length) out.push(cur)
+    return out
+  }
+
+  /** 模型回的 JSON 数组 → 字符串数组；条数对不上、不是数组返回 null。容忍代码围栏和前后多余的话。 */
+  function parseArrayReply(reply, n) {
+    let t = String(reply || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
+    const a = t.indexOf('[')
+    const b = t.lastIndexOf(']')
+    if (a < 0 || b <= a) return null
+    try {
+      const v = JSON.parse(t.slice(a, b + 1))
+      if (!Array.isArray(v) || v.length !== n) return null
+      return v.map((x) => (typeof x === 'string' ? x : x == null ? '' : String(x)))
+    } catch {
+      return null
+    }
+  }
+
+  /** 自定义接口用的系统提示词。 */
+  function customSystem(targetName, extra = '', context = '') {
+    return [
+      `You are a professional translator. Translate every item of the JSON array the user sends into ${targetName}.`,
+      'Keep numbers, names, code, URLs and markup as they are. Do not explain anything.',
+      'Reply with ONLY a JSON array of strings: the same length and the same order as the input.',
+      context,
+      extra ? `Additional requirement from the user: ${extra}` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
+
+  // ---------- 不翻译的区域 ----------
+
+  /** 文本框 / 数组 → 规则列表（去空、去重、限长）。每条：`选择器` 或 `域名 | 选择器`。 */
+  function normalizeExclude(raw) {
+    const lines = Array.isArray(raw) ? raw : String(raw || '').split(/\n/)
+    return [...new Set(lines.map((x) => String(x || '').trim().slice(0, 200)).filter(Boolean))].slice(0, 50)
+  }
+  /** 这个网站要排除的选择器：没写域名的所有网站都用，写了域名的只对该网站（含子域名）用。 */
+  function excludeFor(cfg, host) {
+    const h = String(host || '').toLowerCase()
+    const out = []
+    for (const line of cfg?.exclude || []) {
+      const i = line.indexOf('|')
+      if (i < 0) out.push(line)
+      else {
+        const d = line.slice(0, i).trim().toLowerCase().replace(/^\*?\.?/, '')
+        const sel = line.slice(i + 1).trim()
+        if (d && sel && (h === d || h.endsWith('.' + d))) out.push(sel)
+      }
+    }
+    return out
+  }
+
+  /** 译文自定义 CSS：限长，去掉能跳出 <style> 或引入外部资源的写法。 */
+  function cleanCss(raw) {
+    return String(raw || '')
+      .slice(0, 3000)
+      .replace(/<\/?style[^>]*>/gi, '')
+      .replace(/@import[^;]*;?/gi, '')
+      .replace(/url\s*\([^)]*\)/gi, '')
+      .trim()
+  }
 
   const hostList = (v) => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,;]+/)).map((x) => String(x || '').trim().toLowerCase().replace(/^\*?\.?/, '')).filter(Boolean))]
 
@@ -324,6 +429,9 @@
       lazy: r.lazy !== false,
       skipTarget: r.skipTarget !== false,
       domain: r.domain !== false,
+      customCss: cleanCss(r.customCss),
+      exclude: normalizeExclude(r.exclude),
+      minChars: Math.min(200, Math.max(0, Math.round(Number(r.minChars) || 0))),
     }
   }
 
@@ -384,7 +492,7 @@
 
   globalThis.ccTrans = {
     LANGS, NAMES, uiLang, label, byCode, promptName, nameOf, scriptCounts, inTarget, worthTranslating, pageInTarget, batchPlan,
-    DEFAULT_CFG, MODES, STYLES, ENGINES, ENGINE_NAMES, normalizeServices, activeEngines, pickEngine, engineTarget, enginePrompt, HOVER_KEYS, normalizeCfg, normalizeSites, parseSites, formatSites, effectiveCfg, hostList, shouldAuto, autoMatches, listed,
+    DEFAULT_CFG, MODES, STYLES, ENGINES, ENGINE_NAMES, normalizeServices, activeEngines, pickEngine, engineTarget, enginePrompt, customReady, chatUrl, splitBatches, parseArrayReply, customSystem, normalizeExclude, excludeFor, cleanCss, HOVER_KEYS, normalizeCfg, normalizeSites, parseSites, formatSites, effectiveCfg, hostList, shouldAuto, autoMatches, listed,
     googleUrl, parseGoogle, cacheKey, pruneCache,
   }
 })()

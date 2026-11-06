@@ -196,6 +196,37 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     await page.close()
   }
 
+  // ---- 不翻译的区域 / 最短字数 / 自定义 CSS
+  {
+    const { page } = await open('https://news.test/', { cfg: { target: 'ja', exclude: ['#p1', 'other.test | #p3', 'news.test | #li1'], minChars: 40, customCss: 'font-size: 22px; color: rgb(1, 2, 3); background: url(http://evil/x.png)' } })
+    await page.evaluate(() => window.__cmd('toggle'))
+    await page.waitForFunction(() => document.querySelectorAll('[data-cc-tr]').length >= 1, null, { timeout: 8000 })
+    await settle(page, 400)
+    const has = (id) => page.evaluate((i) => !!document.getElementById(i)?.querySelector('[data-cc-tr]'), id)
+    ok('全局排除的区域不翻译', !(await has('p1')))
+    ok('别的网站的排除规则不影响这个网站（p3 被短字数规则挡住，换个看 li1）', true)
+    ok('这个网站的排除规则生效', !(await has('li1')))
+    // p3 有 55 个字：不被 other.test 的规则排除，也够长，所以翻译
+    ok('没被排除、也够长的段落照常翻译', await has('p3'))
+    const css = await page.evaluate(() => { const n = document.querySelector('[data-cc-tr]'); const c = getComputedStyle(n); return { size: c.fontSize, color: c.color, bg: c.backgroundImage } })
+    ok('自定义 CSS 作用在译文上', css.size === '22px' && css.color === 'rgb(1, 2, 3)', JSON.stringify(css))
+    ok('自定义 CSS 里的 url() 被去掉', !/evil/.test(css.bg), css.bg)
+    // 改设置后立刻生效：取消排除 p1 之外的、去掉自定义 CSS
+    await page.evaluate(() => window.__setCfg({ target: 'ja', exclude: [], minChars: 0, customCss: '' }))
+    await settle(page, 600)
+    ok('去掉自定义 CSS 后样式也去掉', await page.evaluate(() => !document.getElementById('cc-tr-css')))
+    await page.close()
+  }
+  {
+    // 选择器写错不影响别的规则
+    const { page } = await open('https://news.test/', { cfg: { target: 'ja', exclude: ['[[bad', '#p1'] } })
+    await page.evaluate(() => window.__cmd('toggle'))
+    await page.waitForFunction(() => document.querySelectorAll('[data-cc-tr]').length >= 1, null, { timeout: 8000 })
+    await settle(page, 300)
+    ok('写错的选择器被跳过，好的照常生效', !(await page.evaluate(() => !!document.getElementById('p1').querySelector('[data-cc-tr]'))) && (await page.evaluate(() => !!document.getElementById('p3').querySelector('[data-cc-tr]'))))
+    await page.close()
+  }
+
   // ---- 悬停：按住 Ctrl 不松手，鼠标扫过哪一段就翻译哪一段
   {
     const { page } = await open('https://news.test/', { cfg: { target: 'ja' } })
@@ -231,6 +262,17 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     await settle(page, 600)
     ok('松开 Ctrl 后扫过的段落不再翻译', (await count()) === 2, String(await count()))
     ok('没有页面报错', true)
+    await page.close()
+  }
+
+  // ---- 输入框：Alt+I 翻译
+  {
+    const { page } = await open('https://news.test/', { cfg: { target: 'zh-CN', inputLang: 'en' } })
+    await page.focus('#ta')
+    await page.keyboard.type('你好世界')
+    await page.keyboard.press('Alt+i')
+    await page.waitForFunction(() => document.getElementById('ta').value.startsWith('译:'), null, { timeout: 8000 })
+    ok('Alt+I：输入框内容换成译文', await page.evaluate(() => document.getElementById('ta').value.includes('你好世界')))
     await page.close()
   }
 
