@@ -650,6 +650,7 @@ pub fn run() {
             ai_cmds::filetr_preview,
             ai_cmds::filetr_view,
             ai_cmds::filetr_page_preview,
+            ai_cmds::filetr_page_layout,
             ai_cmds::filetr_edit,
             ai_cmds::filetr_retranslate,
             subedit::subtitle_tracks,

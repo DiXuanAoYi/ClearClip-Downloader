@@ -738,7 +738,9 @@ fn lookup_system(lang: &str) -> String {
          {{\"lemma\": base form, \"phonetic\": IPA between slashes or \"\" if not a word of a language with IPA, \"pos\": short part of speech such as n. / v. / adj. / phr., \
          \"meaning\": common dictionary meaning in {lang} (max 25 characters, 2-3 senses separated by ；), \
          \"context_meaning\": what it means in THIS sentence in {lang} (max 40 characters, empty if identical to meaning), \
-         \"note\": optional one short usage tip in {lang} (collocation, register, false friend), else \"\"}}. \
+         \"note\": optional one short usage tip in {lang} (collocation, register, false friend), else \"\", \
+         \"examples\": exactly 2 short, natural example sentences in the WORD's own language that use the lemma, in different contexts (not the given SENTENCE), \
+         each {{\"text\": the sentence, \"tr\": its translation in {lang}}}}}. \
          The transcript may contain recognition errors: if WORD looks like a mis-heard word, give the likely intended word in \"lemma\" and explain in \"note\". No markdown, no extra text."
     )
 }

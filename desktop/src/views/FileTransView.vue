@@ -8,6 +8,7 @@ import { useAppStore } from '../stores/app'
 import type { AiExpert, FileTransView, JobSnap, OcrStatus, PdfxStatus } from '../types'
 import { registerDrop } from '../utils/dropHub'
 import { TARGET_LANGS } from '../utils/langs'
+import PdfCanvas from '../components/PdfCanvas.vue'
 
 /** 文件翻译：拖入文件 → 一页一页翻 → 左原文右译文对照阅读 → 导出。设计图 ④。 */
 const app = useAppStore()
@@ -97,39 +98,12 @@ let release: (() => void) | null = null
 const mine = computed(() => jobs.value.filter((j) => j.op === '文件翻译').sort((a, b) => b.id - a.id))
 const curJob = computed(() => mine.value.find((j) => files.value[j.id] === cur.value))
 const pages = computed(() => view.value?.pages ?? [])
-// 版面预览：把译文真的画到原来的 PDF 页上，原页和译文页并排看位置对不对
+// 版面画布：PDF 才有，译文放回原来的位置，可切换原文 / 译文 / 对比 / 导出效果、缩放平移、直接改译文
 const isPdf = computed(() => /\.pdf$/i.test(cur.value))
-const lpage = ref(0)
-const lpages = ref(0)
-const lay = ref<{ orig: string; trans: string; items: number } | null>(null)
-const layBusy = ref(false)
-const layErr = ref('')
-let layTok = 0
-async function loadLayout() {
-  if (show.value !== 'layout' || !cur.value || !isPdf.value) return
-  const tok = ++layTok
-  layBusy.value = true
-  layErr.value = ''
-  try {
-    const r = await api.filetrPagePreview(cur.value, target.value, ocrEngine.value, lpage.value)
-    if (tok !== layTok) return
-    lay.value = r
-    lpages.value = r.pages
-  } catch (e) {
-    if (tok !== layTok) return
-    lay.value = null
-    layErr.value = errorText(e)
-  } finally {
-    if (tok === layTok) layBusy.value = false
-  }
+function onCanvasEdited(viewPage: number, index: number, text: string | null) {
+  const p = view.value?.pages[viewPage]
+  if (p && index < p.trans.length) p.trans[index] = text
 }
-watch([show, lpage, cur], () => void loadLayout())
-watch(
-  () => curJob.value?.status,
-  (st) => {
-    if (st === 'done' && show.value === 'layout') void loadLayout()
-  },
-)
 const pg = computed(() => pages.value[page.value])
 const doneSegs = computed(() => pages.value.reduce((n, p) => n + p.trans.filter(Boolean).length, 0))
 const totalSegs = computed(() => pages.value.reduce((n, p) => n + p.src.length, 0))
@@ -412,13 +386,7 @@ function status(j: JobSnap): string {
       <section class="rd">
         <div class="tb">
           <span class="t">{{ cur ? baseName(cur) : '阅读' }}</span>
-          <template v-if="show === 'layout' && lpages">
-            <span class="mute">第 {{ lpage + 1 }} / {{ lpages }} 页</span>
-            <el-button size="small" :disabled="lpage <= 0" @click="lpage--">上一页</el-button>
-            <el-button size="small" :disabled="lpage >= lpages - 1" @click="lpage++">下一页</el-button>
-            <el-button size="small" :loading="layBusy" @click="loadLayout">刷新</el-button>
-          </template>
-          <template v-else-if="pages.length && show !== 'layout'">
+          <template v-if="pages.length && show !== 'layout'">
             <span class="mute">第 {{ page + 1 }} / {{ pages.length }} 页</span>
             <el-button size="small" :disabled="page <= 0" @click="page--">上一页</el-button>
             <el-button size="small" :disabled="page >= pages.length - 1" @click="page++">下一页</el-button>
@@ -446,21 +414,7 @@ function status(j: JobSnap): string {
           <b>还没有打开文件</b>
           <span class="mute">拖入文件后，这里左边是原文、右边是译文，翻译的同时就能边译边看。</span>
         </div>
-        <div v-else-if="show === 'layout'" class="lay">
-          <div v-if="layErr" class="empty"><span class="mute">{{ layErr }}</span></div>
-          <div v-else-if="!lay" class="empty"><span class="mute">正在把译文画到原页上…</span></div>
-          <template v-else>
-            <figure>
-              <figcaption>原页</figcaption>
-              <img :src="lay.orig" alt="原页" />
-            </figure>
-            <figure>
-              <figcaption>译文页（{{ lay.items }} 处译文）<i v-if="layBusy" class="mute">刷新中…</i></figcaption>
-              <img :src="lay.trans" alt="译文页" />
-            </figure>
-          </template>
-          <div class="laytip">看位置、字号、是否盖住原文。要改译文：切到“对照”点译文改，再回来点“刷新”。</div>
-        </div>
+        <PdfCanvas v-else-if="show === 'layout' && isPdf" :path="cur" :target="target" :ocr="ocrEngine" :job-status="curJob?.status" @edited="onCanvasEdited" />
         <div v-else class="pg" :class="show">
           <div v-if="pg && show !== 'trans'" class="pane">
             <div class="lab">原文</div>
@@ -547,12 +501,6 @@ function status(j: JobSnap): string {
 .tb { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--el-border-color); flex-wrap: wrap }
 .tb .t { font-weight: 700; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .sp { flex: 1 }
-.lay { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px 18px 40px; overflow: auto; align-content: start; position: relative }
-.lay figure { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0 }
-.lay figcaption { font-size: 12.5px; font-weight: 700; color: var(--el-text-color-secondary) }
-.lay img { width: 100%; height: auto; border: 1px solid var(--el-border-color); border-radius: 6px; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12) }
-.laytip { grid-column: 1 / -1; font-size: 12px; color: var(--el-text-color-secondary) }
-.lay .empty { grid-column: 1 / -1 }
 .job .cancel { font-weight: 700; margin-left: auto }
 .seg.w260 { flex: none; width: 260px }
 .pg { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; overflow-y: auto }

@@ -222,7 +222,14 @@ pub fn filetr_view(state: St<'_>, path: String, target: Option<String>) -> AppRe
     Ok(crate::filetr::view_for(&state.data_dir, &p, &t))
 }
 
-/// 文件翻译：把译文画到原页上，返回原页和译文页两张图（版面预览）。
+/// 文件翻译：版面画布的一页数据（原页图 + 每块的位置、背景色、原文、译文）。
+#[tauri::command]
+pub async fn filetr_page_layout(state: St<'_>, path: String, target: String, ocr: Option<String>, page: usize) -> AppResult<crate::filetr::PageLayout> {
+    let p = existing_file(&path)?;
+    crate::filetr::page_layout(&state, &p, target.trim(), ocr.as_deref().unwrap_or("vision"), page).await
+}
+
+/// 文件翻译：导出效果——把译文真的写到原页上再渲染，返回原页和译文页两张图。
 #[tauri::command]
 pub async fn filetr_page_preview(state: St<'_>, path: String, target: String, ocr: Option<String>, page: usize) -> AppResult<crate::filetr::PagePreview> {
     let p = existing_file(&path)?;

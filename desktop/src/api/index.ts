@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { ECue } from '../utils/subedit'
 import type {
   FileTransView,
+  PdfLayout,
   ShotEntry,
   ScreenStatus,
   ScreenTarget,
@@ -332,6 +333,7 @@ export const api = {
   filetrPreview: (path: string) => invoke<FileTransView>('filetr_preview', { path }),
   filetrView: (path: string, target?: string) => invoke<FileTransView | null>('filetr_view', { path, target }),
   filetrStart: (path: string, opts: { bilingual: boolean; target?: string; pdfMode?: string; ocr?: string; preview?: boolean }) => invoke<number>('filetr_start', { path, opts }),
+  filetrPageLayout: (path: string, target: string, ocr: string, page: number) => invoke<PdfLayout>('filetr_page_layout', { path, target, ocr, page }),
   filetrPagePreview: (path: string, target: string, ocr: string, page: number) => invoke<{ orig: string; trans: string; pages: number; items: number }>('filetr_page_preview', { path, target, ocr, page }),
   filetrEdit: (path: string, target: string, page: number, index: number, text: string) => invoke<void>('filetr_edit', { path, target, page, index, text }),
   filetrRetranslate: (path: string, target: string, page: number, index: number) => invoke<string>('filetr_retranslate', { path, target, page, index }),

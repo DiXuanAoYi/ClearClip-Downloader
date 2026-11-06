@@ -2,6 +2,17 @@
 // 带变量的文字用 {0}、{1} 占位（模板里的 {{ x }} 和脚本里的 `${x}` 都按出现顺序编号）。
 // 运行 `npm run i18n` 可以列出源码里还没有翻译的中文。
 export const en: Record<string, string> = {
+  "对比": "Compare",
+  "导出效果": "Export result",
+  "适应宽度": "Fit width",
+  "实际大小": "Actual size",
+  "把译文真的写进 PDF 再渲染，和生成的文件一样": "Write the translation into the PDF and render it, same as the generated file",
+  "正在渲染页面…": "Rendering the page…",
+  "正在把译文写进页面…": "Writing the translation into the page…",
+  "导出效果（{0} 处译文）": "Export result ({0} translations)",
+  "Ctrl（⌘）+ 滚轮以鼠标为中心缩放，滚轮上下平移，按住拖动平移；点一块译文直接改（改完点别处保存），双击这一块可以重译。": "Ctrl (⌘) + wheel zooms around the pointer, the wheel pans vertically, drag to pan; click a translated block to edit it (click elsewhere to save), double-click a block to re-translate it.",
+  "这一页没有译文块。": "This page has no translated blocks.",
+  "重译中…": "Re-translating…",
   "版面": "Layout",
   "把译文画到原来的页面上看位置": "Draw the translation onto the original page to check positions",
   "原页": "Original page",

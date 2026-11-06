@@ -52,6 +52,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
           window.__calls.push(m)
           if (m.type === 'cc-app-lang') return { ok: true, lang: 'zh' }
           if (m.type === 'cc-tr') return { ok: true, texts: (m.texts || []).map((t) => '译:' + t), cached: 0 }
+          if (m.type === 'cc-vocab') return { ok: true, words: [], stats: {} }
           if (m.type === 'cc-ai-status') return { ok: true, ready: o.ready !== false, model: 'm', lang: '中文', transcribe: true, subtitles: true, maxChars: 600000 }
           if (m.type === 'cc-ai-run') {
             window.__job = m.req
@@ -114,8 +115,9 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       const r = window.__roots.find((x) => x.querySelector('.ln'))
       const span = r.querySelector('.ln span:nth-child(2)')
       const rng = document.createRange()
-      rng.setStart(span.firstChild, 0)
-      rng.setEnd(span.firstChild, 3)
+      const tn = document.createTreeWalker(span, NodeFilter.SHOW_TEXT).nextNode()
+      rng.setStart(tn, 0)
+      rng.setEnd(tn, 3)
       const s = r.getSelection ? r.getSelection() : getSelection()
       s.removeAllRanges()
       s.addRange(rng)
@@ -167,6 +169,21 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.close()
   }
 
+  // ---- 站内切换视频（网址变了、页面没刷新）：自动重新读取字幕
+  {
+    const { page, errors } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    const seen = []
+    page.on('request', (r) => seen.push(r.url()))
+    await page.evaluate(() => history.pushState({}, '', '/watch?v=second12345'))
+    await page.waitForFunction(() => true)
+    await settle(page, 2500)
+    ok('切换视频后自动去读新视频的字幕', seen.some((u) => u.includes('v=second12345')), seen.join('|'))
+    ok('切换后面板重新显示文稿', /段/.test(await text(page, '.meta')))
+    ok('切换视频流程无页面错误', errors.length === 0, errors.join('|'))
+    await page.close()
+  }
+
   // ---- YouTube：读字幕 → 摘要
   {
     const { page, errors } = await open(YT)
@@ -215,9 +232,38 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       i.dispatchEvent(new Event('input'))
     })
     await settle(page, 300)
-    await clickText(page, '翻译（自动方向）')
+    // 文稿显示：原文 / 译文 / 双语（没翻译时是原文，选译文或双语才去翻译，原文始终保留）
+    const viewSel = () => window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).find((x) => [...x.options].some((o) => o.value === 'tr') && x.options.length === 3)
+    ok('文稿里有“原文 / 译文 / 双语”选择，没翻译时停在原文', await page.evaluate((f) => { const x = eval('(' + f + ')')(); return x && [...x.options].map((o) => o.text).join('|') === '原文|译文|双语' && x.value === 'orig' }, viewSel.toString()))
+    ok('没翻译时文稿显示的是原文', !(await text(page, '#lines')).includes('译:'))
+    await page.evaluate((f) => { const x = eval('(' + f + ')')(); x.value = 'both'; x.dispatchEvent(new Event('change')) }, viewSel.toString())
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('译:Welcome')), null, { timeout: 8000 })
+    ok('选双语：自动去翻译，每行原文下方出现译文（原文没有被替换）', (await text(page, '#lines')).includes('Welcome') && (await text(page, '#lines')).includes('译:Welcome'))
+    // 鼠标放在原文上，下面对应的译文高亮
+    const rect = await page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln .mn')).find(Boolean); const b = el.getBoundingClientRect(); return { x: b.x + 10, y: b.y + b.height / 2 } })
+    const bgOf = () => page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln .tr')).find(Boolean); return getComputedStyle(el).backgroundColor })
+    await page.mouse.move(5, 5)
+    const idle = await bgOf()
+    await page.mouse.move(rect.x, rect.y)
+    await settle(page, 250)
+    const lit = await bgOf()
+    ok('鼠标放在原文上：对应译文高亮', idle !== lit && lit !== 'rgba(0, 0, 0, 0)', idle + ' → ' + lit)
+    await page.mouse.move(5, 5)
     ok('翻译后每行下方有译文', true)
+    // 生词页：切到这一页就主动刷新（不再有“刷新”按钮）
+    const vocabCalls = () => page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-vocab' && c.op === 'list').length)
+    const v0 = await vocabCalls()
+    const tabVocab = () => page.evaluate(() => [...window.__roots.flatMap((r) => [...r.querySelectorAll('.tabs button')])].find((b) => /^生词/.test(b.textContent.trim())).click())
+    await tabVocab()
+    await settle(page, 300)
+    const v1 = await vocabCalls()
+    await clickText(page, '文稿')
+    await tabVocab()
+    await settle(page, 300)
+    const v2 = await vocabCalls()
+    ok('每次切到“生词”都向清影要最新的生词', v1 > v0 && v2 > v1, `${v0} → ${v1} → ${v2}`)
+    ok('生词页没有“刷新”按钮', !(await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('.acts button, button')].some((b) => b.textContent.trim() === '刷新')))))
+    await clickText(page, '文稿')
 
     // 任意语言互译：下拉里选日语，请求里带的是 Japanese
     const langs = await page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).filter((x) => [...x.options].some((o) => o.value === 'ja')).map((x) => x.options.length))

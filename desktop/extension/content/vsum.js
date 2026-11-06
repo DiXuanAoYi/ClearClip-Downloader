@@ -43,7 +43,9 @@
     .src { border: 1px solid #e3e6e3; background: #fbfaf8; border-radius: 8px; margin: 4px 0 0; padding: 4px 8px; font-size: 12px; color: #5d6862; cursor: pointer; }
     .warn { color: #a4561a; font-size: 12px; margin-top: 4px; }
     .ln .tm { color: #b4561a; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px; line-height: 20px; align-self: start; justify-self: start; }
-    .ln .tr { color: #5d6862; display: block; }
+    .ln .tr { color: #5d6862; display: block; border-radius: 4px; transition: background .12s, color .12s; }
+    .ln .mn { display: block; }
+    .ln:has(.mn:hover) .tr, .ln .tr.hl { background: #fde9d4; color: #7a3a0c; }
     .mute { color: #5d6862; font-size: 12px; }
     .cmbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; margin: 6px 0; }
     .cmbar i { display: block; }
@@ -165,6 +167,7 @@
       .card, .msg .b, select, input[type=text], textarea { background: #262f2a; border-color: #3a443e; color: #eef1ee; }
       button.sec { background: #262f2a; color: #eef1ee; border-color: #3a443e; }
       .ln .tr, .meta, .mute, .src { color: #a9b3ad; }
+      .ln:has(.mn:hover) .tr, .ln .tr.hl { background: #4a3322; color: #ffd9b3; }
       .warn { background: #3a2f1e; border-color: #6b5530; }
       .cq { background: #1d2420; } .chip { color: #f0a064; background: #e28a4529; } .cmb, .cmth { background: #3a443e; border-color: #3a443e; } .cmth { background: none; } .cmleg, .cq .m { color: #a9b3ad; }
       .tg { color: #f0a064; } .tg.ok { color: #6cc08a; } .tg.no { color: #ee917b; }
@@ -804,7 +807,7 @@
       const [main, sub] = V.viewLine(l.text, tr?.[i], mode)
       body.append(h('div', { class: `ln${hits?.has(i) ? ' hit' : ''}${i === nowIdx ? ' now' : ''}`, 'data-i': i, onclick: () => !getSel() && seek(l.t), onmouseenter: (e) => hovIn(l, i, e.currentTarget), onmouseleave: hovOut },
         isVideo() && h('span', { class: 'tm', text: V.fmtClock(l.t) }),
-        h('span', { style: 'flex:1' }, ...marks(main), sub ? h('span', { class: 'tr' }, ...marks(sub)) : null),
+        h('span', { style: 'flex:1' }, sub ? h('span', { class: 'mn' }, ...marks(main)) : h('span', {}, ...marks(main)), sub ? h('span', { class: 'tr' }, ...marks(sub)) : null),
         h('button', { class: 'rec', title: '把这句记成笔记', text: '＋', onclick: (e) => (e.stopPropagation(), addNote({ t: l.t, text: l.text })) })))
     })
     return h('div', {},
@@ -821,7 +824,13 @@
         isVideo() && h('label', { class: 'mute', title: '读到字幕后，把文稿同时作为字幕层叠在视频上（双语、调字号位置、导出）' }, h('input', { type: 'checkbox', checked: S.prefs.autoSub !== false, onchange: (e) => ((S.prefs.autoSub = e.target.checked), savePrefs(), e.target.checked ? syncSubLayer(S.data) : globalThis.ccSubLayerRun?.destroy()) }), ' 显示在视频上'),
         langSelect('翻译成哪种语言（任意语言互译，自动识别原文）', () => ((S.res.translated = null), render())),
         h('button', { class: 'sec', text: tr ? '重新翻译' : outLabel() ? `翻译成${outLabel()}` : '翻译（自动方向）', disabled: S.busy, onclick: () => task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || ''))) }),
-        tr && sel([['both', '双语'], ['orig', '只看原文'], ['tr', '只看译文']], mode, (v) => ((S.prefs.view = v), savePrefs(), render()), '显示'),
+        sel([['orig', '原文'], ['tr', '译文'], ['both', '双语']], tr ? mode : 'orig', (v) => {
+          S.prefs.view = v
+          savePrefs()
+          render()
+          // 还没有译文就选了译文 / 双语：直接去翻译（原文永远保留，不会被译文替换）
+          if (v !== 'orig' && !S.res.translated && !S.busy) task('translate', {}, (x) => (S.res.translated = d.lines.map((_, i) => x.lines?.[i]?.text || '')))
+        }, '文稿显示：原文 / 译文 / 双语'),
         h('button', { class: 'sec', text: '重新断句', title: '把太长的句子按标点和长度拆开（时间按字数分配）；不改字，也不用重新识别', disabled: S.busy, onclick: resegment }),
         h('button', { class: 'sec', text: d.raw ? '还原顺句前' : '顺句', title: d.raw ? '恢复识别出来的原样' : '给没有标点的字幕（自动识别）补标点、改同音错字，行数不变', disabled: S.busy, onclick: d.raw ? unpunctuate : punctuate }),
       )),
@@ -1358,6 +1367,7 @@
         here ? h('button', { class: 'ts', text: `跳到 ${fmtClock(w.timeSec)}`, onclick: () => seek((w.timeSec || 0) * 1000) }) : h('span', { class: 'mute', text: `${(w.sourceTitle || '').slice(0, 24)} ${fmtClock(w.timeSec)}` })))
   }
   function tabVocab() {
+    // 切到这一页时 onclick 已经主动刷新；这里只处理“第一次进来就在生词页”的情况
     if (!VOCAB.list && !VOCAB.loading && !VOCAB.err) void loadVocab()
     const list = shownVocab()
     const exportAnki = async () => {
@@ -1376,7 +1386,6 @@
       actsBar(
         h('button', { text: '导出 Anki', disabled: !list.length, onclick: exportAnki }),
         h('button', { class: 'sec', text: '存为笔记', disabled: !list.length, onclick: () => addNote({ t: -1, text: list.map((w) => `- ${w.word} ${w.phonetic || ''} ${w.meaning || ''}`.trim()).join('\n'), kind: 'note' }) }),
-        h('button', { class: 'sec', text: '刷新', onclick: () => ((VOCAB.list = null), loadVocab()) }),
         h('button', { class: 'sec', text: '去应用里复习', title: '复习在清影应用的“生词本”页', onclick: () => toast(ui, '打开清影应用 → 生词本，就能复习今天到期的词') })),
     )
   }
@@ -1813,7 +1822,7 @@
         d.track && `· ${d.track}`,
         d.durationMs > 0 && `· ${V.fmtClock(d.durationMs)}`,
         S.status && !S.status.ready && h('span', { style: 'color:#a8362d', text: '· 清影里未设置大模型' })))
-      children.push(h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([id, n]) => h('button', { class: S.tab === id ? 'on' : '', role: 'tab', 'aria-selected': S.tab === id, text: id === 'vocab' && VOCAB.list ? `${n} ${VOCAB.list.length}` : n, onclick: () => ((S.tab = id), savePrefs(), render()) }))))
+      children.push(h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([id, n]) => h('button', { class: S.tab === id ? 'on' : '', role: 'tab', 'aria-selected': S.tab === id, text: id === 'vocab' && VOCAB.list ? `${n} ${VOCAB.list.length}` : n, onclick: () => ((S.tab = id), savePrefs(), id === 'vocab' && void loadVocab(), render()) }))))
     }
     const body = h('div', { class: 'body' }, h('div', { id: 'prog' }))
     if (!d) {
@@ -1856,7 +1865,22 @@
   }
 
   /** 跟随播放：高亮当前行 / 章节。 */
+  // 站内切换视频（YouTube / B 站不刷新页面）：网址对应的视频变了就自动重新读字幕，旧视频的结果先存起来、字幕层关掉
+  function watchNav() {
+    if (S.closed || S.navBusy) return
+    const k = V.videoKey(location.href)
+    if (!S.pageKey) S.pageKey = k
+    if (k === S.pageKey) return
+    S.pageKey = k
+    S.navBusy = true
+    saveSession().catch(() => {})
+    globalThis.ccSubLayerRun?.destroy()
+    // 等页面把标题、播放器换成新视频的再读
+    setTimeout(() => start().finally(() => (S.navBusy = false)), 700)
+  }
+
   function tick(force) {
+    watchNav()
     const v = video()
     placePill(v)
     if (!v || !S.data || !isVideo()) return
@@ -1966,6 +1990,7 @@
   }
 
   async function start() {
+    S.pageKey = V.videoKey(location.href)
     S.data = null
     render()
     try {

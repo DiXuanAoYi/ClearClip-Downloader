@@ -2337,3 +2337,13 @@ export interface ProbeResult {
   text: string
   vision: boolean | null
 }
+
+/** PDF 版面画布：一页的原页图和每块的位置、背景色、原文、译文 */
+export interface PdfLayout {
+  pages: number
+  viewPage: number
+  w: number
+  h: number
+  image: string
+  blocks: { index: number; rect: [number, number, number, number]; size: number; rgb: [number, number, number]; bg: [number, number, number]; src: string; trans: string }[]
+}

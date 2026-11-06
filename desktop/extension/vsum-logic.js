@@ -304,7 +304,9 @@
     const list = tracks || []
     if (!list.length) return null
     const titleScript = scriptOf(hint.title)
-    const spoken = hint.spoken || (titleScript === 'zh' ? 'zh' : titleScript === 'ja' ? 'ja' : titleScript === 'ko' ? 'ko' : '')
+    // 自动字幕（语音识别）的语言就是视频说的语言：比标题文字更可靠（中文标题的英语教学视频不会被当成中文视频）
+    const asr = prefer.length ? null : list.find((t) => t.auto && t.lang)
+    const spoken = hint.spoken || (asr ? asr.lang : '') || (titleScript === 'zh' ? 'zh' : titleScript === 'ja' ? 'ja' : titleScript === 'ko' ? 'ko' : '')
     if (spoken) {
       const m = list.find((t) => !t.auto && sameLang(t.lang, spoken)) || list.find((t) => sameLang(t.lang, spoken))
       if (m) return m

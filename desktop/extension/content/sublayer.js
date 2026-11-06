@@ -60,11 +60,11 @@
     .menu .tail { display: flex; justify-content: space-between; color: #9aa6a2; font-size: 12px }
     .menu .tail button { background: none; border: 0; padding: 0; color: #9aa6a2; font-weight: 400; cursor: pointer; text-decoration: underline }
     .menu .st { color: #9aa6a2; font-size: 12px; line-height: 1.4; word-break: break-all }
-    .cap .w { pointer-events: auto; cursor: pointer; border-radius: 3px; background: transparent; padding: 0; display: inline }
+    .cap .w { font: inherit; font-style: normal; pointer-events: auto; cursor: pointer; border-radius: 3px; background: transparent; padding: 0; display: inline }
     .cap .w:hover { background: #ffffff40 }
     .cap .w.unf { border-bottom: 2px dashed #f08a3c }
     .cap .w.sv { border-bottom: 2px solid #6fcf97 }
-    .bub { position: fixed; display: none; width: 290px; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 6px }
+    .bub { position: fixed; display: none; width: 400px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 14px 16px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 6px }
     .bub.open { display: flex }
     .bub .hd { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap }
     .bub .hd b { font-size: 17px; color: #fff }
@@ -74,7 +74,13 @@
     .bub .ms i { font-style: normal; color: #9aa6a2; margin-right: 6px }
     .bub .cx { padding: 6px 8px; border-radius: 8px; background: #14181a; color: #e7ecea; font-size: 12.5px; line-height: 1.5 }
     .bub .tip { color: #9aa6a2; font-size: 12px; line-height: 1.5 }
-    .bub .row2 { display: flex; gap: 6px; margin-top: 2px }
+    .bub .row2 { display: flex; gap: 6px; margin-top: 2px; flex-wrap: wrap }
+    .bub .row2 button { white-space: nowrap; flex: none }
+    .bub .ex { padding: 6px 8px; border-left: 3px solid #4a5a60; background: #14181a; border-radius: 0 8px 8px 0; font-size: 12.5px; line-height: 1.55 }
+    .bub .ex .tr { color: #9aa6a2; display: block; margin-top: 2px }
+    .bub .ex .tag { float: right; font-size: 10.5px; padding: 0 6px; border-radius: 8px; background: #26343a; color: #8fb4c4; margin-left: 6px }
+    .bub .ex a { color: inherit; cursor: pointer; text-decoration: underline dotted }
+    .bub .ex mark { background: transparent; color: #f0a064; font-weight: 600 }
     .bub .row2 button, .ls button, .dr button.b { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #2f383c; background: #14181a; color: #e7ecea; font-weight: 400; font-size: 12.5px }
     .bub .row2 button.p, .ls button.p { background: #f08a3c; border-color: #f08a3c; color: #14181a; font-weight: 600 }
     .ls { position: fixed; display: none; width: 420px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 8px }
@@ -551,7 +557,10 @@
   }
 
   function placeBubble(r) {
-    bub.style.left = `${Math.max(6, Math.min(window.innerWidth - 296, r.left + r.width / 2 - 145))}px`
+    const bw = Math.min(400, window.innerWidth - 16)
+    bub.style.left = `${Math.max(6, Math.min(window.innerWidth - bw - 6, r.left + r.width / 2 - bw / 2))}px`
+    bub.style.maxHeight = `${Math.max(200, window.innerHeight - 24)}px`
+    bub.style.overflowY = 'auto'
     const above = r.top > 200
     bub.style.top = above ? 'auto' : `${r.bottom + 8}px`
     bub.style.bottom = above ? `${window.innerHeight - r.top + 8}px` : 'auto'
@@ -599,6 +608,27 @@
       else quote.append(document.createTextNode(`“${sentence}”`))
       parts.push(quote)
     }
+    // 例句（除了本句）：① 本视频里别的句子（点一下跳过去）② 模型给的 2 个例句（带译文）
+    const lw = String(lemma).toLowerCase()
+    const hit = (t) => String(t || '').toLowerCase().includes(lw) || String(t || '').toLowerCase().includes(String(word).toLowerCase())
+    const others = []
+    for (let d = 1; d < S.lines.length && others.length < 2; d++) {
+      for (const j of [li + d, li - d]) {
+        if (others.length < 2 && j >= 0 && j < S.lines.length && hit(S.lines[j].text)) others.push(j)
+      }
+    }
+    const markIn = (txt, w) => {
+      const k = String(txt).toLowerCase().indexOf(String(w).toLowerCase())
+      return k < 0 ? [document.createTextNode(txt)] : [document.createTextNode(txt.slice(0, k)), h('mark', { text: txt.slice(k, k + w.length) }), document.createTextNode(txt.slice(k + w.length))]
+    }
+    for (const j of others) {
+      const txt = String(S.lines[j].text || '')
+      parts.push(h('div', { class: 'ex' }, h('span', { class: 'tag', text: '本视频' }), ...markIn(txt, hit(txt) && txt.toLowerCase().includes(lw) ? lemma : word), document.createTextNode(' '), h('a', { text: LN.fmtTime(S.lines[j].t || 0), title: '跳到这句', onclick: () => seekLine(j, true) })))
+    }
+    for (const ex of (Array.isArray(res.examples) ? res.examples : []).slice(0, 2)) {
+      if (!ex || !ex.text) continue
+      parts.push(h('div', { class: 'ex' }, h('span', { class: 'tag', text: '例句' }), ...markIn(String(ex.text), lemma), ex.tr ? h('span', { class: 'tr', text: String(ex.tr) }) : null))
+    }
     const t0 = S.lines[li]?.t || 0
     parts.push(
       h(
@@ -608,8 +638,8 @@
         h('button', { text: '播放原声', onclick: () => playClip(li) }),
         h('button', { text: '朗读', onclick: () => speak(lemma) }),
         h('button', { text: '复制', onclick: () => navigator.clipboard?.writeText(lemma).catch(() => {}) }),
+        h('button', { text: clipKeyHas(lemma) ? '♪ 已录原声' : '录原声（Anki）', title: '录下这一句的原声，导出 Anki 时带上', onclick: (e) => recordClip(lemma, li, e.target) }),
       ),
-      h('div', { class: 'row2' }, h('button', { text: clipKeyHas(lemma) ? '♪ 已录原声' : '录下原声（Anki 用）', onclick: (e) => recordClip(lemma, li, e.target) })),
       saveLine,
     )
     bub.replaceChildren(...parts)
