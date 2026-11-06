@@ -530,8 +530,7 @@ async function loadTransCfg() {
   }).catch(() => {})
   for (const id of ['trTarget', 'trTarget2']) fillLangs($(id), c.target)
   fillLangs($('trInputLang'), c.inputLang)
-  $('trMode').value = c.mode
-  $('trBlur').checked = c.blur
+  $('trMode').value = c.mode === 'replace' ? 'replace' : c.blur ? 'blur' : 'bilingual'
   $('trEngine').value = c.engine
   $('trStyle').value = c.style
   $('trHover').value = c.hover
@@ -568,8 +567,10 @@ async function loadTransCfg() {
 }
 
 $('trTarget').onchange = async () => (await saveTransCfg({ target: $('trTarget').value }), ($('trTarget2').value = $('trTarget').value))
-$('trMode').onchange = () => saveTransCfg({ mode: $('trMode').value })
-$('trBlur').onchange = () => saveTransCfg({ blur: $('trBlur').checked })
+$('trMode').onchange = () => {
+  const v = $('trMode').value
+  return saveTransCfg({ mode: v === 'replace' ? 'replace' : 'bilingual', blur: v === 'blur' })
+}
 $('startTrans').onclick = () => runOnPage('webtrans')
 $('openTransBox').onclick = async () => {
   await api.runtime.sendMessage({ type: 'cc-open-transbox' }).catch(() => {})
@@ -1019,4 +1020,26 @@ init()
 // 设置页已经开着时，右键菜单再次要求配置：切到设置界面
 window.addEventListener('hashchange', () => {
   if (location.hash === '#settings') init()
+})
+
+// ---------- 操作反馈：按钮按下有变化，设置改了有“已保存”提示 ----------
+document.addEventListener('click', (e) => {
+  const b = e.target instanceof Element ? e.target.closest('button') : null
+  if (!b || b.closest('nav') || b.disabled) return
+  b.classList.add('pressed')
+  setTimeout(() => b.classList.remove('pressed'), 450)
+})
+let toastTimer = 0
+function flashToast(text) {
+  const t = document.getElementById('toast')
+  if (!t) return
+  t.textContent = text
+  t.classList.remove('hidden')
+  clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => t.classList.add('hidden'), 1600)
+}
+// 设置类的存储项变了（点了开关、选了下拉、保存了设置）：右下角提示一下，免得不知道生效没有
+const WATCH = ['transCfg', 'features', 'videoCfg', 'audioCfg', 'siteRules', 'writeCfg', 'vsumPrefs', 'pausedUntil', 'noteLimit', 'appLang', 'autoSync', 'syncSites', 'engines']
+api.storage.onChanged.addListener((ch, area) => {
+  if (area === 'local' && WATCH.some((k) => k in ch)) flashToast('✓ 已保存，马上生效')
 })

@@ -13,6 +13,9 @@
     * { box-sizing: border-box; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; letter-spacing: normal; }
     button { cursor: pointer; border: 0; border-radius: 6px; padding: 5px 10px; color: var(--onacc); background: var(--acc); font-weight: 600; }
     button.sec { background: var(--card); color: var(--fg); border: 1px solid var(--line); font-weight: 400; }
+    button { transition: filter .12s, transform .08s; }
+    button:hover:not(:disabled) { filter: brightness(1.1); }
+    button:active:not(:disabled) { transform: translateY(1px) scale(.97); }
     button:focus-visible { outline: 2px solid #d9762b; outline-offset: 2px; }
     .layer { position: fixed; z-index: 2147483647; }
     .menu { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px #0003; padding: 4px; min-width: 220px; max-width: 360px; }

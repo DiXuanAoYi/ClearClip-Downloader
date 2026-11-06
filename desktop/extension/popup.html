@@ -51,9 +51,8 @@
         <div class="rowBtns"><button id="startTrans" class="sec">翻译此页面 / 还原（Alt+A）</button><button id="openTransBox" class="sec" title="输入或粘贴一段文字，几个翻译服务并排对比；先在网页里选中文字再按 Alt+D 会自动带进去">翻译窗（Alt+D）</button></div>
         <div class="rowBtns">
           <div class="col"><label>翻译成</label><select id="trTarget"></select></div>
-          <div class="col"><label>显示</label><select id="trMode"><option value="bilingual">双语对照</option><option value="replace">只显示译文</option></select></div>
+          <div class="col"><label>显示</label><select id="trMode"><option value="bilingual">双语对照</option><option value="blur">双语对照（译文模糊，鼠标移上去才清晰）</option><option value="replace">只显示译文</option></select></div>
         </div>
-        <label class="row" title="双语对照时，译文先糊住；鼠标移到这一段上，这一段的译文就变清晰。适合先读原文、看不懂再瞄一眼译文。"><input id="trBlur" type="checkbox" /> 译文先模糊，鼠标移上去才清晰（双语对照）</label>
       </div>
       <label class="row"><input id="tkOn" type="checkbox" /> 接管浏览器下载（默认关闭）</label>
       <div id="tkInfo" class="mute"></div>
@@ -301,5 +300,6 @@
   <script src="vendor/qrcode.js"></script>
   <script src="qr.js"></script>
   <script src="popup.js"></script>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 </body>
 </html>
