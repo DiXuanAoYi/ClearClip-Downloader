@@ -62,6 +62,19 @@
     .bar-pill { position: fixed; z-index: 2147483647; right: 16px; bottom: 16px; display: flex; gap: 8px; align-items: center; background: #1d2420; color: #fff;
       border-radius: 999px; padding: 6px 12px; box-shadow: 0 6px 20px #0004; }
     .bar-pill button { padding: 2px 8px; font-size: 12px; }
+    .tbox { position: fixed; z-index: 2147483647; width: min(460px, calc(100vw - 24px)); max-height: 80vh; display: flex; flex-direction: column; background: #fff; color: #1d2420;
+      border: 1px solid #cfd5d1; border-radius: 12px; box-shadow: 0 16px 40px #0004; overflow: hidden; }
+    .tbox .hd { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: grab; background: #f3f1ec; border-bottom: 1px solid #e1e5e2; user-select: none; touch-action: none; font-weight: 600; }
+    .tbox .hd .grow { flex: 1; }
+    .tbox .bd { padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+    .tbox textarea { width: 100%; min-height: 70px; resize: vertical; font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; padding: 6px 8px; border: 1px solid #cfd5d1; border-radius: 6px; background: #fff; color: #1d2420; }
+    .tbox .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .tbox select { padding: 4px 6px; border: 1px solid #cfd5d1; border-radius: 6px; background: #fff; color: #1d2420; }
+    .tbox .res { border: 1px solid #e1e5e2; border-radius: 8px; padding: 8px 10px; }
+    .tbox .res .eng { font-size: 11px; color: #5d6862; display: flex; gap: 6px; align-items: center; margin-bottom: 2px; }
+    .tbox .res .txt { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.6; }
+    .tbox .res.err .txt { color: #a8362d; }
+    @media (prefers-color-scheme: dark) { .tbox { background: #1d2420; color: #eef1ee; border-color: #3a443f } .tbox .hd { background: #262f2a; border-color: #3a443f } .tbox textarea, .tbox select { background: #262f2a; color: #eef1ee; border-color: #3a443f } .tbox .res { border-color: #3a443f } }
     @media (prefers-color-scheme: dark) { .card { background: #1d2420; color: #eef1ee; border-color: #3a443f } .card .src { color: #a3aea8 } }
   `))
 
@@ -533,7 +546,7 @@
     const copyBtn = h('button', { class: 'sec', text: '复制', disabled: true })
     const cmpBtn = h('button', { class: 'sec', text: '对比其他服务', onclick: () => compareMore() })
     selCard = h('div', { class: 'card' }, h('div', { class: 'src', text: text.slice(0, 200) }), list,
-      h('div', { class: 'bar' }, h('span', { class: 'grow', text: T.nameOf(S.cfg.target) }), T.activeEngines(S.cfg).length > 1 ? cmpBtn : null, copyBtn, h('button', { class: 'sec', text: '关闭', onclick: closeCard })))
+      h('div', { class: 'bar' }, h('span', { class: 'grow', text: T.nameOf(S.cfg.target) }), T.activeEngines(S.cfg).length > 1 ? cmpBtn : null, h('button', { class: 'sec', text: '翻译窗', title: '在可拖动的翻译窗里继续（可改文字、换语言）', onclick: () => openBox(text) }), copyBtn, h('button', { class: 'sec', text: '关闭', onclick: closeCard })))
     const box = rect || { left: innerWidth / 2 - 190, bottom: innerHeight / 3 }
     selCard.style.left = `${Math.max(8, Math.min(box.left, innerWidth - 400))}px`
     selCard.style.top = `${Math.max(8, Math.min(box.bottom + 8, innerHeight - 200))}px`
@@ -587,6 +600,95 @@
     // 默认只用设置里选的服务；开了“并排对比”就一次问全部
     if (S.cfg.compare) await compareMore()
     else await one(T.pickEngine(S.cfg))
+  }
+
+  // ---------- 翻译窗：悬浮在页面上的小窗，可拖动，输入或粘贴文字、选语言、几个服务并排对比 ----------
+
+  let tbox = null
+  function closeBox() {
+    tbox?.remove()
+    tbox = null
+  }
+  function openBox(text0) {
+    closeCard()
+    closeSel()
+    if (tbox) {
+      const ta = tbox.querySelector('textarea')
+      if (text0) ta.value = text0
+      ta.focus()
+      return tbox.__go?.()
+    }
+    const ta = h('textarea', { placeholder: '输入或粘贴要翻译的文字（Ctrl+Enter 翻译）', rows: '3' })
+    ta.value = text0 || ''
+    const sel = h('select', { title: '翻译成' })
+    for (const l of T.LANGS) sel.append(h('option', { value: l.code, text: l.name, selected: l.code === S.cfg.target }))
+    const cmp = h('input', { type: 'checkbox', checked: !!S.cfg.compare })
+    const out = h('div', { style: 'display:flex;flex-direction:column;gap:8px' })
+    const msg = h('div', { class: 'eng', text: '' })
+    const goBtn = h('button', { text: '翻译' })
+    const hd = h('div', { class: 'hd' }, h('span', { class: 'grow', text: '翻译窗' }), h('button', { class: 'sec', text: '✕', title: '关闭（Esc）', onclick: closeBox }))
+    tbox = h('div', { class: 'tbox' }, hd, h('div', { class: 'bd' }, ta, h('div', { class: 'row' }, h('span', { text: '翻译成' }), sel, h('label', { class: 'row', style: 'gap:4px' }, cmp, document.createTextNode('几个服务并排对比')), h('span', { style: 'flex:1' }), goBtn), msg, out))
+    tbox.style.left = `${Math.max(8, innerWidth - 480)}px`
+    tbox.style.top = '72px'
+    uiRoot().add(tbox)
+    // 拖动标题栏
+    hd.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return
+      const r = tbox.getBoundingClientRect()
+      const dx = e.clientX - r.left
+      const dy = e.clientY - r.top
+      hd.setPointerCapture?.(e.pointerId)
+      const move = (ev) => {
+        tbox.style.left = `${Math.max(0, Math.min(ev.clientX - dx, innerWidth - 80))}px`
+        tbox.style.top = `${Math.max(0, Math.min(ev.clientY - dy, innerHeight - 40))}px`
+      }
+      const up = () => {
+        hd.removeEventListener('pointermove', move)
+        hd.removeEventListener('pointerup', up)
+      }
+      hd.addEventListener('pointermove', move)
+      hd.addEventListener('pointerup', up)
+    })
+    // 打字、快捷键不要被网页拦走
+    for (const ev of ['keydown', 'keyup', 'keypress', 'beforeinput', 'input', 'paste', 'cut', 'copy']) tbox.addEventListener(ev, (e) => e.stopPropagation())
+    const card = (engine, r) => {
+      const name = T.ENGINE_NAMES[engine] || engine
+      const txt = h('div', { class: 'txt', text: r.error || r.text || '' })
+      const head = h('div', { class: 'eng' }, h('span', { text: name }))
+      const el = h('div', { class: `res${r.error ? ' err' : ''}` }, head, txt)
+      if (!r.error && r.text) {
+        const copy = h('button', { class: 'sec', text: '复制', style: 'padding:1px 8px;font-size:12px' })
+        copy.onclick = () => navigator.clipboard?.writeText(r.text).then(() => ((copy.textContent = '已复制'), setTimeout(() => (copy.textContent = '复制'), 1200)), () => (copy.textContent = '复制失败'))
+        head.append(h('span', { style: 'flex:1' }), copy)
+      }
+      return el
+    }
+    const go = async () => {
+      const text = ta.value.trim()
+      if (!text) return
+      goBtn.disabled = true
+      msg.textContent = '翻译中…'
+      out.replaceChildren()
+      const engines = cmp.checked ? T.activeEngines(S.cfg) : [T.pickEngine(S.cfg)]
+      await Promise.all(
+        engines.map(async (engine) => {
+          const r = await send({ type: 'cc-tr', texts: [text], target: sel.value, engine, page: pageInfo() })
+          out.append(card(engine, r.ok ? { text: r.texts?.[0] || '' } : { error: r.error || '翻译失败了' }))
+        }),
+      )
+      msg.textContent = ''
+      goBtn.disabled = false
+    }
+    tbox.__go = go
+    goBtn.onclick = go
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+        e.preventDefault()
+        go()
+      } else if (e.key === 'Escape') closeBox()
+    })
+    ta.focus()
+    if (ta.value.trim()) go()
   }
 
   // ---------- 输入框：连按三次空格，译成“输入框语言”----------
@@ -692,7 +794,10 @@
     if (action === 'toggle') pageToggle()
     else if (action === 'page-on') pageOn()
     else if (action === 'page-off') pageOff()
-    else if (action === 'selection') translateSelection(String(extra.text || getSelection() || '').trim() || '', null)
+    else if (action === 'box') {
+      const t = String(extra.text || getSelection() || '').trim()
+      if (window === window.top || t) openBox(t)
+    } else if (action === 'selection') translateSelection(String(extra.text || getSelection() || '').trim() || '', null)
     return { on: S.on }
   }
 

@@ -450,7 +450,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
     else if (id === 'cc-sublayer') await startSubLayer(tab)
     else if (id === 'cc-wt') await webTransDo(tab, 'toggle')
     else if (id === 'cc-wt-sel') await webTransDo(tab, 'selection', { text: info.selectionText || '' })
-    else if (id === 'cc-tbox') await openTransBox(tab)
+    else if (id === 'cc-tbox') await openTransBox(tab, info.selectionText || '')
     else if (id === 'cc-later' || id === 'cc-later-link') {
       const url = id === 'cc-later' ? tab.url : info.linkUrl
       const r = await addLater({ url, title: id === 'cc-later' ? tab.title : info.selectionText || '', icon: id === 'cc-later' ? tab.favIconUrl : '' })
@@ -476,19 +476,15 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 })
 
-/** 打开翻译窗；当前页面里选中了文字就带进去（只读选区，不碰页面）。 */
-async function openTransBox(tab) {
-  let text = ''
+/** 打开翻译窗：优先在当前网页上弹出可拖动的悬浮窗（选中的文字带进去）；页面不让注入脚本时才开独立页面。 */
+async function openTransBox(tab, text = '') {
+  const t = tab || (await api.tabs.query({ active: true, currentWindow: true }))[0]
   try {
-    const t = tab || (await api.tabs.query({ active: true, currentWindow: true }))[0]
-    if (t?.id != null && isWebPage(t)) {
-      const [r] = await api.scripting.executeScript({ target: { tabId: t.id }, func: () => String(getSelection()?.toString() || '').slice(0, 5000) })
-      text = String(r?.result || '')
-    }
+    await webTransDo(t, 'box', { text })
+    return
   } catch {
-    // 页面不让读（内置页、PDF 查看器）：翻译窗照开，空着
+    // 内置页、PDF 查看器等：退回独立页面
   }
-  if (text.trim()) await api.storage.local.set({ transboxText: text })
   await api.tabs.create({ url: api.runtime.getURL('transbox.html') })
 }
 
