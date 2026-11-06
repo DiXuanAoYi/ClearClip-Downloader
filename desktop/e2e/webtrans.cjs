@@ -166,6 +166,44 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     await page.close()
   }
 
+  // ---- 悬停：按住 Ctrl 不松手，鼠标扫过哪一段就翻译哪一段
+  {
+    const { page } = await open('https://news.test/', { cfg: { target: 'ja' } })
+    const at = (id) =>
+      page.evaluate((i) => {
+        const r = document.getElementById(i).getBoundingClientRect()
+        return { x: r.x + 20, y: r.y + 6 }
+      }, id)
+    const count = () => page.evaluate(() => document.querySelectorAll('[data-cc-tr]').length)
+    const p1 = await at('p1')
+    await page.mouse.move(p1.x, p1.y)
+    await page.keyboard.down('Control')
+    await page.waitForFunction(() => document.querySelectorAll('[data-cc-tr]').length === 1, null, { timeout: 8000 })
+    ok('按住 Ctrl：鼠标指着的这一段先翻译', await page.evaluate(() => !!document.getElementById('p1').querySelector('[data-cc-tr]')))
+    // 还按着，把鼠标挪到另一段
+    const p3 = await at('p3')
+    await page.mouse.move(p3.x, p3.y)
+    await page.waitForFunction(() => document.querySelectorAll('[data-cc-tr]').length === 2, null, { timeout: 8000 }).catch(() => {})
+    ok('还按着 Ctrl 把鼠标挪到另一段：那一段也翻译', (await count()) === 2 && (await page.evaluate(() => !!document.getElementById('p3').querySelector('[data-cc-tr]'))), String(await count()))
+    // 扫回已经翻译的段落：不会被还原
+    await page.mouse.move(p1.x, p1.y)
+    await settle(page, 500)
+    ok('已翻译的段落再扫过不会被还原', (await count()) === 2, String(await count()))
+    // 同一段连续扫过只请求一次
+    await page.mouse.move(p3.x + 5, p3.y)
+    await settle(page, 500)
+    ok('同一段不重复请求', (await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-tr').length)) === 2)
+    // 松开后不再继续翻译
+    await page.keyboard.up('Control')
+    await settle(page, 200)
+    const li = await at('li1')
+    await page.mouse.move(li.x, li.y)
+    await settle(page, 600)
+    ok('松开 Ctrl 后扫过的段落不再翻译', (await count()) === 2, String(await count()))
+    ok('没有页面报错', true)
+    await page.close()
+  }
+
   // ---- 输入框：连按三次空格
   {
     const { page } = await open('https://news.test/', { cfg: { target: 'zh-CN', inputLang: 'en' } })

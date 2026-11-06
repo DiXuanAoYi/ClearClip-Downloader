@@ -364,12 +364,18 @@
   // ---------- 悬停翻译：单击一下修饰键 ----------
 
   let tapKey = null
+  let sweepTimer = 0
   document.addEventListener(
     'mousemove',
     (e) => {
       const el = e.target instanceof Element ? e.target : null
       S.lastBlock = el
       S.lastNode = null
+      // 按住修饰键已经进入“扫描”状态：鼠标停在哪一段超过一小会儿，就翻译那一段（已翻译的不动）
+      if (held) {
+        clearTimeout(sweepTimer)
+        sweepTimer = setTimeout(() => held && hoverTranslate(true), 140)
+      }
     },
     { passive: true, capture: true },
   )
@@ -380,6 +386,13 @@
     clearTimeout(holdTimer)
     holdTimer = 0
   }
+  // 切到别的窗口时收不到松开键的事件，不重置的话回来就一直处在“扫描”状态
+  addEventListener('blur', () => {
+    clearHold()
+    clearTimeout(sweepTimer)
+    tapKey = null
+    held = false
+  })
   document.addEventListener('keydown', (e) => {
     if (e.repeat && e.key === S.cfg.hover) return
     tapKey = S.cfg.hover !== 'off' && e.key === S.cfg.hover ? e.key : null
@@ -403,6 +416,7 @@
   document.addEventListener('mousedown', () => ((tapKey = null), clearHold()), true)
   document.addEventListener('keyup', (e) => {
     clearHold()
+    clearTimeout(sweepTimer)
     if (tapKey && e.key === tapKey && !held) hoverTranslate()
     tapKey = null
     held = false
@@ -425,11 +439,14 @@
     return null
   }
 
+  let hoverDepth = 0
+  let hoverWasOn = false
   async function hoverTranslate(onlyTranslate = false) {
     const b = S.lastBlock && blockUnder(S.lastBlock)
     if (!b) return
     ensureStyle()
     const rec = S.blocks.get(b)
+    if (rec && !rec.node && rec.state === 'busy') return // 这一段正在翻
     if (rec?.node) {
       if (onlyTranslate) return
       // 再点一次 = 还原这一段
@@ -441,16 +458,21 @@
     const { text, last } = textOf(b)
     if (!text) return
     S.blocks.set(b, { text, last, state: 'busy', node: null })
-    const wasOn = S.on
+    // 扫过好几段时会同时有几个在翻：只有最先开始的记下“整页翻译开没开”，最后一个结束时才还原
+    if (hoverDepth++ === 0) hoverWasOn = S.on
     S.on = true // 让 run() 在没开整页时也能工作
-    await run([{ id: b, text }])
-    S.on = wasOn
-    if (!wasOn) {
-      pill?.remove()
-      pill = null
-      const r = S.blocks.get(b)
-      if (r?.state === 'fail') toast(uiRoot(), S.err || '翻译失败了', true, 4000)
+    try {
+      await run([{ id: b, text }])
+    } finally {
+      if (--hoverDepth === 0) {
+        S.on = hoverWasOn
+        if (!hoverWasOn) {
+          pill?.remove()
+          pill = null
+        }
+      }
     }
+    if (!hoverWasOn && S.blocks.get(b)?.state === 'fail') toast(uiRoot(), S.err || '翻译失败了', true, 4000)
   }
 
   // ---------- 划词翻译 ----------
