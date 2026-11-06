@@ -1,6 +1,6 @@
 [package]
 name = "clearclip"
-version = "1.4.0"
+version = "1.5.0"
 description = "清影 ClearClip：抖音 / 快手短视频解析与下载桌面程序"
 authors = ["ClearClip contributors"]
 license = "MIT"
@@ -66,6 +66,7 @@ bzip2 = { version = "0.5.2", default-features = false, features = ["libbz2-rs-sy
 lopdf = { version = "0.36.0", default-features = false }
 pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfium_latest", "thread_safe"] }
 png = "0.17"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 # tract 的 ARM64 汇编内核在 MSVC 下编不过（Windows ARM64），那个平台不带 AI 推理
 [target.'cfg(not(all(windows, target_arch = "aarch64")))'.dependencies]

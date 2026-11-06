@@ -55,21 +55,22 @@ pub fn target_lang(live: &LiveSettings, ai_target: &str) -> String {
 static CACHE: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 const CACHE_CAP: usize = 4000;
 
-fn ckey(lang: &str, text: &str) -> String {
-    format!("{lang}\u{1}{}", crate::livecore::text_key_of(text))
+/// 缓存按“语言 + 软件 + 原文”记：同一句话在不同软件里用的术语库不同，译法可能不一样。
+fn ckey(lang: &str, app: &str, text: &str) -> String {
+    format!("{lang}\u{1}{app}\u{1}{}", crate::livecore::text_key_of(text))
 }
 
-fn cache_get(lang: &str, text: &str) -> Option<String> {
-    CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(&ckey(lang, text)).cloned())
+fn cache_get(lang: &str, app: &str, text: &str) -> Option<String> {
+    CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(&ckey(lang, app, text)).cloned())
 }
 
-fn cache_put(lang: &str, text: &str, tr: &str) {
+fn cache_put(lang: &str, app: &str, text: &str, tr: &str) {
     let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let m = g.get_or_insert_with(HashMap::new);
     if m.len() >= CACHE_CAP {
         m.clear();
     }
-    m.insert(ckey(lang, text), tr.to_string());
+    m.insert(ckey(lang, app, text), tr.to_string());
 }
 
 pub fn cache_clear() {
@@ -78,8 +79,10 @@ pub fn cache_clear() {
 
 /// 逐条翻译。缓存里有的不再请求；其余合成一批交给“网页翻译”任务（用术语库、AI 专家和模型池）。
 /// 返回和输入等长；某一条失败时那一条是原文。
-pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, stop: &AtomicBool) -> AppResult<Vec<String>> {
-    let mut out: Vec<Option<String>> = texts.iter().map(|t| cache_get(lang, t)).collect();
+/// `exe` 是被翻译的软件（可以为空）：按它挑术语库和 AI 专家（生效范围写 `app:软件名`），只带上这个软件用得到的术语，省提示词也更准。
+pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, exe: &str, stop: &AtomicBool) -> AppResult<Vec<String>> {
+    let app_key = crate::glossary::app_key(exe);
+    let mut out: Vec<Option<String>> = texts.iter().map(|t| cache_get(lang, &app_key, t)).collect();
     let todo: Vec<usize> = (0..texts.len()).filter(|i| out[*i].is_none()).collect();
     if !todo.is_empty() {
         let lines: Vec<Value> = todo.iter().enumerate().map(|(k, i)| json!({"t": k, "text": texts[*i]})).collect();
@@ -87,6 +90,7 @@ pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, sto
             "kind": "webtrans",
             "lang": lang,
             "title": title,
+            "url": crate::glossary::app_url(exe),
             "context": "Short user-interface strings, menu items, buttons, dialogue lines or captions captured from the screen of an application or game. Keep them concise; keep names, numbers and key labels intact. OCR may contain small recognition errors; read through them.",
             "lines": lines,
         }))
@@ -118,7 +122,7 @@ pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, sto
             if let Some(i) = todo.get(k as usize) {
                 let tr = tr.trim();
                 if !tr.is_empty() {
-                    cache_put(lang, &texts[*i], tr);
+                    cache_put(lang, &app_key, &texts[*i], tr);
                     out[*i] = Some(tr.to_string());
                 }
             }
@@ -347,8 +351,10 @@ mod tests {
     #[test]
     fn cache_ignores_case_and_punctuation() {
         cache_clear();
-        cache_put("zh", "Start Game!", "开始游戏");
-        assert_eq!(cache_get("zh", "start game").as_deref(), Some("开始游戏"));
-        assert_eq!(cache_get("en", "start game"), None);
+        cache_put("zh", "", "Start Game!", "开始游戏");
+        assert_eq!(cache_get("zh", "", "start game").as_deref(), Some("开始游戏"));
+        assert_eq!(cache_get("en", "", "start game"), None);
+        // 同一句话在另一个软件里不共用缓存（术语库可能不同）
+        assert_eq!(cache_get("zh", "photoshop", "start game"), None);
     }
 }

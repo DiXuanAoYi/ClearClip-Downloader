@@ -65,14 +65,27 @@ pub struct AudioFxSpec {
     pub reverb: Option<ReverbSpec>,
     /// 处理完标准化到这个响度（LUFS）
     pub normalize: Option<f64>,
+    /// 真峰值上限（dBTP），不填用 -1.5
+    pub normalize_tp: Option<f64>,
+    /// 响度范围目标（LU），不填用 11
+    pub normalize_lra: Option<f64>,
     /// 预设名，只用来记录
     pub preset: Option<String>,
 }
 
 impl Default for AudioFxSpec {
     fn default() -> Self {
-        AudioFxSpec { denoise: "off".into(), enhance: false, reverb: None, normalize: None, preset: None }
+        AudioFxSpec { denoise: "off".into(), enhance: false, reverb: None, normalize: None, normalize_tp: None, normalize_lra: None, preset: None }
     }
+}
+
+/// ffmpeg 的 loudnorm 滤镜参数：目标响度 `i`（LUFS）、真峰值上限 `tp`（dBTP，默认 -1.5）、响度范围 `lra`（LU，默认 11）。
+/// 工具箱的“响度标准化”和音效链里的响度标准化共用，行业预设（广播、流媒体、播客…）只是这三个数的不同组合。
+pub fn loudnorm_filter(i: f64, tp: Option<f64>, lra: Option<f64>) -> String {
+    let i = i.clamp(-30.0, -5.0);
+    let tp = tp.filter(|v| v.is_finite()).unwrap_or(-1.5).clamp(-9.0, 0.0);
+    let lra = lra.filter(|v| v.is_finite()).unwrap_or(11.0).clamp(1.0, 20.0);
+    format!("loudnorm=I={i}:TP={tp}:LRA={lra}")
 }
 
 impl AudioFxSpec {
@@ -87,6 +100,8 @@ impl AudioFxSpec {
             enhance: self.enhance,
             reverb: self.reverb.as_ref().map(ReverbSpec::checked),
             normalize: self.normalize.filter(|v| v.is_finite()).map(|v| v.clamp(-30.0, -5.0)),
+            normalize_tp: self.normalize_tp.filter(|v| v.is_finite()).map(|v| v.clamp(-9.0, 0.0)),
+            normalize_lra: self.normalize_lra.filter(|v| v.is_finite()).map(|v| v.clamp(1.0, 20.0)),
             preset: self.preset.clone(),
         };
         if !spec.is_active() {
@@ -293,7 +308,7 @@ pub fn build_graph(spec: &AudioFxSpec, caps: &FxCaps, pad_tail: bool) -> AppResu
     let mut post = vec![];
     if let Some(t) = spec.normalize {
         if caps.loudnorm {
-            post.push(format!("loudnorm=I={t}:TP=-1.5:LRA=11"));
+            post.push(loudnorm_filter(t, spec.normalize_tp, spec.normalize_lra));
             // loudnorm 内部按 192 kHz 输出，必须明确指定采样率
             post.push("aresample=48000".into());
             notes.push(format!("响度标准化到 {t} LUFS"));
@@ -426,6 +441,27 @@ mod tests {
     }
 
     #[test]
+    fn loudnorm_filter_uses_preset_peak_and_range_with_safe_defaults() {
+        assert_eq!(loudnorm_filter(-16.0, None, None), "loudnorm=I=-16:TP=-1.5:LRA=11");
+        // 广播 EBU R128：-23 LUFS，真峰值 -1，响度范围 7
+        assert_eq!(loudnorm_filter(-23.0, Some(-1.0), Some(7.0)), "loudnorm=I=-23:TP=-1:LRA=7");
+        // 超出范围的值被夹回合法范围；非数字退回默认
+        assert_eq!(loudnorm_filter(-99.0, Some(5.0), Some(99.0)), "loudnorm=I=-30:TP=0:LRA=20");
+        assert_eq!(loudnorm_filter(-14.0, Some(f64::NAN), Some(f64::NAN)), "loudnorm=I=-14:TP=-1.5:LRA=11");
+    }
+
+    #[test]
+    fn normalize_peak_and_range_are_checked_and_reach_the_filter() {
+        let s = AudioFxSpec { normalize: Some(-24.0), normalize_tp: Some(-20.0), normalize_lra: Some(0.0), ..Default::default() }.checked().unwrap();
+        assert_eq!((s.normalize_tp, s.normalize_lra), (Some(-9.0), Some(1.0)));
+        let j: AudioFxSpec = serde_json::from_str(r#"{"normalize":-23,"normalizeTp":-1,"normalizeLra":7}"#).unwrap();
+        assert_eq!((j.normalize, j.normalize_tp, j.normalize_lra), (Some(-23.0), Some(-1.0), Some(7.0)));
+        // 旧的请求没有这两个字段，照常能读
+        let old: AudioFxSpec = serde_json::from_str(r#"{"normalize":-16}"#).unwrap();
+        assert_eq!((old.normalize_tp, old.normalize_lra), (None, None));
+    }
+
+    #[test]
     fn rejects_empty_and_unknown() {
         assert!(AudioFxSpec::default().checked().is_err());
         assert!(AudioFxSpec { denoise: "wild".into(), ..Default::default() }.checked().is_err());
@@ -473,7 +509,15 @@ mod tests {
 
     #[test]
     fn chain_order_is_denoise_enhance_reverb_loudness() {
-        let spec = AudioFxSpec { denoise: "medium".into(), enhance: true, reverb: Some(ReverbSpec::default()), normalize: Some(-16.0), preset: None };
+        let spec = AudioFxSpec {
+            denoise: "medium".into(),
+            enhance: true,
+            reverb: Some(ReverbSpec::default()),
+            normalize: Some(-16.0),
+            normalize_tp: None,
+            normalize_lra: None,
+            preset: None,
+        };
         let g = build_graph(&spec, &FxCaps::all(), true).unwrap().graph;
         let pos = |k: &str| g.find(k).unwrap_or_else(|| panic!("缺少 {k}：{g}"));
         assert!(

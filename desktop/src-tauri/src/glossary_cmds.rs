@@ -34,6 +34,75 @@ pub fn glossary_save(state: St<'_>, mut glossary: Glossary) -> AppResult<Glossar
     Ok(out)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppPack {
+    pub id: String,
+    pub name: String,
+    pub exes: Vec<String>,
+    pub count: usize,
+    pub installed: bool,
+}
+
+/// 内置的软件术语库起步包（Photoshop、Premiere…），以及装过没有。
+#[tauri::command]
+pub fn glossary_app_packs(state: St<'_>) -> Vec<AppPack> {
+    let d = state.glossary.snapshot();
+    crate::appterms::PACKS
+        .iter()
+        .map(|p| AppPack {
+            id: p.id.into(),
+            name: p.name.into(),
+            exes: p.exes.iter().map(|e| e.to_string()).collect(),
+            count: p.terms.lines().filter(|l| l.contains('|')).count(),
+            installed: d.glossaries.iter().any(|g| g.remote_id == format!("app-pack:{}", p.id)),
+        })
+        .collect()
+}
+
+/// 装上选中的起步包。已经装过的跳过（不覆盖你改过的内容）。返回新装了几个。
+#[tauri::command]
+pub fn glossary_app_install(state: St<'_>, ids: Vec<String>) -> AppResult<usize> {
+    let now = crate::db::now();
+    state.glossary.edit(|d| {
+        let mut n = 0;
+        for id in &ids {
+            let Some(p) = crate::appterms::pack(id) else { continue };
+            if d.glossaries.iter().any(|g| g.remote_id == format!("app-pack:{}", p.id)) {
+                continue;
+            }
+            d.glossaries.push(crate::appterms::glossary_of(p, now));
+            n += 1;
+        }
+        n
+    })
+}
+
+/// 某个软件自己的术语库：已有就返回，没有就新建一个空的（生效范围 `app:软件名`）。
+#[tauri::command]
+pub fn glossary_for_app(state: St<'_>, exe: String) -> AppResult<Glossary> {
+    let key = glossary::app_key(&exe);
+    if key.is_empty() {
+        return Err(AppError::invalid("认不出这个软件，先把要翻译的软件放到前台再试。"));
+    }
+    let want = format!("app:{key}");
+    if let Some(g) = state.glossary.snapshot().glossaries.into_iter().find(|g| g.matches.iter().any(|m| m.trim().eq_ignore_ascii_case(&want))) {
+        return Ok(g);
+    }
+    let g = Glossary {
+        id: glossary::new_id(),
+        name: format!("{key} 术语"),
+        description: "只在屏幕翻译这个软件时生效。".into(),
+        matches: vec![want],
+        lang: String::new(),
+        updated: crate::db::now(),
+        ..Default::default()
+    };
+    let out = g.clone();
+    state.glossary.edit(|d| d.glossaries.push(g))?;
+    Ok(out)
+}
+
 #[tauri::command]
 pub fn glossary_delete(state: St<'_>, id: String) -> AppResult<()> {
     state.glossary.edit(|d| {

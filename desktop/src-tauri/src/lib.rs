@@ -3,6 +3,7 @@ pub mod ai_cmds;
 pub mod ai_pool;
 pub mod ai_probe;
 pub mod api;
+pub mod appterms;
 pub mod audiofx;
 pub mod backup;
 pub mod batch;
@@ -15,6 +16,7 @@ pub mod console;
 pub mod cookies;
 pub mod db;
 pub mod diagnostics;
+pub mod dictate;
 pub mod download;
 pub mod ed2k;
 pub mod edit;
@@ -38,7 +40,8 @@ pub mod links;
 pub mod live;
 pub mod liveaudio;
 pub mod livecore;
-pub mod livetr;
+pub mod liveshot;
+mod livetr;
 pub mod livetx;
 pub mod livewin;
 pub mod lut;
@@ -288,6 +291,8 @@ pub fn run() {
                             livetr::hotkey(app, "hide");
                         } else if live(|l| &l.hotkey_mode) == sc {
                             livetr::hotkey(app, "mode");
+                        } else if live(|l| &l.hotkey_shot) == sc {
+                            livetr::hotkey(app, "shot");
                         } else {
                             clipboard::parse_clipboard_now(app);
                         }
@@ -643,6 +648,8 @@ pub fn run() {
             ai_cmds::filetr_start,
             ai_cmds::filetr_preview,
             ai_cmds::filetr_view,
+            ai_cmds::filetr_edit,
+            ai_cmds::filetr_retranslate,
             subedit::subtitle_tracks,
             subedit::subedit_load,
             subedit::subedit_validate,
@@ -773,6 +780,12 @@ pub fn run() {
             livetr::sc_windows,
             livetr::sc_ocr_langs,
             livetr::sc_overlay_state,
+            glossary_cmds::glossary_app_packs,
+            glossary_cmds::glossary_app_install,
+            glossary_cmds::glossary_for_app,
+            livetr::sc_shot,
+            livetr::sc_shot_frame,
+            livetr::sc_shot_save,
             livetr::sc_ack_manga,
             livetr::sc_bar,
             livetr::sc_bar_expand,
@@ -791,6 +804,9 @@ pub fn run() {
             writeassist::write_run,
             writeassist::write_job,
             writeassist::write_dictate,
+            dictate::write_dictate_start,
+            dictate::write_dictate_push,
+            dictate::write_dictate_stop,
             writeassist::write_cancel,
             writeassist::write_apply,
             writeassist::write_close,

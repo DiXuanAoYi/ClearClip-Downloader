@@ -215,6 +215,20 @@ pub fn filetr_view(state: St<'_>, path: String, target: Option<String>) -> AppRe
     Ok(crate::filetr::view_for(&state.data_dir, &p, &t))
 }
 
+/// 文件翻译：阅读器里改了一段译文（空白 = 去掉这段译文）。
+#[tauri::command]
+pub fn filetr_edit(state: St<'_>, path: String, target: String, page: usize, index: usize, text: String) -> AppResult<()> {
+    let p = existing_file(&path)?;
+    crate::filetr::edit_seg(&state.data_dir, &p, target.trim(), page, index, &text)
+}
+
+/// 文件翻译：把阅读器里的一段原文重新翻一遍，返回新译文。
+#[tauri::command]
+pub async fn filetr_retranslate(state: St<'_>, path: String, target: String, page: usize, index: usize) -> AppResult<String> {
+    let p = existing_file(&path)?;
+    crate::filetr::retranslate_seg(&state, &p, target.trim(), page, index).await
+}
+
 /// 读取 AI 任务输出的文本结果（摘要 .md、章节 .txt、字幕 .srt）。只能读任务列表里自己生成的文件。
 #[tauri::command]
 pub fn media_job_text(state: St<'_>, id: u64, which: Option<String>) -> AppResult<String> {

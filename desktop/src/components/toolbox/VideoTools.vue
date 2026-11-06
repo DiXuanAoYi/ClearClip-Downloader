@@ -8,6 +8,7 @@ import type { AudioFxPreview, AudioFxSpec, MediaInfoLite, ToolJob, ToolOp } from
 import { formatDuration } from '../../utils/format'
 import { parseClock } from '../../utils/time'
 import FileInput from './FileInput.vue'
+import LoudnessPicker from './LoudnessPicker.vue'
 
 const props = defineProps<{ preset?: string[]; tool?: string }>()
 const emit = defineEmits<{ started: [] }>()
@@ -65,6 +66,8 @@ const p = reactive({
   landMode: 'blur' as 'blur' | 'black',
   speed: 1.5,
   lufs: -16,
+  tp: -1.5,
+  lra: 11,
   fxReverb: true,
   fxPreset: 'room',
   fxMix: -9,
@@ -116,6 +119,8 @@ function fxSpec(): AudioFxSpec {
     enhance: p.fxEnhance,
     reverb: p.fxReverb ? { mixDb: p.fxMix, timeMs: p.fxTime, hfRatio: p.fxHf, preDelayMs: p.fxPre, inGainDb: 0 } : null,
     normalize: p.fxNorm ? p.lufs : null,
+    normalizeTp: p.fxNorm ? p.tp : null,
+    normalizeLra: p.fxNorm ? p.lra : null,
     preset: p.fxReverb ? p.fxPreset : null,
   }
 }
@@ -185,7 +190,7 @@ function build(): ToolOp | null {
     case 'speed':
       return { op: 'speed', factor: p.speed }
     case 'loudness':
-      return { op: 'loudness', target: p.lufs }
+      return { op: 'loudness', target: p.lufs, tp: p.tp, lra: p.lra }
     case 'audiofx':
       if (fxIdle.value) return ElMessage.warning('请至少打开一项效果。'), null
       return { op: 'audio_fx', spec: fxSpec() }
@@ -327,9 +332,8 @@ async function start() {
 
         <template v-else-if="tool === 'loudness'">
           <label>
-            <span>目标响度（LUFS）</span>
-            <el-input-number v-model="p.lufs" size="small" :min="-30" :max="-5" />
-            <small class="mute">-16 适合手机和网页，-14 是常见的流媒体标准，-23 是广播标准。</small>
+            <span>响度标准</span>
+            <LoudnessPicker v-model:lufs="p.lufs" v-model:tp="p.tp" v-model:lra="p.lra" />
           </label>
         </template>
 
@@ -367,7 +371,10 @@ async function start() {
           <label>
             <span>响度标准化</span>
             <el-switch v-model="p.fxNorm" />
-            <el-input-number v-if="p.fxNorm" v-model="p.lufs" size="small" :min="-30" :max="-5" />
+          </label>
+          <label v-if="p.fxNorm">
+            <span>响度标准</span>
+            <LoudnessPicker v-model:lufs="p.lufs" v-model:tp="p.tp" v-model:lra="p.lra" />
           </label>
           <label>
             <span>试听</span>

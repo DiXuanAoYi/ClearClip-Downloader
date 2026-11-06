@@ -5,6 +5,8 @@ import { api, errorText } from './api'
 import { useLanguage } from './i18n/useLanguage'
 import type { Excerpt, WritePending, WritingSettings } from './types'
 import { isWord, speechLang } from './utils/selection'
+import { floatToInt16, int16ToBase64, level as pcmLevel, resampleTo16k } from './utils/pcm'
+import { joinFinals } from './utils/dictation'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ACTIONS, PRESETS, buildWriteRequest, presetById, type WriteAction } from './writePresets'
 
@@ -43,8 +45,6 @@ const speaking = ref(false)
 const recording = ref(false)
 const isReply = computed(() => action.value.id === 'reply')
 let jobId = 0
-let rec: MediaRecorder | null = null
-let chunks: Blob[] = []
 let unlisten: UnlistenFn | undefined
 
 const out = computed(() => outs.value[picked.value]?.text ?? '')
@@ -142,50 +142,101 @@ async function run() {
   }
 }
 
-/** 听写：录一段话，交给清影里设置好的语音转文字（本机 whisper.cpp 或云端接口），文字追加到上面的输入框。 */
+// ---------- 实时听写 ----------
+// 麦克风 → 16 kHz 单声道 PCM → 分块送后端 → 后端按停顿切句、边说边识别：
+// 说到一半是“临时结果”（会被改写，灰字显示），停顿后这一句定稿。引擎：跟着“设置 → AI → 语音转文字”，也可以临时选本机开源模型或在线接口。
+const dictEngine = ref<'auto' | 'local' | 'api'>('auto')
+const dictLabel = ref('')
+const dictLevel = ref(0)
+let dictBase = ''
+let dictFinals: string[] = []
+let dictInterim = ''
+let dictSession = 0
+let dictStream: MediaStream | null = null
+let dictCtx: AudioContext | null = null
+let dictOff: UnlistenFn | undefined
+let dictDone: (() => void) | null = null
+
+function dictRender() {
+  const heard = joinFinals(dictFinals) + (dictInterim ? (dictFinals.length ? ' ' : '') + dictInterim : '')
+  text.value = dictBase + (dictBase && heard ? '\n' : '') + heard
+}
+
+function dictTeardown() {
+  dictStream?.getTracks().forEach((t) => t.stop())
+  void dictCtx?.close().catch(() => {})
+  dictStream = null
+  dictCtx = null
+  dictLevel.value = 0
+}
+
 async function dictate() {
   if (recording.value) {
-    rec?.stop()
+    // 停止：不再录，等后端把没收尾的那一句也识别完（done）
+    dictTeardown()
+    progress.value = '正在收尾…'
+    if (dictSession) void api.writeDictateStop(dictSession)
+    await new Promise<void>((ok) => {
+      dictDone = ok
+      setTimeout(ok, 30000)
+    })
     return
   }
   error.value = ''
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    chunks = []
-    rec = new MediaRecorder(stream)
-    rec.ondataavailable = (e) => chunks.push(e.data)
-    rec.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop())
-      recording.value = false
-      const blob = new Blob(chunks, { type: rec?.mimeType || 'audio/webm' })
-      busy.value = true
-      progress.value = '正在转成文字…'
-      try {
-        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()))
-        const id = await api.writeDictate(bytes, blob.type.includes('ogg') ? 'ogg' : 'webm')
-        for (;;) {
-          await new Promise((r) => setTimeout(r, 500))
-          const j = await api.writeJob(id)
-          if (!j) throw new Error('任务已过期')
-          if (j.state === 'error') throw new Error(j.error ?? '听写失败')
-          if (j.state === 'done') {
-            const t = j.result?.text ?? ''
-            if (!t) throw new Error('没有听清，请再说一次')
-            text.value = (text.value ? text.value + '\n' : '') + t
-            break
-          }
-        }
-      } catch (e) {
-        error.value = errorText(e)
-      } finally {
-        busy.value = false
+    const info = await api.writeDictateStart(dictEngine.value)
+    dictSession = info.session
+    dictLabel.value = info.engine
+    dictBase = text.value.trim()
+    dictFinals = []
+    dictInterim = ''
+    dictOff?.()
+    dictOff = await api.onWriteDictate((p) => {
+      if (p.session !== dictSession) return
+      if (p.kind === 'interim') {
+        dictInterim = p.text
+        dictRender()
+      } else if (p.kind === 'final') {
+        dictInterim = ''
+        if (p.text) dictFinals.push(p.text)
+        dictRender()
+      } else if (p.kind === 'error') {
+        error.value = p.text
+      } else if (p.kind === 'done') {
+        dictInterim = ''
+        dictRender()
+        recording.value = false
         progress.value = ''
+        dictSession = 0
+        dictDone?.()
+        dictDone = null
+        if (!dictFinals.length && !error.value) error.value = '没有听清，请再说一次'
       }
+    })
+    try {
+      dictStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
+    } catch (e) {
+      void api.writeDictateStop(info.session)
+      throw new Error('无法使用麦克风：' + errorText(e))
     }
-    rec.start()
+    dictCtx = new AudioContext()
+    const src = dictCtx.createMediaStreamSource(dictStream)
+    // ScriptProcessor 虽然标了“已弃用”，但在 WebView2 / WebKit 里都能用，不需要额外的 worklet 文件
+    const proc = dictCtx.createScriptProcessor(4096, 1, 1)
+    const rate = dictCtx.sampleRate
+    const session = info.session
+    proc.onaudioprocess = (e) => {
+      const ch = new Float32Array(e.inputBuffer.getChannelData(0))
+      dictLevel.value = pcmLevel(ch)
+      const pcm = int16ToBase64(floatToInt16(resampleTo16k(ch, rate)))
+      void api.writeDictatePush(session, pcm).catch(() => {})
+    }
+    src.connect(proc)
+    proc.connect(dictCtx.destination)
     recording.value = true
   } catch (e) {
-    error.value = '无法使用麦克风：' + errorText(e)
+    dictTeardown()
+    error.value = errorText(e)
   }
 }
 
@@ -403,12 +454,19 @@ onBeforeUnmount(() => {
 
       <main>
         <section class="box">
-          <textarea v-model="text" class="src" rows="4" :placeholder="isReply ? '收到的消息（选中后按快捷键，或粘贴在这里）' : '选中文字后按快捷键，或在这里粘贴要处理的文字'" />
+          <textarea v-model="text" class="src" :class="{ live: recording }" :readonly="recording" rows="4" :placeholder="isReply ? '收到的消息（选中后按快捷键，或粘贴在这里）' : '选中文字后按快捷键，或在这里粘贴要处理的文字'" />
           <div class="boxbar">
             <span class="cnt">{{ hasText ? `${charCount} 字` : '还没有文字' }}</span>
             <span class="sp" />
             <button class="lnk" :disabled="busy" @click="pasteIn">粘贴</button>
             <button class="lnk" :disabled="!hasText || busy" @click="text = ''">清空</button>
+            <span v-if="recording" class="meter" :title="dictLabel"><i :style="{ width: Math.round(dictLevel * 100) + '%' }" /></span>
+            <span v-if="recording" class="cnt">实时听写 · {{ dictLabel }}</span>
+            <select v-else v-model="dictEngine" class="engsel" title="听写用哪个识别引擎：跟随设置，或临时指定本机开源模型 / 在线接口">
+              <option value="auto">听写：跟随设置</option>
+              <option value="local">本机开源模型</option>
+              <option value="api">在线接口</option>
+            </select>
             <button class="lnk mic" :class="{ rec: recording }" :disabled="busy && !recording" @click="dictate">{{ recording ? '■ 停止' : '听写' }}</button>
           </div>
           <div v-if="hist.length > 1" class="histrow">
@@ -588,6 +646,10 @@ main { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-dire
 .ghost.star { padding: 5px 9px; }
 .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .row.after { font-size: 12px; }
+textarea.src.live { color: var(--mute, #7a847e) }
+.meter { width: 46px; height: 6px; border-radius: 3px; background: var(--line, #d9dedb); overflow: hidden; display: inline-block }
+.meter i { display: block; height: 100%; background: var(--acc, #d9762b); transition: width .08s }
+.engsel { height: 24px; font-size: 12px; border: 1px solid var(--line, #d9dedb); border-radius: 6px; background: transparent; color: inherit }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
 .hint { color: var(--mut); }
 .err { color: var(--err); margin: 0; }

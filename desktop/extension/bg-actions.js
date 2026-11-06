@@ -238,6 +238,7 @@ const HANDLERS = {
     else if (m.action === 'shot') await startShot(tab)
     else if (m.action === 'batch-links') return await sendPageVideoLinks(tab)
     else if (m.action === 'webtrans') await webTransDo(tab, String(m.mode || 'toggle'))
+    else if (m.action === 'excludepick') await injectFiles(tab.id, ['content/ui.js', 'content/excludepick.js'])
     else throw new Error('未知操作')
     return {}
   },
@@ -341,6 +342,28 @@ const HANDLERS = {
     const page = p ? { host: String(p.host || '').slice(0, 100), title: String(p.title || ''), sample: String(p.sample || '') } : null
     return translateTexts(texts, { target: String(m.target || ccTrans.engineTarget(cfg, engine)), engine, page, domain: cfg.domain, extra: ccTrans.enginePrompt(cfg, engine) })
   },
+  // 独立翻译窗：同一段文字用几个翻译服务各翻一遍，并排给出结果（任何一个失败不影响别的）
+  'cc-trbox': async (m) => {
+    const cfg = await getTransCfg()
+    const text = String(m.text || '').slice(0, 5000)
+    if (!text.trim()) return { results: [] }
+    const target = String(m.target || cfg.target)
+    const wanted = Array.isArray(m.engines) ? m.engines.filter((e) => ccTrans.ENGINES.includes(e)) : []
+    const engines = wanted.length ? wanted : ccTrans.activeEngines(cfg)
+    const results = await Promise.all(
+      engines.map(async (engine) => {
+        const name = ccTrans.ENGINE_NAMES[engine] || engine
+        try {
+          const r = await translateTexts([text], { target, engine, page: null, domain: false, extra: ccTrans.enginePrompt(cfg, engine) })
+          return { engine, name, text: r.texts[0] }
+        } catch (e) {
+          return { engine, name, error: String(e?.message || e) }
+        }
+      }),
+    )
+    return { results, engines: ccTrans.activeEngines(cfg), names: ccTrans.ENGINE_NAMES }
+  },
+  'cc-open-transbox': async () => (await openTransBox(null), {}),
   'cc-tr-clear': async () => (await clearTransCache(), {}),
   // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）
   'cc-note': async (m) => {
@@ -382,6 +405,7 @@ async function buildMenus() {
   if (f.webtrans) {
     add({ id: 'cc-wt', title: '翻译此页面 / 还原（Alt+A）', contexts: ['page'] })
     add({ id: 'cc-wt-sel', title: '翻译选中的文字', contexts: ['selection'] })
+    add({ id: 'cc-tbox', title: '在翻译窗里翻译（多个服务对比，Alt+D）', contexts: ['selection'] })
   }
   if (f.onDemand) add({ id: 'cc-overview', title: '打开页面媒体总览', contexts: ['page'] })
   add({ id: 'cc-link', title: '发送此链接到清影', contexts: ['link'] })
@@ -426,6 +450,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
     else if (id === 'cc-sublayer') await startSubLayer(tab)
     else if (id === 'cc-wt') await webTransDo(tab, 'toggle')
     else if (id === 'cc-wt-sel') await webTransDo(tab, 'selection', { text: info.selectionText || '' })
+    else if (id === 'cc-tbox') await openTransBox(tab)
     else if (id === 'cc-later' || id === 'cc-later-link') {
       const url = id === 'cc-later' ? tab.url : info.linkUrl
       const r = await addLater({ url, title: id === 'cc-later' ? tab.title : info.selectionText || '', icon: id === 'cc-later' ? tab.favIconUrl : '' })
@@ -451,6 +476,22 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 })
 
+/** 打开翻译窗；当前页面里选中了文字就带进去（只读选区，不碰页面）。 */
+async function openTransBox(tab) {
+  let text = ''
+  try {
+    const t = tab || (await api.tabs.query({ active: true, currentWindow: true }))[0]
+    if (t?.id != null && isWebPage(t)) {
+      const [r] = await api.scripting.executeScript({ target: { tabId: t.id }, func: () => String(getSelection()?.toString() || '').slice(0, 5000) })
+      text = String(r?.result || '')
+    }
+  } catch {
+    // 页面不让读（内置页、PDF 查看器）：翻译窗照开，空着
+  }
+  if (text.trim()) await api.storage.local.set({ transboxText: text })
+  await api.tabs.create({ url: api.runtime.getURL('transbox.html') })
+}
+
 api.commands?.onCommand.addListener(async (cmd) => {
   if (cmd === 'toggle-writing') {
     try {
@@ -473,6 +514,14 @@ api.commands?.onCommand.addListener(async (cmd) => {
     }
     return
   }
+  if (cmd === 'open-transbox') {
+    try {
+      await openTransBox(null)
+    } catch (e) {
+      notify('翻译窗没有打开', e.message)
+    }
+    return
+  }
   if (cmd !== 'toggle-vsum') return
   try {
     if (!(await getFeatures()).vsum) return
@@ -487,6 +536,12 @@ api.runtime.onInstalled.addListener(async (d) => {
   // 升级上来的用户保持原来的样子：视频上的音效按钮继续显示（新安装默认不显示）
   if (d?.reason === 'update') {
     try {
+      // 播放增强新增了总开关（默认关）。升级上来、自己存过功能开关的用户保持原来的样子：原来用着播放增强的继续开着
+      const { features } = await api.storage.local.get('features')
+      if (features && typeof features === 'object' && typeof features.videoMaster !== 'boolean') {
+        const was = features.speed !== false || features.speedMemory !== false || features.seek !== false || features.videoTools === true || features.videoAdvanced === true
+        await api.storage.local.set({ features: { ...features, videoMaster: was } })
+      }
       const { audioCfg } = await api.storage.local.get('audioCfg')
       if (!audioCfg || typeof audioCfg.pillShow !== 'boolean') await api.storage.local.set({ audioCfg: { ...(audioCfg || {}), pillShow: true } })
     } catch {

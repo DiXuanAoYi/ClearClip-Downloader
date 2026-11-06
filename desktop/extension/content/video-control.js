@@ -7,7 +7,7 @@
   const { api, mount, h, send, onSettings, listed } = globalThis.ccUI
   const host = location.hostname.toLowerCase()
 
-  const DEF_FEAT = { speed: true, speedMemory: true, seek: true, videoTools: false, videoAdvanced: false }
+  const DEF_FEAT = { videoMaster: false, speed: true, speedMemory: true, seek: true, videoTools: true, videoAdvanced: true }
   let feat = { ...DEF_FEAT }
   let cfg = L.normalizeCfg()
   let rates = {}
@@ -466,7 +466,7 @@
   }
 
   function showBar(v) {
-    if (off || !(feat.speed || feat.seek || feat.videoTools || feat.videoAdvanced || feat.speedMemory)) return
+    if (off || !feat.videoMaster || !(feat.speed || feat.seek || feat.videoTools || feat.videoAdvanced || feat.speedMemory)) return
     ensureUi()
     if (!bar) {
       const wrap = h('div', { class: 'layer vbar', style: 'display:none' })

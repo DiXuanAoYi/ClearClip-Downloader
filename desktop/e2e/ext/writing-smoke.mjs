@@ -150,6 +150,39 @@ assert.equal(last.write.action, 'stats')
 assert.equal(last.write.facts.length, 1)
 assert.equal(last.write.facts[0].code, 'SP.POP.TOTL')
 
+// 10. 面板底下不能多出一行“null”（Element.append(null) 会把 null 当文字），额外要求输入框能打字
+await page.goto('http://t.test/')
+for (const f of ['content/ui.js', 'writing-logic.js', 'content/writing.js']) await page.addScriptTag({ content: read(f) })
+await page.focus('#ta')
+await shadow('.badge').click()
+await page.waitForSelector('div[style*="2147483647"] >> .panel')
+assert.ok(!/\bnull\b/.test(await shadow('.panel').innerText()), '面板里出现了 null')
+const extra = shadow('.panel >> input[type=text]').first()
+await extra.click()
+await page.keyboard.type('对方是客户')
+assert.equal(await extra.inputValue(), '对方是客户')
+
+// 11. 网页的模态对话框 / 焦点陷阱里，面板也能点、能打字（面板要放进同一个对话框）
+const dialogs = {
+  'http://d.test/modal': `<!doctype html><meta charset=utf-8><body><dialog id=dlg style="width:500px;height:300px"><textarea id=ta style="width:420px;height:120px">王经理你好</textarea></dialog><script>document.getElementById('dlg').showModal()</script></body>`,
+  'http://d.test/trap': `<!doctype html><meta charset=utf-8><body><div id=box role=dialog aria-modal=true style="position:absolute;left:50px;top:50px;width:520px;height:300px"><textarea id=ta style="width:420px;height:120px">王经理你好</textarea></div><script>const box=document.getElementById('box');document.addEventListener('focusin',(e)=>{ if(!box.contains(e.target)) setTimeout(()=>document.getElementById('ta').focus(),0) },true)</script></body>`,
+}
+for (const [url, body] of Object.entries(dialogs)) {
+  await page.route(url, (r) => r.fulfill({ contentType: 'text/html', body }))
+  await page.goto(url)
+  for (const f of ['content/ui.js', 'writing-logic.js', 'content/writing.js']) await page.addScriptTag({ content: read(f) })
+  await page.evaluate(() => document.activeElement?.blur())
+  await page.focus('#ta')
+  await shadow('.badge').click()
+  await page.waitForSelector('div[style*="2147483647"] >> .panel')
+  const box = shadow('.panel >> input[type=text]').first()
+  await box.click()
+  await page.waitForTimeout(400)
+  await page.keyboard.type('客户')
+  assert.equal(await box.inputValue(), '客户', `${url}：额外要求输入框没打上字`)
+  assert.equal(await box.evaluate((e) => e.getRootNode().activeElement === e), true, `${url}：焦点被网页抢走了`)
+}
+
 assert.deepEqual(errors, [])
 await browser.close()
 console.log('writing-smoke ok')

@@ -531,6 +531,7 @@ async function loadTransCfg() {
   for (const id of ['trTarget', 'trTarget2']) fillLangs($(id), c.target)
   fillLangs($('trInputLang'), c.inputLang)
   $('trMode').value = c.mode
+  $('trBlur').checked = c.blur
   $('trEngine').value = c.engine
   $('trStyle').value = c.style
   $('trHover').value = c.hover
@@ -538,7 +539,7 @@ async function loadTransCfg() {
   $('trCompare').checked = c.compare
   for (const eng of ccTrans.ENGINES) {
     const sv = c.services[eng] || {}
-    $(`svcOn_${eng}`).checked = sv.enabled !== false
+    $(`svcOn_${eng}`).checked = eng === 'custom' || eng === 'deeplx' ? sv.enabled === true : sv.enabled !== false
     const sel = $(`svcLang_${eng}`)
     fillLangs(sel, sv.target || c.target)
     const keep = document.createElement('option')
@@ -548,6 +549,14 @@ async function loadTransCfg() {
     sel.value = sv.target || ''
   }
   $('svcPrompt_clearclip').value = c.services.clearclip?.prompt || ''
+  $('svcUrl_deeplx').value = c.services.deeplx?.url || ''
+  $('svcKey_deeplx').value = c.services.deeplx?.key || ''
+  $('svcUrl_custom').value = c.services.custom?.url || ''
+  $('svcKey_custom').value = c.services.custom?.key || ''
+  $('svcModel_custom').value = c.services.custom?.model || ''
+  $('svcPrompt_custom').value = c.services.custom?.prompt || ''
+  $('trExclude').value = (c.exclude || []).join('\n')
+  $('trCss').value = c.customCss || ''
   $('trSelect').checked = c.select
   $('trInput').checked = c.input
   $('trLazy').checked = c.lazy
@@ -560,7 +569,12 @@ async function loadTransCfg() {
 
 $('trTarget').onchange = async () => (await saveTransCfg({ target: $('trTarget').value }), ($('trTarget2').value = $('trTarget').value))
 $('trMode').onchange = () => saveTransCfg({ mode: $('trMode').value })
+$('trBlur').onchange = () => saveTransCfg({ blur: $('trBlur').checked })
 $('startTrans').onclick = () => runOnPage('webtrans')
+$('openTransBox').onclick = async () => {
+  await api.runtime.sendMessage({ type: 'cc-open-transbox' }).catch(() => {})
+  window.close()
+}
 $('saveTrans').onclick = async () => {
   await saveTransCfg({
     target: $('trTarget2').value,
@@ -571,13 +585,24 @@ $('saveTrans').onclick = async () => {
     holdMs: Number($('trHold').value),
     compare: $('trCompare').checked,
     services: Object.fromEntries(
-      ccTrans.ENGINES.map((eng) => [eng, { enabled: $(`svcOn_${eng}`).checked, target: $(`svcLang_${eng}`).value, prompt: eng === 'clearclip' ? $('svcPrompt_clearclip').value : '' }]),
+      ccTrans.ENGINES.map((eng) => [
+        eng,
+        {
+          enabled: $(`svcOn_${eng}`).checked,
+          target: $(`svcLang_${eng}`).value,
+          prompt: eng === 'clearclip' ? $('svcPrompt_clearclip').value : eng === 'custom' ? $('svcPrompt_custom').value : '',
+          ...(eng === 'deeplx' ? { url: $('svcUrl_deeplx').value, key: $('svcKey_deeplx').value } : {}),
+          ...(eng === 'custom' ? { url: $('svcUrl_custom').value, key: $('svcKey_custom').value, model: $('svcModel_custom').value } : {}),
+        },
+      ]),
     ),
     select: $('trSelect').checked,
     input: $('trInput').checked,
     lazy: $('trLazy').checked,
     domain: $('trDomain').checked,
     skipTarget: $('trSkip').checked,
+    exclude: $('trExclude').value,
+    customCss: $('trCss').value,
     auto: ccTrans.hostList($('trAuto').value),
     never: ccTrans.hostList($('trNever').value),
     sites: ccTrans.parseSites($('trSites').value),
@@ -871,6 +896,7 @@ async function runOnPage(action) {
 }
 $('openOverview').onclick = () => runOnPage('overview')
 $('startPick').onclick = () => runOnPage('picker')
+$('pickExclude').onclick = () => runOnPage('excludepick')
 $('batchLinks').onclick = async () => {
   const tab = await currentTab()
   if (!tab?.url?.startsWith('http')) return msg('当前页面不能使用这个功能', 'err')

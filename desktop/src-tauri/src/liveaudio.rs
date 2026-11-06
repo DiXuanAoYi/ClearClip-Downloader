@@ -103,6 +103,21 @@ impl Segmenter {
         (self.noise * 3.0).max(0.012)
     }
 
+    /// 正在说的这一句到目前为止的声音（还没说完）；说话时间太短时返回 None。实时听写用它给出“边说边出字”的临时结果。
+    pub fn current(&self) -> Option<&[f32]> {
+        (self.speaking && self.speech >= self.min_speech / 2).then_some(self.cur.as_slice())
+    }
+
+    /// 结束时把还没收尾的那一句取出来（说话够久才算）。
+    pub fn flush(&mut self) -> Option<Vec<f32>> {
+        let out = (self.speaking && self.speech >= self.min_speech / 2).then(|| std::mem::take(&mut self.cur));
+        self.cur.clear();
+        self.speaking = false;
+        self.quiet = 0;
+        self.speech = 0;
+        out
+    }
+
     /// 喂入 16 kHz 单声道样本，返回已经完整的句子。
     pub fn push(&mut self, samples: &[f32]) -> Vec<Vec<f32>> {
         self.buf.extend_from_slice(samples);
@@ -305,7 +320,7 @@ mod win {
                         if text.is_empty() {
                             continue;
                         }
-                        let tr = crate::livetx::translate(app, std::slice::from_ref(&text), &lang, "", stop)
+                        let tr = crate::livetx::translate(app, std::slice::from_ref(&text), &lang, "", "", stop)
                             .ok()
                             .and_then(|v| v.into_iter().next())
                             .unwrap_or_default();

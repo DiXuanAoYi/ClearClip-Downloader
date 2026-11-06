@@ -169,3 +169,112 @@ fn images_and_scanned_pdf_are_recognised() {
     assert!(png_of(2, 1, true, &[1, 2, 3]).is_none());
     assert!(png_of(0, 0, false, &[]).is_none());
 }
+
+#[test]
+fn ocr_engine_names_fall_back_to_the_vision_model() {
+    let o = |s: &str| Opts { ocr: s.into(), ..Default::default() };
+    assert_eq!(o("enhanced").engine(), "enhanced");
+    assert_eq!(o("api").engine(), "api");
+    assert_eq!(o("vision").engine(), "vision");
+    assert_eq!(o("").engine(), "vision");
+    assert_eq!(o("whatever").engine(), "vision");
+    assert_eq!(Opts::default().engine(), "vision");
+    // 旧的请求没有 ocr / preview 字段，照常能读
+    let old: Opts = serde_json::from_str(r#"{"bilingual":true,"target":"","pdfMode":"inplace"}"#).unwrap();
+    assert_eq!((old.engine(), old.preview), ("vision", false));
+    let new: Opts = serde_json::from_str(r#"{"ocr":"api","preview":true}"#).unwrap();
+    assert_eq!((new.engine(), new.preview), ("api", true));
+}
+
+#[test]
+fn ocr_text_is_cached_per_engine() {
+    let dir = Path::new("/data");
+    let f = Path::new("/docs/scan.pdf");
+    assert_ne!(ocr_path(dir, f, "vision"), ocr_path(dir, f, "enhanced"), "换了识字方式要重新识，不能用上次的结果");
+    assert_eq!(ocr_path(dir, f, "api"), ocr_path(dir, f, "api"));
+}
+
+#[test]
+fn images_decode_to_bgra() {
+    // 2×1 的 PNG：红、绿
+    let mut buf = vec![];
+    {
+        let mut e = png::Encoder::new(&mut buf, 2, 1);
+        e.set_color(png::ColorType::Rgb);
+        e.set_depth(png::BitDepth::Eight);
+        e.write_header().unwrap().write_image_data(&[255, 0, 0, 0, 255, 0]).unwrap();
+    }
+    let (px, w, h) = decode_bgra(&buf).unwrap();
+    assert_eq!((w, h), (2, 1));
+    assert_eq!(px, vec![0, 0, 255, 255, 0, 255, 0, 255], "BGRA：红 = 0,0,255");
+    assert!(decode_bgra(b"not an image").is_err());
+}
+
+#[test]
+fn recognized_lines_become_paragraphs() {
+    use crate::livecore::OLine;
+    // 同一段的两行接起来，隔得远的另起一段
+    let lines = vec![
+        OLine::new("Dear customer,", 10.0, 10.0, 200.0, 20.0),
+        OLine::new("thank you for your order.", 10.0, 34.0, 260.0, 20.0),
+        OLine::new("Best regards", 10.0, 200.0, 140.0, 20.0),
+    ];
+    assert_eq!(lines_to_text(&lines), "Dear customer, thank you for your order.\n\nBest regards");
+    assert_eq!(lines_to_text(&[]), "");
+}
+
+#[test]
+fn pixel_boxes_map_to_pdf_coordinates() {
+    // 图 1000×500 对应页 600×300 磅；像素框 (100,50)-(300,150)
+    let (l, b, r, t) = pdf_rect((100.0, 50.0, 300.0, 150.0), (1000, 500), (600.0, 300.0));
+    assert!((l - 60.0).abs() < 0.01 && (r - 180.0).abs() < 0.01);
+    // PDF 的 y 轴向上：图上 y=50 在页上 = 300 - 30 = 270；y=150 → 210
+    assert!((t - 270.0).abs() < 0.01 && (b - 210.0).abs() < 0.01);
+}
+
+#[test]
+fn edits_in_the_reader_reach_the_cache() {
+    let dir = std::env::temp_dir().join(format!("cc-filetr-edit-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let input = dir.join("a.txt");
+    std::fs::write(&input, "Hello world.\n\nSecond paragraph.").unwrap();
+    let cp = cache_path(&dir, &input, "简体中文");
+    let v = View {
+        input: input.to_string_lossy().into_owned(),
+        target: "简体中文".into(),
+        bilingual: true,
+        pages: vec![ViewPage { src: vec!["Hello world.".into(), "Second paragraph.".into()], trans: vec![Some("你好，世界。".into()), None] }],
+        failed: 1,
+    };
+    save_cache(&cp, &v);
+    // 改第二段：failed 跟着变
+    edit_seg(&dir, &input, "简体中文", 0, 1, "  第二段。 ").unwrap();
+    let got = view_for(&dir, &input, "简体中文").unwrap();
+    assert_eq!(got.pages[0].trans, vec![Some("你好，世界。".to_string()), Some("第二段。".to_string())]);
+    assert_eq!(got.failed, 0);
+    // 清空 = 去掉译文
+    edit_seg(&dir, &input, "简体中文", 0, 0, "   ").unwrap();
+    let got = view_for(&dir, &input, "简体中文").unwrap();
+    assert_eq!(got.pages[0].trans[0], None);
+    assert_eq!(got.failed, 1);
+    // 越界 / 没有缓存都报错，不会 panic
+    assert!(edit_seg(&dir, &input, "简体中文", 3, 0, "x").is_err());
+    assert!(edit_seg(&dir, &input, "English", 0, 0, "x").is_err());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn scan_blocks_round_trip_through_the_sidecar() {
+    let pages = vec![
+        vec![ScanBlock { src: "Hi".into(), trans: "你好".into(), rect: Some((1.0, 2.0, 3.0, 4.0)), size: 9.5, rgb: [0, 0, 0], bg: Some([255, 255, 255]) }],
+        vec![],
+    ];
+    let back: Vec<Vec<ScanBlock>> = serde_json::from_slice(&serde_json::to_vec(&pages).unwrap()).unwrap();
+    assert_eq!(back.len(), 2);
+    assert_eq!(back[0][0].trans, "你好");
+    assert_eq!(back[0][0].rect, Some((1.0, 2.0, 3.0, 4.0)));
+    // 译文不同的识字方式不共用旁路文件
+    let (d, f) = (Path::new("/d"), Path::new("/f.pdf"));
+    assert_ne!(scan_path(d, f, "简体中文", "vision"), scan_path(d, f, "简体中文", "enhanced"));
+    assert_ne!(scan_path(d, f, "简体中文", "vision"), scan_path(d, f, "English", "vision"));
+}

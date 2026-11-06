@@ -164,6 +164,22 @@
 
   // ---------- 浮标 ----------
 
+  let lastField = null
+  let userMoved = false
+  let reclaims = []
+
+  /** 网页抢走焦点时还回去。2 秒内最多还 4 次，网页和我们抢个没完就不再争（让用户自己点）。 */
+  function reclaimFocus(e) {
+    if (!panel || !lastField || !lastField.isConnected || userMoved || (ui && e.target === ui.host)) return false
+    const now = Date.now()
+    reclaims = reclaims.filter((t) => now - t < 2000)
+    if (reclaims.length >= 4) return false
+    reclaims.push(now)
+    const el = lastField
+    setTimeout(() => panel && el.isConnected && el.focus({ preventScroll: true }), 0)
+    return true
+  }
+
   function ensureUi() {
     if (ui) return
     ui = mount(CSS)
@@ -172,6 +188,16 @@
       const t = e.composedPath()[0]
       if (!(t instanceof HTMLElement) || !t.matches('input, select, textarea, a')) e.preventDefault()
     })
+    // 记住面板里最后聚焦的输入框；网页没经过用户操作就把焦点抢走时（焦点陷阱、自动聚焦），把焦点还给它，否则输入框看起来“打不了字”
+    ui.root.addEventListener('focusin', (e) => {
+      const t = e.composedPath()[0]
+      if (t instanceof HTMLElement && t.matches('input, textarea, select')) {
+        lastField = t
+        userMoved = false
+      }
+    })
+    document.addEventListener('pointerdown', (e) => { if (!(ui && e.composedPath().includes(ui.host))) userMoved = true }, true)
+    document.addEventListener('keydown', (e) => { if (e.key === 'Tab') userMoved = true }, true)
     // 面板里的输入框：键盘、输入法、点击事件都不要冒泡到网页（很多网站的快捷键、编辑器、点击空白处收起逻辑会抢焦点或吞字）
     for (const ev of ['keydown', 'keyup', 'keypress', 'beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend', 'paste', 'cut', 'copy', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'dblclick', 'contextmenu', 'focusin', 'focusout']) {
       ui.root.addEventListener(ev, (e) => e.stopPropagation())
@@ -283,6 +309,7 @@
     'focusin',
     (e) => {
       if (ui && e.target === ui.host) return
+      if (reclaimFocus(e)) return
       const t = e.composedPath?.()[0] || e.target
       if (setTarget(t)) showBadge()
       else if (!panel) {
@@ -348,6 +375,10 @@
 
   function openPanel(opts = {}) {
     ensureUi()
+    // 目标在对话框里时，面板也放进同一个对话框：模态对话框外面的东西是“惰性”的点不了、打不了字，焦点陷阱也只放行自己里面的元素
+    ui.place(target?.closest?.('dialog[open], [aria-modal="true"], [role="dialog"]'))
+    lastField = null
+    userMoved = false
     let snap = null
     if (opts.readonly) {
       const s = getSelection()?.toString() || ''
@@ -557,7 +588,9 @@
       : null
     const cand = h('select', { title: '一次生成几个候选', onchange: (e) => ((cfg.candidates = Number(e.target.value)), saveCfg()) })
     for (const n of [1, 2, 3]) cand.append(h('option', { value: String(n), text: `${n} 个候选`, selected: cfg.candidates === n }))
+    // Element.append(null) 会把 null 当成文字塞进页面（面板底下那行“null”），所以先滤掉空的
     bd.append(
+      ...[
       h(
         'div',
         { class: 'acts', style: 'border-top:1px solid var(--line);padding-top:10px' },
@@ -567,6 +600,7 @@
       ),
       recent,
       h('div', { class: 'acts mut' }, h('span', { text: 'Ctrl+Enter 生成 · Esc 关闭' }), h('a', { href: '#', text: '历史记录', onclick: (e) => (e.preventDefault(), showHistory()) })),
+      ].filter(Boolean),
     )
     kids.push(bd)
     return kids

@@ -39,6 +39,8 @@
       [${ATTR}][data-style="dim"] { opacity: .78; }
       [${ATTR}][data-style="underline"] { text-decoration: underline dashed; text-underline-offset: 3px; text-decoration-color: #b4561a99; }
       [${ATTR}][data-style="highlight"] { background: #ffe9a8; color: #1d2420 !important; border-radius: 3px; padding: 0 .25em; }
+      [${ATTR}][data-blur] { filter: blur(6px); transition: filter .12s ease; }
+      [${ATTR}][data-blur]:hover, :hover > [${ATTR}][data-blur] { filter: none; }
       [${ATTR}][data-state="busy"] { opacity: .5; }
       [${ATTR}][data-state="busy"]::after { content: " …"; }
       [${ATTR}][data-state="fail"] { color: #a8362d; cursor: pointer; }
@@ -68,6 +70,13 @@
   const ours = (el) => !!el.closest?.(`[${ATTR}]`)
 
   function skippable(el) {
+    if (S.exclSel && el?.closest) {
+      try {
+        if (el.closest(S.exclSel)) return true
+      } catch {
+        // 选择器有问题：当没写
+      }
+    }
     for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
       if (SKIP_TAGS.has(e.tagName?.toUpperCase?.())) return true
       if (e.isContentEditable || e.getAttribute?.('translate') === 'no' || e.classList?.contains('notranslate')) return true
@@ -155,6 +164,9 @@
     else block.append(node)
   }
 
+  /** 译文模糊只用在双语对照里（只显示译文时原文看不到，再模糊就没法读了）。 */
+  const blurOn = () => S.cfg.blur === true && S.cfg.mode !== 'replace'
+
   function showTranslation(block, text) {
     const rec = S.blocks.get(block)
     if (!rec) return
@@ -162,6 +174,7 @@
     const node = document.createElement('font')
     node.setAttribute(ATTR, '')
     node.setAttribute('data-style', S.cfg.style)
+    if (blurOn()) node.setAttribute('data-blur', '')
     node.setAttribute('translate', 'no')
     node.textContent = text
     placeNode(block, rec, node)
@@ -356,6 +369,7 @@
     for (const [b, rec] of S.blocks) {
       if (!rec.node) continue
       rec.node.setAttribute('data-style', S.cfg.style)
+      rec.node.toggleAttribute('data-blur', blurOn())
       unhide(b)
       if (S.cfg.mode === 'replace') hideOriginal(b, rec, true)
     }
@@ -364,12 +378,18 @@
   // ---------- 悬停翻译：单击一下修饰键 ----------
 
   let tapKey = null
+  let sweepTimer = 0
   document.addEventListener(
     'mousemove',
     (e) => {
       const el = e.target instanceof Element ? e.target : null
       S.lastBlock = el
       S.lastNode = null
+      // 按住修饰键已经进入“扫描”状态：鼠标停在哪一段超过一小会儿，就翻译那一段（已翻译的不动）
+      if (held) {
+        clearTimeout(sweepTimer)
+        sweepTimer = setTimeout(() => held && hoverTranslate(true), 140)
+      }
     },
     { passive: true, capture: true },
   )
@@ -380,6 +400,13 @@
     clearTimeout(holdTimer)
     holdTimer = 0
   }
+  // 切到别的窗口时收不到松开键的事件，不重置的话回来就一直处在“扫描”状态
+  addEventListener('blur', () => {
+    clearHold()
+    clearTimeout(sweepTimer)
+    tapKey = null
+    held = false
+  })
   document.addEventListener('keydown', (e) => {
     if (e.repeat && e.key === S.cfg.hover) return
     tapKey = S.cfg.hover !== 'off' && e.key === S.cfg.hover ? e.key : null
@@ -403,6 +430,7 @@
   document.addEventListener('mousedown', () => ((tapKey = null), clearHold()), true)
   document.addEventListener('keyup', (e) => {
     clearHold()
+    clearTimeout(sweepTimer)
     if (tapKey && e.key === tapKey && !held) hoverTranslate()
     tapKey = null
     held = false
@@ -425,11 +453,14 @@
     return null
   }
 
+  let hoverDepth = 0
+  let hoverWasOn = false
   async function hoverTranslate(onlyTranslate = false) {
     const b = S.lastBlock && blockUnder(S.lastBlock)
     if (!b) return
     ensureStyle()
     const rec = S.blocks.get(b)
+    if (rec && !rec.node && rec.state === 'busy') return // 这一段正在翻
     if (rec?.node) {
       if (onlyTranslate) return
       // 再点一次 = 还原这一段
@@ -441,16 +472,21 @@
     const { text, last } = textOf(b)
     if (!text) return
     S.blocks.set(b, { text, last, state: 'busy', node: null })
-    const wasOn = S.on
+    // 扫过好几段时会同时有几个在翻：只有最先开始的记下“整页翻译开没开”，最后一个结束时才还原
+    if (hoverDepth++ === 0) hoverWasOn = S.on
     S.on = true // 让 run() 在没开整页时也能工作
-    await run([{ id: b, text }])
-    S.on = wasOn
-    if (!wasOn) {
-      pill?.remove()
-      pill = null
-      const r = S.blocks.get(b)
-      if (r?.state === 'fail') toast(uiRoot(), S.err || '翻译失败了', true, 4000)
+    try {
+      await run([{ id: b, text }])
+    } finally {
+      if (--hoverDepth === 0) {
+        S.on = hoverWasOn
+        if (!hoverWasOn) {
+          pill?.remove()
+          pill = null
+        }
+      }
     }
+    if (!hoverWasOn && S.blocks.get(b)?.state === 'fail') toast(uiRoot(), S.err || '翻译失败了', true, 4000)
   }
 
   // ---------- 划词翻译 ----------
@@ -570,6 +606,16 @@
     }
   }, true)
 
+  // Alt+I：把当前输入框里的字译成“输入框语言”（和连按三次空格一样，用在不想连按空格的时候）
+  document.addEventListener('keydown', (e) => {
+    if (!S.cfg.input || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.key.toLowerCase() !== 'i' || e.isComposing) return
+    const el = document.activeElement
+    const editable = el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|)$/i.test(el.type)) || el.isContentEditable)
+    if (!editable) return
+    e.preventDefault()
+    translateInput(el)
+  }, true)
+
   const textOfInput = (el) => (el.isContentEditable ? el.innerText : el.value)
 
   async function translateInput(el) {
@@ -610,6 +656,31 @@
     } catch {
       S.cfg = T.normalizeCfg()
     }
+    applyCfgExtras()
+  }
+
+  /** 设置里“不翻译的区域”和“自定义 CSS”：每次设置变了都重新算。写错的选择器跳过，不影响别的。 */
+  function applyCfgExtras() {
+    const ok = []
+    for (const sel of T.excludeFor(S.cfg, location.hostname)) {
+      try {
+        document.createDocumentFragment().querySelector(sel)
+        ok.push(sel)
+      } catch {
+        // 选择器写错了
+      }
+    }
+    S.exclSel = ok.join(',')
+    const css = T.cleanCss(S.cfg.customCss)
+    let el = document.getElementById('cc-tr-css')
+    if (!css) return void el?.remove()
+    ensureStyle() // 内置样式先放进去，自定义的接在后面、选择器更具体，才压得过内置的
+    if (!el) {
+      el = document.createElement('style')
+      el.id = 'cc-tr-css'
+    }
+    ;(document.head || document.documentElement).append(el)
+    el.textContent = `[${ATTR}][data-style] { ${css} }`
   }
 
   function reinit() {
@@ -635,7 +706,8 @@
       if (area !== 'local' || !ch.transCfg) return
       const was = S.cfg
       S.cfg = T.effectiveCfg(T.normalizeCfg(ch.transCfg.newValue), location.hostname)
-      if (S.on && (was.mode !== S.cfg.mode || was.style !== S.cfg.style)) restyle()
+      applyCfgExtras()
+      if (S.on && (was.mode !== S.cfg.mode || was.style !== S.cfg.style || was.blur !== S.cfg.blur)) restyle()
       // 目标语言 / 引擎变了：已经翻好的作废，重新来
       if (S.on && (was.target !== S.cfg.target || was.engine !== S.cfg.engine || JSON.stringify(was.services) !== JSON.stringify(S.cfg.services))) {
         pageOff()

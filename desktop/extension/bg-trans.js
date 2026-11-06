@@ -62,6 +62,88 @@ async function trClearclip(texts, target, context = '', host = '') {
   }
 }
 
+/** 自定义接口（OpenAI 兼容：OpenAI、DeepSeek、通义、智谱、Ollama、LM Studio、各种中转…）。一批文字发成 JSON 数组，要求原样回一个同样长度的数组。 */
+async function trCustomBatch(s, target, items, context) {
+  const url = ccTrans.chatUrl(s.url)
+  const body = {
+    model: s.model,
+    temperature: 0.2,
+    messages: [
+      { role: 'system', content: ccTrans.customSystem(ccTrans.promptName(target), s.prompt || '', context) },
+      { role: 'user', content: JSON.stringify(items) },
+    ],
+  }
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 90_000)
+  let r
+  try {
+    r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(s.key ? { Authorization: `Bearer ${s.key}` } : {}) }, body: JSON.stringify(body), signal: ctl.signal })
+  } catch {
+    throw new Error(`连不上自定义接口（${url}）。本机的 Ollama 需要设置环境变量 OLLAMA_ORIGINS=* 才允许浏览器扩展访问`)
+  } finally {
+    clearTimeout(timer)
+  }
+  if (r.status === 401 || r.status === 403) throw new Error('自定义接口拒绝了请求（密钥不对或没有权限）')
+  if (r.status === 429) throw new Error('自定义接口限流了（HTTP 429），稍后再试')
+  if (!r.ok) throw new Error(`自定义接口返回了错误（HTTP ${r.status}）：${(await r.text().catch(() => '')).slice(0, 160)}`)
+  const j = await r.json().catch(() => null)
+  const reply = j?.choices?.[0]?.message?.content
+  if (!reply) throw new Error('自定义接口没有返回内容，检查模型名对不对')
+  return reply
+}
+
+async function trCustom(texts, target, context = '') {
+  const cfg = await getTransCfg()
+  const s = cfg.services?.custom || {}
+  if (!ccTrans.customReady(cfg)) throw new Error('自定义接口还没填好：在“设置 → 翻译”里填接口地址和模型名')
+  const out = new Array(texts.length)
+  const batches = ccTrans.splitBatches(texts)
+  let next = 0
+  const worker = async () => {
+    while (next < batches.length) {
+      const idx = batches[next++]
+      const items = idx.map((i) => texts[i])
+      let arr = ccTrans.parseArrayReply(await trCustomBatch(s, target, items, context), items.length)
+      if (!arr && items.length > 1) {
+        // 模型没按数组回、条数对不上：逐条重来一遍，慢一点但不会错位
+        arr = []
+        for (const one of items) arr.push(ccTrans.parseArrayReply(await trCustomBatch(s, target, [one], context), 1)?.[0] ?? one)
+      }
+      if (!arr) arr = [ccTrans.parseArrayReply(await trCustomBatch(s, target, items, context), 1)?.[0] ?? items[0]]
+      idx.forEach((i, k) => (out[i] = arr[k]))
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(3, batches.length) }, worker))
+  return out
+}
+
+/** DeepLX（自己部署或别人提供）和 DeepL 官方 API 的兼容写法：POST {text, source_lang:'auto', target_lang}，回 {data} 或 {translations:[{text}]}。 */
+async function trDeeplx(texts, target) {
+  const s = (await getTransCfg()).services?.deeplx || {}
+  if (!s.url) throw new Error('DeepLX 还没填好：在“设置 → 翻译”里填接口地址')
+  const out = new Array(texts.length)
+  let next = 0
+  const worker = async () => {
+    while (next < texts.length) {
+      const i = next++
+      let r
+      try {
+        r = await fetch(s.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(s.key ? { Authorization: `Bearer ${s.key}` } : {}) }, body: JSON.stringify({ text: texts[i], source_lang: 'auto', target_lang: ccTrans.deeplLang(target) }) })
+      } catch {
+        throw new Error(`连不上 DeepLX（${s.url}）`)
+      }
+      if (r.status === 429) throw new Error('DeepLX 限流了（HTTP 429），稍后再试')
+      if (!r.ok) throw new Error(`DeepLX 返回了错误（HTTP ${r.status}）`)
+      const j = await r.json().catch(() => null)
+      const t = j?.data ?? j?.translations?.[0]?.text
+      if (typeof t !== 'string' || !t) throw new Error('DeepLX 没有返回译文')
+      out[i] = t
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(3, texts.length) }, worker))
+  return out
+}
+
 /** 长文本按句子切成不超过 1500 字的几段（谷歌这个接口用 GET，太长会被拒）。 */
 function trSplit(text, max = 1500) {
   if (text.length <= max) return [text]
@@ -169,7 +251,8 @@ async function translateTexts(texts, { target, engine, page = null, domain = fal
   const dom = engine === 'clearclip' && domain ? await pageDomain(page) : null
   const ctx = [dom ? [dom.domain && `Domain: ${dom.domain}.`, dom.note].filter(Boolean).join(' ') : '', engine === 'clearclip' && extra ? `Additional requirement from the user: ${extra}` : ''].filter(Boolean).join(' ')
   const pv = engine === 'clearclip' ? await promptVersion() : ''
-  const keyEngine = (dom?.domain ? `${engine}:${dom.domain.toLowerCase().slice(0, 40)}` : engine) + (pv ? `@${pv}` : '') + (engine === 'clearclip' && extra ? `#${[...extra].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7).toString(36)}` : '')
+  const cm = engine === 'custom' ? (await getTransCfg()).services?.custom?.model || '' : ''
+  const keyEngine = (engine === 'custom' ? `custom:${cm}` : dom?.domain ? `${engine}:${dom.domain.toLowerCase().slice(0, 40)}` : engine) + (pv ? `@${pv}` : '') + ((engine === 'clearclip' || engine === 'custom') && extra ? `#${[...extra].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7).toString(36)}` : '')
   const cache = await trCacheMap()
   const out = texts.map((t) => cache[ccTrans.cacheKey(keyEngine, target, t)]?.[0] ?? null)
   const todo = out.map((v, i) => (v == null ? i : -1)).filter((i) => i >= 0)
@@ -177,6 +260,8 @@ async function translateTexts(texts, { target, engine, page = null, domain = fal
     const src = todo.map((i) => texts[i])
     let res
     if (engine === 'google') res = await trGoogle(src, target)
+    else if (engine === 'custom') res = await trCustom(src, target, ctx)
+    else if (engine === 'deeplx') res = await trDeeplx(src, target)
     else {
       await trSlot()
       try {

@@ -33,10 +33,16 @@ const plain = (v) => JSON.parse(JSON.stringify(v))
   assert.equal('nope' in plain(X('normalizeFeatures')({ nope: true })), false)
   // 默认注册实时音效、播放控制脚本和网页翻译脚本（悬停 / 划词 / 输入框三连空格）
   assert.equal(f.audioFx, true) // 实时音效默认开（响度标准化默认开，混响 / 均衡器默认关）
-  assert.deepEqual(plain(X('neededScripts')(undefined)), ['cc-audio', 'cc-video', 'cc-trans', 'cc-selbar', 'cc-write', 'cc-unlock'])
-  assert.deepEqual(plain(X('neededScripts')({ floatButton: true, hoverZoom: true, unlock: true })), ['cc-float', 'cc-zoom', 'cc-audio', 'cc-video', 'cc-trans', 'cc-selbar', 'cc-write', 'cc-unlock'])
+  assert.deepEqual(plain(X('neededScripts')(undefined)), ['cc-audio', 'cc-trans', 'cc-selbar', 'cc-write', 'cc-unlock'])
+  // 播放增强默认不启用；打开总开关后，下面各项默认全部可用
+  assert.equal(plain(X('normalizeFeatures')(undefined)).videoMaster, false)
+  const on = plain(X('normalizeFeatures')({ videoMaster: true }))
+  assert.deepEqual([on.speed, on.speedMemory, on.seek, on.videoTools, on.videoAdvanced], [true, true, true, true, true])
+  assert.ok(X('neededScripts')({ videoMaster: true }).includes('cc-video'))
+  assert.ok(!X('neededScripts')({ videoMaster: true, speed: false, speedMemory: false, seek: false, videoTools: false, videoAdvanced: false }).includes('cc-video'), '总开关开着但子项全关，也不注册')
+  assert.deepEqual(plain(X('neededScripts')({ floatButton: true, hoverZoom: true, unlock: true })), ['cc-float', 'cc-zoom', 'cc-audio', 'cc-trans', 'cc-selbar', 'cc-write', 'cc-unlock'])
   assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, audioFx: false, writing: false, selbar: false })), ['cc-unlock'])
-  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, audioFx: false, writing: false, selbar: false, videoTools: true })), ['cc-video', 'cc-unlock'])
+  assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, audioFx: false, writing: false, selbar: false, videoMaster: true, videoTools: true })), ['cc-video', 'cc-unlock'])
   assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, writing: false, selbar: false })), ['cc-audio', 'cc-unlock'])
   // 音效脚本按顺序加载：界面工具 → 纯逻辑 → 处理链 → 内容脚本
   assert.deepEqual(plain(X('RESIDENT_SCRIPTS').find((r) => r.id === 'cc-audio').js), ['content/ui.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'])

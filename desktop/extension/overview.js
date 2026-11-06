@@ -65,7 +65,7 @@ function render() {
     const meta = document.createElement('div')
     meta.className = 'meta'
     const dim = document.createElement('span')
-    dim.textContent = [it.w && it.h ? `${it.w}×${it.h}` : '', it.size ? fmtSize(it.size) : KIND_LABEL[it.kind]].filter(Boolean).join(' · ')
+    dim.textContent = [it.w && it.h ? `${it.w}×${it.h}` : '', it.size ? ovSize(it.size) : KIND_LABEL[it.kind]].filter(Boolean).join(' · ')
     it._dimEl = dim
     const open = document.createElement('a')
     open.href = it.url
@@ -119,7 +119,7 @@ function renderStreams() {
 
 
 const S = globalThis.ccSniff
-const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
+const ovSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
 
 /** 格式徽标：显示探测出的真实格式；和地址后缀对不上时变橙并写明。 */
 function paintFormat(el, it) {
@@ -151,7 +151,7 @@ async function probeAll(list) {
       if (r.mime) it.mime = r.mime
       if (r.size) it.size = r.size
       paintFormat(it._fmtEl, it)
-      if (it._dimEl && r.size) it._dimEl.textContent = [it.w && it.h ? `${it.w}×${it.h}` : '', fmtSize(r.size)].filter(Boolean).join(' · ')
+      if (it._dimEl && r.size) it._dimEl.textContent = [it.w && it.h ? `${it.w}×${it.h}` : '', ovSize(r.size)].filter(Boolean).join(' · ')
     }
   }
   await Promise.all([worker(), worker(), worker(), worker()])
@@ -211,7 +211,7 @@ function showViewer() {
   }
 }
 function infoLine(it) {
-  $('vInfo').textContent = [it.fmt ? S.FORMAT_LABEL[it.fmt] || it.fmt : '', it.w && it.h ? `${it.w}×${it.h}` : '', it.size ? fmtSize(it.size) : ''].filter(Boolean).join(' · ')
+  $('vInfo').textContent = [it.fmt ? S.FORMAT_LABEL[it.fmt] || it.fmt : '', it.w && it.h ? `${it.w}×${it.h}` : '', it.size ? ovSize(it.size) : ''].filter(Boolean).join(' · ')
 }
 function stepViewer(d) {
   if (!vList.length) return

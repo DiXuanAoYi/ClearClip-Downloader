@@ -46,6 +46,12 @@ pub enum ToolOp {
     /// 响度标准化到目标 LUFS（视频画面不重新编码）
     Loudness {
         target: f64,
+        /// 真峰值上限（dBTP），不填用 -1.5
+        #[serde(default)]
+        tp: Option<f64>,
+        /// 响度范围目标（LU），不填用 11
+        #[serde(default)]
+        lra: Option<f64>,
     },
     /// cw / ccw / flip180 / hflip / vflip
     Rotate {
@@ -479,9 +485,8 @@ pub fn plan_with(job: &ToolJob, inputs: &[Input], enc: &Encoders, blur: &str) ->
                 p.args.push(path_arg(&p.output));
             }
         }
-        ToolOp::Loudness { target } => {
-            let t = target.clamp(-30.0, -5.0);
-            let af = format!("loudnorm=I={t}:TP=-1.5:LRA=11");
+        ToolOp::Loudness { target, tp, lra } => {
+            let af = crate::audiofx::loudnorm_filter(*target, *tp, *lra);
             if first.probe.has_video {
                 let ext = if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov") { in_ext.as_str() } else { "mp4" };
                 p.output = out_path(&first.path, dir, "响度", ext);
@@ -1488,7 +1493,7 @@ mod tests {
         assert!((1700..=2400).contains(&d), "{d}");
 
         // 响度
-        let (out, _) = exec(&ff, &job(&[&vs], ToolOp::Loudness { target: -16.0 })).await;
+        let (out, _) = exec(&ff, &job(&[&vs], ToolOp::Loudness { target: -16.0, tp: None, lra: None })).await;
         let p = pr(out).await;
         assert!(p.has_video && p.has_audio);
 
