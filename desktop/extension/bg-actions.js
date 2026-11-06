@@ -535,6 +535,12 @@ api.runtime.onInstalled.addListener(async (d) => {
   // 升级上来的用户保持原来的样子：视频上的音效按钮继续显示（新安装默认不显示）
   if (d?.reason === 'update') {
     try {
+      // 播放增强新增了总开关（默认关）。升级上来、自己存过功能开关的用户保持原来的样子：原来用着播放增强的继续开着
+      const { features } = await api.storage.local.get('features')
+      if (features && typeof features === 'object' && typeof features.videoMaster !== 'boolean') {
+        const was = features.speed !== false || features.speedMemory !== false || features.seek !== false || features.videoTools === true || features.videoAdvanced === true
+        await api.storage.local.set({ features: { ...features, videoMaster: was } })
+      }
       const { audioCfg } = await api.storage.local.get('audioCfg')
       if (!audioCfg || typeof audioCfg.pillShow !== 'boolean') await api.storage.local.set({ audioCfg: { ...(audioCfg || {}), pillShow: true } })
     } catch {
