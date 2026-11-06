@@ -53,6 +53,7 @@
           <div class="col"><label>翻译成</label><select id="trTarget"></select></div>
           <div class="col"><label>显示</label><select id="trMode"><option value="bilingual">双语对照</option><option value="replace">只显示译文</option></select></div>
         </div>
+        <label class="row" title="双语对照时，译文先糊住；鼠标移到这一段上，这一段的译文就变清晰。适合先读原文、看不懂再瞄一眼译文。"><input id="trBlur" type="checkbox" /> 译文先模糊，鼠标移上去才清晰（双语对照）</label>
       </div>
       <label class="row"><input id="tkOn" type="checkbox" /> 接管浏览器下载（默认关闭）</label>
       <div id="tkInfo" class="mute"></div>
@@ -187,7 +188,7 @@
       <div class="col"><label>译文样式</label><select id="trStyle"><option value="card">底色块（醒目）</option><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>
     </div>
     <div class="rowBtns">
-      <div class="col"><label>悬停翻译（单击或按住此键）</label><select id="trHover"><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="off">关闭</option></select></div>
+      <div class="col"><label title="单击一下：翻译鼠标指着的这一段（再单击还原）。按住不放：鼠标扫到哪一段就翻译哪一段，松开停止">悬停翻译（单击或按住此键）</label><select id="trHover"><option value="Control">Ctrl</option><option value="Alt">Alt</option><option value="Shift">Shift</option><option value="off">关闭</option></select></div>
       <div class="col"><label>输入框翻译成</label><select id="trInputLang"></select></div>
     </div>
     <div class="rowBtns">

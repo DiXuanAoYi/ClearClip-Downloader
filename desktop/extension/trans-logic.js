@@ -212,6 +212,7 @@
     target: 'zh-CN', // 网页翻译的目标语言
     mode: 'bilingual', // bilingual 双语对照 / replace 只显示译文
     style: 'card', // 译文样式（card 淡蓝底色 + 左侧竖线）
+    blur: false, // 双语对照时译文先模糊，鼠标移到这一段上才清晰（先读原文，不懂再看译文）
     engine: 'clearclip', // clearclip 用清影里设置的大模型 / google 免费的谷歌翻译（页面文字会发给谷歌）
     hover: 'Control', // 单击一下这个键，翻译鼠标指着的段落；off 关闭
     holdMs: 450, // 按住上面这个键超过这么久也会翻译（不用松手）；0 = 只认单击
@@ -308,6 +309,7 @@
       target: lang(r.target, DEFAULT_CFG.target),
       mode: MODES.includes(r.mode) ? r.mode : DEFAULT_CFG.mode,
       style: STYLES.includes(r.style) ? r.style : DEFAULT_CFG.style,
+      blur: r.blur === true,
       engine: ENGINES.includes(r.engine) ? r.engine : DEFAULT_CFG.engine,
       hover: HOVER_KEYS.includes(r.hover) ? r.hover : DEFAULT_CFG.hover,
       holdMs: clampHold(r.holdMs ?? DEFAULT_CFG.holdMs),

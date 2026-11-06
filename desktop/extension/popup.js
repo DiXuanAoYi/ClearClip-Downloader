@@ -531,6 +531,7 @@ async function loadTransCfg() {
   for (const id of ['trTarget', 'trTarget2']) fillLangs($(id), c.target)
   fillLangs($('trInputLang'), c.inputLang)
   $('trMode').value = c.mode
+  $('trBlur').checked = c.blur
   $('trEngine').value = c.engine
   $('trStyle').value = c.style
   $('trHover').value = c.hover
@@ -560,6 +561,7 @@ async function loadTransCfg() {
 
 $('trTarget').onchange = async () => (await saveTransCfg({ target: $('trTarget').value }), ($('trTarget2').value = $('trTarget').value))
 $('trMode').onchange = () => saveTransCfg({ mode: $('trMode').value })
+$('trBlur').onchange = () => saveTransCfg({ blur: $('trBlur').checked })
 $('startTrans').onclick = () => runOnPage('webtrans')
 $('saveTrans').onclick = async () => {
   await saveTransCfg({

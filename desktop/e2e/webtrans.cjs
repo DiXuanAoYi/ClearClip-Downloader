@@ -166,6 +166,36 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     await page.close()
   }
 
+  // ---- 译文模糊：双语对照时先糊住，鼠标移到这一段上才清晰
+  {
+    const { page } = await open('https://news.test/', { cfg: { target: 'ja', blur: true } })
+    await page.evaluate(() => window.__cmd('toggle'))
+    await page.waitForFunction(() => document.getElementById('p1')?.querySelector('[data-cc-tr]'), null, { timeout: 8000 })
+    await settle(page, 300)
+    const filterOf = () => page.evaluate(() => getComputedStyle(document.getElementById('p1').querySelector('[data-cc-tr]')).filter)
+    await page.mouse.move(900, 600)
+    ok('译文先模糊', /blur/.test(await filterOf()), await filterOf())
+    ok('原文不模糊', (await page.evaluate(() => getComputedStyle(document.getElementById('p1')).filter)) === 'none')
+    const r = await page.evaluate(() => {
+      const b = document.getElementById('p1').getBoundingClientRect()
+      return { x: b.x + 20, y: b.y + 4 }
+    })
+    await page.mouse.move(r.x, r.y)
+    await settle(page, 300)
+    ok('鼠标移到这一段上译文变清晰', (await filterOf()) === 'none', await filterOf())
+    ok('别的段落还是模糊', await page.evaluate(() => { const n = document.getElementById('p3').querySelector('[data-cc-tr]'); return !n || /blur/.test(getComputedStyle(n).filter) }))
+    // 关掉模糊
+    await page.evaluate(() => window.__setCfg({ target: 'ja', blur: false }))
+    await settle(page, 300)
+    await page.mouse.move(900, 600)
+    ok('关掉后译文不再模糊', (await filterOf()) === 'none', await filterOf())
+    // 只显示译文时不模糊
+    await page.evaluate(() => window.__setCfg({ target: 'ja', blur: true, mode: 'replace' }))
+    await settle(page, 300)
+    ok('只显示译文时不模糊（否则没法读）', (await filterOf()) === 'none', await filterOf())
+    await page.close()
+  }
+
   // ---- 悬停：按住 Ctrl 不松手，鼠标扫过哪一段就翻译哪一段
   {
     const { page } = await open('https://news.test/', { cfg: { target: 'ja' } })

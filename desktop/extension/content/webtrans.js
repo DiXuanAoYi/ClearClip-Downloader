@@ -39,6 +39,8 @@
       [${ATTR}][data-style="dim"] { opacity: .78; }
       [${ATTR}][data-style="underline"] { text-decoration: underline dashed; text-underline-offset: 3px; text-decoration-color: #b4561a99; }
       [${ATTR}][data-style="highlight"] { background: #ffe9a8; color: #1d2420 !important; border-radius: 3px; padding: 0 .25em; }
+      [${ATTR}][data-blur] { filter: blur(6px); transition: filter .12s ease; }
+      [${ATTR}][data-blur]:hover, :hover > [${ATTR}][data-blur] { filter: none; }
       [${ATTR}][data-state="busy"] { opacity: .5; }
       [${ATTR}][data-state="busy"]::after { content: " …"; }
       [${ATTR}][data-state="fail"] { color: #a8362d; cursor: pointer; }
@@ -155,6 +157,9 @@
     else block.append(node)
   }
 
+  /** 译文模糊只用在双语对照里（只显示译文时原文看不到，再模糊就没法读了）。 */
+  const blurOn = () => S.cfg.blur === true && S.cfg.mode !== 'replace'
+
   function showTranslation(block, text) {
     const rec = S.blocks.get(block)
     if (!rec) return
@@ -162,6 +167,7 @@
     const node = document.createElement('font')
     node.setAttribute(ATTR, '')
     node.setAttribute('data-style', S.cfg.style)
+    if (blurOn()) node.setAttribute('data-blur', '')
     node.setAttribute('translate', 'no')
     node.textContent = text
     placeNode(block, rec, node)
@@ -356,6 +362,7 @@
     for (const [b, rec] of S.blocks) {
       if (!rec.node) continue
       rec.node.setAttribute('data-style', S.cfg.style)
+      rec.node.toggleAttribute('data-blur', blurOn())
       unhide(b)
       if (S.cfg.mode === 'replace') hideOriginal(b, rec, true)
     }
@@ -657,7 +664,7 @@
       if (area !== 'local' || !ch.transCfg) return
       const was = S.cfg
       S.cfg = T.effectiveCfg(T.normalizeCfg(ch.transCfg.newValue), location.hostname)
-      if (S.on && (was.mode !== S.cfg.mode || was.style !== S.cfg.style)) restyle()
+      if (S.on && (was.mode !== S.cfg.mode || was.style !== S.cfg.style || was.blur !== S.cfg.blur)) restyle()
       // 目标语言 / 引擎变了：已经翻好的作废，重新来
       if (S.on && (was.target !== S.cfg.target || was.engine !== S.cfg.engine || JSON.stringify(was.services) !== JSON.stringify(S.cfg.services))) {
         pageOff()
