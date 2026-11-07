@@ -98,6 +98,28 @@ impl Lut3 {
         Ok(Lut3 { title, size, domain_min: dmin, domain_max: dmax, data })
     }
 
+    /// 按强度和“原样”混合（0 = 原样，1 = 这张 LUT），格点数和范围不变。
+    pub fn with_strength(&self, k: f32) -> Lut3 {
+        let k = k.clamp(0.0, 1.0);
+        let n = self.size;
+        let step = 1.0 / (n - 1) as f32;
+        let mut data = Vec::with_capacity(self.data.len());
+        for b in 0..n {
+            for g in 0..n {
+                for r in 0..n {
+                    let v = self.at(r, g, b);
+                    let mut o = [0.0f32; 3];
+                    for (c, idx) in [r, g, b].into_iter().enumerate() {
+                        let id = self.domain_min[c] + idx as f32 * step * (self.domain_max[c] - self.domain_min[c]);
+                        o[c] = id + (v[c] - id) * k;
+                    }
+                    data.push(o);
+                }
+            }
+        }
+        Lut3 { title: format!("{} {:.0}%", self.title, k * 100.0), size: n, domain_min: self.domain_min, domain_max: self.domain_max, data }
+    }
+
     /// 写成 `.cube` 文本。
     pub fn to_cube(&self) -> String {
         let mut out = String::with_capacity(self.data.len() * 24 + 160);

@@ -223,6 +223,11 @@ pub fn simple_chain(spec: &AudioFxSpec, caps: &FxCaps) -> (Vec<String>, Vec<Stri
 
 /// 合成立体声脉冲响应的滤镜图，输出标签 `[ir]`。
 fn impulse_graph(r: &ReverbSpec, caps: &FxCaps) -> String {
+    impulse_graph_tagged(r, caps, "")
+}
+
+/// 同上，所有标签后面加上 `tag`（一张滤镜图里有好几个混响时互不冲突），输出 `[ir{tag}]`。
+fn impulse_graph_tagged(r: &ReverbSpec, caps: &FxCaps, tag: &str) -> String {
     let rt = r.time_ms as f64 / 1000.0;
     let rt_hi = (rt * r.hf_ratio).max(0.05);
     // 高频先衰减完，所以脉冲响应只需要覆盖低频衰减到 -60 dB 再多一点
@@ -236,17 +241,17 @@ fn impulse_graph(r: &ReverbSpec, caps: &FxCaps) -> String {
     };
     let mut g = vec![];
     for (i, seed) in [(0, 7), (1, 11)] {
-        g.push(format!("anoisesrc=d={len:.3}:c=white:r=48000:a=0.5:s={seed}:n=256,asplit=2[n{i}a][n{i}b]"));
-        g.push(format!("[n{i}a]lowpass=f=1800:p=2,volume='pow(10,-3*t/{rt:.4})':eval=frame[n{i}lo]"));
-        g.push(format!("[n{i}b]highpass=f=1800:p=2,volume='pow(10,-3*t/{rt_hi:.4})':eval=frame[n{i}hi]"));
-        g.push(mix2(&format!("n{i}lo"), &format!("n{i}hi"), &format!("n{i}")));
+        g.push(format!("anoisesrc=d={len:.3}:c=white:r=48000:a=0.5:s={seed}:n=256,asplit=2[n{i}a{tag}][n{i}b{tag}]"));
+        g.push(format!("[n{i}a{tag}]lowpass=f=1800:p=2,volume='pow(10,-3*t/{rt:.4})':eval=frame[n{i}lo{tag}]"));
+        g.push(format!("[n{i}b{tag}]highpass=f=1800:p=2,volume='pow(10,-3*t/{rt_hi:.4})':eval=frame[n{i}hi{tag}]"));
+        g.push(mix2(&format!("n{i}lo{tag}"), &format!("n{i}hi{tag}"), &format!("n{i}{tag}")));
     }
     // 旧版 ffmpeg 的 amerge 要求两路声道布局互不重叠，所以明确标成左、右
-    let mut tail = String::from("[n0]aformat=channel_layouts=FL[irl];[n1]aformat=channel_layouts=FR[irr];[irl][irr]amerge=inputs=2");
+    let mut tail = format!("[n0{tag}]aformat=channel_layouts=FL[irl{tag}];[n1{tag}]aformat=channel_layouts=FR[irr{tag}];[irl{tag}][irr{tag}]amerge=inputs=2");
     if r.pre_delay_ms > 0 {
         tail.push_str(&format!(",adelay=delays={0}|{0}", r.pre_delay_ms));
     }
-    tail.push_str(",afade=t=in:d=0.004[ir]");
+    tail.push_str(&format!(",afade=t=in:d=0.004[ir{tag}]"));
     g.push(tail);
     g.join(";")
 }
@@ -263,6 +268,28 @@ fn echo_chain(r: &ReverbSpec) -> String {
         decays.push(format!("{:.3}", (amp * 10f64.powf(-3.0 * d / rt.max(1.0))).clamp(0.01, 0.9)));
     }
     format!("aecho=0.85:0.9:{}:{}", delays.join("|"), decays.join("|"))
+}
+
+/// 剪辑里给一路声音加混响：`[input]` → `[output]`，标签都带 `tag`。输入要求已经是 48 kHz 立体声 fltp。
+/// 返回滤镜语句和要提示的话（没有 afir 时退回回声）。
+pub fn reverb_stmts(r: &ReverbSpec, caps: &FxCaps, input: &str, output: &str, tag: &str) -> (Vec<String>, Option<String>) {
+    let r = r.checked();
+    if caps.afir {
+        let mut g = vec![format!("[{input}]volume={},asplit=2[rd{tag}][rw{tag}]", db(r.in_gain_db))];
+        g.push(impulse_graph_tagged(&r, caps, tag));
+        g.push(format!("[rw{tag}][ir{tag}]afir=dry=1:wet=1:gtype=gn:irfmt=input,volume={}[rv{tag}]", db(r.mix_db)));
+        g.push(if caps.amix_normalize {
+            format!("[rd{tag}][rv{tag}]amix=inputs=2:normalize=0:duration=first[{output}]")
+        } else {
+            format!("[rd{tag}][rv{tag}]amix=inputs=2:duration=first,volume=2[{output}]")
+        });
+        (g, None)
+    } else {
+        (
+            vec![format!("[{input}]volume={},{}[{output}]", db(r.in_gain_db), echo_chain(&r))],
+            Some("当前的 ffmpeg 没有卷积滤镜（afir），混响退回成多抽头回声，效果比较简陋。在“设置 → 组件”里安装完整版 ffmpeg 可以得到真正的混响。".into()),
+        )
+    }
 }
 
 /// 构建完整的滤镜图。`pad_tail`：音频文件在结尾留出混响尾巴；视频不加长（视频流是直接复制的）。

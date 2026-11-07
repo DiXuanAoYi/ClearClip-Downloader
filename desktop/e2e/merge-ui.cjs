@@ -73,6 +73,7 @@ const INIT = `
         case 'glossary_state': return window.__gl
         case 'glossary_folder_add': window.__gl.folders.push(args.path); return window.__gl
         case 'glossary_save': window.__glSaved = args.glossary; return args.glossary
+        case 'media_job_start': window.__job = args.job; return 5
         default: return null
       }
     },
@@ -201,6 +202,35 @@ const INIT = `
   }
 
   ok('没有页面错误', !errors.length, errors.join(' | '))
+  // 工具箱：剪辑里也能做的几样合成“快速处理”，可以一键送进剪辑
+  {
+    const page = await open('video')
+    const nav = await page.locator('nav.tools .tool').allInnerTexts()
+    ok('工具列表里有“快速处理”，没有单独的裁剪 / 拼接 / 倍速 / 旋转 / 去除音轨 / 竖屏转横屏', nav.includes('快速处理') && !['裁剪片段', '拼接', '倍速', '旋转 / 翻转', '去除音轨', '竖屏转横屏'].some((t) => nav.includes(t)), nav.join(','))
+    ok('压缩、转换格式、GIF、截图、响度、音效还在', ['压缩视频', '转换格式', '转 GIF', '截图', '响度标准化', '音效 / 混响'].every((t) => nav.includes(t)), nav.join(','))
+    ok('不是快速处理时没有“在剪辑里打开”', (await page.getByRole('button', { name: '在剪辑里打开' }).count()) === 0)
+    await page.locator('nav.tools .tool', { hasText: '快速处理' }).click()
+    await page.waitForTimeout(200)
+    const subs = await page.locator('.quick .el-radio-button').allInnerTexts()
+    ok('快速处理里有 6 项', subs.length === 6 && subs.includes('倍速') && subs.includes('竖屏转横屏'), subs.join(','))
+    await page.locator('.quick .el-radio-button', { hasText: '倍速' }).click()
+    await page.waitForTimeout(150)
+    await page.getByRole('button', { name: '开始处理' }).click()
+    await page.waitForTimeout(300)
+    const job = await page.evaluate(() => window.__job)
+    ok('选倍速开始处理：发出倍速任务', job && job.op === 'speed' && job.inputs[0] === '/m/clip.mp4', JSON.stringify(job))
+    await page.getByRole('button', { name: '在剪辑里打开' }).click()
+    await page.waitForTimeout(200)
+    const req = await page.evaluate(() => window.__app.toolboxRequest)
+    ok('“在剪辑里打开”把文件交给剪辑', req && req.tab === 'edit' && req.paths[0] === '/m/clip.mp4', JSON.stringify(req))
+    // 切到别的工具再回来，停在上次选的那一项
+    await page.locator('nav.tools .tool', { hasText: '压缩视频' }).click()
+    await page.locator('nav.tools .tool', { hasText: '快速处理' }).click()
+    await page.waitForTimeout(150)
+    ok('再回到快速处理时停在上次的“倍速”', (await page.locator('.quick .el-radio-button.is-active').innerText()) === '倍速')
+    await page.close()
+  }
+
   await browser.close()
   console.log(`\n${pass} 通过，${fail} 失败`)
   process.exit(fail ? 1 : 0)

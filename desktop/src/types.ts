@@ -1676,6 +1676,13 @@ export interface EditClip {
   keyframes: EditKeyframes
   bg: EditBackground
   transition: EditTransition | null
+  /** 套一张 `.cube`（空 = 不套）和它的强度 0–1 */
+  lut: string
+  lutMix: number
+  /** 混响（和工具箱“音效 / 混响”同一套参数）；null = 不加 */
+  reverb: ReverbSpec | null
+  /** 防抖强度；导出时才做（预览里不做） */
+  stabilize: 'off' | 'light' | 'normal' | 'strong'
 }
 
 /** 关键帧：某个属性在某个时刻（毫秒，相对素材 / 文字自己的开始）的值，`ease` 是到下一个关键帧之间用的曲线 */
@@ -1753,6 +1760,8 @@ export interface EditAudio {
   fadeOutMs: number
   looped: boolean
   duck: boolean
+  /** 混响；null = 不加 */
+  reverb: ReverbSpec | null
   /** 节拍分析结果（`beatsMs` 是素材里的时间，不随配乐在时间线上的位置变）；没分析过是空。只存在工程里，导出用不到 */
   beats?: EditBeats | null
 }
@@ -1885,6 +1894,15 @@ export interface EditOutput {
   quality: 'small' | 'balanced' | 'high'
   codec: 'h264' | 'hevc'
   format: 'mp4' | 'mkv'
+  /** 导出什么：成片 / GIF / 只导出声音（m4a）/ 一帧图片（png） */
+  kind: 'video' | 'gif' | 'audio' | 'frame'
+  /** 只导出时间线上的这一段（毫秒）；toMs 为 0 = 到结尾。导出一帧时只看 fromMs */
+  fromMs: number
+  toMs: number
+  /** 声音响度标准化（LUFS）；0 = 不处理 */
+  loudness: number
+  gifWidth: number
+  gifFps: number
 }
 
 export interface EditProject {

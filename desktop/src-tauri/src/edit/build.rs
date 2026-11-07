@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::audiofx::{simple_chain, AudioFxSpec, FxCaps};
+use crate::audiofx::{loudnorm_filter, reverb_stmts, simple_chain, AudioFxSpec, FxCaps};
 use crate::error::{AppError, AppResult};
 use crate::media_tools::{atempo_chain, s, target_kbps, video_codec_for, VideoCodec};
 use crate::vidcaps::Caps;
@@ -78,7 +78,32 @@ pub struct EditPlan {
     pub masks: Vec<MaskJob>,
     /// 人像抠图要先生成的抠图视频（见 `ml::matte::render_matte`）
     pub mattes: Vec<MatteJob>,
+    /// 防抖要先跑的分析（vidstabdetect），每项是一遍 ffmpeg 的参数（不含 ffmpeg 本身）
+    pub stabs: Vec<Vec<String>>,
 }
+
+/// GIF 最长多久
+pub const MAX_GIF_MS: u64 = 60_000;
+
+fn clock(ms: u64) -> String {
+    let t = ms / 100;
+    format!("{}:{:02}.{}", t / 600, (t / 10) % 60, t % 10)
+}
+
+/// 要导出的那一段：`to` 为 0 或超出结尾时到结尾；一帧图片只看起点（不超过最后一帧）。
+fn out_range(from_ms: u64, to_ms: u64, total: u64, kind: &str) -> AppResult<(u64, u64)> {
+    if kind == "frame" {
+        return Ok((from_ms.min(total.saturating_sub(50)), total));
+    }
+    let to = if to_ms == 0 || to_ms > total { total } else { to_ms };
+    let from = from_ms.min(total);
+    if to <= from || to - from < MIN_RANGE_MS {
+        return Err(AppError::invalid("要导出的这一段太短了（结束要比开始至少晚 0.1 秒）。"));
+    }
+    Ok((from, to))
+}
+
+const MIN_RANGE_MS: u64 = 100;
 
 fn sec(ms: u64) -> String {
     format!("{:.3}", ms as f64 / 1000.0)
@@ -176,6 +201,9 @@ struct Regions<'a> {
     warnings: Vec<String>,
     /// 额外输入（遮罩视频、背景图片）的参数，按输入编号顺序
     extra: Vec<Vec<String>>,
+    /// 防抖用哪个滤镜：vidstab / deshake / 空（预览或没有防抖的片段）
+    stab: &'static str,
+    stabs: Vec<Vec<String>>,
 }
 
 /// 预览时素材长边超过这个值就先缩小再做区域效果（预览本来就只有 360 高，没必要在 4K 上做模糊）
@@ -395,6 +423,49 @@ fn ai_matte_allowed(c: &Clip, i: usize, rg: &mut Regions) -> bool {
 }
 
 /// 一个片段的画面处理，输出 `[v{i}]`。
+/// 套 LUT：先按 BT.709 电视范围转成 RGB，lut3d 之后再转回来（不指定的话 ffmpeg 自动转换时按 BT.601，颜色会偏）。
+fn lut_chain(path: &str) -> String {
+    format!(
+        "scale=in_color_matrix=bt709:in_range=tv:out_color_matrix=bt709:out_range=pc,format=rgb24,lut3d=file={}:interp=tetrahedral,scale=in_color_matrix=bt709:in_range=pc:out_color_matrix=bt709:out_range=tv,format=yuv420p",
+        filter_path(Path::new(path))
+    )
+}
+
+/// 防抖：vidstab 时登记一遍分析（输出 `.trf`），返回变换滤镜；deshake 直接返回滤镜。不做防抖返回 None。
+fn stab_filter(i: usize, c: &Clip, rg: &mut Regions) -> Option<String> {
+    if !c.wants_stabilize() || rg.stab.is_empty() {
+        return None;
+    }
+    if !c.regions.is_empty() {
+        rg.warnings.push(format!("第 {} 个片段有区域效果，没有做防抖（防抖会挪动画面，区域会对不上）。", i + 1));
+        return None;
+    }
+    if rg.stab == "deshake" {
+        let r = match c.stabilize.as_str() {
+            "light" => 16,
+            "strong" => 64,
+            _ => 32,
+        };
+        return Some(format!("deshake=rx={r}:ry={r}:edge=mirror"));
+    }
+    let (shaky, smooth) = match c.stabilize.as_str() {
+        "light" => (4, 10),
+        "strong" => (8, 40),
+        _ => (6, 20),
+    };
+    let trf = rg.tmp.join(format!("stab{i}.trf"));
+    let mut a: Vec<String> = vec![];
+    if c.in_ms > 0 {
+        a.extend(["-ss".into(), sec(c.in_ms)]);
+    }
+    a.extend(["-t".into(), sec(c.out_ms - c.in_ms), "-i".into(), c.path.clone()]);
+    a.extend(s(&["-map", "0:v:0", "-an", "-sn", "-vf"]));
+    a.push(format!("vidstabdetect=stepsize=6:shakiness={shaky}:accuracy=15:result={}", filter_path(&trf)));
+    a.extend(s(&["-f", "null", "-"]));
+    rg.stabs.push(a);
+    Some(format!("vidstabtransform=input={}:smoothing={smooth}:optzoom=1:interpol=bicubic", filter_path(&trf)))
+}
+
 fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmts: &mut Vec<String>) {
     let (w, h) = (f.w, f.h);
     let mut head: Vec<String> = vec![];
@@ -416,6 +487,8 @@ fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmt
             if c.kind == ClipKind::Video && c.reverse {
                 head.push("reverse".into());
             }
+            // 防抖在变速之前做（分析的是素材原来的帧）
+            head.extend(stab_filter(i, c, rg));
             head.push(setpts);
         }
         format!("[{i}:v:0]")
@@ -425,6 +498,9 @@ fn clip_video(i: usize, c: &Clip, sr: &Source, f: &Frame, rg: &mut Regions, stmt
     // 色彩：统一转成 BT.709 电视范围。图片（RGB）转 YUV 时不指定的话 ffmpeg 默认用 BT.601，颜色会偏
     let conv = "out_color_matrix=bt709:out_range=tv";
     let mut tail: Vec<String> = vec![];
+    if !c.lut.is_empty() {
+        tail.push(lut_chain(&c.lut));
+    }
     tail.extend(tone_filter(c));
     let d = c.duration_ms();
     if c.fade_in_ms > 0 {
@@ -472,6 +548,9 @@ fn clip_keys(i: usize, c: &Clip, f: &Frame, stmts: &mut Vec<String>) {
     let at = |prop: &str, fixed: &str| keyframes::track(&c.keyframes, prop).map_or_else(|| fixed.to_string(), |k| keyframes::expr(&k, "t"));
     let (z, px, py) = (at("zoom", "1"), at("panX", "0"), at("panY", "0"));
     let mut tail: Vec<String> = vec![];
+    if !c.lut.is_empty() {
+        tail.push(lut_chain(&c.lut));
+    }
     tail.extend(tone_filter(c));
     let d = c.duration_ms();
     if c.fade_in_ms > 0 {
@@ -498,6 +577,14 @@ fn audio_fades(f: &mut Vec<String>, len_ms: u64, fade_in: u64, fade_out: u64) {
 
 const AFORMAT: &str = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
 
+fn warn_once(warnings: &mut Vec<String>, note: Option<String>) {
+    if let Some(n) = note {
+        if !warnings.contains(&n) {
+            warnings.push(n);
+        }
+    }
+}
+
 /// 一个片段的声音，输出 `[a{i}]`，长度严格等于片段在时间线上的长度；没有声音（图片、静音、素材没有音轨）时用静音补上。
 fn clip_audio(i: usize, c: &Clip, has_audio: bool, fx: &FxCaps, stmts: &mut Vec<String>, warnings: &mut Vec<String>) {
     let d = c.duration_ms();
@@ -521,6 +608,15 @@ fn clip_audio(i: usize, c: &Clip, has_audio: bool, fx: &FxCaps, stmts: &mut Vec<
                 }
             }
         }
+        let mut src = format!("{i}:a:0");
+        if let Some(r) = &c.reverb {
+            stmts.push(format!("[{src}]{}[ap{i}]", f.join(",")));
+            let (g, note) = reverb_stmts(r, fx, &format!("ap{i}"), &format!("ar{i}"), &format!("c{i}"));
+            stmts.extend(g);
+            warn_once(warnings, note);
+            src = format!("ar{i}");
+            f = vec![];
+        }
         // 素材的声音比画面短一点点很常见，补齐再裁到片段长度，拼接时才不会错位
         f.push(format!("apad=whole_dur={}", sec(d)));
         f.push(format!("atrim=duration={}", sec(d)));
@@ -528,7 +624,7 @@ fn clip_audio(i: usize, c: &Clip, has_audio: bool, fx: &FxCaps, stmts: &mut Vec<
         if (c.volume - 1.0).abs() > 1e-9 {
             f.push(format!("volume={:.4}", c.volume));
         }
-        stmts.push(format!("[{i}:a:0]{}[a{i}]", f.join(",")));
+        stmts.push(format!("[{src}]{}[a{i}]", f.join(",")));
     } else {
         stmts.push(format!("anullsrc=r=48000:cl=stereo:d={},aformat=sample_fmts=fltp:channel_layouts=stereo[a{i}]", sec(d)));
     }
@@ -769,10 +865,12 @@ fn drawtext(k: usize, t: &TextItem, h: u32, font: Option<&Path>, tmp: &Path) -> 
 }
 
 /// 一条配乐 → `[m{k}]`。`idx` 是它的输入编号，`total` 是时间线总长。返回 false 表示这条不会被听到（起点在视频结束之后）。
-fn music_track(k: usize, idx: usize, a: &AudioTrack, src: &Source, total: u64, stmts: &mut Vec<String>) -> bool {
+/// 返回这条配乐会不会被听到，以及要提示的话（混响退回成回声时）。
+fn music_track(k: usize, idx: usize, a: &AudioTrack, src: &Source, total: u64, fx: &FxCaps, stmts: &mut Vec<String>) -> (bool, Option<String>) {
     if a.start_ms >= total {
-        return false;
+        return (false, None);
     }
+    let mut warn = None;
     let avail = total - a.start_ms;
     let seg = a.out_ms.map(|o| o - a.in_ms).or_else(|| src.duration_ms.map(|d| d.saturating_sub(a.in_ms)));
     let len = if a.looped { avail } else { seg.map_or(avail, |s| s.min(avail)) };
@@ -791,6 +889,15 @@ fn music_track(k: usize, idx: usize, a: &AudioTrack, src: &Source, total: u64, s
         f.push(format!("aloop=loop=-1:size={samples}"));
     }
     f.push(format!("atrim=duration={}", sec(len)));
+    let mut input = format!("{idx}:a:0");
+    if let Some(r) = &a.reverb {
+        stmts.push(format!("[{input}]{}[mp{k}]", f.join(",")));
+        let (g, note) = reverb_stmts(r, fx, &format!("mp{k}"), &format!("mr{k}"), &format!("m{k}"));
+        stmts.extend(g);
+        warn = note;
+        input = format!("mr{k}");
+        f = vec![];
+    }
     audio_fades(&mut f, len, a.fade_in_ms, a.fade_out_ms);
     if (a.volume - 1.0).abs() > 1e-9 {
         f.push(format!("volume={:.4}", a.volume));
@@ -798,8 +905,11 @@ fn music_track(k: usize, idx: usize, a: &AudioTrack, src: &Source, total: u64, s
     if a.start_ms > 0 {
         f.push(format!("adelay={0}|{0}", a.start_ms));
     }
-    stmts.push(format!("[{idx}:a:0]{}[m{k}]", f.join(",")));
-    true
+    if f.is_empty() {
+        f.push("anull".into());
+    }
+    stmts.push(format!("[{input}]{}[m{k}]", f.join(",")));
+    (true, warn)
 }
 
 /// 画面按时间线拼接：相邻且没有转场的片段分成一组，用 `concat` 拼；组与组之间用 `xfade` 和 `acrossfade` 叠起来。
@@ -891,6 +1001,23 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     }
     if p.clips.iter().any(|c| c.freeze) {
         need("tpad", "无法定格画面")?;
+    }
+    if p.clips.iter().any(|c| !c.lut.is_empty()) {
+        need("lut3d", "无法套用 LUT")?;
+    }
+    // 防抖：预览不做（要先把整段分析一遍，太慢）；有 vidstab 用 vidstab，没有退回 deshake
+    let stab: &'static str = if preview || !p.clips.iter().any(Clip::wants_stabilize) {
+        ""
+    } else if caps.vidstab() {
+        "vidstab"
+    } else if caps.has_filter("deshake") {
+        plan.warnings.push("当前的 ffmpeg 没有 vidstab，防抖改用 deshake，效果较弱。在“设置 → 组件”里安装完整版 ffmpeg 可以使用 vidstab。".into());
+        "deshake"
+    } else {
+        return Err(AppError::invalid("当前的 ffmpeg 没有防抖滤镜（vidstab / deshake），无法防抖。请在“设置 → 组件”里安装完整版 ffmpeg，或关掉片段的防抖。"));
+    };
+    if preview && p.clips.iter().any(Clip::wants_stabilize) {
+        plan.notes.push("预览里不做防抖，导出时才做".into());
     }
     if p.clips.iter().any(|c| c.reverse && !c.freeze) {
         need("reverse", "无法倒放")?;
@@ -1022,6 +1149,8 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         mattes: vec![],
         warnings: vec![],
         extra: vec![],
+        stab,
+        stabs: vec![],
     };
     let mut stmts: Vec<String> = vec![];
     let fx = FxCaps::from_caps(caps, None);
@@ -1100,7 +1229,9 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         for (k, a) in p.audio.iter().enumerate() {
             let idx = p.clips.len() + k;
             let sr = src.get(&a.path).expect("checked above");
-            if music_track(k, idx, a, sr, total, &mut stmts) {
+            let (heard_it, note) = music_track(k, idx, a, sr, total, &fx, &mut stmts);
+            warn_once(&mut plan.warnings, note);
+            if heard_it {
                 heard.push((format!("m{k}"), a.duck));
             } else {
                 plan.warnings.push(format!("第 {} 条音频轨的起点在视频结束之后，不会被听到。", k + 1));
@@ -1133,55 +1264,136 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         }
     }
 
-    // 编码
-    let level = match p.out.quality.as_str() {
-        "small" => 0,
-        "high" => 2,
-        _ => 1,
-    };
-    let pps = f64::from(w) * f64::from(h) * frac_f(fps);
-    let want_hevc = p.out.codec == "hevc" && !preview;
-    let hevc = if want_hevc { hevc_args(caps, level, target_kbps(pps, level)) } else { None };
-    if want_hevc && hevc.is_none() {
-        plan.warnings.push(format!(
-            "当前的 ffmpeg 没有 HEVC 编码器，已改用 H.264。{}",
-            if caps.gpl { "" } else { "在“设置 → 组件”里安装完整版 ffmpeg 可以使用 libx265。" }
-        ));
-    }
-    let want_ext = if p.out.format == "mkv" && !preview { "mkv" } else { "mp4" };
-    let vc: VideoCodec = if preview && caps.encoders.h264 == Some("libx264") {
-        VideoCodec {
-            args: s(&["-c:v", "libx264", "-preset", "ultrafast", "-crf", "32", "-pix_fmt", "yuv420p"]),
-            ext: "mp4",
-            audio: s(&["-c:a", "aac", "-b:a", "96k"]),
-            note: None,
-            pix: "yuv420p",
-        }
+    // 导出哪一段、导出成什么（预览总是整条时间线的视频）
+    let kind: &str = if preview { "video" } else { p.out.kind.as_str() };
+    let (from, to) = if preview { (0, total) } else { out_range(p.out.from_ms, p.out.to_ms, total, kind)? };
+    if kind == "frame" {
+        stmts.push(format!("[{video}]trim=start={},setpts=PTS-STARTPTS[vrg]", sec(from)));
+        video = "vrg".into();
+        plan.out_ms = 1000;
     } else {
-        let mut vc = video_codec_for(&caps.encoders, if preview { "small" } else { &p.out.quality }, want_ext, Some(pps));
-        // 编辑后的成片画质比“压缩”高一档
-        if !preview && vc.args.iter().any(|a| a == "libx264") {
-            if let Some(i) = vc.args.iter().position(|a| a == "-crf") {
-                vc.args[i + 1] = ["26", "22", "18"][level].into();
+        if from > 0 || to < total {
+            stmts.push(format!("[{video}]trim=start={}:end={},setpts=PTS-STARTPTS[vrg]", sec(from), sec(to)));
+            video = "vrg".into();
+            if let Some(a) = &audio_out {
+                stmts.push(format!("[{a}]atrim=start={}:end={},asetpts=PTS-STARTPTS[arg]", sec(from), sec(to)));
+                audio_out = Some("arg".into());
             }
+            plan.notes.push(format!("只导出 {} – {}", clock(from), clock(to)));
         }
-        vc
-    };
-    let (vargs, pix, ext, acodec): (Vec<String>, &str, &'static str, Vec<String>) = match hevc {
-        Some((a, pix)) => {
-            plan.notes.push("视频编码为 HEVC".into());
-            (a, pix, want_ext, s(&["-c:a", "aac", "-b:a", "192k"]))
+        plan.out_ms = to - from;
+    }
+    // 响度标准化：放在最后，整条成片一起算
+    if !preview && p.out.loudness != 0.0 && matches!(kind, "video" | "audio") {
+        if let Some(a) = &audio_out {
+            need("loudnorm", "无法做响度标准化")?;
+            stmts.push(format!("[{a}]{},aresample=48000[aln]", loudnorm_filter(p.out.loudness, None, None)));
+            audio_out = Some("aln".into());
+            plan.notes.push(format!("声音响度标准化到 {} LUFS", p.out.loudness));
         }
-        None => {
-            if let Some(n) = vc.note.clone() {
-                plan.warnings.push(n);
+    }
+    let (tail_args, ext): (Vec<String>, &'static str) = match kind {
+        "audio" => {
+            let a = audio_out.clone().ok_or_else(|| AppError::invalid("成片里没有声音，不能只导出声音。"))?;
+            stmts.push(format!("[{video}]nullsink"));
+            plan.notes.push("只导出声音（m4a）".into());
+            let mut t = vec!["-map".to_string(), format!("[{a}]")];
+            t.extend(s(&["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]));
+            t.extend(["-t".into(), sec(plan.out_ms)]);
+            (t, "m4a")
+        }
+        "gif" => {
+            need("palettegen", "无法导出 GIF")?;
+            need("paletteuse", "无法导出 GIF")?;
+            if plan.out_ms > MAX_GIF_MS {
+                return Err(AppError::invalid(format!("GIF 最长 {} 秒（再长文件会非常大）。请在导出设置里选一段时间，或导出视频。", MAX_GIF_MS / 1000)));
             }
-            let ext = if preview && vc.ext == "mkv" && vc.args.iter().any(|a| a == "libvpx-vp9") { "webm" } else { vc.ext };
-            (vc.args.clone(), vc.pix, ext, vc.audio.clone())
+            if let Some(a) = audio_out.take() {
+                stmts.push(format!("[{a}]anullsink"));
+            }
+            let gw = p.out.gif_width.min(w);
+            stmts.push(format!(
+                "[{video}]fps={},scale={gw}:-2:flags=lanczos:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,split[gs0][gs1]",
+                p.out.gif_fps
+            ));
+            stmts.push("[gs0]palettegen[gpal]".into());
+            stmts.push("[gs1][gpal]paletteuse=dither=bayer:bayer_scale=4[vout]".into());
+            plan.notes.push(format!("导出 GIF：宽 {gw}，每秒 {} 帧", p.out.gif_fps));
+            let mut t = s(&["-map", "[vout]", "-loop", "0"]);
+            t.extend(["-t".into(), sec(plan.out_ms)]);
+            (t, "gif")
+        }
+        "frame" => {
+            if let Some(a) = audio_out.take() {
+                stmts.push(format!("[{a}]anullsink"));
+            }
+            stmts.push(format!("[{video}]scale=in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24[vout]"));
+            plan.notes.push(format!("导出 {} 这一帧（PNG）", clock(from)));
+            (s(&["-map", "[vout]", "-frames:v", "1"]), "png")
+        }
+        _ => {
+            let level = match p.out.quality.as_str() {
+                "small" => 0,
+                "high" => 2,
+                _ => 1,
+            };
+            let pps = f64::from(w) * f64::from(h) * frac_f(fps);
+            let want_hevc = p.out.codec == "hevc" && !preview;
+            let hevc = if want_hevc { hevc_args(caps, level, target_kbps(pps, level)) } else { None };
+            if want_hevc && hevc.is_none() {
+                plan.warnings.push(format!(
+                    "当前的 ffmpeg 没有 HEVC 编码器，已改用 H.264。{}",
+                    if caps.gpl { "" } else { "在“设置 → 组件”里安装完整版 ffmpeg 可以使用 libx265。" }
+                ));
+            }
+            let want_ext = if p.out.format == "mkv" && !preview { "mkv" } else { "mp4" };
+            let vc: VideoCodec = if preview && caps.encoders.h264 == Some("libx264") {
+                VideoCodec {
+                    args: s(&["-c:v", "libx264", "-preset", "ultrafast", "-crf", "32", "-pix_fmt", "yuv420p"]),
+                    ext: "mp4",
+                    audio: s(&["-c:a", "aac", "-b:a", "96k"]),
+                    note: None,
+                    pix: "yuv420p",
+                }
+            } else {
+                let mut vc = video_codec_for(&caps.encoders, if preview { "small" } else { &p.out.quality }, want_ext, Some(pps));
+                // 编辑后的成片画质比“压缩”高一档
+                if !preview && vc.args.iter().any(|a| a == "libx264") {
+                    if let Some(i) = vc.args.iter().position(|a| a == "-crf") {
+                        vc.args[i + 1] = ["26", "22", "18"][level].into();
+                    }
+                }
+                vc
+            };
+            let (vargs, pix, ext, acodec): (Vec<String>, &str, &'static str, Vec<String>) = match hevc {
+                Some((a, pix)) => {
+                    plan.notes.push("视频编码为 HEVC".into());
+                    (a, pix, want_ext, s(&["-c:a", "aac", "-b:a", "192k"]))
+                }
+                None => {
+                    if let Some(n) = vc.note.clone() {
+                        plan.warnings.push(n);
+                    }
+                    let ext = if preview && vc.ext == "mkv" && vc.args.iter().any(|a| a == "libvpx-vp9") { "webm" } else { vc.ext };
+                    (vc.args.clone(), vc.pix, ext, vc.audio.clone())
+                }
+            };
+            // 收尾：像素格式（编码器要求的）和色彩标记（BT.709、电视范围）
+            stmts.push(format!("[{video}]format={pix},setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv[vout]"));
+            let mut t = s(&["-map", "[vout]"]);
+            if let Some(a) = &audio_out {
+                t.extend(["-map".into(), format!("[{a}]")]);
+            }
+            t.extend(vargs);
+            if audio_out.is_some() {
+                t.extend(acodec);
+                t.extend(s(&["-ar", "48000", "-ac", "2"]));
+            }
+            t.extend(["-t".into(), sec(plan.out_ms)]);
+            t.extend(s(&["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv", "-max_muxing_queue_size", "4096"]));
+            (t, ext)
         }
     };
-    // 收尾：像素格式（编码器要求的）和色彩标记（BT.709、电视范围）
-    stmts.push(format!("[{video}]format={pix},setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv[vout]"));
 
     // 区域效果的遮罩视频：作为额外的输入，排在片段和音频轨之后
     for a in &rg.extra {
@@ -1192,21 +1404,12 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     }
     plan.masks = rg.masks;
     plan.mattes = rg.mattes;
+    plan.stabs = rg.stabs;
     plan.warnings.extend(rg.warnings);
 
     let graph = stmts.join(";");
     args.extend(graph_args(&graph, caps, tmp)?);
-    args.extend(s(&["-map", "[vout]"]));
-    if let Some(a) = &audio_out {
-        args.extend(["-map".into(), format!("[{a}]")]);
-    }
-    args.extend(vargs);
-    if audio_out.is_some() {
-        args.extend(acodec);
-        args.extend(s(&["-ar", "48000", "-ac", "2"]));
-    }
-    args.extend(["-t".into(), sec(total)]);
-    args.extend(s(&["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv", "-max_muxing_queue_size", "4096"]));
+    args.extend(tail_args);
 
     let len: usize = args.iter().map(|a| a.len() + 3).sum();
     if len > MAX_ARGS_LEN {
@@ -1226,6 +1429,15 @@ fn frac_f(f: (u32, u32)) -> f64 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn export_range_is_clamped_and_too_short_ranges_are_refused() {
+        assert_eq!(out_range(0, 0, 5000, "video").unwrap(), (0, 5000));
+        assert_eq!(out_range(1000, 99_999, 5000, "gif").unwrap(), (1000, 5000));
+        assert!(out_range(3000, 3050, 5000, "video").is_err());
+        assert!(out_range(6000, 0, 5000, "audio").is_err());
+        assert_eq!(out_range(9000, 0, 5000, "frame").unwrap().0, 4950, "一帧图片不超过最后一帧");
+    }
     use super::super::spec::{TextItem, Transition};
     use super::*;
     use crate::media_tools::Encoders;

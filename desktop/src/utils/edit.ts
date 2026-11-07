@@ -63,7 +63,7 @@ export interface Placed {
 export const clamp = (v: number, lo: number, hi: number) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : lo)
 
 export function defaultOutput(): EditOutput {
-  return { width: 0, height: 0, fps: 0, fit: 'contain', quality: 'balanced', codec: 'h264', format: 'mp4' }
+  return { width: 0, height: 0, fps: 0, fit: 'contain', quality: 'balanced', codec: 'h264', format: 'mp4', kind: 'video', fromMs: 0, toMs: 0, loudness: 0, gifWidth: 480, gifFps: 12 }
 }
 
 export function emptyProject(): EditProject {
@@ -110,6 +110,10 @@ function blankClip(): EditClip {
     bg: blankBackground(),
     keyframes: {},
     transition: null,
+    lut: '',
+    lutMix: 1,
+    reverb: null,
+    stabilize: 'off',
   }
 }
 
@@ -184,7 +188,7 @@ function blankText(): EditText {
 }
 
 function blankAudio(): EditAudio {
-  return { id: 0, path: '', startMs: 0, inMs: 0, outMs: null, volume: 1, fadeInMs: 0, fadeOutMs: 0, looped: false, duck: false, beats: null }
+  return { id: 0, path: '', startMs: 0, inMs: 0, outMs: null, volume: 1, fadeInMs: 0, fadeOutMs: 0, looped: false, duck: false, reverb: null, beats: null }
 }
 
 export function nextId(p: EditProject): number {
@@ -1709,7 +1713,7 @@ export function playbackFps(p: EditProject, pl: Placed[], t: number, sources: Re
  * 把一个片段的设置应用到其他所有片段：`transition` 转场（第一个片段前面没有衔接，不用）、`tone` 亮度 / 对比度 / 饱和度、`turn` 旋转和翻转。
  * 返回有多少个片段变了。
  */
-export function applyToAllClips(p: EditProject, fromId: number, what: 'transition' | 'tone' | 'turn'): number {
+export function applyToAllClips(p: EditProject, fromId: number, what: 'transition' | 'tone' | 'turn' | 'lut'): number {
   const src = p.clips.find((c) => c.id === fromId)
   if (!src) return 0
   let n = 0
@@ -1720,6 +1724,10 @@ export function applyToAllClips(p: EditProject, fromId: number, what: 'transitio
       const same = (c.transition?.kind ?? '') === (src.transition?.kind ?? '') && (c.transition?.durationMs ?? 0) === (src.transition?.durationMs ?? 0)
       if (same) return
       c.transition = src.transition ? { ...src.transition } : null
+    } else if (what === 'lut') {
+      if (c.lut === src.lut && c.lutMix === src.lutMix) return
+      c.lut = src.lut
+      c.lutMix = src.lutMix
     } else if (what === 'tone') {
       if (c.brightness === src.brightness && c.contrast === src.contrast && c.saturation === src.saturation) return
       c.brightness = src.brightness
