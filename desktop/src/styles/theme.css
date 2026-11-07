@@ -10,6 +10,22 @@
   --cc-acc-soft: #d9762b1f;
   --cc-ok: #2f8a57;
   --cc-err: #c2453b;
+  /* 解析页等新版界面用的辅助色：细分隔线、浅填充、悬停、底栏、主按钮（白字够 4.5:1 的深一档橙）、选中边框、链接 */
+  --cc-line-soft: #e3e7e4;
+  --cc-fill: #eef0ee;
+  --cc-hover: #f6f7f6;
+  --cc-foot: #fafbfa;
+  --cc-fg2: #4a5550;
+  --cc-dot: #b9c1bd;
+  --cc-acc-strong: #b4561a;
+  --cc-acc-strong-hover: #9e4b16;
+  --cc-on-acc: #ffffff;
+  --cc-acc-text: #8a4a19;
+  --cc-acc-line: #ecbb95;
+  --cc-link: #ad5e22;
+  --cc-cover: #263034;
+  --cc-ok-soft: #e6f2eb;
+  --cc-ok-text: #22663f;
   --cc-font: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC', system-ui, sans-serif;
   --cc-mono: 'JetBrains Mono', ui-monospace, Consolas, 'SF Mono', monospace;
 
@@ -34,6 +50,21 @@ html.dark {
   --cc-acc-soft: #f08a3c22;
   --cc-ok: #5cc28a;
   --cc-err: #ec7a70;
+  --cc-line-soft: #283034;
+  --cc-fill: #1b2023;
+  --cc-hover: #262e31;
+  --cc-foot: #1e2427;
+  --cc-fg2: #b4bfbb;
+  --cc-dot: #5a6569;
+  --cc-acc-strong: #f08a3c;
+  --cc-acc-strong-hover: #f3a163;
+  --cc-on-acc: #1d2420;
+  --cc-acc-text: #f3a163;
+  --cc-acc-line: #8a5027;
+  --cc-link: #f3a163;
+  --cc-cover: #0f1315;
+  --cc-ok-soft: #1f3a2b;
+  --cc-ok-text: #7fd3a2;
 
   --el-color-primary: #f08a3c;
   --el-color-primary-light-3: #b8692f;
@@ -139,4 +170,179 @@ textarea,
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* ---------- 解析页的选择控件（解析结果、字幕、范围、列表共用） ---------- */
+
+/* 分段按钮：二选一 / 三选一 */
+.pz-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 8px;
+  background: var(--cc-fill);
+}
+.pz-seg > button {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--cc-fg2);
+  cursor: pointer;
+}
+.pz-seg > button:hover:not(:disabled) {
+  color: var(--cc-fg);
+}
+.pz-seg > button.on {
+  background: var(--cc-card);
+  color: var(--cc-fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px #0000001f;
+}
+.pz-seg > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 带勾的多选标签 */
+.pz-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  max-width: 100%;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--cc-line);
+  background: var(--cc-card);
+  font: inherit;
+  font-size: 13px;
+  color: var(--cc-fg);
+  cursor: pointer;
+  text-align: left;
+}
+.pz-chip:hover:not(:disabled) {
+  border-color: var(--cc-dot);
+}
+.pz-chip.on {
+  border-color: var(--cc-acc);
+  background: var(--cc-acc-soft);
+}
+.pz-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.pz-box {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid var(--cc-dot);
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pz-chip.on .pz-box {
+  background: var(--cc-acc-strong);
+  border-color: var(--cc-acc-strong);
+}
+.pz-chip.on .pz-box::after {
+  content: '';
+  width: 7px;
+  height: 4px;
+  border: 2px solid var(--cc-on-acc);
+  border-top: 0;
+  border-right: 0;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+/* 小标签 */
+.pz-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 400;
+  background: var(--cc-fill);
+  color: var(--cc-fg2);
+  white-space: nowrap;
+}
+.pz-tag.acc {
+  background: var(--cc-acc-soft);
+  color: var(--cc-acc-text);
+}
+.pz-tag.ok {
+  background: var(--cc-ok-soft);
+  color: var(--cc-ok-text);
+}
+
+/* 文字链接样式的按钮 */
+.pz-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--cc-link);
+  cursor: pointer;
+}
+.pz-link:hover {
+  text-decoration: underline;
+}
+.pz-link:disabled {
+  color: var(--cc-mute);
+  cursor: default;
+  text-decoration: none;
+}
+
+/* 区块标题行：标题 + 灰色数量，次要操作在右边 */
+.pz-sh {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.pz-st {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cc-fg);
+}
+.pz-st small {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--cc-mute);
+}
+.pz-sa {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.pz-note {
+  font-size: 12px;
+  color: var(--cc-mute);
+}
+
+/* 主按钮：深一档的橙，白字对比度够 */
+.el-button.pz-strong {
+  --el-button-bg-color: var(--cc-acc-strong);
+  --el-button-border-color: var(--cc-acc-strong);
+  --el-button-text-color: var(--cc-on-acc);
+  --el-button-hover-bg-color: var(--cc-acc-strong-hover);
+  --el-button-hover-border-color: var(--cc-acc-strong-hover);
+  --el-button-hover-text-color: var(--cc-on-acc);
+  --el-button-active-bg-color: var(--cc-acc-strong-hover);
+  --el-button-active-border-color: var(--cc-acc-strong-hover);
+  --el-button-disabled-bg-color: var(--cc-acc-line);
+  --el-button-disabled-border-color: var(--cc-acc-line);
+  --el-button-disabled-text-color: var(--cc-on-acc);
+  font-weight: 600;
 }

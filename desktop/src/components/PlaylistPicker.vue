@@ -80,36 +80,40 @@ watch(
 
 <template>
   <div class="picker">
-    <div class="bar">
-      <span class="count">已选 {{ selected.size }} / {{ entries.length }} 条<template v-if="doneCount"> · 其中 {{ doneCount }} 条之前已下载</template></span>
-      <span class="ops">
-        <el-button link size="small" type="primary" @click="selectVisible(selectedVisible < visible.length)">{{ selectedVisible < visible.length ? '全选' : '全不选' }}</el-button>
-        <el-button link size="small" @click="invert">反选</el-button>
-        <el-button v-if="doneCount" link size="small" type="primary" @click="onlyNew">只选没下载过的</el-button>
+    <div class="pz-sh">
+      <span class="pz-st">视频<small>已选 {{ selected.size }} / {{ entries.length }}</small></span>
+      <span class="pz-sa">
+        <button type="button" class="pz-link" @click="selectVisible(selectedVisible < visible.length)">{{ selectedVisible < visible.length ? '全选' : '全不选' }}</button>
+        <button type="button" class="pz-link" @click="invert">反选</button>
+        <button v-if="doneCount" type="button" class="pz-link" @click="onlyNew">只选没下载过的</button>
       </span>
     </div>
     <div class="filters">
-      <el-input v-model="query" size="small" clearable placeholder="在列表中搜索标题" class="q" />
+      <el-input v-model="query" clearable placeholder="搜索标题" class="q">
+        <template #prefix>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+        </template>
+      </el-input>
       <span class="range">
-        <span class="mute">第</span>
-        <el-input-number v-model="from" :min="1" :max="entries.length" size="small" controls-position="right" :value-on-clear="null" class="n" />
-        <span class="mute">到</span>
-        <el-input-number v-model="to" :min="1" :max="entries.length" size="small" controls-position="right" :value-on-clear="null" class="n" />
-        <el-button size="small" @click="applyRange">选中这个范围</el-button>
+        <span>第</span>
+        <el-input-number v-model="from" :min="1" :max="entries.length" :controls="false" :value-on-clear="null" class="n" aria-label="从第几个" />
+        <span>到</span>
+        <el-input-number v-model="to" :min="1" :max="entries.length" :controls="false" :value-on-clear="null" class="n" aria-label="到第几个" />
+        <el-button @click="applyRange">选这些</el-button>
       </span>
-      <el-checkbox v-if="doneCount" v-model="hideDone" size="small">隐藏已下载的</el-checkbox>
+      <el-checkbox v-if="doneCount" v-model="hideDone">隐藏已下载的</el-checkbox>
     </div>
-    <div v-if="!visible.length" class="empty mute">没有匹配的条目。</div>
-    <VirtualList v-else :items="visible" :item-height="54" :item-key="(e) => e.id" class="list">
+    <div v-if="!visible.length" class="empty pz-note">没有匹配的条目。</div>
+    <VirtualList v-else :items="visible" :item-height="48" :item-key="(e) => e.id" class="list">
       <template #default="{ item: e }">
-        <label class="entry" :class="{ on: selected.has(e.id) }">
+        <label class="entry" :class="{ on: selected.has(e.id), done: downloaded.has(e.id) }">
           <el-checkbox :model-value="selected.has(e.id)" @change="toggle(e.id)" />
-          <span class="mono mute idx">{{ e.index }}</span>
+          <span class="mono idx">{{ e.index }}</span>
           <img v-if="e.thumbnail" :src="e.thumbnail" class="thumb" referrerpolicy="no-referrer" loading="lazy" alt="" />
           <span v-else class="thumb" />
           <span class="title ellipsis" :title="e.title">{{ e.title }}</span>
-          <span v-if="downloaded.has(e.id)" class="tag">已下载</span>
-          <small v-if="e.durationMs" class="mono mute">{{ formatDuration(e.durationMs) }}</small>
+          <span><span v-if="downloaded.has(e.id)" class="pz-tag ok">已下载</span></span>
+          <span class="mono dur">{{ e.durationMs ? formatDuration(e.durationMs) : '' }}</span>
         </label>
       </template>
     </VirtualList>
@@ -120,85 +124,65 @@ watch(
 .picker {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-.bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: var(--cc-mute);
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.ops :deep(.el-button) {
-  margin-left: 8px;
+  gap: 12px;
 }
 .filters {
   display: flex;
-  gap: 10px;
-  align-items: center;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }
 .q {
-  width: 200px;
+  flex: 1 1 220px;
 }
 .range {
   display: flex;
-  gap: 6px;
   align-items: center;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--cc-fg2);
 }
 .n {
-  width: 86px;
+  width: 56px;
 }
 .list {
-  height: 330px;
-  border: 1px solid var(--cc-line);
-  border-radius: 6px;
+  max-height: 392px;
+  border: 1px solid var(--cc-line-soft);
+  border-radius: 8px;
 }
 .entry {
-  height: 54px;
-  box-sizing: border-box;
-  display: flex;
+  display: grid;
+  grid-template-columns: 18px 28px 64px minmax(0, 1fr) auto 56px;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  border-top: 1px dashed var(--cc-line);
+  gap: 12px;
+  height: 48px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--cc-line-soft);
   cursor: pointer;
-  font-size: 12.5px;
+  box-sizing: border-box;
 }
-.entry.on {
-  background: var(--cc-acc-soft);
+.entry:hover {
+  background: var(--cc-hover);
+}
+.entry.done .title {
+  color: var(--cc-mute);
 }
 .idx {
-  width: 30px;
   text-align: right;
-  flex: none;
+  font-size: 12px;
+  color: var(--cc-mute);
 }
 .thumb {
   width: 64px;
   height: 36px;
   border-radius: 4px;
-  object-fit: cover;
-  background: var(--cc-line);
-  flex: none;
 }
-.title {
-  flex: 1;
-  min-width: 0;
-}
-.tag {
-  flex: none;
-  font-size: 10.5px;
-  padding: 0 6px;
-  border-radius: 4px;
-  border: 1px solid var(--cc-ok);
-  color: var(--cc-ok);
-  line-height: 18px;
+.dur {
+  text-align: right;
+  font-size: 12px;
+  color: var(--cc-mute);
 }
 .empty {
-  padding: 24px;
-  text-align: center;
+  padding: 16px 0;
 }
 </style>

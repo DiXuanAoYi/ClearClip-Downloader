@@ -16,13 +16,16 @@ const emit = defineEmits<{
   'update:split': [on: boolean]
 }>()
 
-const open = ref(false)
+/** 完整 / 只下载一段 / 选一章 */
+const mode = ref<'full' | 'range' | 'chapter'>('full')
 const startText = ref('')
 const endText = ref('')
 const precise = ref(false)
 const error = ref('')
+const chapterAt = ref(-1)
 
 const total = computed(() => props.durationMs ?? 0)
+const open = computed(() => mode.value !== 'full')
 
 function apply() {
   const start = startText.value.trim() ? parseClock(startText.value) : 0
@@ -48,29 +51,48 @@ function apply() {
 }
 
 watch([startText, endText, precise], () => open.value && apply())
-watch(open, (on) => {
-  if (on) apply()
-  else {
+watch(mode, (m) => {
+  if (m === 'full') {
     error.value = ''
+    chapterAt.value = -1
     emit('update:clip', null)
+  } else if (m === 'chapter') {
+    if (chapterAt.value < 0 && props.chapters.length) useChapter(props.chapters[0], 0)
+  } else {
+    chapterAt.value = -1
+    apply()
   }
 })
 // 外部清空（换了一个作品）时同步
 watch(
   () => props.clip,
   (c) => {
-    if (c === null && !open.value) {
+    if (c === null && mode.value === 'full') {
       startText.value = ''
       endText.value = ''
     }
   },
 )
+watch(
+  () => props.chapters,
+  () => {
+    mode.value = 'full'
+    chapterAt.value = -1
+  },
+)
 
-function useChapter(c: Chapter) {
-  open.value = true
+function useChapter(c: Chapter, i: number) {
+  chapterAt.value = i
+  if (mode.value !== 'chapter') mode.value = 'chapter'
   startText.value = formatClock(c.startMs)
   endText.value = formatClock(c.endMs)
 }
+
+/** 章节色条：每段按时长占宽度 */
+const bars = computed(() => {
+  const all = props.chapters.reduce((n, c) => n + Math.max(0, c.endMs - c.startMs), 0) || 1
+  return props.chapters.map((c, i) => ({ c, i, grow: Math.max(0.5, ((c.endMs - c.startMs) / all) * 100) }))
+})
 
 const summary = computed(() => {
   if (!props.clip) return ''
@@ -82,32 +104,45 @@ const summary = computed(() => {
 
 <template>
   <div class="clip">
-    <div class="line">
-      <el-checkbox v-model="open">只下载一段</el-checkbox>
-      <template v-if="open">
-        <el-input v-model="startText" size="small" class="t" placeholder="开始 0:00" />
-        <span class="mute">至</span>
-        <el-input v-model="endText" size="small" class="t" placeholder="结束（留空到结尾）" />
-        <el-checkbox v-model="precise" size="small">精确剪切（重新编码，较慢）</el-checkbox>
-      </template>
+    <div class="pz-seg" role="radiogroup" aria-label="下载范围">
+      <button type="button" role="radio" :aria-checked="mode === 'full'" :class="{ on: mode === 'full' }" @click="mode = 'full'">完整视频</button>
+      <button type="button" role="radio" :aria-checked="mode === 'range'" :class="{ on: mode === 'range' }" @click="mode = 'range'">只下载一段</button>
+      <button v-if="chapters.length" type="button" role="radio" :aria-checked="mode === 'chapter'" :class="{ on: mode === 'chapter' }" @click="mode = 'chapter'">选章节</button>
     </div>
-    <small v-if="open && (error || summary)" :class="error ? 'err' : 'mute'">{{ error || summary }}</small>
-    <small v-if="open && !precise && !error" class="mute">默认不重新编码，速度快，开头会落在前一个关键帧上，可能比设置的时间早几秒。</small>
 
-    <template v-if="chapters.length">
-      <div class="chead">
-        <span class="mute">章节（{{ chapters.length }}）</span>
-        <el-checkbox :model-value="split" size="small" @update:model-value="(v: unknown) => emit('update:split', !!v)">同时把每个章节另存为单独的文件</el-checkbox>
-      </div>
-      <div class="chapters">
-        <div v-for="(c, i) in chapters" :key="i" class="chap">
-          <span class="mono mute">{{ formatClock(c.startMs) }}</span>
-          <span class="ellipsis grow" :title="c.title">{{ c.title || `第 ${i + 1} 章` }}</span>
-          <small class="mono mute">{{ formatDuration(c.endMs - c.startMs) }}</small>
-          <el-button link size="small" type="primary" @click="useChapter(c)">只下载这一章</el-button>
-        </div>
-      </div>
-    </template>
+    <div v-if="mode === 'range'" class="line">
+      <label class="t"><span class="sr">开始</span><el-input v-model="startText" placeholder="开始 0:00" /></label>
+      <span class="mute">至</span>
+      <label class="t"><span class="sr">结束</span><el-input v-model="endText" placeholder="结束（留空到结尾）" /></label>
+      <el-checkbox v-model="precise">精确剪切（重新编码，较慢）</el-checkbox>
+    </div>
+
+    <div v-if="chapters.length" class="bar" :aria-label="`章节（${chapters.length}）`">
+      <button
+        v-for="b in bars"
+        :key="b.i"
+        type="button"
+        class="seg"
+        :class="{ on: mode === 'chapter' && chapterAt === b.i, alt: b.i % 2 === 1 }"
+        :style="{ flexGrow: b.grow }"
+        :title="`${b.c.title || `第 ${b.i + 1} 章`} · ${formatClock(b.c.startMs)} – ${formatClock(b.c.endMs)}（点一下只下载这一章）`"
+        @click="useChapter(b.c, b.i)"
+      >
+        <span class="ellipsis">{{ b.c.title || `第 ${b.i + 1} 章` }}<template v-if="b.grow > 14"> · {{ formatDuration(b.c.endMs - b.c.startMs) }}</template></span>
+      </button>
+    </div>
+    <div v-if="mode === 'chapter'" class="chapters" role="radiogroup" aria-label="选一章">
+      <button v-for="(c, i) in chapters" :key="i" type="button" role="radio" :aria-checked="chapterAt === i" class="chap" :class="{ on: chapterAt === i }" @click="useChapter(c, i)">
+        <span class="dot" />
+        <span class="mono mute">{{ formatClock(c.startMs) }}</span>
+        <span class="ellipsis grow" :title="c.title">{{ c.title || `第 ${i + 1} 章` }}</span>
+        <span class="mono mute">{{ formatDuration(c.endMs - c.startMs) }}</span>
+      </button>
+    </div>
+
+    <small v-if="open && (error || summary)" :class="error ? 'err' : 'pz-note'">{{ error || summary }}</small>
+    <small v-if="mode === 'range' && !precise && !error" class="pz-note">默认不重新编码，速度快，开头会落在前一个关键帧上，可能比设置的时间早几秒。</small>
+    <el-checkbox v-if="chapters.length" :model-value="split" @update:model-value="(v: unknown) => emit('update:split', !!v)">同时把每个章节另存为单独的文件</el-checkbox>
   </div>
 </template>
 
@@ -115,50 +150,109 @@ const summary = computed(() => {
 .clip {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 10px;
 }
 .line {
   display: flex;
-  gap: 8px;
-  align-items: center;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
 }
 .t {
   width: 150px;
 }
-.err {
-  color: var(--cc-err);
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
-small {
-  font-size: 11.5px;
-}
-.chead {
+.bar {
   display: flex;
-  justify-content: space-between;
+  gap: 2px;
+  width: 100%;
+  height: 28px;
+}
+.seg {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 4px;
+  padding: 0 8px;
+  border: 0;
+  background: var(--cc-fill);
+  color: var(--cc-fg2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.seg.alt {
+  background: var(--cc-line-soft);
+}
+.seg:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.seg:last-child {
+  border-radius: 0 4px 4px 0;
+}
+.seg:hover {
+  color: var(--cc-fg);
+}
+.seg.on {
+  background: var(--cc-acc-soft);
+  color: var(--cc-acc-text);
+  box-shadow: inset 0 0 0 1px var(--cc-acc);
 }
 .chapters {
-  max-height: 180px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--cc-line-soft);
+  border-radius: 8px;
+  max-height: 240px;
   overflow: auto;
-  border: 1px solid var(--cc-line);
-  border-radius: 6px;
 }
 .chap {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 10px;
-  border-top: 1px dashed var(--cc-line);
-  font-size: 12.5px;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--cc-line-soft);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.chap:first-child {
-  border-top: 0;
+.chap:last-child {
+  border-bottom: 0;
+}
+.chap:hover {
+  background: var(--cc-hover);
+}
+.chap.on {
+  background: var(--cc-acc-soft);
+}
+.dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--cc-dot);
+  box-sizing: border-box;
+}
+.chap.on .dot {
+  border: 4px solid var(--cc-acc-strong);
 }
 .grow {
   flex: 1;
-  min-width: 0;
+}
+.err {
+  color: var(--cc-err);
+  font-size: 12px;
 }
 </style>

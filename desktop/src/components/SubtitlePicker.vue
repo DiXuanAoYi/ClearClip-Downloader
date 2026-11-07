@@ -13,6 +13,8 @@ const props = defineProps<{
   hasVideo: boolean
   /** 按偏好语言应选中的字幕 */
   preferred: string[]
+  /** 不能选（例如“只要音频”时），附带原因 */
+  disabled?: string
 }>()
 const emit = defineEmits<{
   toggle: [id: string]
@@ -33,10 +35,15 @@ function title(a: Asset) {
 
 function note(a: Asset) {
   if (a.ext === 'xml') return app.settings?.danmakuAss === false ? 'XML 弹幕' : '弹幕 · 转为 ASS'
-  if (a.id.startsWith('auto-')) return a.label.includes('自动翻译') ? '机器翻译' : '机器生成'
+  if (a.id.startsWith('auto-')) return a.label.includes('自动翻译') ? '自动翻译' : '自动生成'
   if (a.quality?.endsWith('.ai')) return 'AI 生成'
   return a.ext.toUpperCase()
 }
+const MODES: { v: SubMode; label: string }[] = [
+  { v: 'file', label: '单独文件' },
+  { v: 'soft', label: '内嵌到视频' },
+  { v: 'burn', label: '烧录进画面' },
+]
 
 const modeHint = computed(() => {
   if (!picked.value.length) return ''
@@ -48,42 +55,40 @@ const modeHint = computed(() => {
 </script>
 
 <template>
-  <div class="subs">
-    <div class="head">
-      <span class="label">字幕与弹幕（{{ assets.length }}）</span>
-      <span class="ops">
-        <el-button v-if="preferred.length" link size="small" type="primary" @click="emit('pick', preferred)">按偏好语言选择</el-button>
-        <el-button link size="small" @click="emit('pick', picked.length ? [] : texts.map((a) => a.id))">{{ picked.length ? '全不选' : '全选字幕' }}</el-button>
+  <div class="subs" :class="{ off: !!disabled }">
+    <div class="pz-sh">
+      <span class="pz-st">{{ danmaku.length && texts.length ? '字幕与弹幕' : danmaku.length ? '弹幕' : '字幕' }}<small>已选 {{ picked.length }} / {{ assets.length }}</small></span>
+      <span v-if="!disabled" class="pz-sa">
+        <button v-if="preferred.length" type="button" class="pz-link" @click="emit('pick', preferred)">按偏好语言选</button>
+        <button type="button" class="pz-link" @click="emit('pick', picked.length ? [] : texts.map((a) => a.id))">{{ picked.length ? '全不选' : '全选字幕' }}</button>
       </span>
     </div>
-    <div class="opts">
+    <p v-if="disabled" class="pz-note">{{ disabled }}</p>
+    <div class="chips">
       <button
-        v-for="a in texts"
+        v-for="a in [...texts, ...danmaku]"
         :key="a.id"
         type="button"
-        class="opt"
+        class="pz-chip"
         :class="{ on: selected.has(a.id) }"
         :aria-pressed="selected.has(a.id)"
+        :disabled="!!disabled"
+        :title="title(a)"
         @click="emit('toggle', a.id)"
       >
-        <span class="ellipsis" :title="title(a)">{{ title(a) }}</span>
-        <small class="mono">{{ note(a) }}</small>
-      </button>
-      <button v-for="a in danmaku" :key="a.id" type="button" class="opt" :class="{ on: selected.has(a.id) }" :aria-pressed="selected.has(a.id)" @click="emit('toggle', a.id)">
-        <span>{{ title(a) }}</span>
-        <small class="mono">{{ note(a) }}</small>
+        <span class="pz-box" />
+        <span class="ellipsis">{{ title(a) }}</span>
+        <span class="pz-tag">{{ note(a) }}</span>
       </button>
     </div>
-    <div v-if="picked.length" class="mode">
-      <span class="mute">已选 {{ picked.length }} 项，处理方式</span>
-      <el-radio-group :model-value="mode" size="small" @update:model-value="(v: unknown) => emit('update:mode', v as SubMode)">
-        <el-radio-button value="file">单独保存为文件</el-radio-button>
-        <el-radio-button value="soft">内嵌到视频</el-radio-button>
-        <el-radio-button value="burn">烧录进画面</el-radio-button>
-      </el-radio-group>
-      <small class="mute">{{ modeHint }}</small>
+    <div v-if="picked.length && !disabled" class="mode">
+      <span class="ml">处理方式</span>
+      <div class="pz-seg" role="radiogroup" aria-label="字幕处理方式">
+        <button v-for="m in MODES" :key="m.v" type="button" role="radio" :aria-checked="mode === m.v" :class="{ on: mode === m.v }" @click="emit('update:mode', m.v)">{{ m.label }}</button>
+      </div>
+      <span class="pz-note">{{ modeHint }}</span>
     </div>
-    <small v-if="pickedText === 0 && hasDanmaku && mode !== 'file'" class="mute">只选了弹幕：烧录后弹幕直接出现在画面里。</small>
+    <small v-if="pickedText === 0 && hasDanmaku && mode !== 'file' && !disabled" class="pz-note">只选了弹幕：烧录后弹幕直接出现在画面里。</small>
   </div>
 </template>
 
@@ -91,58 +96,31 @@ const modeHint = computed(() => {
 .subs {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
 }
-.head {
+.chips {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.label {
-  font-size: 11.5px;
-  color: var(--cc-mute);
-}
-.ops :deep(.el-button) {
-  margin-left: 8px;
-}
-.opts {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  flex-wrap: wrap;
   gap: 8px;
-  max-height: 168px;
-  overflow: auto;
-  padding: 2px;
 }
-.opt {
-  all: unset;
-  cursor: pointer;
-  border: 1px solid var(--cc-line);
-  border-radius: 8px;
-  padding: 6px 10px;
-  display: flex;
-  flex-direction: column;
-  font-size: 12.5px;
-  min-width: 0;
-}
-.opt small {
-  color: var(--cc-mute);
-  font-size: 10.5px;
-}
-.opt.on {
-  border-color: var(--cc-acc);
-  background: var(--cc-acc-soft);
-}
-.opt:focus-visible {
-  outline: 2px solid var(--cc-acc);
+.chips .pz-chip {
+  max-width: 320px;
 }
 .mode {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-  margin-top: 2px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }
-.mode small {
-  font-size: 11.5px;
+.ml {
+  width: 56px;
+  font-size: 12px;
+  color: var(--cc-fg2);
+}
+.mode .pz-note {
+  flex: 1 1 240px;
+}
+p.pz-note {
+  margin: 0;
 }
 </style>
