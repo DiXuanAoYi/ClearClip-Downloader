@@ -516,11 +516,22 @@ impl Runner {
         self.clear();
     }
 
+    /// 循环结束收尾。只收拾自己的会话：重新开始（换区域、换模式、悬浮窗和快捷键先后按了开始）时，
+    /// 新会话已经登记好了，旧线程在这里清掉它的话，新会话就再也停不下来（停止按钮找不到它，它还一直贴译文）。
     fn finish(&mut self) {
-        close_overlay(&self.app);
-        close_subbar_if_idle(&self.app);
-        *lock(&SESSION) = None;
-        emit_state(&self.app, "已停止");
+        let mine = {
+            let mut g = lock(&SESSION);
+            let mine = g.as_ref().map_or(true, |s| Arc::ptr_eq(&s.stop, &self.stop));
+            if mine {
+                *g = None;
+            }
+            mine
+        };
+        if mine {
+            close_overlay(&self.app);
+            close_subbar_if_idle(&self.app);
+            emit_state(&self.app, "已停止");
+        }
     }
 
     fn clear(&mut self) {
@@ -543,6 +554,10 @@ impl Runner {
     }
 
     fn emit_blocks(&self, mode: &str, blocks: Vec<OBlock>, live: &LiveSettings, erase: bool, lang: &str, bilingual: bool) {
+        // 已经停了（这一轮的识字 / 翻译还在路上）：不再贴译文，免得停止后译文又冒出来
+        if self.stop.load(Ordering::Relaxed) {
+            return;
+        }
         let p = OPayload {
             seq: SEQ.fetch_add(1, Ordering::Relaxed),
             mode: mode.to_string(),
@@ -568,6 +583,9 @@ impl Runner {
             emit_state(&self.app, "目标窗口最小化或已关闭");
             return Ok(());
         };
+        if self.stop.load(Ordering::Relaxed) {
+            return Ok(());
+        }
         let bar_only = mode == "subtitle" && live.sub_place == "bar";
         if bar_only {
             ensure_subbar(&self.app, live);
@@ -689,9 +707,10 @@ impl Runner {
         let ep = crate::ai::chat_endpoint_for(&self.st, &settings, crate::ai_pool::Task::Translate)?;
         let model = settings.ai.model.clone();
         let known: &[(String, String)] = if live.manga_names { &self.names } else { &[] };
-        let system = livetx::manga_system(lang, live.manga_rtl, live.manga_sfx, known);
-        let resp = tauri::async_runtime::block_on(crate::ai::chat_img(&ep, &model, &system, "Translate the text on this page.", &url))
-            .map_err(crate::imgtrans::vision_hint)?;
+        // 漫画模式用漫画的提示词；标准模式选了“视觉模型”识字时，用软件界面的（以前也用漫画的：会跳过界面文字、把图标当字）
+        let system = if mode == "manga" { livetx::manga_system(lang, live.manga_rtl, live.manga_sfx, known) } else { livetx::screen_system(lang, known) };
+        let ask = if mode == "manga" { "Translate the text on this page." } else { "Translate the text on this screen." };
+        let resp = tauri::async_runtime::block_on(crate::ai::chat_img(&ep, &model, &system, ask, &url)).map_err(crate::imgtrans::vision_hint)?;
         if live.manga_names {
             for (s, t) in livetx::parse_names(&resp) {
                 if let Some(e) = self.names.iter_mut().find(|e| e.0 == s) {

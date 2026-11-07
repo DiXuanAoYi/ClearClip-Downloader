@@ -50,6 +50,8 @@ pub struct Glossary {
     pub lang: String,
     pub terms: Vec<Term>,
     pub updated: i64,
+    /// 所在文件夹，多层用 `/` 分隔（如 `游戏/原神`）；空 = 最外层
+    pub folder: String,
 }
 
 impl Default for Glossary {
@@ -65,6 +67,7 @@ impl Default for Glossary {
             lang: String::new(),
             terms: vec![],
             updated: 0,
+            folder: String::new(),
         }
     }
 }
@@ -108,6 +111,56 @@ pub struct Data {
     pub glossaries: Vec<Glossary>,
     pub candidates: Vec<Candidate>,
     pub sites: Vec<ExtractSite>,
+    /// 建了还没放术语库的文件夹（有术语库的文件夹由术语库自己的 `folder` 体现）
+    pub folders: Vec<String>,
+}
+
+// ---------- 文件夹 ----------
+
+/// 整理文件夹路径：`/` 分隔，去掉空段和首尾空白，最多 6 层、每层 40 字。
+pub fn clean_folder(path: &str) -> String {
+    path.split(['/', '\\'])
+        .map(|p| p.trim().chars().filter(|c| !c.is_control()).take(40).collect::<String>())
+        .filter(|p| !p.is_empty())
+        .take(6)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// `path` 是不是 `dir` 本身或它下面的。
+pub fn in_folder(path: &str, dir: &str) -> bool {
+    path == dir || path.strip_prefix(dir).is_some_and(|r| r.starts_with('/'))
+}
+
+/// 把 `from` 文件夹（连同子文件夹和里面的术语库）改到 `to` 下。
+pub fn rename_folder(d: &mut Data, from: &str, to: &str) {
+    let mv = |p: &str| if in_folder(p, from) { clean_folder(&format!("{to}{}", &p[from.len()..])) } else { p.to_string() };
+    for g in &mut d.glossaries {
+        g.folder = mv(&g.folder);
+    }
+    d.folders = d.folders.iter().map(|f| mv(f)).filter(|f| !f.is_empty()).collect();
+    d.folders.sort();
+    d.folders.dedup();
+}
+
+/// 删除文件夹：里面的术语库和子文件夹往上挪一层（不删术语库）。
+pub fn remove_folder(d: &mut Data, path: &str) {
+    let parent = path.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+    let up = |p: &str| -> String {
+        if p == path {
+            parent.clone()
+        } else if in_folder(p, path) {
+            clean_folder(&format!("{parent}/{}", &p[path.len() + 1..]))
+        } else {
+            p.to_string()
+        }
+    };
+    for g in &mut d.glossaries {
+        g.folder = up(&g.folder);
+    }
+    d.folders = d.folders.iter().filter(|f| f.as_str() != path).map(|f| up(f)).filter(|f| !f.is_empty()).collect();
+    d.folders.sort();
+    d.folders.dedup();
 }
 
 // ---------- 持久化 ----------
@@ -162,6 +215,7 @@ pub fn clean_glossary(g: &mut Glossary) {
     g.description = g.description.trim().chars().take(400).collect();
     g.matches = g.matches.iter().map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).take(100).collect();
     g.lang = g.lang.trim().to_string();
+    g.folder = clean_folder(&g.folder);
     if !matches!(g.origin.as_str(), "user" | "community" | "extracted") {
         g.origin = "user".into();
     }
@@ -754,5 +808,26 @@ mod tests {
         assert_eq!(again.glossaries[0].name, "未命名术语库");
         assert_eq!(again.glossaries[0].terms, vec![t("A", "甲")]);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn folders_are_cleaned_renamed_and_removed_without_losing_glossaries() {
+        assert_eq!(clean_folder(" 游戏 / / 原神 /"), "游戏/原神");
+        assert_eq!(clean_folder("a\\b/c/d/e/f/g/h"), "a/b/c/d/e/f");
+        assert!(in_folder("游戏/原神", "游戏") && in_folder("游戏", "游戏") && !in_folder("游戏机", "游戏"));
+        let g = |id: &str, f: &str| Glossary { id: id.into(), folder: f.into(), ..Default::default() };
+        let mut d = Data {
+            glossaries: vec![g("a", "游戏/原神"), g("b", "游戏"), g("c", "游戏机"), g("d", "")],
+            folders: vec!["游戏/空的".into(), "工作".into()],
+            ..Default::default()
+        };
+        rename_folder(&mut d, "游戏", "娱乐/游戏");
+        let fs: Vec<_> = d.glossaries.iter().map(|x| x.folder.as_str()).collect();
+        assert_eq!(fs, ["娱乐/游戏/原神", "娱乐/游戏", "游戏机", ""], "同名前缀（游戏机）不受影响");
+        assert_eq!(d.folders, ["娱乐/游戏/空的", "工作"]);
+        remove_folder(&mut d, "娱乐/游戏");
+        let fs: Vec<_> = d.glossaries.iter().map(|x| x.folder.as_str()).collect();
+        assert_eq!(fs, ["娱乐/原神", "娱乐", "游戏机", ""], "删文件夹不删术语库，往上挪一层");
+        assert!(d.folders.contains(&"娱乐/空的".to_string()));
     }
 }

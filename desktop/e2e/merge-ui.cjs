@@ -31,6 +31,11 @@ const INIT = `
   ]
   window.__shot = [{ at: 1700000500000, src: 'Start Game', text: '开始游戏', saved: false }]
   window.__live = [{ at: 1700000400, mode: 'standard', exe: 'game.exe', src: 'Options', text: '选项' }]
+  const term = (s) => ({ source: s, target: s + '译', note: '' })
+  window.__gl = { candidates: [], sites: [], folders: ['空文件夹'], glossaries: [
+    { id: 'g1', name: '原神术语', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', updated: 0, folder: '游戏/原神', terms: [term('A'), term('B'), term('C')] },
+    { id: 'g2', name: '通用', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', updated: 0, folder: '', terms: [term('X')] },
+  ] }
   window.__sc = { supported: true, running: false, mode: 'standard', target: null, hidden: false, paused: false, msg: '', audio: false }
   window.__TAURI_INTERNALS__ = {
     transformCallback(cb) { const id = cbId++; cbs[id] = cb; return id },
@@ -48,7 +53,8 @@ const INIT = `
         case 'list_orphan_parts': return []
         case 'get_after_all_done': return 'none'
         case 'sc_status': return window.__sc
-        case 'sc_toggle': window.__sc = { ...window.__sc, running: !window.__sc.running }; window.__emit('live://state', window.__sc); return null
+        case 'sc_start': window.__sc = { ...window.__sc, running: true }; window.__emit('live://state', window.__sc); return window.__sc
+        case 'sc_stop': window.__sc = { ...window.__sc, running: false }; window.__emit('live://state', window.__sc); return window.__sc
         case 'float_expand': window.__expanded = args.expanded; return null
         case 'excerpt_list': return window.__excerpts
         case 'excerpt_note': window.__excerpts.find((e) => e.id === args.id).note = args.note; return null
@@ -63,6 +69,10 @@ const INIT = `
         case 'sc_windows': case 'sc_ocr_langs': case 'app_glossary_packs': return []
         case 'experts_state': return { experts: [] }
         case 'ocr_status': return { supported: true, installed: false }
+        case 'tm_stats': return [0, 0]
+        case 'glossary_state': return window.__gl
+        case 'glossary_folder_add': window.__gl.folders.push(args.path); return window.__gl
+        case 'glossary_save': window.__glSaved = args.glossary; return args.glossary
         default: return null
       }
     },
@@ -94,7 +104,10 @@ const INIT = `
     ok('控制里有开始、模式、重选、隐藏译文', ['开始', '标准', '字幕', '漫画', '▭ 重选', '隐藏译文'].every((b) => btns.includes(b)), btns.join(','))
     await page.locator('.panel button', { hasText: '开始' }).click()
     await page.waitForTimeout(200)
-    ok('点“开始”调用屏幕翻译，按钮变“停止”', (await page.evaluate(() => window.__calls.some((c) => c.cmd === 'sc_toggle'))) && (await page.locator('.panel button', { hasText: '停止' }).count()) === 1)
+    ok('点“开始”调用和主程序一样的开始，按钮变“停止”', (await page.evaluate(() => window.__calls.some((c) => c.cmd === 'sc_start'))) && (await page.locator('.panel button', { hasText: '停止' }).count()) === 1)
+    await page.locator('.panel button', { hasText: '停止' }).click()
+    await page.waitForTimeout(200)
+    ok('点“停止”就是停止（不是切换），按钮变回“开始”', (await page.evaluate(() => window.__calls.some((c) => c.cmd === 'sc_stop'))) && (await page.locator('.panel button', { hasText: '开始' }).count()) === 1)
     await page.locator('.ball .x').click()
     await page.waitForTimeout(200)
     const saved = await page.evaluate(() => window.__saved)
@@ -155,6 +168,35 @@ const INIT = `
     await page.locator('.tr-hint').getByRole('button', { name: '文件翻译' }).click()
     await page.waitForTimeout(200)
     ok('点“文件翻译”切到文件翻译页', (await page.evaluate(() => window.__app.view)) === 'filetr')
+    await page.close()
+  }
+
+  // 5. 术语库：多层文件夹；“添加一行”插在当前选中的那一行下面，没选中就加在最下面
+  {
+    const page = await open('glossary')
+    const rows = await page.locator('.item').allInnerTexts()
+    const names = rows.map((r) => r.replace(/[▾▸]/g, '').trim().split('\n')[0].trim())
+    ok('术语库按文件夹分层显示（游戏 → 原神 → 原神术语，空文件夹也在）', names.some((n) => n.includes('📁 游戏')) && names.some((n) => n.includes('📁 原神')) && names.some((n) => n.includes('📁 空文件夹')) && names.indexOf(names.find((n) => n.includes('📁 原神'))) < names.findIndex((n) => n.startsWith('原神术语')), names.join(' | '))
+    const pad = await page.locator('.item', { hasText: '原神术语' }).evaluate((e) => parseInt(e.style.paddingLeft))
+    ok('第二层文件夹里的术语库缩进两层', pad === 36, String(pad))
+    await page.locator('.item.folder', { hasText: '游戏' }).first().locator('.fold').click()
+    await page.waitForTimeout(150)
+    ok('折叠“游戏”后里面的都收起来', !(await page.locator('.item', { hasText: '原神术语' }).count()))
+    await page.locator('.item.folder', { hasText: '游戏' }).first().locator('.fold').click()
+    await page.locator('.item', { hasText: '原神术语' }).getByRole('button', { name: '编辑' }).click()
+    await page.waitForTimeout(300)
+    // 没有选中的行：加在最下面
+    await page.getByRole('button', { name: '添加一行' }).click()
+    await page.waitForTimeout(200)
+    const v1 = await page.locator('.gl-terms tbody tr').evaluateAll((trs) => trs.map((tr) => tr.querySelector('input').value))
+    ok('没选中行时，新行加在最下面', JSON.stringify(v1) === JSON.stringify(['A', 'B', 'C', '']), JSON.stringify(v1))
+    // 点第一行（A），再添加：插在 A 下面
+    await page.locator('.gl-terms tbody tr').nth(0).locator('input').first().click()
+    await page.getByRole('button', { name: '添加一行' }).click()
+    await page.waitForTimeout(200)
+    const v2 = await page.locator('.gl-terms tbody tr').evaluateAll((trs) => trs.map((tr) => tr.querySelector('input').value))
+    ok('选中 A 后添加，新行插在 A 下面', JSON.stringify(v2) === JSON.stringify(['A', '', 'B', 'C', '']), JSON.stringify(v2))
+    ok('新行成了当前行，光标在里面', await page.evaluate(() => document.activeElement?.closest('tr')?.classList.contains('current-row') === true))
     await page.close()
   }
 

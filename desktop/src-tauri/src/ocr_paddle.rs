@@ -256,7 +256,9 @@ impl Engine {
             }
             let text = text.trim().to_string();
             if !text.is_empty() {
-                out.push(OLine { text, x: b[0], y: b[1], w: b[2], h: b[3], vertical });
+                // 识字用扩过的框（识得准）；报给排版的是收紧到字迹的框（字号、分段才对得上，和 Windows 自带识字一致）
+                let t = if vertical { b } else { livecore::tighten_to_ink(bgra, w, h, b) };
+                out.push(OLine { text, x: t[0], y: t[1], w: t[2], h: t[3], vertical });
             }
         }
         Ok(out)

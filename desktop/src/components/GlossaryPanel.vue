@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { open, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errorText } from '../api'
 import type { AiSettings, CommunityGlossary, ExtractSite, Glossary, GlossaryCandidate, GlossaryData, GlossaryTerm } from '../types'
 
 const ai = defineModel<AiSettings>({ required: true })
-const data = ref<GlossaryData>({ glossaries: [], candidates: [], sites: [] })
+const data = ref<GlossaryData>({ glossaries: [], candidates: [], sites: [], folders: [] })
 const tab = ref<'mine' | 'extract' | 'community'>('mine')
 const busy = ref(false)
 
@@ -49,30 +49,134 @@ async function clearTm() {
   }
 }
 
+// ---------- 文件夹（多层，用 / 分隔）----------
+const collapsed = ref<Set<string>>(new Set())
+/** 所有文件夹路径（含每一层的上级），按层级排好。 */
+const allFolders = computed(() => {
+  const set = new Set<string>()
+  const add = (p: string) => {
+    const parts = p.split('/').filter(Boolean)
+    for (let i = 1; i <= parts.length; i++) set.add(parts.slice(0, i).join('/'))
+  }
+  data.value.folders.forEach(add)
+  data.value.glossaries.forEach((g) => g.folder && add(g.folder))
+  return [...set].sort((a, b) => a.localeCompare(b, 'zh'))
+})
+type TreeRow = { kind: 'folder'; path: string; name: string; depth: number; count: number } | { kind: 'glossary'; g: Glossary; depth: number }
+const depthOf = (p: string) => (p ? p.split('/').length : 0)
+const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
+const hiddenBy = (p: string) => [...collapsed.value].some((c) => p !== c && (p + '/').startsWith(c + '/'))
+/** 树形列表：文件夹在前、术语库在后，每层按名称排；折叠的文件夹里的东西不显示。 */
+const tree = computed<TreeRow[]>(() => {
+  const rows: TreeRow[] = []
+  const walk = (dir: string) => {
+    for (const f of allFolders.value.filter((x) => parentOf(x) === dir)) {
+      const count = data.value.glossaries.filter((g) => g.folder === f || g.folder.startsWith(f + '/')).length
+      rows.push({ kind: 'folder', path: f, name: f.split('/').pop() || f, depth: depthOf(f) - 1, count })
+      if (!collapsed.value.has(f)) walk(f)
+    }
+    for (const g of data.value.glossaries.filter((x) => (x.folder || '') === dir)) rows.push({ kind: 'glossary', g, depth: depthOf(dir) })
+  }
+  walk('')
+  return rows.filter((r) => r.kind === 'glossary' || !hiddenBy(r.path))
+})
+function toggleFolder(p: string) {
+  const s = new Set(collapsed.value)
+  if (s.has(p)) s.delete(p)
+  else s.add(p)
+  collapsed.value = s
+}
+async function newFolder(parent = '') {
+  let name: string
+  try {
+    name = (await ElMessageBox.prompt(parent ? `在“${parent}”里新建文件夹（可以用 / 一次建多层）` : '新建文件夹（可以用 / 一次建多层，如 游戏/原神）', '新建文件夹', { inputPlaceholder: '文件夹名' })).value
+  } catch {
+    return
+  }
+  if (!name?.trim()) return
+  try {
+    data.value = await api.glossaryFolderAdd(parent ? `${parent}/${name}` : name)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+async function renameFolder(p: string) {
+  let to: string
+  try {
+    to = (await ElMessageBox.prompt('新的位置和名称（用 / 表示上下级，可以移到别的文件夹里）', '重命名 / 移动文件夹', { inputValue: p })).value
+  } catch {
+    return
+  }
+  if (!to?.trim() || to.trim() === p) return
+  try {
+    data.value = await api.glossaryFolderRename(p, to)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+async function removeFolder(p: string) {
+  try {
+    await ElMessageBox.confirm(`删除文件夹“${p}”？里面的术语库和子文件夹会挪到上一层，不会被删除。`, '删除文件夹', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    data.value = await api.glossaryFolderRemove(p)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+
 // ---------- 术语库列表与编辑 ----------
 const editing = ref<Glossary | null>(null)
 const matchText = ref('')
 const search = ref('')
-const shown = computed(() => {
+const PAGE = 300
+/** 显示从第几条开始（术语很多时只显示 300 条，新加的那行要在显示范围里） */
+const winStart = ref(0)
+const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   const terms = editing.value?.terms || []
   return q ? terms.filter((t) => t.source.toLowerCase().includes(q) || t.target.toLowerCase().includes(q)) : terms
 })
+const shown = computed(() => filtered.value.slice(winStart.value, winStart.value + PAGE))
+/** 当前激活的行（点过、或正在输入的那一行） */
+const active = ref<GlossaryTerm | null>(null)
+const termTable = ref<{ setCurrentRow: (row?: GlossaryTerm) => void } | null>(null)
 
-function blank(): Glossary {
-  return { id: '', name: '', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', terms: [], updated: 0 }
+function blank(folder = ''): Glossary {
+  return { id: '', name: '', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', terms: [], updated: 0, folder }
 }
-function edit(g?: Glossary) {
-  editing.value = g ? JSON.parse(JSON.stringify(g)) : blank()
+function edit(g?: Glossary, folder = '') {
+  editing.value = g ? JSON.parse(JSON.stringify(g)) : blank(folder)
   matchText.value = (editing.value?.matches || []).join('\n')
   search.value = ''
+  winStart.value = 0
+  active.value = null
 }
-function addRow() {
-  editing.value?.terms.unshift({ source: '', target: '', note: '' })
-  search.value = ''
+/** 添加一行：插在当前激活的那一行下面；没有激活的行就加在最下面。新行变成激活行，光标放进去。 */
+async function addRow() {
+  const g = editing.value
+  if (!g) return
+  const row: GlossaryTerm = { source: '', target: '', note: '' }
+  const at = active.value ? g.terms.indexOf(active.value) : -1
+  const idx = at >= 0 ? at + 1 : g.terms.length
+  g.terms.splice(idx, 0, row)
+  // 搜索时新行（空的）会被筛掉：清掉搜索
+  if (search.value) search.value = ''
+  if (idx < winStart.value || idx >= winStart.value + PAGE) winStart.value = Math.max(0, idx - Math.floor(PAGE / 2))
+  active.value = row
+  await nextTick()
+  termTable.value?.setCurrentRow(row)
+  await nextTick()
+  const el = document.querySelector('.gl-terms .current-row') as HTMLElement | null
+  el?.scrollIntoView({ block: 'nearest' })
+  el?.querySelector('input')?.focus()
 }
 function dropRow(t: GlossaryTerm) {
-  if (editing.value) editing.value.terms = editing.value.terms.filter((x) => x !== t)
+  if (!editing.value) return
+  editing.value.terms = editing.value.terms.filter((x) => x !== t)
+  if (active.value === t) active.value = null
 }
 async function saveEditing() {
   const g = editing.value
@@ -257,19 +361,30 @@ function onTab(name: string | number) {
       <el-tab-pane :label="`术语库（${data.glossaries.length}）`" name="mine">
         <div class="bar">
           <el-button size="small" type="primary" @click="edit()">新建术语库</el-button>
+          <el-button size="small" @click="newFolder()">新建文件夹</el-button>
           <el-button size="small" @click="importCsv()">导入 CSV…</el-button>
         </div>
-        <div v-if="!data.glossaries.length" class="empty mute">还没有术语库。点“新建术语库”自己写，或去“社区术语库”一键安装。</div>
-        <div v-for="g in data.glossaries" :key="g.id" class="item" :class="{ off: !g.enabled }">
-          <el-switch v-model="g.enabled" size="small" @change="toggle(g)" />
-          <div class="info">
-            <div class="nm">{{ g.name }} <el-tag size="small" effect="plain">{{ ORIGIN[g.origin] }}</el-tag></div>
-            <small class="mute">{{ g.terms.length }} 条 · {{ langName(g.lang) }} · {{ g.matches.length ? '仅 ' + g.matches.slice(0, 3).join('、') + (g.matches.length > 3 ? '…' : '') : '所有网站' }}</small>
+        <div v-if="!data.glossaries.length && !allFolders.length" class="empty mute">还没有术语库。点“新建术语库”自己写，或去“社区术语库”一键安装。</div>
+        <template v-for="r in tree" :key="r.kind === 'folder' ? 'f:' + r.path : r.g.id">
+          <div v-if="r.kind === 'folder'" class="item folder" :style="{ paddingLeft: r.depth * 18 + 'px' }">
+            <button class="fold" type="button" :aria-label="collapsed.has(r.path) ? '展开' : '折叠'" @click="toggleFolder(r.path)">{{ collapsed.has(r.path) ? '▸' : '▾' }}</button>
+            <div class="info" @click="toggleFolder(r.path)"><div class="nm">📁 {{ r.name }} <small class="mute">{{ r.count }} 个术语库</small></div></div>
+            <el-button size="small" link type="primary" @click="edit(undefined, r.path)">新建术语库</el-button>
+            <el-button size="small" link @click="newFolder(r.path)">新建子文件夹</el-button>
+            <el-button size="small" link @click="renameFolder(r.path)">重命名 / 移动</el-button>
+            <el-button size="small" link type="danger" @click="removeFolder(r.path)">删除</el-button>
           </div>
-          <el-button size="small" link type="primary" @click="edit(g)">编辑</el-button>
-          <el-button size="small" link @click="exportCsv(g)">导出</el-button>
-          <el-button size="small" link type="danger" @click="remove(g)">删除</el-button>
-        </div>
+          <div v-else class="item" :class="{ off: !r.g.enabled }" :style="{ paddingLeft: r.depth * 18 + 'px' }">
+            <el-switch v-model="r.g.enabled" size="small" @change="toggle(r.g)" />
+            <div class="info">
+              <div class="nm">{{ r.g.name }} <el-tag size="small" effect="plain">{{ ORIGIN[r.g.origin] }}</el-tag></div>
+              <small class="mute">{{ r.g.terms.length }} 条 · {{ langName(r.g.lang) }} · {{ r.g.matches.length ? '仅 ' + r.g.matches.slice(0, 3).join('、') + (r.g.matches.length > 3 ? '…' : '') : '所有网站' }}</small>
+            </div>
+            <el-button size="small" link type="primary" @click="edit(r.g)">编辑</el-button>
+            <el-button size="small" link @click="exportCsv(r.g)">导出</el-button>
+            <el-button size="small" link type="danger" @click="remove(r.g)">删除</el-button>
+          </div>
+        </template>
       </el-tab-pane>
 
       <!-- 智能提取 -->
@@ -302,7 +417,7 @@ function onTab(name: string | number) {
             </el-table>
             <div class="row act">
               <el-select v-model="addTo" size="small" placeholder="加入到…" class="sel">
-                <el-option v-for="g in data.glossaries" :key="g.id" :value="g.id" :label="g.name" />
+                <el-option v-for="g in data.glossaries" :key="g.id" :value="g.id" :label="g.folder ? `${g.folder} / ${g.name}` : g.name" />
                 <el-option :value="NEW" label="＋ 新建术语库" />
               </el-select>
               <el-input v-if="addTo === NEW || !addTo" v-model="newName" size="small" class="sel" placeholder="新术语库名称" />
@@ -321,7 +436,7 @@ function onTab(name: string | number) {
             <el-table-column label="直接加入" min-width="140">
               <template #default="{ row }">
                 <el-select v-model="row.glossary" size="small" clearable placeholder="先待确认" @change="saveSites(data.sites)">
-                  <el-option v-for="g in data.glossaries" :key="g.id" :value="g.id" :label="g.name" />
+                  <el-option v-for="g in data.glossaries" :key="g.id" :value="g.id" :label="g.folder ? `${g.folder} / ${g.name}` : g.name" />
                 </el-select>
               </template>
             </el-table-column>
@@ -358,21 +473,33 @@ function onTab(name: string | number) {
           <div class="field"><label>名称</label><el-input v-model="editing.name" size="small" /></div>
           <div class="field"><label>适用的目标语言</label><el-select v-model="editing.lang" size="small"><el-option v-for="l in LANGS" :key="l.v" :value="l.v" :label="l.l" /></el-select></div>
         </div>
-        <div class="field"><label>说明</label><el-input v-model="editing.description" size="small" /></div>
+        <div class="grid">
+          <div class="field"><label>说明</label><el-input v-model="editing.description" size="small" /></div>
+          <div class="field">
+            <label>文件夹（多层用 / 分隔，可以直接输入新的）</label>
+            <el-select v-model="editing.folder" size="small" filterable allow-create clearable default-first-option placeholder="最外层">
+              <el-option v-for="f in allFolders" :key="f" :value="f" :label="f" />
+            </el-select>
+          </div>
+        </div>
         <div class="field"><label>只在这些网站生效（每行一个；留空 = 所有网站）</label><el-input v-model="matchText" type="textarea" :rows="2" class="mono" placeholder="youtube.com&#10;*.bilibili.com&#10;https://github.com/*" /></div>
         <div class="row">
-          <el-input v-model="search" size="small" clearable placeholder="搜索术语" class="sel" />
-          <el-button size="small" @click="addRow">添加一行</el-button>
+          <el-input v-model="search" size="small" clearable placeholder="搜索术语" class="sel" @input="winStart = 0" />
+          <el-button size="small" :title="active ? '插在当前选中的那一行下面' : '加在最下面'" @click="addRow">添加一行</el-button>
           <el-button v-if="editing?.id" size="small" @click="importCsv(editing?.id || '')">并入 CSV…</el-button>
           <small class="mute">共 {{ editing?.terms.length }} 条；译文留空 = 保持原文不翻译</small>
         </div>
-        <el-table :data="shown.slice(0, 300)" size="small" max-height="340">
-          <el-table-column label="原文" min-width="160"><template #default="{ row }"><el-input v-model="row.source" size="small" /></template></el-table-column>
-          <el-table-column label="译文" min-width="160"><template #default="{ row }"><el-input v-model="row.target" size="small" /></template></el-table-column>
-          <el-table-column label="说明" min-width="120"><template #default="{ row }"><el-input v-model="row.note" size="small" /></template></el-table-column>
+        <el-table ref="termTable" class="gl-terms" :data="shown" size="small" max-height="340" highlight-current-row @current-change="(r: GlossaryTerm | undefined) => r && (active = r)" @row-click="(r: GlossaryTerm) => (active = r)">
+          <el-table-column label="原文" min-width="160"><template #default="{ row }"><el-input v-model="row.source" size="small" @focus="active = row" /></template></el-table-column>
+          <el-table-column label="译文" min-width="160"><template #default="{ row }"><el-input v-model="row.target" size="small" @focus="active = row" /></template></el-table-column>
+          <el-table-column label="说明" min-width="120"><template #default="{ row }"><el-input v-model="row.note" size="small" @focus="active = row" /></template></el-table-column>
           <el-table-column width="56"><template #default="{ row }"><el-button size="small" link type="danger" @click="dropRow(row)">删</el-button></template></el-table-column>
         </el-table>
-        <small v-if="shown.length > 300" class="mute">只显示前 300 条，请用搜索缩小范围。</small>
+        <div v-if="filtered.length > PAGE" class="row">
+          <small class="mute">共 {{ filtered.length }} 条，显示第 {{ winStart + 1 }}–{{ Math.min(filtered.length, winStart + PAGE) }} 条</small>
+          <el-button size="small" link :disabled="winStart === 0" @click="winStart = Math.max(0, winStart - PAGE)">上一页</el-button>
+          <el-button size="small" link :disabled="winStart + PAGE >= filtered.length" @click="winStart = winStart + PAGE">下一页</el-button>
+        </div>
       </div>
       <template #footer>
         <el-button size="small" @click="editing = null">取消</el-button>
@@ -394,6 +521,8 @@ h4 { margin: 0; font-size: 13px; }
 .sel { width: 180px; }
 .item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--cc-border, rgba(128,128,128,.2)); }
 .item.off { opacity: .6; }
+.item.folder .info { cursor: pointer; }
+.fold { all: unset; cursor: pointer; width: 16px; text-align: center; color: var(--cc-mute); }
 .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .nm { font-size: 13px; }
 .box { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 14px; border-bottom: 1px solid var(--cc-border, rgba(128,128,128,.2)); }

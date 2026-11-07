@@ -621,6 +621,8 @@ export interface Glossary {
   lang: string
   terms: GlossaryTerm[]
   updated: number
+  /** 所在文件夹，多层用 / 分隔；空 = 最外层 */
+  folder: string
 }
 
 export interface GlossaryCandidate {
@@ -645,6 +647,8 @@ export interface GlossaryData {
   glossaries: Glossary[]
   candidates: GlossaryCandidate[]
   sites: ExtractSite[]
+  /** 建了还没放术语库的文件夹 */
+  folders: string[]
 }
 
 export interface CommunityGlossary {

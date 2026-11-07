@@ -112,6 +112,7 @@ const MODES: [string, string][] = [
   ['subtitle', '字幕'],
   ['manga', '漫画'],
 ]
+const hk = computed(() => ({ hotkey: app.settings?.live.hotkey ?? '', hotkeyPick: app.settings?.live.hotkeyPick ?? '', hotkeyHide: app.settings?.live.hotkeyHide ?? '' }))
 const scShown = computed(() => !!sc.value?.supported && (app.settings?.live.floatButton ?? false))
 async function setScOpen(v: boolean) {
   scOpen.value = v
@@ -119,7 +120,15 @@ async function setScOpen(v: boolean) {
 }
 async function act(kind: string, arg = '') {
   try {
-    if (kind === 'toggle') await api.scToggle()
+    // 开始 / 停止和主程序“屏幕翻译”页的按钮是同一套：停止就是停止，开始用上次的区域（没有就去框选）
+    if (kind === 'toggle') {
+      if (sc.value?.running) sc.value = await api.scStop()
+      else
+        sc.value = await api.scStart().catch(async () => {
+          await api.scPick()
+          return sc.value as ScreenStatus
+        })
+    }
     else if (kind === 'mode') await api.scSetMode(arg)
     else if (kind === 'pause') await api.scPause()
     else if (kind === 'pick') await api.scPick()
@@ -168,12 +177,12 @@ onBeforeUnmount(() => {
       <button class="x" type="button" title="关闭悬浮窗" @click.stop="hide">×</button>
     </div>
     <div v-if="scShown && scOpen" class="panel">
-      <button @click="act('toggle')">{{ sc?.running ? '停止' : '开始' }}</button>
+      <button :title="`开始 / 停止（${hk.hotkey}）`" @click="act('toggle')">{{ sc?.running ? '停止' : '开始' }}</button>
       <button v-if="sc?.running" @click="act('pause')">{{ sc?.paused ? '▶ 继续' : '⏸ 暂停' }}</button>
       <button v-for="m in MODES" :key="m[0]" :class="{ sel: sc?.mode === m[0] }" @click="act('mode', m[0])">{{ m[1] }}</button>
-      <button title="重新框选" @click="act('pick')">▭ 重选</button>
+      <button :title="`重新框选（${hk.hotkeyPick}）`" @click="act('pick')">▭ 重选</button>
       <button v-if="sc?.running" title="把译文叠在画面上存成图片（也会复制到剪贴板）" @click="act('shot')">📷 存译图</button>
-      <button @click="act('hide')">{{ sc?.hidden ? '显示译文' : '隐藏译文' }}</button>
+      <button :title="`显示 / 隐藏译文（${hk.hotkeyHide}）`" @click="act('hide')">{{ sc?.hidden ? '显示译文' : '隐藏译文' }}</button>
       <span v-if="sc?.running" class="live">{{ sc.paused ? '已暂停' : `${fps} 帧/秒` }}</span>
       <button title="收起" @click="setScOpen(false)">‹</button>
     </div>

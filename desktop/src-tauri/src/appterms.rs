@@ -81,6 +81,7 @@ pub fn glossary_of(p: &Pack, now: i64) -> Glossary {
         lang: "zh-CN".into(),
         terms: terms_of(p),
         updated: now,
+        folder: "软件界面".into(),
     }
 }
 

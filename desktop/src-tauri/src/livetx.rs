@@ -116,6 +116,26 @@ pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, exe
 
 // ---------- 漫画：视觉模型 ----------
 
+/// 标准模式选了“视觉模型”识字：软件 / 游戏界面（菜单、按钮、标签、对话、说明），返回格式和漫画一样。
+pub fn screen_system(lang: &str, names: &[(String, String)]) -> String {
+    let known = if names.is_empty() {
+        String::new()
+    } else {
+        let list: Vec<String> = names.iter().map(|(a, b)| format!("{a}={b}")).collect();
+        format!(" Keep these names and terms translated exactly as: {}.", list.join("; "))
+    };
+    format!(
+        "You are translating the screen of a software application or game with OCR. Find every piece of readable text: menu items, buttons, tabs, labels, titles, list items, dialogue lines, descriptions. \
+         Each separate UI element is its own block (do not merge different list items, menu entries or columns into one block); a multi-line paragraph is one block. \
+         Icons, pictograms and symbols (a person, a gear, a bell, a heart, arrows, checkboxes, logos) are NOT text: never output them and never put them into a block's text. \
+         For each block give: \"text\" (original, line breaks removed), \"translation\" (concise, natural {lang}; keep names, numbers and key labels), \
+         \"box\": [x, y, w, h] — a tight box around the TEXT itself, each number 0–1000 relative to the whole image with origin at the top-left, and \"vertical\": false unless the text is written top-to-bottom. \
+         List blocks in reading order (top to bottom, left to right).{known} \
+         Also list names and terms you translated as \"names\": [{{\"src\":\"...\",\"tr\":\"...\"}}]. \
+         Reply with ONE JSON object only, no commentary, no code fences: {{\"blocks\":[{{\"text\":\"...\",\"translation\":\"...\",\"box\":[0,0,100,50],\"vertical\":false,\"sfx\":false}}],\"names\":[]}}. If there is no text reply {{\"blocks\":[],\"names\":[]}}."
+    )
+}
+
 pub fn manga_system(lang: &str, rtl: bool, sfx: bool, names: &[(String, String)]) -> String {
     let order = if rtl {
         "List blocks in reading order (for vertical Japanese manga: right to left, top to bottom)."
