@@ -472,10 +472,11 @@ impl Default for Opts {
 }
 
 impl Opts {
-    /// 识字方式只认三种，其余当视觉模型。
+    /// 识字方式只认四种（增强识字 / Windows 自带 / 识字接口 / 视觉模型），其余当视觉模型。
     pub fn engine(&self) -> &'static str {
         match self.ocr.as_str() {
             "enhanced" => "enhanced",
+            "system" => "system",
             "api" => "api",
             _ => "vision",
         }
@@ -531,13 +532,7 @@ pub fn lines_to_text(lines: &[crate::livecore::OLine]) -> String {
 
 /// 用 `engine`（enhanced / api）识别一张 BGRA 图，返回带位置的行。
 async fn recognize_lines(st: &crate::AppState, engine: &str, bgra: Vec<u8>, w: usize, h: usize) -> AppResult<Vec<crate::livecore::OLine>> {
-    let (dir, client, live, engine) = (st.data_dir.clone(), st.dl_client.clone(), st.settings().live.clone(), engine.to_string());
-    tokio::task::spawn_blocking(move || {
-        let cx = crate::ocr::Ctx { data_dir: &dir, client: &client, live: &live };
-        crate::ocr::recognize(&cx, &engine, &bgra, w, h)
-    })
-    .await
-    .map_err(|e| AppError::msg(e.to_string()))?
+    crate::imagetext::recognize(st, engine, bgra, w, h).await
 }
 
 /// 一张图的 (mime, 字节)。

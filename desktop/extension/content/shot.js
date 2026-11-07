@@ -243,11 +243,12 @@
     let engine = 'one'
     try {
       const got = await store.get('shotEngine')
-      if (got && got.shotEngine === 'two') engine = 'two'
+      if (got && (got.shotEngine === 'two' || got.shotEngine === 'local')) engine = got.shotEngine
     } catch {
       /* 读不到就用默认 */
     }
-    const engLabel = () => (engine === 'two' ? '识别：视觉识字 + 翻译模型 ▾' : '识别：视觉模型 ▾')
+    // 本机识字：用清影里“屏幕翻译 → 识字”选的本机方式（增强识字 / Windows 自带 / 识字接口），位置更准，图片不发给大模型
+    const engLabel = () => ({ two: '识别：视觉识字 + 翻译模型 ▾', local: '识别：清影本机识字 ▾' })[engine] || '识别：视觉模型 ▾'
     bEng.textContent = engLabel()
     // 提交一个后台任务并等结果
     const runAi = (req) => globalThis.ccUI.aiRun(req, { interval: 500, stop: () => !globalThis.__ccShotStop, timeoutMs: 120000 })
@@ -293,7 +294,7 @@
       })
     }
     bEng.onclick = async () => {
-      engine = engine === 'two' ? 'one' : 'two'
+      engine = { one: 'two', two: 'local', local: 'one' }[engine] || 'one'
       bEng.textContent = engLabel()
       try {
         await store.set({ shotEngine: engine })
@@ -341,7 +342,7 @@
     let result
     try {
       result = await globalThis.ccUI.aiRun(
-        { kind: 'imgtrans', image: cap.dataUrl, lang: cap.lang, title: document.title },
+        { kind: 'imgtrans', image: cap.dataUrl, lang: cap.lang, title: document.title, url: location.href, ...(engine === 'local' ? { ocr: 'local' } : {}) },
         { interval: 500, stop: () => !globalThis.__ccShotStop, timeoutMs: 120000, onSubmit: (id) => (jobId = id) },
       )
     } catch (e) {

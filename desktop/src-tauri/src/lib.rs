@@ -32,6 +32,7 @@ pub mod glossary;
 pub mod glossary_cmds;
 pub mod grab;
 pub mod i18n;
+pub mod imagetext;
 pub mod imgtrans;
 pub mod inbox;
 pub mod lan;

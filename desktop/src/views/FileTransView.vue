@@ -27,7 +27,7 @@ const bilingual = ref(true)
 // PDF：译文写回原处 / 原页与译文页交替 / 只输出 TXT
 const pdfMode = ref<'inplace' | 'interleave' | 'txt'>('inplace')
 // 图片和扫描版 PDF 的识字方式：视觉模型 / 本机增强识字（PaddleOCR，开源）/ 在线识字接口
-const ocrEngine = ref<'vision' | 'enhanced' | 'api'>('vision')
+const ocrEngine = ref<'vision' | 'enhanced' | 'system' | 'api'>('vision')
 const ocrSt = ref<OcrStatus | null>(null)
 const ocrBusy = ref(false)
 async function ocrRefresh() {
@@ -73,7 +73,7 @@ onMounted(() => {
   try {
     previewFirst.value = localStorage.getItem('cc-ft-preview') !== '0'
     const e = localStorage.getItem('cc-ft-ocr')
-    if (e === 'enhanced' || e === 'api' || e === 'vision') ocrEngine.value = e
+    if (e === 'enhanced' || e === 'system' || e === 'api' || e === 'vision') ocrEngine.value = e
   } catch {
     /* 读不到就用默认 */
   }
@@ -347,6 +347,7 @@ function status(j: JobSnap): string {
             <el-select v-model="ocrEngine" size="small" class="grow">
               <el-option value="vision" label="视觉模型（默认）" />
               <el-option value="enhanced" label="本机增强识字（开源 PaddleOCR）" />
+              <el-option value="system" label="Windows 自带识字（不用下载，只在 Windows 上可用）" />
               <el-option value="api" label="在线识字接口（高精度）" />
             </el-select>
           </div>
@@ -355,6 +356,10 @@ function status(j: JobSnap): string {
               <div class="row1"><b>增强识字</b><span :class="ocrSt?.installed ? 'okc' : 'mute'">{{ ocrSt?.installed ? '已安装' : ocrSt?.supported === false ? '这台电脑暂不支持' : '还没安装' }}</span></div>
               <div class="row2"><el-button v-if="ocrSt?.supported !== false && !ocrSt?.installed" size="small" type="primary" :loading="ocrBusy" @click="ocrInstall">下载并安装（约 15 MB）</el-button></div>
               <small class="mute">PaddleOCR 开源模型，中英日韩等常见语言，全程在本机运行，不上传页面。比视觉模型更稳、更便宜，位置也更准；手写、艺术字、特别复杂的版面仍可能出错。</small>
+            </template>
+            <template v-else-if="ocrEngine === 'system'">
+              <div class="row1"><b>Windows 自带识字</b></div>
+              <small class="mute">用 Windows 10/11 自带的识字，不用下载、不上传页面；识别的语言取决于系统里装了哪些语言包（“屏幕翻译 → 识字”里可以选）。小字会先放大再识别。</small>
             </template>
             <template v-else>
               <div class="row1"><b>在线识字接口</b><span :class="apiReady ? 'okc' : 'mute'">{{ apiReady ? apiProvider : '还没填密钥' }}</span></div>

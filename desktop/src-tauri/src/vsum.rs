@@ -91,6 +91,8 @@ pub struct Req {
     pub comments: Vec<Cmt>,
     /// imgtrans：要识别并翻译的图片（data URL）
     pub image: String,
+    /// imgtrans：识字方式。空 / vision = 视觉大模型一步完成；enhanced / system / api / local = 本机识字 + 翻译任务（见 imagetext.rs）
+    pub ocr: String,
 }
 
 /// 自定义提示词的长度上限。
@@ -328,6 +330,9 @@ pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     if req.kind == "transcribe" || req.kind == "subtitles" {
         return start_transcribe(app, req);
     }
+    if req.kind == "imgtrans" && crate::imagetext::is_local(req.ocr.trim()) {
+        return start_image_local(app, req);
+    }
     let prep = prepare(app, req)?;
     let (id, cancel) = new_job();
     match prep {
@@ -358,6 +363,29 @@ pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
             });
         }
     }
+    Ok(id)
+}
+
+/// 截图翻译走本机识字：识字 → 按版面并段 → 翻译任务（术语库、专家、翻译记忆），结果格式和视觉模型一样。
+fn start_image_local(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
+    use tauri::Manager;
+    let st = app.state::<Arc<crate::AppState>>().inner().clone();
+    let (id, cancel) = new_job();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let progress = move |done: usize, total: usize| {
+            with_job(id, |j| {
+                j.done = done;
+                j.total = total.max(1);
+                j.note = if done == 0 { "正在识字…".into() } else { "正在翻译…".into() };
+            });
+        };
+        let out = crate::imagetext::translate_image(&app, &st, &req, &cancel, progress).await;
+        with_job(id, |j| match out {
+            Ok(v) => j.result = Some(v),
+            Err(e) => j.error = Some(e.message),
+        });
+    });
     Ok(id)
 }
 

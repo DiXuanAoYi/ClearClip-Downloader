@@ -17,6 +17,24 @@ const histAt = ref(0)
 const saved = ref(false)
 const cmp = ref<{ name: string; text: string; err?: boolean }[]>([])
 const cmpBusy = ref(false)
+// 识别方式：视觉模型一步完成（默认），或本机识字（屏幕翻译里选的那种）+ 翻译模型，位置更准、不发图片给模型
+const readOcr = () => {
+  try {
+    return localStorage.getItem('shotOcr') === 'local' ? 'local' : 'vision'
+  } catch {
+    return 'vision'
+  }
+}
+const ocrMode = ref<'vision' | 'local'>(readOcr())
+function toggleOcr() {
+  ocrMode.value = ocrMode.value === 'local' ? 'vision' : 'local'
+  try {
+    localStorage.setItem('shotOcr', ocrMode.value)
+  } catch {
+    /* 记不住也能用 */
+  }
+  if (sel.value) void run(sel.value)
+}
 let langName = '简体中文'
 const out = ref<HTMLCanvasElement | null>(null)
 let img: HTMLImageElement | null = null
@@ -164,7 +182,7 @@ async function run(r: Rect) {
     langName = settings.ai.targetLang || '简体中文'
     cmp.value = []
     saved.value = false
-    jobId = await api.shotRun({ kind: 'imgtrans', image: c.url, lang: langName })
+    jobId = await api.shotRun({ kind: 'imgtrans', image: c.url, lang: langName, ocr: ocrMode.value })
     for (let n = 0; n < 240 && alive; n++) {
       await new Promise((ok) => setTimeout(ok, 500))
       const j = await api.writeJob(jobId)
@@ -336,6 +354,7 @@ const listStyle = computed(() => {
         <button @click="copyText(blocks.map((b) => b.text).join('\n'))">复制原文</button>
         <button @click="speak">朗读</button>
         <button :disabled="cmpBusy" @click="compare">对比服务</button>
+        <button :title="ocrMode === 'local' ? '现在：本机识字 + 翻译模型（点一下换成视觉模型重新识别）' : '现在：视觉模型（点一下换成本机识字重新识别）'" @click="toggleOcr">{{ ocrMode === 'local' ? '识别：本机' : '识别：视觉模型' }}</button>
         <button @click="pin">钉在桌面</button>
         <button :class="{ on: saved }" @click="saveNote">{{ saved ? '已存笔记' : '存为笔记' }}</button>
         <button @click="copyImage">复制图片</button>
