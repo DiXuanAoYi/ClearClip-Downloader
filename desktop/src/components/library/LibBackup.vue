@@ -19,6 +19,25 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => un?.())
 
+// 浏览器扩展的笔记、高亮、导入的字幕同步到清影（进备份）：单份上限可以调
+const extMb = ref(10)
+const ext = ref<{ size: number; ts: number; error: string; rejectedSize: number } | null>(null)
+async function loadExt() {
+  const s = await api.getSettings().catch(() => null)
+  if (s) extMb.value = s.extDataMb || 10
+  ext.value = await api.extDataStatus().catch(() => null)
+}
+onMounted(loadExt)
+async function saveExtMb() {
+  try {
+    const s = await api.getSettings()
+    await api.saveSettings({ ...s, extDataMb: Math.min(200, Math.max(1, Math.round(Number(extMb.value) || 10))) }, s)
+    ElMessage.success('已保存，扩展下次同步时生效')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+
 function stamp() {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
@@ -109,6 +128,15 @@ async function restore() {
         <el-button size="small" @click="restore">从备份还原…</el-button>
       </div>
     </section>
+    <section>
+      <h4>浏览器扩展的数据</h4>
+      <p class="mute">扩展里的笔记、高亮和导入的字幕改动后会同步一份到清影（随备份一起保存；新装扩展或刚连上清影时自动取回）。超过上限的那次不同步，扩展里的数据不受影响。</p>
+      <div class="row">
+        单份上限 <el-input-number v-model="extMb" size="small" :min="1" :max="200" :step="5" controls-position="right" @change="saveExtMb" /> MB
+        <span class="mute">{{ ext?.ts ? `清影里现在存着 ${formatBytes(ext.size)}` : '还没有同步过' }}</span>
+      </div>
+      <p v-if="ext?.error" class="err">{{ ext.error }}</p>
+    </section>
   </div>
 </template>
 
@@ -126,8 +154,13 @@ p {
   margin: 0 0 8px;
   font-size: 12px;
 }
+.err {
+  color: var(--el-color-danger);
+  margin-top: 6px;
+}
 .row {
   display: flex;
+  font-size: 12px;
   gap: 10px;
   align-items: center;
 }

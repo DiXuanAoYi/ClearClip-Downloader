@@ -86,7 +86,8 @@ pub async fn translate_image(
     let engine = resolve(req.ocr.trim(), &st.settings().live.ocr);
     let (bgra, w, h) = decode_data_url(&req.image)?;
     progress(0, 2);
-    let lines = recognize(st, engine, bgra, w, h).await?;
+    let lines = recognize(st, engine, bgra.clone(), w, h).await?;
+    let lines = if st.settings().live.skip_icons { crate::livecore::drop_icons(lines, Some((&bgra, w, h))) } else { lines };
     let groups = group_lines(&lines);
     if stop.load(Ordering::Relaxed) {
         return Err(AppError::msg("已取消"));

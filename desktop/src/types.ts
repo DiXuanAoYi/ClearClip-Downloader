@@ -1044,6 +1044,7 @@ export interface Settings {
   danmakuAss: boolean
   verifyDownloads: boolean
   videoCacheMb: number
+  extDataMb: number
   videoCacheAuto: boolean
   library: LibrarySettings
   danmaku: DanmakuStyle
@@ -2143,6 +2144,7 @@ export interface ScreenSettings {
   fontScale: number
   bilingual: boolean
   skipSame: boolean
+  skipIcons: boolean
   opacity: number
   subPlace: 'cover' | 'bar'
   subBilingual: boolean

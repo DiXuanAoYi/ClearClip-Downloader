@@ -644,6 +644,7 @@ pub fn run() {
             library_cmds::duplicates_similar,
             library_cmds::cues_search,
             library_cmds::cues_reindex,
+            library_cmds::ext_data_status,
             library_cmds::backup_export,
             library_cmds::backup_import,
             library_cmds::restart_app,

@@ -453,9 +453,12 @@ async fn read_head(sock: &mut TcpStream) -> Option<(Request, Option<u64>, Vec<u8
     Some((req, len, buf[head_end + 4..].to_vec()))
 }
 
-/// 请求正文上限：普通接口 64 KB；已授权的视频摘要接口要带整篇文稿，放宽到 2 MiB；已授权的 `/api/send` 放宽到 16 MiB（便签）。
-fn body_limit(authorized: bool, path: &str) -> usize {
-    if authorized && (path.starts_with("/api/v1/ai/") || path.starts_with("/api/v1/videocache/") || path == "/api/v1/vocab/clip" || path == "/api/v1/extdata") {
+/// 请求正文上限：普通接口 64 KB；已授权的视频摘要接口要带整篇文稿，放宽到 2 MiB；已授权的 `/api/send` 放宽到 16 MiB（便签）；
+/// 扩展数据同步按设置里的上限（`ext_max`，再留一点 JSON 外壳的余量）。
+fn body_limit(authorized: bool, path: &str, ext_max: usize) -> usize {
+    if authorized && path == "/api/v1/extdata" {
+        ext_max + 64 * 1024
+    } else if authorized && (path.starts_with("/api/v1/ai/") || path.starts_with("/api/v1/videocache/") || path == "/api/v1/vocab/clip") {
         AI_BODY
     } else if authorized && path == "/api/send" {
         NOTE_BODY
@@ -567,7 +570,7 @@ async fn handle(app: AppHandle, mut sock: TcpStream, peer: SocketAddr) {
         json(&mut sock, "403 Forbidden", serde_json::json!({"error": "访问令牌无效，请重新扫码"})).await;
         return;
     }
-    let max_body = body_limit(authorized, &req.path);
+    let max_body = body_limit(authorized, &req.path, crate::datareg::ext_limit_bytes(state.settings().ext_data_mb));
     let Ok(Some(body)) = tokio::time::timeout(SMALL_TIMEOUT, read_body(&mut sock, len.unwrap_or(0), leftover, max_body)).await else {
         json(&mut sock, "413 Payload Too Large", serde_json::json!({"error": "内容太大。较大的内容请作为文件发送。"})).await;
         return;
@@ -982,15 +985,17 @@ mod tests {
 
     #[test]
     fn only_authorized_ai_routes_get_the_large_body_limit() {
-        assert_eq!(body_limit(true, "/api/v1/ai/run"), AI_BODY);
-        assert_eq!(body_limit(false, "/api/v1/ai/run"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/send"), NOTE_BODY);
-        assert_eq!(body_limit(false, "/api/send"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/cookies"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/v1/tasks"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/v1/aix"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/v1/vocab/clip"), AI_BODY, "原声录音");
-        assert_eq!(body_limit(true, "/api/v1/extdata"), AI_BODY, "扩展数据同步");
+        const EXT: usize = 10 * 1024 * 1024;
+        assert_eq!(body_limit(true, "/api/v1/ai/run", EXT), AI_BODY);
+        assert_eq!(body_limit(false, "/api/v1/ai/run", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/send", EXT), NOTE_BODY);
+        assert_eq!(body_limit(false, "/api/send", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/cookies", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/v1/tasks", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/v1/aix", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/v1/vocab/clip", EXT), AI_BODY, "原声录音");
+        assert_eq!(body_limit(true, "/api/v1/extdata", EXT), EXT + 64 * 1024, "扩展数据同步按设置的上限");
+        assert_eq!(body_limit(false, "/api/v1/extdata", EXT), MAX_BODY);
     }
 
     #[tokio::test]

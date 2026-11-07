@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
+const FILES = ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -523,6 +523,23 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '生成摘要')
     await settle(page, 600)
     ok('点生成会提示去设置', await page.evaluate(() => window.__roots.some((r) => /设置 → AI/.test(r.textContent))))
+    await page.close()
+  }
+
+  // ---- 面板拆成了几个文件（vsum-*.js）：每个标签页都能打开、有内容、不报错
+  {
+    const { page, errors } = await open(YT)
+    await page.waitForFunction(() => window.__roots?.some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    ok('各标签页的文件都加载了', await page.evaluate(() => ['transcript', 'notes', 'comments', 'vocab', 'mindmap', 'more'].every((k) => typeof globalThis.ccVsumTabs?.[k] === 'function') && !!globalThis.ccVsumStyle?.CSS))
+    const seen = []
+    for (const tab of ['摘要', '章节', '文稿', '导图', '问答', '笔记', '生词', '评论', '更多']) {
+      await clickText(page, tab)
+      await settle(page, 350)
+      const t = await text(page)
+      seen.push(`${tab}:${t.replace(/\s+/g, '').length}`)
+    }
+    ok('九个标签页都有内容', seen.every((x) => Number(x.split(':')[1]) > 20), seen.join(' '))
+    ok('切换所有标签页没有页面错误', errors.length === 0, errors.join('|'))
     await page.close()
   }
 

@@ -435,6 +435,12 @@ pub async fn library_export(state: St<'_>, format: String, dest: String, ids: Op
     Ok(items.len())
 }
 
+/// 浏览器扩展数据同步的情况（清影里存着的大小、时间、最近一次被拒的原因）。
+#[tauri::command]
+pub fn ext_data_status(state: St<'_>) -> crate::datareg::ExtStatus {
+    crate::datareg::ext_status(&state.data_dir)
+}
+
 #[tauri::command]
 pub async fn backup_export(app: AppHandle, state: St<'_>, dest: String) -> AppResult<()> {
     let st = state.inner().clone();

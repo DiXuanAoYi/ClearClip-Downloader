@@ -279,6 +279,7 @@ export const api = {
   duplicatesSimilar: () => invoke<DupGroup[]>('duplicates_similar'),
   cuesSearch: (query: string) => invoke<CueHit[]>('cues_search', { query }),
   cuesReindex: () => invoke<number>('cues_reindex'),
+  extDataStatus: () => invoke<{ size: number; ts: number; error: string; rejectedSize: number }>('ext_data_status'),
   backupExport: (dest: string) => invoke<void>('backup_export', { dest }),
   backupImport: (src: string) => invoke<BackupInfo>('backup_import', { src }),
   restartApp: () => invoke<void>('restart_app'),

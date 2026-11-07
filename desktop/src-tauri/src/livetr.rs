@@ -654,7 +654,8 @@ impl Runner {
 
     fn recognize(&self, live: &LiveSettings, frame: &Frame, engine: &str) -> AppResult<Vec<livecore::OLine>> {
         let cx = crate::ocr::Ctx { data_dir: &self.st.data_dir, client: &self.st.dl_client, live };
-        crate::ocr::recognize(&cx, engine, &frame.bgra, frame.w, frame.h)
+        let lines = crate::ocr::recognize(&cx, engine, &frame.bgra, frame.w, frame.h)?;
+        Ok(if live.skip_icons { livecore::drop_icons(lines, Some((&frame.bgra, frame.w, frame.h))) } else { lines })
     }
 
     fn history(&mut self, live: &LiveSettings, mode: &str, items: &[(String, String)]) {
@@ -1346,6 +1347,7 @@ pub async fn sc_try(state: St<'_>, target: Option<Target>) -> AppResult<TryResul
         let engine = if live.ocr == "vision" { "system".to_string() } else { live.ocr.clone() };
         let cx = crate::ocr::Ctx { data_dir: &st.data_dir, client: &st.dl_client, live: &live };
         let lines = crate::ocr::recognize(&cx, &engine, &f.bgra, f.w, f.h)?;
+        let lines = if live.skip_icons { livecore::drop_icons(lines, Some((&f.bgra, f.w, f.h))) } else { lines };
         let groups = livecore::group_lines(&lines);
         Ok(TryResult { lines: groups.into_iter().map(|g| g.text).collect(), ms: t0.elapsed().as_millis() as u64, w: f.w, h: f.h, engine })
     })

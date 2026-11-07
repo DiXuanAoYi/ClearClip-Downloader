@@ -25,7 +25,7 @@ pub fn system(lang: &str) -> String {
         "You are an OCR and translation engine. Find every piece of readable text in the image, grouping text that belongs together (a paragraph, a speech bubble, a button, a label, a table cell) into one block. \
          For each block give: \"text\" (the original text, line breaks as spaces), \"translation\" (a natural translation into {lang}; if the text is already in {lang} repeat it unchanged), \
          and \"box\": [x, y, w, h] — the block's bounding box relative to the whole image, each number 0–1000, origin at the top-left. \
-         List blocks in reading order. Ignore decorative text you cannot read. \
+         List blocks in reading order. Ignore decorative text you cannot read. Icons, pictograms and symbols (a person, a gear, a bell, a heart, arrows, checkboxes) are NOT text: never output them as blocks and never put them into a block's text. \
          Reply with ONE JSON object only, no commentary and no code fences: {{\"blocks\":[{{\"text\":\"...\",\"translation\":\"...\",\"box\":[0,0,100,50]}}]}}. \
          If the image has no text reply {{\"blocks\":[]}}."
     )

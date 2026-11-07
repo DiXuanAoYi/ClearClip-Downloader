@@ -188,7 +188,7 @@ async function startPicker(tab) {
 /** 打开视频摘要面板（再次注入 = 关闭）。 */
 async function startVsum(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用视频摘要')
-  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum.js'])
+  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'])
 }
 
 /** 在当前页面的视频上叠字幕层（再次注入 = 关闭）。 */

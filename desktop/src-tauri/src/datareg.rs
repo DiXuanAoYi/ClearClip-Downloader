@@ -50,13 +50,47 @@ pub const ITEMS: &[Item] = &[
 
 /// 浏览器扩展同步过来的用户数据（笔记、高亮、本地导入的字幕）。
 pub const EXT_FILE: &str = "extension-data.json";
-/// 扩展数据的大小上限（HTTP 接口正文上限是 2 MiB）。
-pub const EXT_MAX: usize = 1_900_000;
+/// 扩展数据单份上限的默认值和可调范围（MB，“媒体库 → 备份与还原”里改）。
+pub const EXT_DEFAULT_MB: u64 = 10;
+pub const EXT_MIN_MB: u64 = 1;
+pub const EXT_MAX_MB: u64 = 200;
+
+/// 设置里的上限（MB）→ 字节，限制在可调范围内。
+pub fn ext_limit_bytes(mb: u64) -> usize {
+    (mb.clamp(EXT_MIN_MB, EXT_MAX_MB) as usize) * 1024 * 1024
+}
+
+/// 最近一次同步的结果（给设置页看：同步了多大、有没有因为超过上限被拒）。
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtStatus {
+    /// 清影里现在存着的那份的大小和时间
+    pub size: u64,
+    pub ts: i64,
+    /// 最近一次被拒的原因（成功后清空）
+    pub error: String,
+    /// 被拒的那份有多大
+    pub rejected_size: u64,
+}
+
+static EXT_ERR: std::sync::Mutex<Option<(String, u64)>> = std::sync::Mutex::new(None);
+
+pub fn ext_status(data_dir: &Path) -> ExtStatus {
+    let p = data_dir.join(EXT_FILE);
+    let size = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+    let ts = ext_load(data_dir)["ts"].as_i64().unwrap_or(0);
+    let (error, rejected_size) = EXT_ERR.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default();
+    ExtStatus { size, ts, error, rejected_size }
+}
+
+fn mb(n: usize) -> String {
+    format!("{:.1} MB", n as f64 / 1048576.0)
+}
 /// 扩展会同步的键：只认这些，别的不收。
 pub const EXT_KEYS: [&str; 3] = ["vsumNotes", "hlData", "vsumLocal"];
 
 /// 存扩展同步来的数据（只留认得的键），返回保存的时间。
-pub fn ext_save(data_dir: &Path, data: &serde_json::Value) -> AppResult<i64> {
+pub fn ext_save(data_dir: &Path, data: &serde_json::Value, max: usize) -> AppResult<i64> {
     let mut keep = serde_json::Map::new();
     for k in EXT_KEYS {
         if let Some(v) = data.get(k) {
@@ -65,13 +99,16 @@ pub fn ext_save(data_dir: &Path, data: &serde_json::Value) -> AppResult<i64> {
     }
     let ts = crate::db::now();
     let body = serde_json::json!({"ts": ts, "data": keep}).to_string();
-    if body.len() > EXT_MAX {
-        return Err(crate::error::AppError::invalid("扩展数据太大，没有同步"));
+    if body.len() > max {
+        let msg = format!("扩展数据有 {}，超过了上限 {}，这次没有同步。可以在清影“媒体库 → 备份与还原”里调大上限。", mb(body.len()), mb(max));
+        *EXT_ERR.lock().unwrap_or_else(|e| e.into_inner()) = Some((msg.clone(), body.len() as u64));
+        return Err(crate::error::AppError::invalid(msg));
     }
     let p = data_dir.join(EXT_FILE);
     let tmp = p.with_extension("json.tmp");
     std::fs::write(&tmp, body)?;
     std::fs::rename(&tmp, &p)?;
+    *EXT_ERR.lock().unwrap_or_else(|e| e.into_inner()) = None;
     Ok(ts)
 }
 
@@ -183,12 +220,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         assert_eq!(ext_load(&d)["ts"], 0);
-        ext_save(&d, &serde_json::json!({"vsumNotes": [{"id": "n1"}], "hlData": {"a": 1}, "secret": "x"})).unwrap();
+        ext_save(&d, &serde_json::json!({"vsumNotes": [{"id": "n1"}], "hlData": {"a": 1}, "secret": "x"}), ext_limit_bytes(EXT_DEFAULT_MB)).unwrap();
         let v = ext_load(&d);
         assert_eq!(v["data"]["vsumNotes"][0]["id"], "n1");
         assert!(v["data"].get("secret").is_none(), "不认识的键不收");
         assert!(restorable(EXT_FILE) && user_files(&d).iter().any(|f| f.rel == EXT_FILE), "进备份");
-        assert!(ext_save(&d, &serde_json::json!({"hlData": "x".repeat(EXT_MAX)})).is_err());
+        // 默认上限 10 MB：3 MB 能存，超过上限的被拒，并记下原因和大小
+        assert_eq!(ext_limit_bytes(EXT_DEFAULT_MB), 10 * 1024 * 1024);
+        ext_save(&d, &serde_json::json!({"hlData": "x".repeat(3 * 1024 * 1024)}), ext_limit_bytes(EXT_DEFAULT_MB)).unwrap();
+        let e = ext_save(&d, &serde_json::json!({"hlData": "x".repeat(3 * 1024 * 1024)}), ext_limit_bytes(2)).unwrap_err();
+        assert!(e.message.contains("上限 2.0 MB"), "{}", e.message);
+        let st = ext_status(&d);
+        assert!(st.error.contains("上限") && st.rejected_size > 3_000_000 && st.size > 3_000_000);
+        assert_eq!(ext_limit_bytes(0), 1024 * 1024, "限制在可调范围内");
+        assert_eq!(ext_limit_bytes(10_000), 200 * 1024 * 1024);
         let _ = std::fs::remove_dir_all(&d);
     }
 

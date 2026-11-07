@@ -320,6 +320,8 @@ pub struct Settings {
     pub verify_downloads: bool,
     /// 视频缓存（扩展同步来的摘要和双语字幕）占用上限，MB
     pub video_cache_mb: u64,
+    /// 浏览器扩展同步过来的用户数据（笔记、高亮、导入的字幕）单份上限，MB
+    pub ext_data_mb: u64,
     /// 收藏生词时自动把该视频的缓存同步到清影
     pub video_cache_auto: bool,
     /// 媒体库：回收站、整理规则
@@ -683,6 +685,8 @@ pub struct LiveSettings {
     pub bilingual: bool,
     /// 数字、符号、已经是目标语言的文字不翻
     pub skip_same: bool,
+    /// 图标不是文字：像图标的识字结果丢掉、行首的图标去掉，不翻译
+    pub skip_icons: bool,
     /// 译文层不透明度（百分比 30–100）
     pub opacity: u8,
     // ---- 字幕模式 ----
@@ -748,6 +752,7 @@ impl Default for LiveSettings {
             font_scale: 100,
             bilingual: false,
             skip_same: true,
+            skip_icons: true,
             opacity: 100,
             sub_place: "cover".into(),
             sub_bilingual: true,
@@ -1293,6 +1298,7 @@ impl Default for Settings {
             danmaku_ass: true,
             verify_downloads: true,
             video_cache_mb: crate::videocache::DEFAULT_LIMIT_MB,
+            ext_data_mb: crate::datareg::EXT_DEFAULT_MB,
             video_cache_auto: true,
             library: LibrarySettings::default(),
             danmaku: DanmakuStyle::default(),

@@ -229,7 +229,7 @@ pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply
         // 浏览器扩展的用户数据（笔记、高亮、本地导入的字幕）：同步过来进备份，换浏览器 / 重装扩展时取回
         ("POST", "/api/v1/extdata") => {
             let v: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-            match crate::datareg::ext_save(&state.data_dir, &v["data"]) {
+            match crate::datareg::ext_save(&state.data_dir, &v["data"], crate::datareg::ext_limit_bytes(state.settings().ext_data_mb)) {
                 Ok(ts) => ok(json!({"ts": ts})),
                 Err(e) => err("400 Bad Request", &e.message),
             }

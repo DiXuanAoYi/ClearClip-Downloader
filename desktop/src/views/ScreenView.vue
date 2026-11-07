@@ -368,6 +368,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         </div>
         <div class="kv"><span>同时显示原文（小字）</span><el-switch v-model="form.bilingual" /></div>
         <div class="kv"><span>数字、符号、已经是目标语言的文字不翻<small class="mute block">省请求，也避免把专有名词翻坏</small></span><el-switch v-model="form.skipSame" /></div>
+        <div class="kv"><span>图标不识别、不翻译<small class="mute block">人像、齿轮、铃铛这类图标常被认成“8”“©”“Q”之类的字：单独的图标直接丢掉，文字前面的图标去掉</small></span><el-switch v-model="form.skipIcons" /></div>
         <div class="kv"><span>屏幕边上放一个小悬浮钮<small class="mute block">点开能开始 / 停止、切模式、重新框选、隐藏译文；也可以只用托盘和快捷键</small></span><el-switch :model-value="form.floatButton" @change="onBar" /></div>
         <div class="grid">
           <div class="field"><label>开始 / 停止</label><el-input v-model="form.hotkey" size="small" class="mono" /></div>
