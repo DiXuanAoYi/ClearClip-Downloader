@@ -79,8 +79,7 @@
 
     <section id="v-audio" class="view hidden">
       <label class="row spread"><span><b>响度标准化</b><br /><span class="mute">统一不同视频的音量，默认开启</span></span><input id="auOn" type="checkbox" /></label>
-      <label class="row spread"><span><b>在视频上显示音效按钮</b><br /><span class="mute">视频角上的“音效 -16 LUFS”小按钮。关掉后音效仍然生效，可在这里调整，或在视频页按 Alt+Shift+A 打开面板</span></span><input id="auPill" type="checkbox" /></label>
-      <label class="row spread"><span><b>只在鼠标移到视频时显示</b></span><input id="auPillHover" type="checkbox" /></label>
+      <label class="row spread"><span><b>在视频胶囊上显示音效状态</b><br /><span class="mute">鼠标移到视频上时，右下角的清影胶囊里显示“● 音效 -16 LUFS”。关掉后音效仍然生效，可以从胶囊的 ⋮ 菜单、这里，或按 Alt+Shift+A 打开面板</span></span><input id="auPill" type="checkbox" /></label>
       <div id="auState" class="card"></div>
       <div id="auMeter" class="card">
         <div class="meterRow"><span class="mute">输入</span><div class="meterBar"><i id="auIn"></i></div><b id="auInV" class="mono"></b></div>
@@ -179,7 +178,7 @@
     <label class="row"><input id="notifyDone" type="checkbox" /> 下载完成时弹出通知</label>
 
     <h2>网页翻译</h2>
-    <p class="mute">整页双语对照、单击 Ctrl 翻译鼠标指着的段落、选中文字点“译”、输入框里连按三次空格翻译。只翻译看得见的段落，翻过的内容会缓存在本机。</p>
+    <p class="mute">整页双语对照、单击 Ctrl 翻译鼠标指着的段落、选中文字用划词工具条的“翻译”（多个服务对比）、输入框里连按三次空格翻译。只翻译看得见的段落，翻过的内容会缓存在本机。</p>
     <label>翻译引擎</label>
     <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option><option value="deeplx">DeepLX / DeepL（要先在下面填好；选“清影”时，清影没开会自动用它备用）</option><option value="custom">自定义接口（OpenAI 兼容；建议在清影的模型池里加，这里留作清影没开时的备用）</option></select>
     <div class="rowBtns">
@@ -193,7 +192,6 @@
     <div class="rowBtns">
       <div class="col"><label>按住多久直接翻译</label><select id="trHold"><option value="0">不用，只认单击</option><option value="300">0.3 秒</option><option value="450">0.45 秒（默认）</option><option value="700">0.7 秒</option><option value="1000">1 秒</option></select></div>
     </div>
-    <label class="row"><input id="trSelect" type="checkbox" /> 选中文字后显示“译”按钮</label>
     <label>各翻译服务单独设置（语言留“沿用”就用上面的目标语言）</label>
     <div class="row"><label class="row"><input id="svcOn_clearclip" type="checkbox" /> 清影（大模型）</label><select id="svcLang_clearclip"></select></div>
     <textarea id="svcPrompt_clearclip" rows="2" placeholder="给大模型的额外要求，如：保留专有名词原文；语气口语化（最多 500 字，可留空）"></textarea>
@@ -262,7 +260,7 @@
     <label class="row"><input id="unlockAll" type="checkbox" /> 解除复制 / 右键限制：所有网站都开启（不建议）</label>
     <label>解除限制只对这些网站生效（每行一个，含子域名）</label>
     <textarea id="ruleUnlock" placeholder="example.com"></textarea>
-    <label>不显示视频悬浮下载按钮的网站</label>
+    <label>视频胶囊里不显示“下载”的网站</label>
     <textarea id="ruleFloat"></textarea>
     <label>不启用播放增强的网站</label>
     <textarea id="ruleVideo"></textarea>

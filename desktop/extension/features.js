@@ -2,7 +2,7 @@
 
 const FEATURES = [
   // group：page = 页面工具，video = 播放增强，link = 与清影联动。tag：常驻 = 在打开的每个网页里运行
-  { id: 'floatButton', group: 'page', name: '视频悬浮下载按钮', desc: '鼠标移到视频上显示；可选清晰度', tag: '常驻', def: false },
+  { id: 'floatButton', group: 'page', name: '视频上的“下载”', desc: '在视频右下角的清影胶囊里；点开可以选清晰度', tag: '常驻', def: false },
   { id: 'hoverZoom', group: 'page', name: '图片悬停放大 / 画廊', desc: '按“取原图”规则找大图；规则可以自己加', tag: '常驻', def: false },
   { id: 'unlock', group: 'page', name: '解除复制 / 右键限制', desc: '只对你开启过的网站生效（弹窗“工具”里对当前网站开启）', tag: '常驻 · 主世界', def: true },
   { id: 'webtrans', group: 'page', name: '网页翻译（双语对照 / 悬停 / 划词 / 输入框）', desc: '用清影里设置的大模型，或免费的谷歌翻译；快捷键 Alt+A。设了“自动翻译的网站”才会常驻', tag: '按需 · 自动翻译的网站常驻', def: true },
@@ -36,10 +36,10 @@ function normalizeFeatures(raw) {
 
 /** 常驻内容脚本：key 是脚本编号，need 判断当前设置下是否要注册。文件在内容脚本里按顺序加载。 */
 const RESIDENT_SCRIPTS = [
-  { id: 'cc-float', js: ['content/ui.js', 'content/float-button.js'], need: (f) => f.floatButton },
+  { id: 'cc-float', js: ['content/ui.js', 'content/vdock.js', 'content/float-button.js'], need: (f) => f.floatButton },
   { id: 'cc-zoom', js: ['content/ui.js', 'content/original.js', 'content/hover-zoom.js'], need: (f) => f.hoverZoom },
-  { id: 'cc-audio', js: ['content/ui.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'], need: (f) => f.audioFx },
-  { id: 'cc-video', js: ['content/ui.js', 'content/video-logic.js', 'content/video-control.js'], need: (f) => f.videoMaster && (f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced) },
+  { id: 'cc-audio', js: ['content/ui.js', 'content/vdock.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'], need: (f) => f.audioFx },
+  { id: 'cc-video', js: ['content/ui.js', 'content/vdock.js', 'content/video-logic.js', 'content/video-control.js'], need: (f) => f.videoMaster && (f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced) },
   // 解除限制：只在用户开启过的网站里注册（unlockAll 才是所有网站），在页面自己的环境（MAIN）里尽早运行
   // 网页翻译：只在用户设为“自动翻译”的网站里常驻；其他网站点了才注入
   { id: 'cc-trans', js: ['content/ui.js', 'trans-logic.js', 'content/webtrans.js'], need: (f) => f.webtrans, matches: (_rules, trans) => (trans ? ccTrans.autoMatches(trans) : []) },

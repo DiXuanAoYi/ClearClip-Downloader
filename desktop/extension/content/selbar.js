@@ -5,7 +5,6 @@
   const { h, send, mount, toast } = globalThis.ccUI
   const api = globalThis.browser ?? globalThis.chrome
   const SEL = globalThis.ccSel
-  globalThis.ccSelbarOn = true // 网页翻译里那个只有“译”字的小按钮让位给这条工具条
   globalThis.ccSelbarRun = true
 
   const CSS = `
@@ -238,12 +237,16 @@
     place(card, st.rect || { left: innerWidth / 2 - 190, bottom: innerHeight / 3, top: innerHeight / 3 })
   }
 
-  const doTranslate = () => openCard('翻译', async (set) => {
-    const r = await send({ type: 'cc-tr', texts: [st.text], page: { host: location.host, title: document.title, sample: '' } })
-    if (!r.ok) throw new Error(r.error || '翻译失败了')
-    const t = r.texts?.[0] || ''
-    set(t === st.text ? '这段文字已经是目标语言，不用翻译。' : t)
-  })
+  // 翻译：和网页翻译的划词卡片是同一张（多个服务对比、转到翻译窗、存为笔记）
+  const doTranslate = async () => {
+    const text = st.text
+    const r0 = st.rect || { left: innerWidth / 2 - 190, right: innerWidth / 2 + 190, top: innerHeight / 3, bottom: innerHeight / 3 }
+    const rect = { left: r0.left, right: r0.right, top: r0.top, bottom: r0.bottom }
+    close()
+    if (globalThis.ccWebTrans?.translateSelection) return void globalThis.ccWebTrans.translateSelection(text, rect)
+    const r = await send({ type: 'cc-wt-sel', text, rect })
+    if (!r.ok) toast(uiRoot(), r.error || '翻译失败了', true)
+  }
 
   const doDefine = () => {
     if (SEL.isWord(st.text) && globalThis.ccWordCard) {

@@ -79,7 +79,6 @@
     .note .q { border-left: 3px solid #d9762b; padding-left: 8px; white-space: pre-wrap; }
     .note .x { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
     .note .x button { padding: 1px 7px; font-size: 12px; }
-    .pill { transition: opacity .25s; position: fixed; z-index: 2147483000; padding: 4px 10px; border-radius: 14px; background: #b4561acc; color: #fff; font-size: 12px; box-shadow: 0 2px 8px #0004; }
     .sm { display: flex; flex-direction: column; gap: 12px; }
     .sm .vid { display: grid; gap: 2px; }
     .sm .vid b { font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

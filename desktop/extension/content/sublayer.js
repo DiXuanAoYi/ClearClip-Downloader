@@ -34,17 +34,6 @@
     .cap { position: fixed; pointer-events: none; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px }
     .cap span { font-size: inherit; display: inline-block; max-width: 92%; background: #000a; color: #fff; padding: 2px 10px; border-radius: 4px; white-space: pre-wrap; text-shadow: 0 1px 2px #000; line-height: 1.35 }
     .cap span.second { color: #ffe9a8 }
-    .pill { transition: opacity .25s; position: fixed; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 4px 0 9px; border-radius: 15px; background: #1d2420d9; color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 2px 8px #0005; user-select: none }
-    .pill .mk { width: 16px; height: 16px; border-radius: 5px; background: #f08a3c; color: #14181a; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none }
-    .pill .lb { cursor: pointer; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-    .pill .sw { width: 30px; height: 18px; border-radius: 9px; background: #ffffff59; position: relative; cursor: pointer; padding: 0; border: 0; flex: none }
-    .pill .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s }
-    .pill .sw.on { background: #f08a3c }
-    .pill .sw.on::after { left: 14px }
-    .pill .vd { width: 1px; height: 16px; background: #ffffff4d; flex: none }
-    .pill .dots { width: 26px; height: 26px; border-radius: 13px; padding: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer }
-    .pill .dots:hover, .pill .dots.on { background: #ffffff38 }
-    .pill .dots svg { width: 16px; height: 16px; fill: #fff }
     .menu { position: fixed; display: none; flex-direction: column; gap: 12px; width: 288px; box-sizing: border-box; padding: 14px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; font-size: 13px; box-shadow: 0 10px 30px #0006 }
     .menu.open { display: flex }
     .menu .row { display: flex; flex-direction: column; gap: 6px }
@@ -167,20 +156,8 @@
     { onchange: (e) => setLearn(e.target.value) },
     ...LEARN_OPTS.map(([v, t]) => h('option', { value: v, text: t })),
   )
-  const svgNs = 'http://www.w3.org/2000/svg'
-  const dotsIcon = document.createElementNS(svgNs, 'svg')
-  dotsIcon.setAttribute('viewBox', '0 0 16 16')
-  for (const y of [3, 8, 13]) {
-    const c = document.createElementNS(svgNs, 'circle')
-    c.setAttribute('cx', '8')
-    c.setAttribute('cy', String(y))
-    c.setAttribute('r', '1.5')
-    dotsIcon.append(c)
-  }
   const lbEl = h('span', { class: 'lb', title: '开/关双语字幕', onclick: () => toggleOn() })
   const swEl = h('button', { class: 'sw', title: '开/关双语字幕', 'aria-label': '开/关双语字幕', onclick: () => toggleOn() })
-  const dotsBtn = h('button', { class: 'dots', title: '字幕设置', 'aria-label': '字幕设置', onclick: () => togglePop() }, dotsIcon)
-  const pill = h('div', { class: 'pill' }, h('span', { class: 'mk', text: '清' }), lbEl, swEl, h('span', { class: 'vd' }), dotsBtn)
   const pop = h(
     'div',
     { class: 'menu' },
@@ -215,7 +192,6 @@
   function togglePop(open) {
     const on = open ?? !pop.classList.contains('open')
     pop.classList.toggle('open', on)
-    dotsBtn.classList.toggle('on', on)
     layout()
   }
   async function toggleOn() {
@@ -226,11 +202,26 @@
     layout()
     paint()
   }
+  // 挂进视频胶囊：胶囊上是“双语”和开关；⋮ 菜单里是字幕设置、精听、生词本、关闭
+  const Dock = globalThis.ccVDock
+  Dock.register('sublayer', {
+    order: 5,
+    title: '字幕层',
+    applies: (v) => !S.closed && v === S.video,
+    inline: () => [lbEl, swEl],
+    menu: () => [
+      { label: '字幕设置…', title: '翻译成、显示方式、查词、字号位置、延迟、导出 SRT、转写', onclick: () => togglePop(true) },
+      { label: S.ls ? '退出精听模式' : '精听模式', onclick: () => toggleListen() },
+      { label: '生词本', onclick: () => toggleDrawer() },
+      { label: '关闭字幕层', onclick: () => api_destroy() },
+    ],
+    sticky: () => pop.classList.contains('open'),
+  })
+  document.addEventListener('mousedown', (e) => pop.classList.contains('open') && !e.composedPath().includes(ui.host) && !Dock.owns(e) && togglePop(false), true)
   const bub = h('div', { class: 'bub wcard' })
   const lsEl = h('div', { class: 'ls' })
   const drEl = h('div', { class: 'dr' })
   ui.add(cap)
-  ui.add(pill)
   ui.add(pop)
   ui.add(bub)
   ui.add(lsEl)
@@ -247,30 +238,16 @@
     const r = v && v.isConnected ? v.getBoundingClientRect() : null
     if (!r || r.width < 10) {
       cap.style.display = 'none'
-      pill.style.display = 'none'
       pop.style.display = 'none'
       return
     }
-    pill.style.display = ''
-    // 胶囊放在视频右下角、控制栏上方；菜单在胶囊上方
-    const pw = pill.offsetWidth || 150
-    const ph = pill.offsetHeight || 30
-    const pl = Math.min(window.innerWidth - pw - 4, Math.max(4, r.right - pw - 12))
-    const pt = Math.min(window.innerHeight - ph - 4, Math.max(4, r.bottom - ph - 62))
-    // 鼠标移出视频（含胶囊、菜单）1.5 秒后自动隐藏；菜单打开时一直显示
-    const m = globalThis.__ccPtr || { x: -1, y: -1 }
-    const inBox = (b) => m.x >= b.left && m.x <= b.right && m.y >= b.top && m.y <= b.bottom
-    if (inBox(r) || pop.classList.contains('open') || inBox(pill.getBoundingClientRect())) S.seen = Date.now()
-    const show = Date.now() - S.seen < 1500
-    pill.style.opacity = show ? '1' : '0'
-    pill.style.pointerEvents = show ? '' : 'none'
-    pill.style.left = `${pl}px`
-    pill.style.top = `${pt}px`
+    // 设置菜单放在视频胶囊（vdock.js）上方
     pop.style.display = ''
-    pop.style.left = `${Math.max(4, Math.min(window.innerWidth - 292, pl + pw - 288))}px`
+    const at = Dock.above(288, v)
+    pop.style.left = `${at.left}px`
     pop.style.top = 'auto'
-    pop.style.bottom = `${window.innerHeight - pt + 8}px`
-    pop.style.maxHeight = `${Math.max(120, pt - 16)}px`
+    pop.style.bottom = `${at.bottom}px`
+    pop.style.maxHeight = `${at.maxHeight}px`
     pop.style.overflowY = 'auto'
     const fs = Math.max(12, Math.round((r.height / 22) * (S.prefs.size / 100)))
     cap.style.cssText = `left:${r.left}px;width:${r.width}px;bottom:${Math.max(0, window.innerHeight - r.bottom) + (r.height * S.prefs.bottom) / 100}px;font-size:${fs}px`
@@ -938,6 +915,7 @@
     clearInterval(S.timer)
     window.removeEventListener('resize', layout)
     ui.remove()
+    Dock.unregister('sublayer')
     unsub()
     delete globalThis.ccSubLayerRun
   }
@@ -979,6 +957,8 @@
     S.target = S.prefs.target || (st.ok && st.lang) || '简体中文'
     if (![...langSel.options].some((o) => o.value === S.target)) langSel.append(h('option', { value: S.target, text: S.target }))
     S.video = pickVideo()
+    // 刚打开时让胶囊露一下，知道入口在哪儿
+    if (S.video) Dock.show(S.video)
     if (!S.video) {
       toast(ui, '这个页面没有找到视频', true, 4000)
       return api_destroy()

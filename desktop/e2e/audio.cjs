@@ -5,7 +5,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'].map((f) => path.join(EXT, f))
+const FILES = ['content/ui.js', 'content/vdock.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -142,12 +142,13 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
   const play = (page) => page.evaluate(() => document.getElementById('v').play())
   const stat = (page) => page.evaluate(() => window.__cmd({ type: 'cc-audio', action: 'stat' }))
   const peak = (page, ms = 600) => page.evaluate((m) => window.__peakMax(m), ms)
-  const pillText = (page) => page.evaluate(() => (window.__roots || []).map((r) => r.querySelector('.apill')?.textContent).find(Boolean) || null)
+  // 音效状态现在在视频胶囊（vdock.js）里：● + “音效 -16 LUFS”
+  const pillText = (page) => page.evaluate(() => (window.__roots || []).flatMap((r) => [...r.querySelectorAll('.dock .lb')]).map((x) => x.textContent).find((t) => t.startsWith('音效')) || null)
   const hover = async (page) => { await page.mouse.move(250, 150); await sleep(200); await page.mouse.move(300, 200); await sleep(250) }
 
   // ---- 1. 安静的视频被拉到目标响度（-16 LUFS，输入 -26 dBFS 峰值 ≈ -25.3 LUFS → 约 +9 dB）
   {
-    const { page, errors } = await open('https://site.test/')
+    const { page, errors } = await open('https://site.test/', { store: { audioCfg: { pillShow: true } } })
     await play(page)
     await sleep(7000)
     const s = await stat(page)
@@ -157,7 +158,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
     const p = await peak(page)
     ok('输出峰值接近目标（-21 ~ -14 dBFS）', p > -21 && p < -14, String(p))
     await hover(page)
-    ok('视频上显示小按钮：音效 -16 LUFS', (await pillText(page)) === '音效 -16 LUFS', String(await pillText(page)))
+    ok('视频胶囊里显示音效状态：音效 -16 LUFS', (await pillText(page)) === '音效 -16 LUFS', String(await pillText(page)))
     ok('没有脚本错误', errors.length === 0, errors.join('|'))
 
     // 关闭响度标准化 → 增益回到 0，输出回到原声（峰值约 -26）
@@ -223,7 +224,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 
   // ---- 4. 跨域直链：跳过并提示，声音不受影响
   {
-    const { page } = await open('https://site.test/?src=https://cdn.test/q.wav')
+    const { page } = await open('https://site.test/?src=https://cdn.test/q.wav', { store: { audioCfg: { pillShow: true } } })
     await play(page)
     await sleep(2500)
     const s = await stat(page)
@@ -233,7 +234,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
     const hasToast = await page.evaluate(() => (window.__roots || []).some((r) => /无法统一音量/.test(r.textContent || '')))
     ok('跨域直链：出现“无法统一音量”提示', hasToast)
     await hover(page)
-    ok('跨域直链：小按钮显示“音效 未处理”', (await pillText(page)) === '音效 未处理', String(await pillText(page)))
+    ok('跨域直链：胶囊里显示“音效 未处理”', (await pillText(page)) === '音效 未处理', String(await pillText(page)))
     await page.close()
   }
 
@@ -249,7 +250,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 
   // ---- 5b. “不再提示”：设了就不弹
   {
-    const { page } = await open('https://site.test/?src=https://cdn.test/q.wav', { store: { audioCfg: { notifyOff: true } } })
+    const { page } = await open('https://site.test/?src=https://cdn.test/q.wav', { store: { audioCfg: { notifyOff: true, pillShow: true } } })
     await play(page)
     await sleep(1500)
     const hasToast = await page.evaluate(() => (window.__roots || []).some((r) => /无法统一音量/.test(r.textContent || '')))
@@ -290,11 +291,16 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 
   // ---- 7. 快捷面板：切预设、开混响、本站关闭
   {
-    const { page } = await open('https://site.test/')
+    const { page } = await open('https://site.test/', { store: { audioCfg: { pillShow: true } } })
     await play(page)
     await sleep(1500)
     await hover(page)
-    await page.evaluate(() => (window.__roots || []).map((r) => r.querySelector('.apill')).find(Boolean).click())
+    // 胶囊的 ⋮ 菜单里有“实时音效…”；点胶囊上的音效状态打开面板
+    await page.evaluate(() => (window.__roots || []).map((r) => r.querySelector('.dock .dots')).find(Boolean).click())
+    await sleep(200)
+    const items = await page.evaluate(() => (window.__roots || []).flatMap((r) => [...r.querySelectorAll('.dmenu .it')]).map((b) => b.textContent))
+    ok('胶囊菜单里有“实时音效…”', items.some((t) => t.startsWith('实时音效')), items.join(','))
+    await page.evaluate(() => (window.__roots || []).flatMap((r) => [...r.querySelectorAll('.dmenu .it')]).find((b) => b.textContent.startsWith('实时音效')).click())
     await sleep(200)
     const chips = await page.evaluate(() => (window.__roots || []).flatMap((r) => [...r.querySelectorAll('.apnl .c')].map((b) => b.textContent)))
     ok('面板有五个响度预设和三档混响', ['温和', '标准', '安静', '夜间', '广播', '关', '房间', '大厅'].every((x) => chips.includes(x)), chips.join(','))

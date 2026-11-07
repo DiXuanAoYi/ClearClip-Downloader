@@ -188,7 +188,7 @@ async function startPicker(tab) {
 /** 打开视频摘要面板（再次注入 = 关闭）。 */
 async function startVsum(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用视频摘要')
-  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'])
+  await injectFiles(tab.id, ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'])
 }
 
 /** 在当前页面的视频上叠字幕层（再次注入 = 关闭）。 */
@@ -199,7 +199,7 @@ async function startShot(tab) {
 
 async function startSubLayer(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用字幕层')
-  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js'])
+  await injectFiles(tab.id, ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js'])
 }
 
 // ---------- 以图搜图 ----------
@@ -367,9 +367,30 @@ const HANDLERS = {
     )
     return { results, engines: ccTrans.activeEngines(cfg), names: ccTrans.ENGINE_NAMES }
   },
+  // 划词工具条的“翻译”：在选区所在的那个页面（框架）里打开网页翻译的划词卡片；那里还没有翻译脚本就先注入
+  'cc-wt-sel': async (m, sender) => {
+    const tab = sender?.tab
+    if (!tab) throw new Error('找不到页面')
+    const frameId = sender.frameId ?? 0
+    const r0 = m.rect && typeof m.rect === 'object' ? m.rect : null
+    const rect = r0 ? { left: Number(r0.left) || 0, right: Number(r0.right) || 0, top: Number(r0.top) || 0, bottom: Number(r0.bottom) || 0 } : null
+    const msg = { type: 'cc-wt', action: 'selection', text: String(m.text || '').slice(0, 5000), rect }
+    const ready = (r) => r && typeof r === 'object' && 'on' in r
+    try {
+      if (ready(await api.tabs.sendMessage(tab.id, msg, { frameId }))) return {}
+    } catch {
+      // 还没注入
+    }
+    await api.scripting.executeScript({ target: { tabId: tab.id, frameIds: [frameId] }, files: TR_FILES })
+    await sleep(60)
+    if (!ready(await api.tabs.sendMessage(tab.id, msg, { frameId }))) throw new Error('划词翻译没有启动（这个页面可能不允许扩展运行脚本）')
+    return {}
+  },
   'cc-open-transbox': async (m, sender) => (await openTransBox(sender?.tab || null, String(m.text || '').slice(0, 5000)), {}),
   // 视频摘要读到字幕后，把文稿作为字幕层叠在视频上
   'cc-sublayer-open': async (_m, sender) => (sender?.tab && (await startSubLayer(sender.tab)), {}),
+  // 视频胶囊菜单里的“视频摘要”（再注入一次会关掉，所以胶囊只在没打开时显示这一项）
+  'cc-vsum-open': async (_m, sender) => (sender?.tab && (await startVsum(sender.tab)), {}),
   'cc-tr-clear': async () => (await clearTransCache(), {}),
   // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）
   'cc-note': async (m) => {

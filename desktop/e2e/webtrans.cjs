@@ -343,7 +343,7 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     await page.close()
   }
 
-  // ---- 划词：出现“译”按钮，点开有译文卡片
+  // ---- 划词：不再有单独的“译”小按钮；划词工具条的“翻译”打开这张卡片（多服务、翻译窗、存为笔记）
   {
     const { page } = await open('https://news.test/', { cfg: { target: 'zh-CN' } })
     await page.evaluate(() => window.__cmd('page-off'))
@@ -358,11 +358,11 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
     })
     await page.evaluate(() => document.getElementById('p1').dispatchEvent(new MouseEvent('mouseup', { bubbles: true, composed: true })))
     await settle(page, 200)
-    const hasBtn = await page.evaluate(() => (window.__roots || []).some((r) => r.querySelector('button.sel')))
-    ok('选中文字后出现“译”按钮', hasBtn)
-    await page.evaluate(() => (window.__roots || []).map((r) => r.querySelector('button.sel')).find(Boolean).click())
+    ok('选中文字后不再出现单独的“译”按钮', !(await page.evaluate(() => (window.__roots || []).some((r) => r.querySelector('button.sel')))))
+    await page.evaluate(() => globalThis.ccWebTrans.translateSelection(String(getSelection()), { left: 40, right: 200, top: 60, bottom: 80 }))
     await page.waitForFunction(() => (window.__roots || []).some((r) => /译:/.test(r.querySelector('.card .out')?.textContent || '')), null, { timeout: 8000 })
-    ok('点“译”弹出译文卡片', true)
+    const btns = await page.evaluate(() => (window.__roots || []).flatMap((r) => [...r.querySelectorAll('.card .bar button')]).map((b) => b.textContent))
+    ok('划词工具条调用：弹出译文卡片，有翻译窗、存为笔记、复制', ['翻译窗', '存为笔记', '复制'].every((x) => btns.includes(x)), btns.join(','))
     await page.close()
   }
 

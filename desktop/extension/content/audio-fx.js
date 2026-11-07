@@ -249,12 +249,9 @@
     // 扩展已失效
   }
 
-  // ---------- 视频上的小按钮和快捷面板 ----------
+  // ---------- 视频胶囊里的状态和快捷面板 ----------
 
   const CSS = `
-    .apill { display: flex; align-items: center; gap: 6px; background: #10201ae0; color: #fff; border: 1px solid #ffffff2e; border-radius: 16px; padding: 3px 10px; font-size: 12px; font-weight: 500; cursor: pointer; backdrop-filter: blur(6px); user-select: none; }
-    .apill .d { width: 7px; height: 7px; border-radius: 50%; background: #52b57c; }
-    .apill.w .d { background: #d9a441; } .apill.o .d { background: #8a948f; }
     .apnl { width: 232px; background: #10201af2; color: #fff; border: 1px solid #ffffff29; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; box-shadow: 0 8px 24px #0006; }
     .apnl .r { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .apnl .ch { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -268,21 +265,14 @@
     .atoast { max-width: 300px; background: #10201af2; color: #fff; border: 1px solid #ffffff29; border-radius: 8px; padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 6px 20px #0005; }
   `
   let ui = null
-  let pill = null
   let panel = null
   let hovered = null
-  let hideTimer = 0
-  let lastMove = 0
   let meterTimer = 0
+  const Dock = globalThis.ccVDock
 
   function ensureUi() {
     if (ui) return
     ui = mount(CSS)
-    pill = h('button', { class: 'layer apill', style: 'display:none', title: '实时音效：点开设置', 'aria-haspopup': 'true' })
-    pill.addEventListener('click', togglePanel)
-    pill.addEventListener('mouseenter', () => clearTimeout(hideTimer))
-    pill.addEventListener('mouseleave', scheduleHide)
-    ui.add(pill)
   }
 
   function pillState() {
@@ -295,79 +285,54 @@
     return { cls: '', text: c && cfg.on ? `音效 ${cfg.target} LUFS` : '音效' }
   }
 
-  function refreshPill() {
-    if (!pill) return
-    const s = pillState()
-    if (!s || !hovered) {
-      pill.style.display = 'none'
-      return
-    }
-    pill.className = `layer apill ${s.cls}`
-    pill.replaceChildren(h('span', { class: 'd' }), h('span', { text: s.text }))
-    // 关掉“在视频上显示音效按钮”时，按钮仍占着位置（给 Alt+Shift+A 的面板定位），只是看不见、点不到
-    pill.style.visibility = cfg.pillShow || panel ? '' : 'hidden'
-    place()
-  }
+  // 挂进视频胶囊（vdock.js）：设置里开了“在视频上显示音效状态”时，胶囊上显示状态点和响度；菜单里一项“实时音效…”
+  Dock.register('audio', {
+    order: 30,
+    title: '音效',
+    applies: () => featOn,
+    // 默认不在视频上显示音效状态：这时只在别的功能让胶囊出现时，菜单里多一项“实时音效…”
+    passive: () => !cfg.pillShow && !panel,
+    onHover: (v) => {
+      if (hovered !== v) closePanel()
+      hovered = v
+    },
+    inline: (v) => {
+      hovered = v
+      const st = cfg.pillShow ? pillState() : null
+      if (!st) return null
+      return [Dock.parts.dot(st.cls), Dock.parts.label(st.text, () => togglePanel(), '实时音效：点开设置')]
+    },
+    menu: () => [{ label: '实时音效…', hint: 'Alt+Shift+A', title: '响度标准化、混响、临时关闭', onclick: (v) => ((hovered = v), togglePanel()) }],
+    sticky: () => !!panel,
+  })
+  const refreshPill = () => Dock.refresh()
 
   function place() {
-    if (!hovered || !pill) return
-    const r = hovered.getBoundingClientRect()
-    if (r.width < 240 || r.height < 135 || r.bottom < 60 || r.top > innerHeight - 40) {
-      pill.style.display = 'none'
-      closePanel()
-      return
-    }
-    pill.style.display = ''
-    const w = pill.offsetWidth || 90
-    pill.style.left = `${Math.max(4, Math.min(innerWidth - w - 4, r.right - w - 12))}px`
-    pill.style.top = `${Math.max(8, Math.min(innerHeight - 40, r.bottom - 64))}px`
-    if (panel) {
-      panel.style.left = `${Math.max(4, Math.min(innerWidth - 240, r.right - 244))}px`
-      panel.style.top = `${Math.max(8, parseFloat(pill.style.top) - panel.offsetHeight - 6)}px`
-    }
+    if (!panel) return
+    const p = Dock.above(240, hovered)
+    panel.style.left = `${p.left}px`
+    panel.style.top = 'auto'
+    panel.style.bottom = `${p.bottom}px`
+    panel.style.maxHeight = `${p.maxHeight}px`
+    panel.style.overflowY = 'auto'
   }
 
-  function scheduleHide() {
-    clearTimeout(hideTimer)
-    hideTimer = setTimeout(() => {
-      if (panel || (cfg.pillShow && !cfg.pillHover)) return
-      hovered = null
-      refreshPill()
-    }, 2000)
-  }
-
-  document.addEventListener('mousemove', (e) => {
-    const now = performance.now()
-    if (!featOn || now - lastMove < 150) return
-    lastMove = now
-    let v = null
-    for (const el of e.composedPath?.() || []) if (el.tagName === 'VIDEO') { v = el; break }
-    if (!v) v = document.elementsFromPoint(e.clientX, e.clientY).find((x) => x.tagName === 'VIDEO') || null
-    if (v) {
-      ensureUi()
-      clearTimeout(hideTimer)
-      if (hovered !== v) {
-        hovered = v
-        closePanel()
-      }
-      refreshPill()
-    } else if (hovered) scheduleHide()
-  }, { capture: true, passive: true })
-  // Alt+Shift+A：不显示视频上的按钮时，用快捷键打开同一个音效面板
+  // Alt+Shift+A：用快捷键打开同一个音效面板（胶囊上不显示音效状态时也能用）
   document.addEventListener('keydown', (e) => {
     if (!featOn || !e.altKey || !e.shiftKey || e.code !== 'KeyA' || e.ctrlKey || e.metaKey) return
     const vids = [...document.querySelectorAll('video')].filter((v) => v.getBoundingClientRect().width >= 240)
-    const v = hovered || vids.find((x) => !x.paused) || vids[0]
+    const v = Dock.current() || hovered || vids.find((x) => !x.paused) || vids[0]
     if (!v) return
     e.preventDefault()
-    ensureUi()
     hovered = v
-    refreshPill()
     togglePanel()
+    Dock.show(v)
     place()
   }, true)
-  addEventListener('scroll', () => hovered && place(), { capture: true, passive: true })
-  addEventListener('resize', () => hovered && place())
+  addEventListener('scroll', () => panel && place(), { capture: true, passive: true })
+  addEventListener('resize', () => panel && place())
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && panel && closePanel(), true)
+  document.addEventListener('mousedown', (e) => panel && ui && !e.composedPath().includes(ui.host) && !Dock.owns(e) && closePanel(), true)
 
   const REV_QUICK = [['', '关'], ['room', '房间'], ['hall', '大厅']]
 
@@ -383,11 +348,10 @@
 
   function togglePanel() {
     if (panel) return closePanel()
+    ensureUi()
     if (!meterWanted) meterWanted = 2 // 面板开着就一直测量
     for (const c of chains.values()) wire(c)
     panel = h('div', { class: 'layer apnl' })
-    panel.addEventListener('mouseenter', () => clearTimeout(hideTimer))
-    panel.addEventListener('mouseleave', scheduleHide)
     ui.add(panel)
     renderPanel()
     meterTimer = setInterval(() => panel && updateMeter(), 500)

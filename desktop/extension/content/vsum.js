@@ -24,7 +24,7 @@
     data: null, // 当前文稿：{ title, url, lines, chapters, tracks, ... }
     tab: 'summary',
     status: null, // 清影的状态：{ ready, model, lang, transcribe, maxChars }
-    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: true, srcV: 1, view: 'both', lead: 3, pill: true, prompts: {}, theme: 'auto', fs: 13 },
+    prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: true, srcV: 1, view: 'both', lead: 3, prompts: {}, theme: 'auto', fs: 13 },
     res: {}, // 本次的结果：summary / outline / cards / quotes / translated / rewrite
     chat: [],
     hit: 0, // 当前搜索命中的第几处
@@ -892,7 +892,6 @@
   function tick(force) {
     watchNav()
     const v = video()
-    placePill(v)
     if (!v || !S.data || !isVideo()) return
     const ms = v.currentTime * 1000
     if (S.tab === 'transcript') {
@@ -914,30 +913,21 @@
     }
   }
 
-  const pill = h('button', { class: 'pill', text: '笔记 (n)', title: '记下当前这句话', style: 'display:none', onclick: () => quickNote() })
-  ui.add(pill)
-  let pillSeen = 0
   document.addEventListener('mousemove', (e) => (globalThis.__ccPtr = { x: e.clientX, y: e.clientY, t: Date.now() }), { capture: true, passive: true })
-  function placePill(v) {
-    const r = v?.getBoundingClientRect()
-    const ok = r && S.prefs.pill && S.data && isVideo() && r.width > 200 && r.height > 120 && r.bottom > 0 && r.top < innerHeight
-    pill.style.display = ok ? '' : 'none'
-    if (ok) {
+  // 视频胶囊（vdock.js）的菜单里：记笔记、回到面板、关闭摘要（以前视频左上角单独有个“笔记 (n)”按钮，和播放增强的工具条叠在一起）
+  const Dock = globalThis.ccVDock
+  Dock.register('vsum', {
+    order: 40,
+    title: '视频摘要',
+    applies: () => !S.closed && !!S.data && isVideo(),
+    menu: () => {
       const cnt = S.notes.filter((n) => n.key === localKey()).length
-      const lab = `笔记 (${cnt})`
-      if (pill.textContent !== lab) pill.textContent = lab
-      // 鼠标移出视频区域后淡出隐藏（离开 1.5 秒后）；刚出现时先显示 2.5 秒
-      const m = globalThis.__ccPtr || { x: -1, y: -1, t: 0 }
-      const inside = m.x >= r.left && m.x <= r.right && m.y >= r.top && m.y <= r.bottom
-      if (inside) pillSeen = Date.now()
-      if (!pillSeen) pillSeen = Date.now() + 1000
-      const show = Date.now() - pillSeen < 1500
-      pill.style.opacity = show ? '1' : '0'
-      pill.style.pointerEvents = show ? '' : 'none'
-      pill.style.left = `${Math.max(4, r.left + 8)}px`
-      pill.style.top = `${Math.max(4, r.top + 8)}px`
-    }
-  }
+      return [
+        { label: `记下当前这句（已有 ${cnt} 条）`, hint: 'n', onclick: () => quickNote() || toast(ui, '页面上没有找到视频', true) },
+        { label: '关闭视频摘要', hint: 'Alt+Shift+S', onclick: () => stop() },
+      ]
+    },
+  })
 
   /** 读到字幕后，同时把文稿作为字幕层叠在视频上（已经开着就换成新文稿）；可在文稿页关掉。 */
   let subOpenAt = 0
@@ -1056,6 +1046,7 @@
     // 正在生成的任务不取消：清影继续跑，重新打开后自动接上（要取消请点进度条上的“取消”）
     S.closed = true
     unsubSession()
+    Dock.unregister('vsum')
     saveSession().catch(() => {})
     ui.remove()
     delete globalThis.__ccVsum

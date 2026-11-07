@@ -1,103 +1,60 @@
-// 视频悬浮下载按钮：鼠标移到视频上，右上角出现“用清影下载”，点开可以选发送页面还是发送检测到的视频流。
+// 视频下载：在视频胶囊（vdock.js）上放一个“下载”，点开可以选发送页面还是发送检测到的视频流。
 ;(() => {
   if (globalThis.__ccFloat) return
   globalThis.__ccFloat = true
   const { mount, h, send, hostOff, onSettings, toast } = globalThis.ccUI
 
-  const MIN_W = 240
-  const MIN_H = 135
-  const CSS = `
-    .fb { background: #b4561a; color: #fff; box-shadow: 0 2px 10px #0006; padding: 5px 12px; border-radius: 16px; font-size: 12px; line-height: 18px; }
-    .fb:hover { background: #d9762b; }
-  `
+  const Dock = globalThis.ccVDock
   let ui = null
-  let btn = null
   let menu = null
   let video = null
-  let hideTimer = 0
-  let last = 0
   let off = false
 
   const refresh = () => hostOff('floatButton').then((v) => {
     off = v
-    if (off) hide()
+    if (off) closeMenu()
+    Dock.refresh()
   })
   refresh()
   onSettings(refresh)
 
   function ensureUi() {
     if (ui) return
-    ui = mount(CSS)
-    btn = h('button', { class: 'layer fb', text: '用清影下载', title: '发送到清影', onclick: toggleMenu, style: 'display:none' })
-    btn.addEventListener('mouseenter', () => clearTimeout(hideTimer))
-    btn.addEventListener('mouseleave', scheduleHide)
-    ui.add(btn)
+    ui = mount('')
   }
+
+  // 挂进视频胶囊：胶囊上一个“下载”，点开选发送页面还是检测到的视频流
+  Dock.register('download', {
+    order: 10,
+    title: '下载',
+    applies: () => !off,
+    inline: () => Dock.parts.btn('下载', () => toggleMenu(Dock.current()), '用清影下载（选清晰度或视频流）'),
+    menu: () => [{ label: '用清影下载…', onclick: (v) => toggleMenu(v) }],
+    sticky: () => !!menu,
+  })
 
   function place() {
-    if (!video || !btn) return
-    const r = video.getBoundingClientRect()
-    if (r.width < MIN_W || r.height < MIN_H || r.bottom < 40 || r.top > innerHeight - 40) return hide()
-    const w = btn.offsetWidth || 96
-    const left = Math.max(4, Math.min(r.right - 8 - w, innerWidth - w - 4))
-    const top = Math.max(r.top + 8, 8)
-    btn.style.left = `${left}px`
-    btn.style.top = `${top}px`
-    btn.style.display = ''
-    if (menu) {
-      menu.style.left = `${Math.max(4, Math.min(left, innerWidth - 280))}px`
-      menu.style.top = `${top + 30}px`
-    }
+    if (!menu) return
+    const p = Dock.above(280, video)
+    menu.style.left = `${p.left}px`
+    menu.style.top = 'auto'
+    menu.style.bottom = `${p.bottom}px`
+    menu.style.maxHeight = `${p.maxHeight}px`
+    menu.style.overflowY = 'auto'
   }
-
-  function show(v) {
-    ensureUi()
-    clearTimeout(hideTimer)
-    video = v
-    place()
-  }
-
-  function hide() {
-    clearTimeout(hideTimer)
-    closeMenu()
-    if (btn) btn.style.display = 'none'
-    video = null
-  }
-
-  function scheduleHide() {
-    clearTimeout(hideTimer)
-    hideTimer = setTimeout(() => !menu && hide(), 1500)
-  }
-
-  function videoAt(e) {
-    for (const el of e.composedPath?.() || []) if (el.tagName === 'VIDEO') return el
-    return document.elementsFromPoint(e.clientX, e.clientY).find((x) => x.tagName === 'VIDEO') || null
-  }
-
-  document.addEventListener(
-    'mousemove',
-    (e) => {
-      const now = performance.now()
-      if (off || now - last < 120) return
-      last = now
-      const v = videoAt(e)
-      if (v) show(v)
-      else if (btn && btn.style.display !== 'none') scheduleHide()
-    },
-    { capture: true, passive: true },
-  )
-  addEventListener('scroll', () => video && place(), { capture: true, passive: true })
-  addEventListener('resize', () => video && place())
+  addEventListener('scroll', () => menu && place(), { capture: true, passive: true })
+  addEventListener('resize', () => menu && place())
 
   function closeMenu() {
     menu?.remove()
     menu = null
   }
 
-  async function toggleMenu() {
+  async function toggleMenu(v) {
     if (menu) return closeMenu()
-    const v = video
-    menu = h('div', { class: 'layer menu' }, h('div', { class: 'hd', text: '正在检测视频…' }))
+    ensureUi()
+    video = v
+    menu = h('div', { class: 'layer menu', style: 'width:280px' }, h('div', { class: 'hd', text: '正在检测视频…' }))
     ui.add(menu)
     place()
     const r = await send({ type: 'cc-sniffed' })
@@ -117,4 +74,5 @@
   }
 
   document.addEventListener('keydown', (e) => e.key === 'Escape' && menu && closeMenu(), true)
+  document.addEventListener('mousedown', (e) => menu && ui && !e.composedPath().includes(ui.host) && !Dock.owns(e) && closeMenu(), true)
 })()

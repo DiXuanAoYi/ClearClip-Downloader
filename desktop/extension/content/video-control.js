@@ -13,12 +13,9 @@
   let rates = {}
   let off = false
   let ui = null
-  let bar = null
   let panel = null
   let hovered = null
   let lastGesture = 0
-  let lastMove = 0
-  let hideTimer = 0
   const known = new Set()
   const st = new WeakMap()
   const S = (el) => {
@@ -28,11 +25,6 @@
   }
 
   const CSS = `
-    .vbar { display: flex; gap: 2px; align-items: center; background: #14181add; color: #fff; border-radius: 16px; padding: 3px 6px; box-shadow: 0 2px 10px #0006; font-size: 12px; user-select: none; }
-    .vbar button { background: transparent; color: #fff; padding: 2px 7px; border-radius: 10px; font-size: 12px; font-weight: 500; line-height: 18px; }
-    .vbar button:hover { background: #ffffff33; }
-    .vbar .rate { font-weight: 700; min-width: 42px; text-align: center; color: #ffb27a; }
-    .vbar .sp { width: 1px; height: 14px; background: #ffffff44; margin: 0 3px; }
     .flash { background: #14181acc; color: #fff; border-radius: 8px; padding: 4px 12px; font-size: 16px; font-weight: 700; transform: translateX(-50%); pointer-events: none; }
     .pnl { background: #fff; color: #1d2420; border: 1px solid #cfd5d1; border-radius: 10px; box-shadow: 0 10px 28px #0004; padding: 10px 12px; width: 280px; font-size: 12px; }
     .pnl .r { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
@@ -117,7 +109,10 @@
   scan()
 
   function activeMedia() {
-    if (hovered?.isConnected) return hovered
+    // 鼠标正停在上面的视频优先（胶囊记着最后停过的那个，鼠标移开了就不算）
+    const m = globalThis.__ccPtr
+    const r = hovered?.isConnected ? hovered.getBoundingClientRect() : null
+    if (r && m && m.x >= r.left && m.x <= r.right && m.y >= r.top && m.y <= r.bottom) return hovered
     if (lastActive?.isConnected && !lastActive.paused) return lastActive
     let best = null
     let area = -1
@@ -327,10 +322,10 @@
 
   /** 视频跨域、画布被污染：改用浏览器对可见区域的截图，再裁出视频所在的部分。 */
   async function shotViaTab(el, type) {
-    bar && (bar.host.style.visibility = 'hidden')
+    Dock.setHidden(true)
     await new Promise((r) => setTimeout(r, 90))
     const res = await send({ type: 'cc-capture' })
-    bar && (bar.host.style.visibility = '')
+    Dock.setHidden(false)
     if (!res.ok || !res.dataUrl) return null
     const img = await new Promise((ok) => {
       const i = new Image()
@@ -432,79 +427,56 @@
   }
 
   const BTN = (text, fn, title) => h('button', { text, title, onclick: (e) => { e.stopPropagation(); fn() } })
-  const SP = () => h('span', { class: 'sp' })
 
-  function refreshBar() {
-    if (!bar || !hovered) return
-    const el = hovered
-    const s = S(el)
-    const wide = el.getBoundingClientRect().width >= 420
-    const kids = []
-    if (feat.speed) kids.push(BTN('‹', () => run('slower', el), '减速'), h('span', { class: 'rate', text: L.fmtRate(el.playbackRate) }), BTN('›', () => run('faster', el), '加速'), BTN('复位', () => run('reset', el)))
-    if (feat.seek && wide) kids.push(SP(), BTN(`−${cfg.seekStep}s`, () => run('back', el)), BTN(`+${cfg.seekStep}s`, () => run('forward', el)))
-    if (feat.videoTools && wide) {
-      kids.push(SP(), BTN('截图', () => run('shot', el)))
-      if (el.requestPictureInPicture) kids.push(BTN('画中画', () => run('pip', el)))
-      kids.push(BTN(s.A == null ? '循环 A–B' : s.B == null ? '标记 B' : '取消循环', () => loopStep(el)))
-    }
-    kids.push(SP(), BTN('⋯', () => togglePanel(el), '更多'))
-    bar.firstChild.replaceChildren(...kids)
-  }
+  // 挂进视频胶囊（vdock.js）：胶囊上是倍速 ‹ 1.5× ›，其余（快进快退、截图、画中画、A–B 循环、更多设置）在 ⋮ 菜单里
+  const Dock = globalThis.ccVDock
+  const refreshBar = () => Dock.refresh()
+  const enabled = () => !off && feat.videoMaster && (feat.speed || feat.seek || feat.videoTools || feat.videoAdvanced || feat.speedMemory)
+  Dock.register('video', {
+    order: 20,
+    title: '播放',
+    applies: () => enabled(),
+    onHover: (v) => {
+      hovered = v
+      adopt(v)
+    },
+    inline: (el) => {
+      if (!feat.speed) return null
+      const P = Dock.parts
+      return [P.btn('‹', () => run('slower', el), '减速'), P.text(L.fmtRate(el.playbackRate), '当前倍速'), P.btn('›', () => run('faster', el), '加速')]
+    },
+    menu: (el) => {
+      const s = S(el)
+      const out = []
+      if (feat.speed && el.playbackRate !== 1) out.push({ label: '倍速复位 1×', onclick: () => run('reset', el) })
+      if (feat.seek) out.push({ label: `后退 ${cfg.seekStep} 秒`, onclick: () => run('back', el) }, { label: `前进 ${cfg.seekStep} 秒`, onclick: () => run('forward', el) })
+      if (feat.videoTools) {
+        out.push({ label: '截图', onclick: () => run('shot', el) })
+        if (el.requestPictureInPicture) out.push({ label: '画中画', onclick: () => run('pip', el) })
+        out.push({ label: s.A == null ? '循环 A–B：标记 A' : s.B == null ? '循环 A–B：标记 B' : '取消 A–B 循环', onclick: () => loopStep(el) })
+      }
+      out.push({ label: '播放增强设置…', title: '记住倍速、跳过片头片尾、音量增益、画面调整', onclick: () => togglePanel(el) })
+      return out
+    },
+    sticky: () => !!panel,
+  })
 
   function place() {
-    if (!bar || !hovered) return
-    const r = hovered.getBoundingClientRect()
-    if (r.width < 240 || r.height < 135 || r.bottom < 40 || r.top > innerHeight - 40) return hideBar()
-    const el = bar.firstChild
-    el.style.left = `${Math.max(4, r.left + 8)}px`
-    el.style.top = `${Math.max(r.top + 8, 8)}px`
-    el.style.display = ''
-    if (panel) {
-      panel.style.left = el.style.left
-      panel.style.top = `${parseFloat(el.style.top) + 32}px`
-    }
-  }
-
-  function showBar(v) {
-    if (off || !feat.videoMaster || !(feat.speed || feat.seek || feat.videoTools || feat.videoAdvanced || feat.speedMemory)) return
-    ensureUi()
-    if (!bar) {
-      const wrap = h('div', { class: 'layer vbar', style: 'display:none' })
-      wrap.addEventListener('mouseenter', () => clearTimeout(hideTimer))
-      wrap.addEventListener('mouseleave', scheduleHide)
-      ui.add(wrap)
-      bar = { host: ui.host, firstChild: wrap }
-    }
-    clearTimeout(hideTimer)
-    hovered = v
-    adopt(v)
-    refreshBar()
-    place()
+    if (!panel) return
+    const p = Dock.above(300, hovered)
+    panel.style.left = `${p.left}px`
+    panel.style.top = 'auto'
+    panel.style.bottom = `${p.bottom}px`
+    panel.style.maxHeight = `${p.maxHeight}px`
+    panel.style.overflowY = 'auto'
   }
 
   function hideBar() {
-    clearTimeout(hideTimer)
     closePanel()
-    if (bar) bar.firstChild.style.display = 'none'
     hovered = null
   }
-  const scheduleHide = () => {
-    clearTimeout(hideTimer)
-    hideTimer = setTimeout(() => !panel && hideBar(), 1800)
-  }
-
-  document.addEventListener('mousemove', (e) => {
-    const now = performance.now()
-    if (off || now - lastMove < 120) return
-    lastMove = now
-    let v = null
-    for (const el of e.composedPath?.() || []) if (el.tagName === 'VIDEO') { v = el; break }
-    if (!v) v = document.elementsFromPoint(e.clientX, e.clientY).find((x) => x.tagName === 'VIDEO') || null
-    if (v) showBar(v)
-    else if (bar && bar.firstChild.style.display !== 'none') scheduleHide()
-  }, { capture: true, passive: true })
-  addEventListener('scroll', () => hovered && place(), { capture: true, passive: true })
-  addEventListener('resize', () => hovered && place())
+  addEventListener('scroll', () => panel && place(), { capture: true, passive: true })
+  addEventListener('resize', () => panel && place())
 
   // ---------- “⋯”面板 ----------
 
@@ -519,6 +491,8 @@
 
   function togglePanel(el) {
     if (panel) return closePanel()
+    ensureUi()
+    hovered = el
     const s = S(el)
     const kids = [h('div', { class: 'hd', text: '播放增强' })]
     if (feat.speedMemory) kids.push(row('新视频默认倍速', h('span', { style: 'flex:1', text: rates[host] ? `记住 · ${L.fmtRate(Number(rates[host]))}` : '1×（未记住）' }), BTN('清除', () => { delete rates[host]; saveRates(); closePanel() })))
@@ -568,18 +542,19 @@
       r.off.video = [...new Set([...(r.off.video || []), host])]
       await api.storage.local.set({ siteRules: r })
     })))
-    panel = h('div', { class: 'layer pnl' }, ...kids)
+    panel = h('div', { class: 'layer pnl', style: 'width:300px;box-sizing:border-box' }, ...kids)
     ui.add(panel)
     place()
   }
 
   document.addEventListener('keydown', (e) => e.key === 'Escape' && panel && closePanel(), true)
-  document.addEventListener('mousedown', (e) => panel && !e.composedPath().includes(ui.host) && closePanel(), true)
+  document.addEventListener('mousedown', (e) => panel && !e.composedPath().includes(ui.host) && !Dock.owns(e) && closePanel(), true)
 
   function teardown() {
     hideBar()
     ui?.remove()
-    ui = bar = null
+    ui = null
+    Dock.refresh()
     for (const el of known) {
       const s = S(el)
       if (s.saved) {

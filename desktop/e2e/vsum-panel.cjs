@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
+const FILES = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {

@@ -381,7 +381,7 @@ async function renderTools() {
 }
 
 const SITE_TOGGLES = [
-  { id: 'floatButton', name: '不显示视频悬浮下载按钮', get: (r, h) => hostListed(r.off.floatButton, h), set: (r, h, on) => (r.off.floatButton = toggleHost(r.off.floatButton, h, on)) },
+  { id: 'floatButton', name: '视频胶囊里不显示“下载”', get: (r, h) => hostListed(r.off.floatButton, h), set: (r, h, on) => (r.off.floatButton = toggleHost(r.off.floatButton, h, on)) },
   { id: 'video', name: '不启用播放增强', get: (r, h) => hostListed(r.off.video, h), set: (r, h, on) => (r.off.video = toggleHost(r.off.video, h, on)) },
   { id: 'hoverZoom', name: '不启用图片悬停放大', get: (r, h) => hostListed(r.off.hoverZoom, h), set: (r, h, on) => (r.off.hoverZoom = toggleHost(r.off.hoverZoom, h, on)) },
   { id: 'unlock', name: '解除复制 / 右键限制', get: (r, h) => r.unlockAll || hostListed(r.unlockOn, h), set: (r, h, on) => (r.unlockOn = toggleHost(r.unlockOn, h, on)) },
@@ -556,7 +556,6 @@ async function loadTransCfg() {
   $('svcPrompt_custom').value = c.services.custom?.prompt || ''
   $('trExclude').value = (c.exclude || []).join('\n')
   $('trCss').value = c.customCss || ''
-  $('trSelect').checked = c.select
   $('trInput').checked = c.input
   $('trLazy').checked = c.lazy
   $('trDomain').checked = c.domain
@@ -597,7 +596,6 @@ $('saveTrans').onclick = async () => {
         },
       ]),
     ),
-    select: $('trSelect').checked,
     input: $('trInput').checked,
     lazy: $('trLazy').checked,
     domain: $('trDomain').checked,

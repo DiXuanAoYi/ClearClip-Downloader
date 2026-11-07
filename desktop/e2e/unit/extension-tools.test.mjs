@@ -45,7 +45,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v))
   assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, audioFx: false, writing: false, selbar: false, videoMaster: true, videoTools: true })), ['cc-video', 'cc-unlock'])
   assert.deepEqual(plain(X('neededScripts')({ speed: false, speedMemory: false, seek: false, webtrans: false, writing: false, selbar: false })), ['cc-audio', 'cc-unlock'])
   // 音效脚本按顺序加载：界面工具 → 纯逻辑 → 处理链 → 内容脚本
-  assert.deepEqual(plain(X('RESIDENT_SCRIPTS').find((r) => r.id === 'cc-audio').js), ['content/ui.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'])
+  assert.deepEqual(plain(X('RESIDENT_SCRIPTS').find((r) => r.id === 'cc-audio').js), ['content/ui.js', 'content/vdock.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'])
 }
 
 // ---- 站点规则

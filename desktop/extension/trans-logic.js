@@ -220,7 +220,6 @@
     holdMs: 450, // 按住上面这个键超过这么久也会翻译（不用松手）；0 = 只认单击
     compare: false, // 划词翻译时把所有翻译服务的结果并排显示
     services: {}, // 各翻译服务单独的设置：{ clearclip|google|custom: { enabled?, target?, prompt?, url?, key?, model? } }
-    select: true, // 选中文字后出现“译”按钮
     input: true, // 输入框里连按三次空格，翻译成下面的语言
     inputLang: 'en',
     auto: [], // 这些网站打开就自动翻译
@@ -436,7 +435,6 @@
       holdMs: clampHold(r.holdMs ?? DEFAULT_CFG.holdMs),
       compare: r.compare === true,
       services: normalizeServices(r.services),
-      select: r.select !== false,
       input: r.input !== false,
       inputLang: lang(r.inputLang, DEFAULT_CFG.inputLang),
       auto: hostList(r.auto),

@@ -4,8 +4,8 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const VSUM = ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js']
-const SUB = ['content/ui.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js']
+const VSUM = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js']
+const SUB = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js']
 const SEL = ['content/ui.js', 'selbar-logic.js', 'content/wordcard.js', 'content/selbar.js']
 let pass = 0
 let fail = 0
@@ -72,6 +72,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
           }[req.kind]
           return { ok: true, state: 'done', done: 1, total: 1, note: '', result }
         }
+        if (m.type === 'cc-tr') return { ok: true, texts: (m.texts || []).map((t) => '译:' + t), cached: 0 }
         if (m.type === 'cc-ai-cancel' || m.type === 'cc-note' || m.type === 'cc-sublayer-open' || m.type === 'cc-videocache') return { ok: true }
         return { ok: false, error: 'unknown ' + m.type }
       },
@@ -129,6 +130,39 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
   const cap2 = await inRoots(() => window.__roots.map((r) => r.querySelector('.cap')).find(Boolean)?.textContent || '')
   ok('会话换了字幕，字幕层跟着换并重新翻译', /Another track line/.test(cap2) && /译:Another/.test(cap2), cap2)
 
+  // 4b. 视频胶囊：字幕层的“双语”开关和视频摘要的“记笔记”都在同一个胶囊里（以前各有一个小按钮）
+  await page.mouse.move(300, 120)
+  await page.waitForTimeout(150)
+  await page.mouse.move(320, 140)
+  await page.waitForTimeout(400)
+  const dock = await page.evaluate(() => {
+    const all = (window.__roots || []).flatMap((r) => [...r.querySelectorAll('.dock')])
+    const d = all.find((x) => x.style.display !== 'none')
+    return d ? { n: all.length, text: d.innerText.replace(/\s+/g, ' '), sw: !!d.querySelector('.sw') } : null
+  })
+  ok('一个胶囊，上面有字幕层的“双语”开关', dock && dock.n === 1 && /双语/.test(dock.text) && dock.sw, JSON.stringify(dock))
+  ok('没有以前的字幕胶囊和“笔记 (n)”按钮', !(await page.evaluate(() => (window.__roots || []).some((r) => r.querySelector('.pill')))))
+  await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dock .dots')).find(Boolean).click())
+  await page.waitForTimeout(250)
+  const mItems = await page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('.dmenu .it')]).map((b) => b.textContent))
+  ok('菜单里有字幕设置、精听、生词本、关闭字幕层', ['字幕设置…', '精听模式', '生词本', '关闭字幕层'].every((x) => mItems.some((t) => t.startsWith(x))), mItems.join(' | '))
+  ok('菜单里有记笔记、关闭视频摘要；已经打开的不再出现在“打开”里', mItems.some((t) => t.startsWith('记下当前这句')) && mItems.some((t) => t.startsWith('关闭视频摘要')) && !mItems.some((t) => t.startsWith('视频摘要 / 总结')) && !mItems.some((t) => t.startsWith('双语字幕层')), mItems.join(' | '))
+  await page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('.dmenu .it')]).find((b) => b.textContent.startsWith('字幕设置')).click())
+  await page.waitForTimeout(300)
+  const popAt = await page.evaluate(() => {
+    const pop = window.__roots.map((r) => r.querySelector('.menu.open')).find(Boolean)
+    const cap = window.__roots.map((r) => r.querySelector('.dock')).find(Boolean)
+    return pop && cap ? { pop: pop.getBoundingClientRect().bottom, cap: cap.getBoundingClientRect().top } : null
+  })
+  ok('字幕设置在胶囊上方打开', popAt && popAt.pop <= popAt.cap + 1, JSON.stringify(popAt))
+  await page.evaluate(() => window.__roots.map((r) => r.querySelector('.menu.open')).find(Boolean)?.classList.remove('open'))
+  // 胶囊上的开关：关掉字幕再打开
+  await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dock .sw')).find(Boolean).click())
+  await page.waitForTimeout(300)
+  ok('胶囊上的开关能关掉字幕', !(await page.evaluate(() => /译:/.test(window.__roots.map((r) => r.querySelector('.cap')).find(Boolean)?.textContent || ''))))
+  await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dock .sw')).find(Boolean).click())
+  await page.waitForTimeout(400)
+
   // 5. 字幕层查词：共用词卡（释义、本句意思、本句、例句、加入生词本）
   await page.evaluate(() => {
     const w = window.__roots.map((r) => r.querySelector('.cap .w')).find(Boolean)
@@ -183,6 +217,29 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
   await page.waitForTimeout(300)
   const added2 = await page.evaluate(() => window.__added)
   ok('划词词卡加入生词本', added2?.word === 'resilient' && /resilient garden/.test(added2.sentence), JSON.stringify(added2))
+
+  // 7. 划词工具条的“翻译”：打开网页翻译的同一张卡片（多服务、翻译窗、存为笔记），页面上不再有单独的“译”按钮
+  await inject(['trans-logic.js', 'content/webtrans.js'])
+  await page.evaluate(() => {
+    const p = document.getElementById('txt')
+    const tn = p.firstChild
+    const rng = document.createRange()
+    rng.setStart(tn, 4)
+    rng.setEnd(tn, 30)
+    getSelection().removeAllRanges()
+    getSelection().addRange(rng)
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 120, clientY: 400 }))
+  })
+  await page.waitForFunction(() => (window.__roots || []).some((r) => [...r.querySelectorAll('.bar button')].some((b) => b.textContent.trim() === '翻译')), null, { timeout: 4000 }).catch(() => {})
+  ok('页面上没有单独的“译”按钮', !(await page.evaluate(() => (window.__roots || []).some((r) => r.querySelector('button.sel')))))
+  await page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('.bar button')]).find((b) => b.textContent.trim() === '翻译').click())
+  await page.waitForFunction(() => (window.__roots || []).some((r) => /译:/.test(r.querySelector('.card .out')?.textContent || '')), null, { timeout: 5000 }).catch(() => {})
+  const trCard = await page.evaluate(() => {
+    const c = window.__roots.map((r) => r.querySelector('.card .out')).find((x) => x && /译:/.test(x.textContent))
+    const card = c?.closest('.card')
+    return card ? { out: c.textContent, btns: [...card.querySelectorAll('.bar button')].map((b) => b.textContent) } : null
+  })
+  ok('划词“翻译”打开网页翻译的卡片', trCard && /^译:resilient/.test(trCard.out) && ['翻译窗', '存为笔记'].every((x) => trCard.btns.includes(x)), JSON.stringify(trCard))
 
   ok('没有页面错误', !errors.length, errors.join(' | '))
   await browser.close()
