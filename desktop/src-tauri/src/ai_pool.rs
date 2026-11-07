@@ -506,7 +506,15 @@ pub struct Cand {
 pub fn from_entry(e: &PoolEntry, usable: bool) -> Cand {
     // 机器翻译服务只参与翻译
     let tasks = if crate::mt::Kind::parse(&e.kind).is_mt() { vec!["translate".to_string()] } else { e.tasks.clone() };
-    Cand { id: e.id.clone(), priority: e.priority, daily_limit: e.daily_limit, monthly_chars: e.monthly_chars, chars_used: 0, tasks, usable: usable && e.enabled }
+    Cand {
+        id: e.id.clone(),
+        priority: e.priority,
+        daily_limit: e.daily_limit,
+        monthly_chars: e.monthly_chars,
+        chars_used: 0,
+        tasks,
+        usable: usable && e.enabled,
+    }
 }
 
 /// 按规则排出可以依次尝试的服务（返回 `cands` 的下标）。

@@ -14,6 +14,7 @@ mod clipboard;
 mod commands;
 pub mod console;
 pub mod cookies;
+pub mod datareg;
 pub mod db;
 pub mod diagnostics;
 pub mod dictate;
@@ -25,9 +26,7 @@ pub mod error;
 pub mod excerpts;
 pub mod experts;
 pub mod experts_cmds;
-pub mod datareg;
 pub mod filetr;
-pub mod tm;
 pub mod glossary;
 pub mod glossary_cmds;
 pub mod grab;
@@ -83,6 +82,7 @@ pub mod subtitle;
 pub mod subtitle_io;
 pub mod subtitle_tools;
 pub mod supadata;
+pub mod tm;
 pub mod tools;
 pub mod track;
 pub mod transfer;
@@ -647,6 +647,8 @@ pub fn run() {
             library_cmds::backup_export,
             library_cmds::backup_import,
             library_cmds::restart_app,
+            ai_cmds::tm_stats,
+            ai_cmds::tm_clear,
             ai_cmds::secret_set,
             ai_cmds::secret_has,
             ai_cmds::ai_status,

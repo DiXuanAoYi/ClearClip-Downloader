@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn glossary_terms_survive_machine_translation_via_placeholders() {
-        let terms = vec![crate::glossary::Term { source: "Rust".into(), target: "锈语言".into(), ..Default::default() }];
+        let terms = [crate::glossary::Term { source: "Rust".into(), target: "锈语言".into(), ..Default::default() }];
         let refs: Vec<&crate::glossary::Term> = terms.iter().collect();
         let sys = format!("Translate into 简体中文. JSON array{}", crate::glossary::prompt_block(&refs));
         let g = glossary_of(&sys);

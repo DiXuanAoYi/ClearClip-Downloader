@@ -30,6 +30,25 @@ async function reload() {
 }
 onMounted(reload)
 
+// 翻译记忆：所有翻译入口共用的“原文 → 译文”；换了术语库或专家后旧的机器译文自动不再命中
+const tm = ref<[number, number]>([0, 0])
+const loadTm = () => api.tmStats().then((v) => (tm.value = v), () => {})
+onMounted(loadTm)
+async function clearTm() {
+  try {
+    await ElMessageBox.confirm('清空翻译记忆里的机器译文？你在文件翻译阅读器里改过的译文会保留。', '翻译记忆', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    const n = await api.tmClear()
+    ElMessage.success(`已清空 ${n} 条`)
+    await loadTm()
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+
 // ---------- 术语库列表与编辑 ----------
 const editing = ref<Glossary | null>(null)
 const matchText = ref('')
@@ -228,6 +247,10 @@ function onTab(name: string | number) {
       让专有名词、行话在翻译里始终是同一个译法。每次翻译只会把这一批文字里<b>出现过</b>的术语告诉模型，不增加多少用量。可以自己建、从沉浸式翻译的
       <a href="#" @click.prevent="api.openUrl('https://github.com/immersive-translate/terms')">公共术语库</a>安装，或者让模型从字幕 / 网页里智能提取，确认后入库。CSV 格式与沉浸式翻译相同，可互相导入导出。
     </small>
+    <div class="tmrow">
+      <small class="mute">翻译记忆：{{ tm[0] }} 条（其中人工改过 {{ tm[1] }} 条）。网页、字幕、屏幕、文件翻译共用，同一句话不重复翻；换了术语库或 AI 专家后，旧的机器译文自动不再使用。</small>
+      <el-button size="small" text :disabled="!tm[0] || tm[0] === tm[1]" @click="clearTm">清空机器译文</el-button>
+    </div>
 
     <el-tabs v-model="tab" @tab-change="onTab">
       <!-- 我的术语库 -->
@@ -382,4 +405,5 @@ h4 { margin: 0; font-size: 13px; }
 .field label { font-size: 12px; color: var(--cc-mute); }
 .bd { margin-left: 6px; }
 @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+.tmrow { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
 </style>

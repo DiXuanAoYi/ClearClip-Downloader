@@ -1720,13 +1720,12 @@ pub fn prompt_version(st: &crate::AppState) -> String {
     let glossaries: Vec<_> = st.glossary.snapshot().glossaries.into_iter().filter(|g| g.enabled).collect();
     // 翻译真正会用到的服务：池里启用的、适用于翻译的条目（模型、类型），加上旧的默认设置。
     // 以前只算 s.ai.model，迁移到模型池后它一直是空的，换模型时扩展的缓存不会失效。
-    let route: Vec<serde_json::Value> = s
-        .ai
-        .pool
-        .iter()
-        .filter(|e| e.enabled && (e.tasks.is_empty() || e.tasks.iter().any(|t| t == "translate")))
-        .map(|e| serde_json::json!([e.id, e.kind, e.model, e.base_url, e.priority]))
-        .collect();
+    let route: Vec<serde_json::Value> =
+        s.ai.pool
+            .iter()
+            .filter(|e| e.enabled && (e.tasks.is_empty() || e.tasks.iter().any(|t| t == "translate")))
+            .map(|e| serde_json::json!([e.id, e.kind, e.model, e.base_url, e.priority]))
+            .collect();
     let material = serde_json::json!({
         "model": s.ai.model, "route": route, "expert": s.ai.expert, "auto": s.ai.expert_auto, "glossaryOn": s.ai.glossary_on,
         "experts": st.experts.all(), "glossaries": glossaries,

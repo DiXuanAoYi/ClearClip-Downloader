@@ -226,6 +226,15 @@ pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply
                 Err(e) => err("400 Bad Request", &e.message),
             }
         }
+        // 浏览器扩展的用户数据（笔记、高亮、本地导入的字幕）：同步过来进备份，换浏览器 / 重装扩展时取回
+        ("POST", "/api/v1/extdata") => {
+            let v: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            match crate::datareg::ext_save(&state.data_dir, &v["data"]) {
+                Ok(ts) => ok(json!({"ts": ts})),
+                Err(e) => err("400 Bad Request", &e.message),
+            }
+        }
+        ("GET", "/api/v1/extdata") => ok(crate::datareg::ext_load(&state.data_dir)),
         ("GET", "/api/v1/vocab/clips") => ok(json!({"words": crate::vocab::clips(&state.data_dir).into_iter().map(|(k, _)| k).collect::<Vec<_>>()})),
         // 视频缓存（浏览器扩展用）：同步摘要 / 双语字幕快照，恢复时取回
         ("POST", "/api/v1/videocache/put") => match serde_json::from_slice::<crate::videocache::Put>(&req.body) {

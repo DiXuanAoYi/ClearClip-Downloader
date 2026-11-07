@@ -534,7 +534,39 @@ api.commands?.onCommand.addListener(async (cmd) => {
   }
 })
 
+// ---------- 扩展的用户数据同步到清影（笔记、高亮、本地导入的字幕）：进清影的备份；新装扩展时自动取回 ----------
+
+const EXT_KEYS = ['vsumNotes', 'hlData', 'vsumLocal']
+let extPushTimer = 0
+function pushExtDataSoon() {
+  clearTimeout(extPushTimer)
+  extPushTimer = setTimeout(async () => {
+    try {
+      const data = await api.storage.local.get(EXT_KEYS)
+      await call('/api/v1/extdata', { data })
+    } catch {
+      // 清影没开：下次改动时再同步
+    }
+  }, 15000)
+}
+async function pullExtData() {
+  try {
+    const r = await call('/api/v1/extdata')
+    const have = await api.storage.local.get(EXT_KEYS)
+    const fill = {}
+    for (const k of EXT_KEYS) {
+      const v = r?.data?.[k]
+      const empty = have[k] == null || (Array.isArray(have[k]) ? !have[k].length : typeof have[k] === 'object' && !Object.keys(have[k]).length)
+      if (v != null && empty) fill[k] = v
+    }
+    if (Object.keys(fill).length) await api.storage.local.set(fill)
+  } catch {
+    // 清影没开或没配对：不取回
+  }
+}
+
 api.runtime.onInstalled.addListener(async (d) => {
+  if (d?.reason === 'install') pullExtData()
   // 升级上来的用户保持原来的样子：视频上的音效按钮继续显示（新安装默认不显示）
   if (d?.reason === 'update') {
     try {
@@ -571,5 +603,8 @@ api.storage.onChanged.addListener((ch, area) => {
   }
   if (ch.engines) rebuildMenusSoon()
   if (ch.siteRules || ch.transCfg) syncResident()
+  if (EXT_KEYS.some((k) => ch[k])) pushExtDataSoon()
+  // 刚连上清影（填了令牌 / 配对成功）：本地还没有的笔记、高亮从清影取回
+  if (ch.token?.newValue && !ch.token.oldValue) pullExtData()
 })
 syncResident()

@@ -702,7 +702,15 @@ fn monthly_character_quota_takes_a_service_out_of_rotation() {
     pool.record_chars("deepl", 20, now);
     assert_eq!(pool.chars_used("deepl", now), 500_010);
     assert_eq!(pool.chars_used("deepl", now + 40 * 86400), 0, "下个月重新算");
-    let c = |id: &str, limit: u64, used: u64| Cand { id: id.into(), priority: 10, daily_limit: 0, monthly_chars: limit, chars_used: used, tasks: vec![], usable: true };
+    let c = |id: &str, limit: u64, used: u64| Cand {
+        id: id.into(),
+        priority: 10,
+        daily_limit: 0,
+        monthly_chars: limit,
+        chars_used: used,
+        tasks: vec![],
+        usable: true,
+    };
     let cands = vec![c("deepl", 500_000, pool.chars_used("deepl", now)), c("llm", 0, 0)];
     let order = rank(&cands, &Default::default(), Task::Translate, now);
     assert_eq!(order, vec![1], "本月额度用完的机器翻译不再被挑中");

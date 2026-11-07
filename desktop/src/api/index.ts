@@ -284,6 +284,8 @@ export const api = {
   restartApp: () => invoke<void>('restart_app'),
 
   secretSet: (name: string, value: string) => invoke<void>('secret_set', { name, value }),
+  tmStats: () => invoke<[number, number]>('tm_stats'),
+  tmClear: () => invoke<number>('tm_clear'),
   secretHas: (name: string) => invoke<boolean>('secret_has', { name }),
   aiStatus: () => invoke<AiStatus>('ai_status'),
   aiTest: () => invoke<string>('ai_test'),

@@ -97,8 +97,8 @@ pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, exe
         .map_err(|e| AppError::msg(e.to_string()))?;
         // 直接等结果（以前是把请求塞进给扩展用的任务表，再每 80 毫秒查一次）
         let fut = crate::vsum::run_now(app, req, stop);
-        let res = tauri::async_runtime::block_on(async { tokio::time::timeout(Duration::from_secs(90), fut).await })
-            .map_err(|_| AppError::msg("翻译超时"))??;
+        let res =
+            tauri::async_runtime::block_on(async { tokio::time::timeout(Duration::from_secs(90), fut).await }).map_err(|_| AppError::msg("翻译超时"))??;
         let got = res["lines"].as_array().cloned().unwrap_or_default();
         for item in got {
             let (Some(k), Some(tr)) = (item["t"].as_u64(), item["text"].as_str()) else { continue };

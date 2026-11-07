@@ -38,6 +38,7 @@ pub const ITEMS: &[Item] = &[
     user("glossaries.json", "术语库"),
     user("experts.json", "AI 专家"),
     user("excerpts.json", "摘录"),
+    user(EXT_FILE, "浏览器扩展的笔记、高亮和导入的字幕"),
     Item { path: "tm.db", class: Class::User, dir: false, sqlite: true, label: "翻译记忆（含人工改过的译文）" },
     Item { path: "videocache.db", class: Class::Cache, dir: false, sqlite: true, label: "视频缓存（摘要会话、双语字幕）" },
     Item { path: "filetr", class: Class::Cache, dir: true, sqlite: false, label: "文件翻译缓存" },
@@ -46,6 +47,38 @@ pub const ITEMS: &[Item] = &[
     Item { path: "previews", class: Class::Cache, dir: true, sqlite: false, label: "预览图" },
     Item { path: "vault.bin", class: Class::Secret, dir: false, sqlite: false, label: "保存的密钥" },
 ];
+
+/// 浏览器扩展同步过来的用户数据（笔记、高亮、本地导入的字幕）。
+pub const EXT_FILE: &str = "extension-data.json";
+/// 扩展数据的大小上限（HTTP 接口正文上限是 2 MiB）。
+pub const EXT_MAX: usize = 1_900_000;
+/// 扩展会同步的键：只认这些，别的不收。
+pub const EXT_KEYS: [&str; 3] = ["vsumNotes", "hlData", "vsumLocal"];
+
+/// 存扩展同步来的数据（只留认得的键），返回保存的时间。
+pub fn ext_save(data_dir: &Path, data: &serde_json::Value) -> AppResult<i64> {
+    let mut keep = serde_json::Map::new();
+    for k in EXT_KEYS {
+        if let Some(v) = data.get(k) {
+            keep.insert(k.to_string(), v.clone());
+        }
+    }
+    let ts = crate::db::now();
+    let body = serde_json::json!({"ts": ts, "data": keep}).to_string();
+    if body.len() > EXT_MAX {
+        return Err(crate::error::AppError::invalid("扩展数据太大，没有同步"));
+    }
+    let p = data_dir.join(EXT_FILE);
+    let tmp = p.with_extension("json.tmp");
+    std::fs::write(&tmp, body)?;
+    std::fs::rename(&tmp, &p)?;
+    Ok(ts)
+}
+
+/// 读出扩展数据：`{"ts": .., "data": {..}}`，没有就是 `{"ts": 0, "data": {}}`。
+pub fn ext_load(data_dir: &Path) -> serde_json::Value {
+    std::fs::read(data_dir.join(EXT_FILE)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_else(|| serde_json::json!({"ts": 0, "data": {}}))
+}
 
 /// 备份里放用户数据的目录前缀。
 pub const BACKUP_PREFIX: &str = "data/";
@@ -141,6 +174,21 @@ mod tests {
         assert!(restorable("vocab.db") && restorable("vocab-clips/a.webm") && restorable("excerpts.json"));
         assert!(!restorable("vault.bin") && !restorable("../evil") && !restorable("vocab-clips/../x") && !restorable("filetr/a.json"));
         assert!(!restorable("vocab-clips/") && !restorable("vocab-clips/a/b"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn extension_data_keeps_only_known_keys() {
+        let d = std::env::temp_dir().join(format!("cc-datareg-ext-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        assert_eq!(ext_load(&d)["ts"], 0);
+        ext_save(&d, &serde_json::json!({"vsumNotes": [{"id": "n1"}], "hlData": {"a": 1}, "secret": "x"})).unwrap();
+        let v = ext_load(&d);
+        assert_eq!(v["data"]["vsumNotes"][0]["id"], "n1");
+        assert!(v["data"].get("secret").is_none(), "不认识的键不收");
+        assert!(restorable(EXT_FILE) && user_files(&d).iter().any(|f| f.rel == EXT_FILE), "进备份");
+        assert!(ext_save(&d, &serde_json::json!({"hlData": "x".repeat(EXT_MAX)})).is_err());
         let _ = std::fs::remove_dir_all(&d);
     }
 

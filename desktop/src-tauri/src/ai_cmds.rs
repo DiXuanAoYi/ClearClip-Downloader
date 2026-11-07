@@ -22,6 +22,18 @@ fn check_secret_name(name: &str) -> AppResult<()> {
     }
 }
 
+/// 翻译记忆：一共几条、其中几条是人工改过的。
+#[tauri::command]
+pub fn tm_stats(state: St<'_>) -> (u64, u64) {
+    crate::tm::count(&state.data_dir)
+}
+
+/// 清空翻译记忆里的机器译文（人工改过的保留），返回清掉几条。
+#[tauri::command]
+pub fn tm_clear(state: St<'_>) -> AppResult<u64> {
+    crate::tm::clear_machine(&state.data_dir)
+}
+
 #[tauri::command]
 pub fn secret_set(state: St<'_>, name: String, value: String) -> AppResult<()> {
     check_secret_name(&name)?;
@@ -208,7 +220,8 @@ pub fn filetr_start(app: AppHandle, path: String, opts: crate::filetr::Opts) -> 
         return Err(AppError::invalid("支持 TXT、Markdown、PDF、SRT / VTT / ASS 字幕、Word(docx)、EPUB，以及图片（PNG / JPG / WebP）。"));
     }
     // 记下源文件和选项：文件翻译页切走再回来，靠它认出“这个任务是哪个文件、是不是只预览”
-    let meta = media_tools::JobMeta { kind: Some("filetr"), input: Some(p.to_string_lossy().into_owned()), params: serde_json::to_value(&opts).unwrap_or_default() };
+    let meta =
+        media_tools::JobMeta { kind: Some("filetr"), input: Some(p.to_string_lossy().into_owned()), params: serde_json::to_value(&opts).unwrap_or_default() };
     Ok(media_tools::spawn_job_meta(&app, title_of(&p), "文件翻译", meta, move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
 }
 

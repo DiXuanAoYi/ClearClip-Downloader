@@ -4,8 +4,8 @@
 //! - 人工改过的译文（文件翻译阅读器里改的）记为 edited，不受术语版本影响，优先于机器译文。
 //! - 换了术语库或 AI 专家（术语版本变了）就不再命中旧的机器译文；换模型不影响（同一句话不必因为换了模型重译）。
 
-use std::path::Path;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 
 use rusqlite::{params, Connection};
 
@@ -35,10 +35,27 @@ impl Profile {
     }
 }
 
-static CONN: OnceLock<Mutex<Connection>> = OnceLock::new();
+/// 打开的数据库连接，连同它对应的数据目录（数据目录换了就重新打开；测试里每个用例用自己的目录）。
+static CONN: Mutex<Option<(PathBuf, Connection)>> = Mutex::new(None);
 
-fn conn(data_dir: &Path) -> AppResult<MutexGuard<'static, Connection>> {
-    if CONN.get().is_none() {
+struct Guard(MutexGuard<'static, Option<(PathBuf, Connection)>>);
+
+impl std::ops::Deref for Guard {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        &self.0.as_ref().expect("tm").1
+    }
+}
+
+impl std::ops::DerefMut for Guard {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.0.as_mut().expect("tm").1
+    }
+}
+
+fn conn(data_dir: &Path) -> AppResult<Guard> {
+    let mut g = CONN.lock().unwrap_or_else(|e| e.into_inner());
+    if g.as_ref().map_or(true, |(p, _)| p != data_dir) {
         let c = Connection::open(data_dir.join("tm.db")).map_err(|e| AppError::msg(format!("打开翻译记忆失败：{e}")))?;
         c.execute_batch(
             "PRAGMA journal_mode=WAL;
@@ -49,9 +66,9 @@ fn conn(data_dir: &Path) -> AppResult<MutexGuard<'static, Connection>> {
              CREATE INDEX IF NOT EXISTS tm_ts ON tm(ts);",
         )
         .map_err(|e| AppError::msg(e.to_string()))?;
-        let _ = CONN.set(Mutex::new(c));
+        *g = Some((data_dir.to_path_buf(), c));
     }
-    Ok(CONN.get().expect("tm").lock().unwrap_or_else(|e| e.into_inner()))
+    Ok(Guard(g))
 }
 
 fn norm(src: &str) -> String {

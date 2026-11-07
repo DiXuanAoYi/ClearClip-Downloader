@@ -55,7 +55,11 @@ pub fn blocks_of(groups: &[Group], translations: &[String], w: usize, h: usize) 
             let y = (g.y as f64 / fh).clamp(0.0, 1.0);
             let rw = (g.w as f64 / fw).clamp(0.0, 1.0 - x);
             let rh = (g.h as f64 / fh).clamp(0.0, 1.0 - y);
-            Block { text: g.text.trim().to_string(), translation: tr.map(|t| t.trim().to_string()).unwrap_or_default(), rect: (rw > 0.0 && rh > 0.0).then_some([x, y, rw, rh]) }
+            Block {
+                text: g.text.trim().to_string(),
+                translation: tr.map(|t| t.trim().to_string()).unwrap_or_default(),
+                rect: (rw > 0.0 && rh > 0.0).then_some([x, y, rw, rh]),
+            }
         })
         .collect()
 }
@@ -72,7 +76,13 @@ pub async fn recognize(st: &crate::AppState, engine: &str, bgra: Vec<u8>, w: usi
 }
 
 /// 本机识字 + 翻译任务：返回和视觉模型一样的 `{"blocks": [...], "engine": ...}`。
-pub async fn translate_image(app: &tauri::AppHandle, st: &Arc<crate::AppState>, req: &crate::vsum::Req, stop: &AtomicBool, progress: impl Fn(usize, usize)) -> AppResult<Value> {
+pub async fn translate_image(
+    app: &tauri::AppHandle,
+    st: &Arc<crate::AppState>,
+    req: &crate::vsum::Req,
+    stop: &AtomicBool,
+    progress: impl Fn(usize, usize),
+) -> AppResult<Value> {
     let engine = resolve(req.ocr.trim(), &st.settings().live.ocr);
     let (bgra, w, h) = decode_data_url(&req.image)?;
     progress(0, 2);
@@ -117,7 +127,8 @@ mod tests {
 
     #[test]
     fn recognized_lines_become_relative_blocks() {
-        let lines = vec![OLine::new("Start", 10.0, 10.0, 40.0, 20.0), OLine::new("Game", 55.0, 11.0, 45.0, 19.0), OLine::new("Options", 10.0, 100.0, 60.0, 20.0)];
+        let lines =
+            vec![OLine::new("Start", 10.0, 10.0, 40.0, 20.0), OLine::new("Game", 55.0, 11.0, 45.0, 19.0), OLine::new("Options", 10.0, 100.0, 60.0, 20.0)];
         let g = group_lines(&lines);
         let b = blocks_of(&g, &["开始游戏".to_string()], 200, 200);
         assert_eq!(b.len(), g.len());
