@@ -92,7 +92,7 @@ const navs: { id: ViewName; label: string }[] = [
   { id: 'screen', label: '屏幕翻译' },
   { id: 'library', label: '媒体库' },
   { id: 'filetr', label: '文件翻译' },
-  { id: 'vocab', label: '生词本' },
+  { id: 'vocab', label: '生词与摘录' },
   { id: 'tools', label: '工具箱' },
   { id: 'safebox', label: '保险箱' },
   { id: 'settings', label: '设置' },

@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
+const FILES = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -52,6 +52,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
           window.__calls.push(m)
           if (m.type === 'cc-app-lang') return { ok: true, lang: 'zh' }
           if (m.type === 'cc-tr') return { ok: true, texts: (m.texts || []).map((t) => '译:' + t), cached: 0 }
+          if (m.type === 'cc-vocab') return { ok: true, words: [], stats: {} }
           if (m.type === 'cc-ai-status') return { ok: true, ready: o.ready !== false, model: 'm', lang: '中文', transcribe: true, subtitles: true, maxChars: 600000 }
           if (m.type === 'cc-ai-run') {
             window.__job = m.req
@@ -114,8 +115,9 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       const r = window.__roots.find((x) => x.querySelector('.ln'))
       const span = r.querySelector('.ln span:nth-child(2)')
       const rng = document.createRange()
-      rng.setStart(span.firstChild, 0)
-      rng.setEnd(span.firstChild, 3)
+      const tn = document.createTreeWalker(span, NodeFilter.SHOW_TEXT).nextNode()
+      rng.setStart(tn, 0)
+      rng.setEnd(tn, 3)
       const s = r.getSelection ? r.getSelection() : getSelection()
       s.removeAllRanges()
       s.addRange(rng)
@@ -167,6 +169,21 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.close()
   }
 
+  // ---- 站内切换视频（网址变了、页面没刷新）：自动重新读取字幕
+  {
+    const { page, errors } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    const seen = []
+    page.on('request', (r) => seen.push(r.url()))
+    await page.evaluate(() => history.pushState({}, '', '/watch?v=second12345'))
+    await page.waitForFunction(() => true)
+    await settle(page, 2500)
+    ok('切换视频后自动去读新视频的字幕', seen.some((u) => u.includes('v=second12345')), seen.join('|'))
+    ok('切换后面板重新显示文稿', /段/.test(await text(page, '.meta')))
+    ok('切换视频流程无页面错误', errors.length === 0, errors.join('|'))
+    await page.close()
+  }
+
   // ---- YouTube：读字幕 → 摘要
   {
     const { page, errors } = await open(YT)
@@ -174,7 +191,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const meta = await text(page, '.meta')
     ok('读到字幕：3 段、轨道名', /3 段/.test(meta) && /English/.test(meta), meta)
     ok('标题取自页面数据', (await text(page, '.hd')).includes('Demo "video"'))
-    ok('读到字幕后自动打开字幕层（把文稿交过去）', await page.evaluate(() => window.__calls.some((c) => c.type === 'cc-sublayer-open') && window.__sub?.length === 3 || (globalThis.ccSubLayerSeed?.lines?.length === 3)), '')
+    ok('读到字幕后自动打开字幕层（文稿放进视频会话）', await page.evaluate(() => window.__calls.some((c) => c.type === 'cc-sublayer-open') && globalThis.ccVSession?.current().lines.length === 3), '')
     await clickText(page, '生成摘要')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('这个视频介绍了 Rust')), null, { timeout: 8000 })
     const run = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-ai-run').req)
@@ -215,9 +232,38 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       i.dispatchEvent(new Event('input'))
     })
     await settle(page, 300)
-    await clickText(page, '翻译（自动方向）')
+    // 文稿显示：原文 / 译文 / 双语（没翻译时是原文，选译文或双语才去翻译，原文始终保留）
+    const viewSel = () => window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).find((x) => [...x.options].some((o) => o.value === 'tr') && x.options.length === 3)
+    ok('文稿里有“原文 / 译文 / 双语”选择，没翻译时停在原文', await page.evaluate((f) => { const x = eval('(' + f + ')')(); return x && [...x.options].map((o) => o.text).join('|') === '原文|译文|双语' && x.value === 'orig' }, viewSel.toString()))
+    ok('没翻译时文稿显示的是原文', !(await text(page, '#lines')).includes('译:'))
+    await page.evaluate((f) => { const x = eval('(' + f + ')')(); x.value = 'both'; x.dispatchEvent(new Event('change')) }, viewSel.toString())
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('译:Welcome')), null, { timeout: 8000 })
+    ok('选双语：自动去翻译，每行原文下方出现译文（原文没有被替换）', (await text(page, '#lines')).includes('Welcome') && (await text(page, '#lines')).includes('译:Welcome'))
+    // 鼠标放在原文上，下面对应的译文高亮
+    const rect = await page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln .mn')).find(Boolean); const b = el.getBoundingClientRect(); return { x: b.x + 10, y: b.y + b.height / 2 } })
+    const bgOf = () => page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln .tr')).find(Boolean); return getComputedStyle(el).backgroundColor })
+    await page.mouse.move(5, 5)
+    const idle = await bgOf()
+    await page.mouse.move(rect.x, rect.y)
+    await settle(page, 250)
+    const lit = await bgOf()
+    ok('鼠标放在原文上：对应译文高亮', idle !== lit && lit !== 'rgba(0, 0, 0, 0)', idle + ' → ' + lit)
+    await page.mouse.move(5, 5)
     ok('翻译后每行下方有译文', true)
+    // 生词页：切到这一页就主动刷新（不再有“刷新”按钮）
+    const vocabCalls = () => page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-vocab' && c.op === 'list').length)
+    const v0 = await vocabCalls()
+    const tabVocab = () => page.evaluate(() => [...window.__roots.flatMap((r) => [...r.querySelectorAll('.tabs button')])].find((b) => /^生词/.test(b.textContent.trim())).click())
+    await tabVocab()
+    await settle(page, 300)
+    const v1 = await vocabCalls()
+    await clickText(page, '文稿')
+    await tabVocab()
+    await settle(page, 300)
+    const v2 = await vocabCalls()
+    ok('每次切到“生词”都向清影要最新的生词', v1 > v0 && v2 > v1, `${v0} → ${v1} → ${v2}`)
+    ok('生词页没有“刷新”按钮', !(await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('.acts button, button')].some((b) => b.textContent.trim() === '刷新')))))
+    await clickText(page, '文稿')
 
     // 任意语言互译：下拉里选日语，请求里带的是 Japanese
     const langs = await page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).filter((x) => [...x.options].some((o) => o.value === 'ja')).map((x) => x.options.length))
@@ -270,11 +316,11 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('卡片、金句、改写都出来了', true)
     const rewrite = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1).req)
     ok('改写请求带格式与摘要 Markdown', rewrite.format === 'xhs' && rewrite.text.includes('这个视频介绍了 Rust') && rewrite.text.includes('t=41s'), rewrite.text?.slice(0, 120))
-    // 存便签
-    await clickText(page, '存进清影的便签')
+    // 存进摘录
+    await clickText(page, '存进清影的摘录')
     await settle(page, 300)
     const note = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-note'))
-    ok('便签内容是 Markdown 笔记', note && note.text.startsWith('# Demo "video"') && note.text.includes('Rust 又快又安全'), note?.text?.slice(0, 80))
+    ok('摘录内容是 Markdown 笔记（末尾带来源）', note && note.text.startsWith('# Demo "video"') && note.text.includes('Rust 又快又安全') && /\n来源：.*\nhttps:\/\/www.youtube.com/.test(note.text), note?.text?.slice(-120))
 
     // 缓存：同样的摘要不再请求
     const before = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)
@@ -477,6 +523,23 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '生成摘要')
     await settle(page, 600)
     ok('点生成会提示去设置', await page.evaluate(() => window.__roots.some((r) => /设置 → AI/.test(r.textContent))))
+    await page.close()
+  }
+
+  // ---- 面板拆成了几个文件（vsum-*.js）：每个标签页都能打开、有内容、不报错
+  {
+    const { page, errors } = await open(YT)
+    await page.waitForFunction(() => window.__roots?.some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    ok('各标签页的文件都加载了', await page.evaluate(() => ['transcript', 'notes', 'comments', 'vocab', 'mindmap', 'more'].every((k) => typeof globalThis.ccVsumTabs?.[k] === 'function') && !!globalThis.ccVsumStyle?.CSS))
+    const seen = []
+    for (const tab of ['摘要', '章节', '文稿', '导图', '问答', '笔记', '生词', '评论', '更多']) {
+      await clickText(page, tab)
+      await settle(page, 350)
+      const t = await text(page)
+      seen.push(`${tab}:${t.replace(/\s+/g, '').length}`)
+    }
+    ok('九个标签页都有内容', seen.every((x) => Number(x.split(':')[1]) > 20), seen.join(' '))
+    ok('切换所有标签页没有页面错误', errors.length === 0, errors.join('|'))
     await page.close()
   }
 

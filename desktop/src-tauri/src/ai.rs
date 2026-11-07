@@ -94,7 +94,9 @@ pub fn chat_endpoint_for(st: &AppState, settings: &Settings, task: Task) -> AppR
         } else {
             !e.base_url.is_empty() && !e.model.is_empty() && (key.is_some() || is_local_url(&e.base_url))
         };
-        cands.push(ai_pool::from_entry(e, usable));
+        let mut cand = ai_pool::from_entry(e, usable);
+        cand.chars_used = st.ai_pool.chars_used(&e.id, crate::db::now());
+        cands.push(cand);
         rows.push(Row {
             id: e.id.clone(),
             name: if e.name.is_empty() { e.id.clone() } else { e.name.clone() },
@@ -107,7 +109,7 @@ pub fn chat_endpoint_for(st: &AppState, settings: &Settings, task: Task) -> AppR
     if !ai.base_url.is_empty() && !ai.model.is_empty() {
         let key = st.vault.get(KEY_CHAT).filter(|k| !k.is_empty());
         let usable = key.is_some() || is_local_url(&ai.base_url);
-        cands.push(ai_pool::Cand { id: "default".into(), priority: 500, daily_limit: 0, tasks: vec![], usable });
+        cands.push(ai_pool::Cand { id: "default".into(), priority: 500, daily_limit: 0, monthly_chars: 0, chars_used: 0, tasks: vec![], usable });
         rows.push(Row { id: "default".into(), name: "默认".into(), base: ai.base_url.clone(), model: ai.model.clone(), key, kind: crate::mt::Kind::Chat });
     }
     if ai.pool.is_empty() {
@@ -349,6 +351,11 @@ pub async fn chat_img(ep: &Endpoint, model: &str, system: &str, text: &str, imag
 }
 
 /// `user` 是消息内容：纯文字是字符串，带图片是内容块数组。
+/// 按模型名判断能不能看图（和“检测可用模型”同一套规则）。
+pub(crate) fn can_see(model: &str) -> bool {
+    crate::ai_probe::classify(model, &Value::Null).iter().any(|c| c == "vision")
+}
+
 async fn chat_msg(ep: &Endpoint, model: &str, system: &str, user: Value) -> AppResult<String> {
     if ep.cands.is_empty() {
         return chat_one(ep, model, system, &user).await;
@@ -356,7 +363,13 @@ async fn chat_msg(ep: &Endpoint, model: &str, system: &str, user: Value) -> AppR
     let now = || crate::db::now();
     let mut tried: Vec<String> = Vec::new();
     let mut last: Option<AppError> = None;
-    for c in &ep.cands {
+    // 带图片的请求（识图翻译、漫画、扫描页）：能看图的模型排前面（按模型名判断，见 ai_probe::classify），纯文字模型留在后面兜底
+    let has_image = user.as_array().is_some_and(|a| a.iter().any(|p| p.get("type").and_then(Value::as_str) == Some("image_url")));
+    let mut order: Vec<&Candidate> = ep.cands.iter().collect();
+    if has_image {
+        order.sort_by_key(|c| !can_see(&c.model));
+    }
+    for c in order {
         if c.kind.is_mt() {
             // 机器翻译服务：只接“把一批文字译成某种语言”的请求，其他（术语提取、看图、摘要）跳过换下一家
             let Some((lang, texts)) = crate::mt::translate_request(system, &user) else { continue };
@@ -365,10 +378,13 @@ async fn chat_msg(ep: &Endpoint, model: &str, system: &str, user: Value) -> AppR
                 last = Some(e);
                 continue;
             }
-            match crate::mt::translate(&c.client, c.kind, &c.base, c.key.as_deref(), &c.model, &lang, &texts).await {
+            // 术语库：机器翻译不认提示词，用占位符保护术语，回来再换成规定的译法
+            let (sent, maps) = crate::mt::protect_terms(&texts, &crate::mt::glossary_of(system));
+            match crate::mt::translate(&c.client, c.kind, &c.base, c.key.as_deref(), &c.model, &lang, &sent).await.map(|v| crate::mt::restore_terms(v, &maps)) {
                 Ok(v) => {
                     if let Some(p) = &ep.pool {
                         p.record_ok(&c.id, now());
+                        p.record_chars(&c.id, texts.iter().map(|t| t.chars().count() as u64).sum(), now());
                     }
                     return Ok(serde_json::to_string(&v)?);
                 }
@@ -406,6 +422,13 @@ async fn chat_msg(ep: &Endpoint, model: &str, system: &str, user: Value) -> AppR
                 last = Some(e);
             }
         }
+    }
+    if has_image && !ep.cands.iter().any(|c| can_see(&c.model)) {
+        let hint = "模型池里没有能看图的模型（如 qwen-vl、glm-4v、gemini、gpt-4o）。识图翻译、漫画模式、扫描版 PDF 需要这类模型，或改用本机识字。";
+        return Err(match last {
+            Some(e) => AppError::new(e.kind, format!("{hint}最近的错误：{}", e.message)),
+            None => AppError::invalid(hint),
+        });
     }
     let last = last.unwrap_or_else(|| {
         AppError::invalid(
@@ -1398,14 +1421,32 @@ pub async fn run_translate(ctx: &JobCtx, input: &Path) -> AppResult<PathBuf> {
         Ok(())
     };
     let terms = if settings.ai.glossary_on { ctx.st.glossary.terms_for("", lang_tag(&settings.ai.target_lang)) } else { vec![] };
-    let t = translate_cues_g(&ep, &settings.ai.model, &settings.ai.target_lang, &cues, settings.ai.batch_size, &terms, &progress).await?;
-    let merged = apply_translation(&cues, &t.texts, settings.ai.bilingual);
+    // 翻译记忆：字幕档案下译过的句子直接用，只把没命中的交给模型，译完写回
+    let target = settings.ai.target_lang.clone();
+    let tv = crate::tm::terms_version(&ctx.st);
+    let src: Vec<String> = cues.iter().map(|c| c.lines.join("\n")).collect();
+    let mut texts = crate::tm::lookup(&ctx.st.data_dir, crate::tm::Profile::Subtitle, &target, &tv, &src);
+    let todo: Vec<usize> = (0..cues.len()).filter(|i| texts[*i].is_none()).collect();
+    if !todo.is_empty() {
+        let work: Vec<Cue> = todo.iter().map(|i| cues[*i].clone()).collect();
+        let t = translate_cues_g(&ep, &settings.ai.model, &target, &work, settings.ai.batch_size, &terms, &progress).await?;
+        let mut pairs = vec![];
+        for (k, i) in todo.iter().enumerate() {
+            texts[*i] = t.texts.get(k).cloned().flatten();
+            if let Some(tr) = &texts[*i] {
+                pairs.push((src[*i].clone(), tr.clone()));
+            }
+        }
+        crate::tm::store(&ctx.st.data_dir, crate::tm::Profile::Subtitle, &target, &tv, "pool", &pairs);
+    }
+    let merged = apply_translation(&cues, &texts, settings.ai.bilingual);
     let tag = lang_tag(&settings.ai.target_lang);
     let base = strip_lang_suffix(&stem_of(input)).to_string();
     let out = out_beside(input, &base, tag, "srt");
     std::fs::write(&out, subtitle::format_srt(&merged))?;
-    if t.failed > 0 {
-        ctx.note(format!("有 {} 条没有翻译成功，保留了原文。", t.failed));
+    let failed = texts.iter().filter(|t| t.is_none()).count();
+    if failed > 0 {
+        ctx.note(format!("有 {failed} 条没有翻译成功，保留了原文。"));
     }
     register_subtitle(&ctx.st, input, &out, tag);
     Ok(out)

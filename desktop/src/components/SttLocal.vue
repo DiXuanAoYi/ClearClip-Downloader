@@ -34,7 +34,7 @@ async function choose(id: string) {
   if (!props.persist) return
   try {
     const s = await api.getSettings()
-    await api.saveSettings({ ...s, ai: { ...s.ai, sttLocalModel: id, sttEngine: 'local' } })
+    await api.saveSettings({ ...s, ai: { ...s.ai, sttLocalModel: id, sttEngine: 'local' } }, s)
   } catch (e) {
     ElMessage.error(errorText(e))
   }

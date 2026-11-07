@@ -64,3 +64,15 @@ assert.equal(S.toSrt(lines, trans, 'trans', 0).split('\n\n')[0], '1\n00:00:01,00
 assert.equal(S.srtTime(3_723_004), '01:02:03,004')
 assert.equal(S.cacheKey('yt:abc', '简体中文', 'p1'), 'yt:abc|简体中文|p1')
 console.log('extension-sublayer: ok')
+
+// 字幕层样式：全局 `* { font: 13px }` 会把词的 <i> 缩成 13px（学习模式下原文变小）；查词浮窗要够宽、按钮不换行
+import { readFileSync } from 'node:fs'
+{
+  const src = readFileSync(new URL('../../extension/content/sublayer.js', import.meta.url), 'utf8')
+  assert.ok(/\.cap \.w \{ font: inherit;/.test(src), '词的样式要继承字幕字号')
+  assert.ok(/\.bub \{[^}]*width: 400px/.test(src), '查词浮窗宽度 400')
+  assert.ok(/\.bub \.row2 button \{ white-space: nowrap/.test(src), '按钮不换行')
+  const card = readFileSync(new URL('../../extension/content/wordcard.js', import.meta.url), 'utf8')
+  assert.ok(src.includes("'本视频'") && card.includes("'例句'"), '例句：本视频其他句 + 模型例句（共用词卡）')
+  assert.ok(!/\.wcard \{[^}]*display:/.test(card), '词卡样式不能自带 display（字幕层的浮窗靠 display 开关）')
+}

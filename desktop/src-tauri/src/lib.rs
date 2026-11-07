@@ -14,6 +14,7 @@ mod clipboard;
 mod commands;
 pub mod console;
 pub mod cookies;
+pub mod datareg;
 pub mod db;
 pub mod diagnostics;
 pub mod dictate;
@@ -30,6 +31,7 @@ pub mod glossary;
 pub mod glossary_cmds;
 pub mod grab;
 pub mod i18n;
+pub mod imagetext;
 pub mod imgtrans;
 pub mod inbox;
 pub mod lan;
@@ -80,6 +82,7 @@ pub mod subtitle;
 pub mod subtitle_io;
 pub mod subtitle_tools;
 pub mod supadata;
+pub mod tm;
 pub mod tools;
 pub mod track;
 pub mod transfer;
@@ -106,6 +109,16 @@ use crate::cookies::CookieStore;
 use crate::db::Db;
 use crate::download::DownloadManager;
 use crate::settings::Settings;
+
+/// 设置变了就通知所有窗口（主窗口、贴字层、写作窗、截图窗），界面把别处的改动合进自己正在编辑的表单。
+static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+pub fn settings_changed(s: &Settings) {
+    if let Some(app) = APP_HANDLE.get() {
+        use tauri::Emitter;
+        let _ = app.emit("settings-changed", s);
+    }
+}
 
 pub struct AppState {
     pub settings: RwLock<Settings>,
@@ -165,6 +178,24 @@ impl AppState {
     /// 保存的设置原样（不含省流量模式的临时调整）。
     pub fn settings_raw(&self) -> Settings {
         self.settings.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// 后端改设置的唯一入口：在一把写锁里完成“读、改、存盘”，改完通知所有窗口。
+    /// 以前各处是“复制一份、改、整份写回”，两处同时改、或设置页开着时，会把别人的改动覆盖掉。
+    pub fn update_settings<R>(&self, f: impl FnOnce(&mut Settings) -> R) -> crate::error::AppResult<R> {
+        let (r, snap) = {
+            let mut g = self.settings.write().unwrap_or_else(|e| e.into_inner());
+            let mut s = g.clone();
+            let r = f(&mut s);
+            if s == *g {
+                return Ok(r);
+            }
+            s.save(&self.settings_path)?;
+            *g = s.clone();
+            (r, s)
+        };
+        settings_changed(&snap);
+        Ok(r)
     }
 
     /// 解析用的上下文；开启“录制样本”时附带样本目录。
@@ -302,6 +333,7 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
+            let _ = APP_HANDLE.set(app.handle().clone());
             let handle = app.handle().clone();
             let (config_dir, data_dir) = match portable_dir() {
                 Some(p) => (p.clone(), p),
@@ -384,7 +416,11 @@ pub fn run() {
                 subs: subs::SubsState::default(),
                 live: live::LiveState::default(),
                 media_jobs: media_tools::MediaJobs::default(),
-                ai_pool: Arc::new(ai_pool::AiPool::default()),
+                ai_pool: {
+                    let p = Arc::new(ai_pool::AiPool::default());
+                    p.load_chars(&data_dir);
+                    p
+                },
                 glossary: Arc::new(glossary::Store::open(&data_dir)),
                 experts: Arc::new(experts::Store::open(&data_dir)),
                 vault,
@@ -403,6 +439,14 @@ pub fn run() {
             ai_pool::migrate_default(&app.state::<Arc<AppState>>());
             download::restore(&handle);
             batch::restore(&handle);
+            // 以前浏览器扩展存成“收到的文件”文字便签的摘录，搬进“摘录”（只做一次）
+            {
+                let st = app.state::<Arc<AppState>>();
+                let n = excerpts::migrate_browser_notes(&st.data_dir, &st.db);
+                if n > 0 {
+                    log::info!("moved {n} browser notes into excerpts");
+                }
+            }
             if let Ok(n) = app.state::<Arc<AppState>>().db.inbox_prune(settings.inbox.keep_days, settings.inbox.max_items) {
                 if n > 0 {
                     log::info!("pruned {n} old inbox items");
@@ -439,8 +483,9 @@ pub fn run() {
             library_cmds::spawn_maintenance(&handle);
             security::spawn_idle_watch(&handle);
             security::apply_window_protection(&handle, settings.security.content_protection);
-            tray::apply_float(&handle, settings.float_ball && !locked);
-            livetr::ensure_bar(&handle, settings.live.float_button && !locked);
+            if !locked {
+                tray::sync_float(&handle);
+            }
             spawn_account_reminders(handle.clone());
 
             tray::create(&handle)?;
@@ -608,9 +653,12 @@ pub fn run() {
             library_cmds::duplicates_similar,
             library_cmds::cues_search,
             library_cmds::cues_reindex,
+            library_cmds::ext_data_status,
             library_cmds::backup_export,
             library_cmds::backup_import,
             library_cmds::restart_app,
+            ai_cmds::tm_stats,
+            ai_cmds::tm_clear,
             ai_cmds::secret_set,
             ai_cmds::secret_has,
             ai_cmds::ai_status,
@@ -650,6 +698,7 @@ pub fn run() {
             ai_cmds::filetr_preview,
             ai_cmds::filetr_view,
             ai_cmds::filetr_page_preview,
+            ai_cmds::filetr_page_layout,
             ai_cmds::filetr_edit,
             ai_cmds::filetr_retranslate,
             subedit::subtitle_tracks,
@@ -711,6 +760,7 @@ pub fn run() {
             excerpts::excerpt_remove,
             excerpts::excerpt_note,
             excerpts::excerpt_markdown,
+            excerpts::excerpt_export,
             edit::highlights::edit_highlights,
             edit::highlights::edit_highlights_llm,
             edit::analyze::edit_waveform,
@@ -790,7 +840,7 @@ pub fn run() {
             livetr::sc_shot_save,
             livetr::sc_ack_manga,
             livetr::sc_bar,
-            livetr::sc_bar_expand,
+            tray::float_expand,
             livetr::sc_try,
             livetr::sc_history,
             livetr::sc_history_clear,

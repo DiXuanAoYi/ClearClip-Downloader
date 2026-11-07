@@ -643,6 +643,121 @@ pub fn ink_bbox(bgra: &[u8], w: usize, h: usize, x: f32, y: f32, rw: f32, rh: f3
     Some([bx0 as f32, by0 as f32, ow, oh])
 }
 
+// ---------- 图标：不是文字，不识别也不翻译 ----------
+
+/// 常被识字引擎当成“字”的图标形状（人像、齿轮、铃铛、心形、方框……认出来多半是这些符号）。
+const ICON_GLYPHS: &str = "©®@°•·○●◯◎□■▢▣◇◆♡♥☆★✓✔✗✘⊙⊕⊗⊘⊞⊟⌂⏻☰≡※¤§¶†‡⚙⛭☐☑☒◐◑◒◓♪♫⬚⬜⬛▶◀▲▼►◄";
+/// 两个字母的正常界面文字（不当成图标）。
+const SHORT_WORDS: &[&str] =
+    &["ok", "no", "go", "up", "on", "to", "by", "me", "my", "we", "us", "hi", "in", "is", "it", "of", "or", "so", "tv", "pc", "id", "ai", "ui", "vs"];
+
+fn is_text_script(c: char) -> bool {
+    is_cjk(c) || ('\u{3040}'..='\u{30FF}').contains(&c) || ('\u{AC00}'..='\u{D7AF}').contains(&c)
+}
+
+/// 单独一块、像图标的识字结果：一两个字符、不是中日韩文字、框接近正方形（图标就是方的），或者全是符号。
+pub fn is_icon_like(l: &OLine) -> bool {
+    let cs: Vec<char> = l.text.chars().filter(|c| !c.is_whitespace()).collect();
+    if cs.is_empty() {
+        return true;
+    }
+    if cs.iter().any(|c| is_text_script(*c)) {
+        return false;
+    }
+    if cs.iter().all(|c| !c.is_alphanumeric()) && cs.len() <= 3 {
+        return true;
+    }
+    if cs.len() > 2 {
+        return false;
+    }
+    let low: String = cs.iter().flat_map(|c| c.to_lowercase()).collect();
+    if cs.len() == 2 && (SHORT_WORDS.contains(&low.as_str()) || cs.iter().all(|c| c.is_ascii_digit())) {
+        return false;
+    }
+    // 一个字符，或者两个字符但框是方的（两个字母的单词一般比字高宽得多）
+    cs.len() == 1 || l.w <= l.h * 1.25
+}
+
+/// 一行里每一列有没有“字迹”（和底色差得多的点）。
+fn ink_columns(bgra: &[u8], w: usize, h: usize, l: &OLine) -> Option<Vec<bool>> {
+    if w == 0 || h == 0 || bgra.len() < w * h * 4 || l.w < 4.0 || l.h < 4.0 {
+        return None;
+    }
+    let (bg, _) = sample_colors(bgra, w, h, l.x, l.y, l.w, l.h);
+    let x0 = (l.x.max(0.0) as usize).min(w - 1);
+    let x1 = ((l.x + l.w).max(0.0) as usize).min(w);
+    let y0 = ((l.y + l.h * 0.1).max(0.0) as usize).min(h - 1);
+    let y1 = ((l.y + l.h * 0.9).max(0.0) as usize).min(h);
+    if x1 <= x0 + 2 || y1 <= y0 {
+        return None;
+    }
+    Some((x0..x1).map(|x| (y0..y1).any(|y| dist(px(bgra, w, x, y), bg) > 60)).collect())
+}
+
+/// 行首是图标（“👤 Account” 被认成 “8 Account”）：按字迹找行首那一块和后面文字之间的大空隙
+/// （图标和文字之间的空隙比单词间的空格宽得多）。返回文字开始的列（相对行首）。
+fn icon_gap(cols: &[bool], em: f32) -> Option<usize> {
+    let first = cols.iter().position(|c| *c)?;
+    let mut i = first;
+    while i < cols.len() && cols[i] {
+        i += 1;
+    }
+    // 图标本身最宽约 1.6 个字高
+    if (i - first) as f32 > em * 1.6 {
+        return None;
+    }
+    let gap_start = i;
+    while i < cols.len() && !cols[i] {
+        i += 1;
+    }
+    if i >= cols.len() {
+        return None;
+    }
+    ((i - gap_start) as f32 >= em * 0.45).then_some(i)
+}
+
+/// 去掉图标：像图标的整块丢掉；行首的图标符号去掉（坐标跟着挪到文字开头）。
+/// `img` 是识字用的那张图（BGRA）；有图时按字迹判断行首的字母 / 数字是不是图标，没图只认明显的图标符号。
+pub fn drop_icons(lines: Vec<OLine>, img: Option<(&[u8], usize, usize)>) -> Vec<OLine> {
+    lines
+        .into_iter()
+        .filter(|l| !is_icon_like(l))
+        .filter_map(|mut l| {
+            if l.vertical {
+                return Some(l);
+            }
+            let chars: Vec<char> = l.text.chars().collect();
+            let total = chars.len().max(1) as f32;
+            // 行首一个图标符号（后面可以有也可以没有空格）
+            let lead_glyph = chars.first().is_some_and(|c| ICON_GLYPHS.contains(*c));
+            // 行首单独一个字母 / 数字，后面是空格和一个像样的词
+            let mut it = l.text.splitn(2, ' ');
+            let (head, rest) = (it.next().unwrap_or(""), it.next().unwrap_or("").trim_start());
+            let lone = head.chars().count() == 1 && !head.chars().any(is_text_script) && rest.chars().filter(|c| c.is_alphabetic()).count() >= 2;
+            if !(lead_glyph || lone) {
+                return Some(l);
+            }
+            let gap = img.and_then(|(b, w, h)| ink_columns(b, w, h, &l)).and_then(|cols| icon_gap(&cols, l.h));
+            let strip = lead_glyph || gap.is_some();
+            if !strip {
+                return Some(l);
+            }
+            let text: String = if lone { rest.to_string() } else { chars.iter().skip_while(|c| ICON_GLYPHS.contains(**c) || c.is_whitespace()).collect() };
+            if text.trim().is_empty() {
+                return None;
+            }
+            let cut = match gap {
+                Some(px) => px as f32,
+                None => l.w * (total - text.chars().count() as f32) / total,
+            };
+            l.x += cut;
+            l.w = (l.w - cut).max(1.0);
+            l.text = text.trim().to_string();
+            Some(l)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -664,6 +779,63 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn icons_are_not_text() {
+        let sq = |t: &str| OLine::new(t, 0.0, 0.0, 20.0, 20.0);
+        // 设置侧栏的图标被认成的“字”
+        for t in ["8", "©", "(", "Q", "@", "O", "E", "≡", "8)", "D", "()"] {
+            assert!(is_icon_like(&sq(t)), "{t} 是图标");
+        }
+        // 真正的短文字不能丢
+        assert!(!is_icon_like(&OLine::new("OK", 0.0, 0.0, 30.0, 20.0)));
+        assert!(!is_icon_like(&OLine::new("设", 0.0, 0.0, 20.0, 20.0)));
+        assert!(!is_icon_like(&OLine::new("12", 0.0, 0.0, 22.0, 20.0)));
+        assert!(!is_icon_like(&OLine::new("Account", 0.0, 0.0, 90.0, 20.0)));
+        assert!(!is_icon_like(&OLine::new("Go", 0.0, 0.0, 20.0, 20.0)));
+        // 两个字母、框是方的：图标
+        assert!(is_icon_like(&OLine::new("Qj", 0.0, 0.0, 20.0, 20.0)));
+        let out = drop_icons(vec![sq("8"), OLine::new("Account", 40.0, 0.0, 90.0, 20.0), OLine::new("© Billing", 0.0, 30.0, 110.0, 20.0)], None);
+        let texts: Vec<_> = out.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, ["Account", "Billing"]);
+        assert!(out[1].x > 0.0, "去掉图标后框挪到文字开头");
+    }
+
+    #[test]
+    fn leading_icon_found_by_the_gap_in_the_pixels() {
+        // 白底，一个 18 像素宽的图标，空 20 像素，后面是一串字（每个字 8 像素，字间 2 像素）
+        let (w, h) = (200usize, 24usize);
+        let mut img = vec![255u8; w * h * 4];
+        let ink = |img: &mut Vec<u8>, x0: usize, x1: usize| {
+            for y in 3..21 {
+                for x in x0..x1 {
+                    let i = (y * w + x) * 4;
+                    img[i] = 0;
+                    img[i + 1] = 0;
+                    img[i + 2] = 0;
+                }
+            }
+        };
+        ink(&mut img, 10, 28);
+        let mut x = 48;
+        while x < 150 {
+            ink(&mut img, x, x + 8);
+            x += 10;
+        }
+        let line = OLine::new("8 Account", 8.0, 2.0, 150.0, 20.0);
+        let out = drop_icons(vec![line.clone()], Some((&img, w, h)));
+        assert_eq!(out[0].text, "Account");
+        assert!((out[0].x - 48.0).abs() <= 2.0, "x = {}", out[0].x);
+        // 没有大空隙：行首的 “A” 是真字，不动
+        let mut plain = vec![255u8; w * h * 4];
+        let mut x = 10;
+        while x < 150 {
+            ink(&mut plain, x, x + 8);
+            x += 10;
+        }
+        let out = drop_icons(vec![OLine::new("A Tale", 8.0, 2.0, 150.0, 20.0)], Some((&plain, w, h)));
+        assert_eq!(out[0].text, "A Tale");
+    }
 
     fn l(t: &str, x: f32, y: f32, w: f32, h: f32) -> OLine {
         OLine::new(t, x, y, w, h)

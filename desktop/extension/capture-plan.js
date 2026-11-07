@@ -36,7 +36,7 @@ function captureName(title, date, ext, part = 0, parts = 1) {
   return `${base}-${stamp}${parts > 1 ? `-${part + 1}` : ''}.${ext}`
 }
 
-/** 摘录存成文字便签的格式：原文 + 来源。 */
+/** 摘录的格式：原文 + 来源（清影会拆出标题和网址）。 */
 function excerptText(selection, title, url) {
   return `${String(selection).trim()}\n\n—— ${title || ''}\n${url || ''}`.trim()
 }

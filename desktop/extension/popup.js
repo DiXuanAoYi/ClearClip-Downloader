@@ -68,84 +68,12 @@ async function renderSync() {
   }
 }
 
-const picked = new Set()
-
-async function sendItems(items, tab) {
-  const c = await getConfig()
-  let ok = 0
-  let pendingPair = false
-  for (const item of items) {
-    try {
-      const r = item.kind === 'image' ? await call('/api/grab', grabPayload({ url: item.url, referrer: tab.url }, cookieHeader(await api.cookies.getAll({ url: item.url }).catch(() => [])), navigator.userAgent, browserName())) : await call('/api/send', { text: sniffedPayload(item, tab.url, tab.title), device: c.device, name: browserName() })
-      if (r.state === 'pending_pair') pendingPair = true
-      else ok++
-    } catch (e) {
-      msg(e.message, 'err')
-      return
-    }
-  }
-  msg(pendingPair ? '第一次使用：请在电脑上点“允许”完成配对' : `已发送 ${ok} 项，清影会开始下载`, 'ok')
-}
-
+// 检测到的视频流只显示个数；勾选发送在“页面媒体总览”里（以前这里还有一份同样的列表）
 async function renderSniffed() {
   const tab = await currentTab()
   const list = tab?.id != null ? arrangeSniffed(await getSniffed(tab.id)) : []
   $('sniffBox').classList.toggle('hidden', !list.length)
   $('sniffCount').textContent = list.length
-  $('sniffList').innerHTML = ''
-  for (const item of list) {
-    const row = document.createElement('div')
-    row.className = 'it'
-    const box = document.createElement('input')
-    box.type = 'checkbox'
-    box.checked = picked.has(item.url)
-    box.onchange = () => {
-      box.checked ? picked.add(item.url) : picked.delete(item.url)
-      $('sniffSend').textContent = picked.size ? `发送所选（${picked.size}）` : '发送所选'
-    }
-    const name = document.createElement('span')
-    let path = item.url
-    try {
-      path = new URL(item.url).pathname.split('/').filter(Boolean).pop() || new URL(item.url).hostname
-    } catch {
-      // keep the raw url
-    }
-    const label = document.createElement('span')
-    label.textContent = sniffLabel(item)
-    const file = document.createElement('span')
-    file.className = 'sub'
-    file.textContent = path
-    name.append(label, file)
-    name.title = item.url
-    const btn = document.createElement('button')
-    btn.textContent = '发送'
-    btn.onclick = async () => {
-      btn.disabled = true
-      try {
-        await sendItems([item], tab)
-      } finally {
-        btn.disabled = false
-      }
-    }
-    row.append(box, name, btn)
-    $('sniffList').append(row)
-  }
-  $('sniffAll').onclick = () => {
-    const all = list.every((x) => picked.has(x.url))
-    for (const x of list) all ? picked.delete(x.url) : picked.add(x.url)
-    renderSniffed()
-  }
-  $('sniffSend').textContent = picked.size ? `发送所选（${picked.size}）` : '发送所选'
-  $('sniffSend').onclick = async () => {
-    const items = list.filter((x) => picked.has(x.url))
-    if (!items.length) return msg('先勾选要发送的项目', 'err')
-    $('sniffSend').disabled = true
-    try {
-      await sendItems(items, tab)
-    } finally {
-      $('sniffSend').disabled = false
-    }
-  }
 }
 
 // ---------- 接管浏览器下载 ----------
@@ -381,7 +309,7 @@ async function renderTools() {
 }
 
 const SITE_TOGGLES = [
-  { id: 'floatButton', name: '不显示视频悬浮下载按钮', get: (r, h) => hostListed(r.off.floatButton, h), set: (r, h, on) => (r.off.floatButton = toggleHost(r.off.floatButton, h, on)) },
+  { id: 'floatButton', name: '视频胶囊里不显示“下载”', get: (r, h) => hostListed(r.off.floatButton, h), set: (r, h, on) => (r.off.floatButton = toggleHost(r.off.floatButton, h, on)) },
   { id: 'video', name: '不启用播放增强', get: (r, h) => hostListed(r.off.video, h), set: (r, h, on) => (r.off.video = toggleHost(r.off.video, h, on)) },
   { id: 'hoverZoom', name: '不启用图片悬停放大', get: (r, h) => hostListed(r.off.hoverZoom, h), set: (r, h, on) => (r.off.hoverZoom = toggleHost(r.off.hoverZoom, h, on)) },
   { id: 'unlock', name: '解除复制 / 右键限制', get: (r, h) => r.unlockAll || hostListed(r.unlockOn, h), set: (r, h, on) => (r.unlockOn = toggleHost(r.unlockOn, h, on)) },
@@ -556,7 +484,6 @@ async function loadTransCfg() {
   $('svcPrompt_custom').value = c.services.custom?.prompt || ''
   $('trExclude').value = (c.exclude || []).join('\n')
   $('trCss').value = c.customCss || ''
-  $('trSelect').checked = c.select
   $('trInput').checked = c.input
   $('trLazy').checked = c.lazy
   $('trDomain').checked = c.domain
@@ -597,7 +524,6 @@ $('saveTrans').onclick = async () => {
         },
       ]),
     ),
-    select: $('trSelect').checked,
     input: $('trInput').checked,
     lazy: $('trLazy').checked,
     domain: $('trDomain').checked,
@@ -800,7 +726,7 @@ async function savePageAction(action) {
   const r = await api.runtime.sendMessage({ type: 'cc-page-save', action, tabId: tab.id }).catch((e) => ({ ok: false, error: e.message }))
   if (!r?.ok) return msg(r?.error || '没有完成', 'err')
   if (r.pairing) return msg('第一次使用：请在电脑上点“允许”完成配对', 'ok')
-  const done = { shotVisible: '截图已保存到下载文件夹', shotArea: '', shotFull: '整页截图已保存到下载文件夹', pdf: '', md: '', clip: '已摘录到清影，在“收到的文件”里查看' }[action]
+  const done = { shotVisible: '截图已保存到下载文件夹', shotArea: '', shotFull: '整页截图已保存到下载文件夹', pdf: '', md: '', clip: '已摘录到清影，在“生词与摘录 → 摘录”里查看' }[action]
   msg(r.note || done, 'ok')
   // 选区截图、Markdown 预览都需要用户回到页面 / 新标签页：关掉弹窗
   if (action === 'shotArea' || action === 'md' || action === 'pdf') window.close()
@@ -896,15 +822,7 @@ async function runOnPage(action) {
   window.close()
 }
 $('openOverview').onclick = () => runOnPage('overview')
-$('startPick').onclick = () => runOnPage('picker')
 $('pickExclude').onclick = () => runOnPage('excludepick')
-$('batchLinks').onclick = async () => {
-  const tab = await currentTab()
-  if (!tab?.url?.startsWith('http')) return msg('当前页面不能使用这个功能', 'err')
-  const r = await api.runtime.sendMessage({ type: 'cc-run', action: 'batch-links', tabId: tab.id }).catch((e) => ({ ok: false, error: e.message }))
-  if (!r?.ok) return msg(r?.error || '没有完成', 'err')
-  msg(`已把 ${r.count} 条链接发到清影，请在电脑上选择要下载的`, 'ok')
-}
 $('startVsum').onclick = () => runOnPage('vsum')
 $('startSubLayer').onclick = () => runOnPage('sublayer')
 $('startShot').onclick = () => runOnPage('shot')

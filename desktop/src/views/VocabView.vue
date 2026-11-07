@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ExcerptsPanel from '../components/ExcerptsPanel.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -7,6 +8,8 @@ import type { VideoCacheFull, VideoCacheInfo, VocabStats, VocabWord } from '../t
 import { videoKey } from '../utils/videokey'
 
 /** 生词本：统计 + 筛选 + 表格（熟练度）+ 右侧今日复习卡 + 导出。设计图 ②。 */
+// 生词 / 摘录（摘录以前只能在写作窗里看，浏览器扩展存的在“收到的文件”里）
+const part = ref<'words' | 'excerpts'>('words')
 const stats = ref<VocabStats>({ total: 0, due: 0, fresh: 0, learned: 0, today: 0 })
 const all = ref<VocabWord[]>([])
 const query = ref('')
@@ -71,7 +74,7 @@ async function loadCaches() {
 }
 async function saveCacheSettings() {
   const s = await api.getSettings()
-  await api.saveSettings({ ...s, videoCacheAuto: autoSync.value, videoCacheMb: Math.max(10, Number(limitMb.value) || 500) })
+  await api.saveSettings({ ...s, videoCacheAuto: autoSync.value, videoCacheMb: Math.max(10, Number(limitMb.value) || 500) }, s)
 }
 /** 用默认浏览器打开出处：跳到那一秒；装了扩展会定位到那一句并高亮这个词。 */
 async function openSource(w: VocabWord, restore = false) {
@@ -193,8 +196,9 @@ async function exportAs(f: (typeof FORMATS)[number]) {
   const path = await save({ defaultPath: `生词本.${f[2]}`, filters: [{ name: f[1], extensions: [f[2]] }] })
   if (!path) return
   try {
-    await api.vocabExport(f[0], path)
-    ElMessage.success(`已导出到 ${path}`)
+    // Anki 而且录过原声时，后端存成 .zip（卡片 + 原声），返回实际写入的路径
+    const out = await api.vocabExport(f[0], path)
+    ElMessage.success(`已导出到 ${out}`)
   } catch (e) {
     ElMessage.error(errorText(e))
   }
@@ -210,9 +214,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <template>
   <div class="vocab">
     <header class="h1">
-      <h1>生词本</h1>
-      <p>来自你看过的视频字幕，每个词都带着原句和出处</p>
+      <h1>{{ part === 'words' ? '生词本' : '摘录' }}</h1>
+      <p>{{ part === 'words' ? '来自你看过的视频字幕，每个词都带着原句和出处' : '浏览器里摘录、存为笔记的文字，写作窗、截图翻译里存的，都在这里' }}</p>
+      <el-radio-group v-model="part" size="small" class="part">
+        <el-radio-button value="words">生词</el-radio-button>
+        <el-radio-button value="excerpts">摘录</el-radio-button>
+      </el-radio-group>
     </header>
+    <ExcerptsPanel v-if="part === 'excerpts'" class="expanel" />
+    <template v-else>
 
     <div class="stat-row">
       <div class="stat"><b>{{ stats.total }}</b><span>全部生词</span></div>
@@ -321,6 +331,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <div v-if="!summaryText && !viewing.subs?.lines?.length" class="mute">缓存里没有可显示的内容。</div>
       </template>
     </el-dialog>
+    </template>
   </div>
 </template>
 
@@ -329,6 +340,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .h1 { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap }
 .h1 h1 { margin: 0; font-size: 26px }
 .h1 p { margin: 0; color: var(--el-text-color-secondary) }
+.h1 .part { margin-left: auto }
+.expanel { flex: 1; min-height: 0 }
 .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px }
 .stat { border: 1px solid var(--el-border-color); background: var(--el-bg-color); border-radius: 12px; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px }
 .stat b { font-size: 26px }

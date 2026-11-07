@@ -44,7 +44,6 @@
 
     $('auOn').onchange = () => save({ ...cfg, on: $('auOn').checked })
     $('auPill').onchange = () => save({ ...cfg, pillShow: $('auPill').checked })
-    $('auPillHover').onchange = () => save({ ...cfg, pillHover: $('auPillHover').checked })
     $('auTarget').oninput = () => save(A.withCustom(cfg, { target: Number($('auTarget').value) }))
     $('auComp').oninput = () => save(A.withCustom(cfg, { comp: Number($('auComp').value) }))
     $('auMax').oninput = () => save(A.withCustom(cfg, { maxGain: Number($('auMax').value) }))
@@ -85,8 +84,6 @@
     $('auCompV').textContent = `${cfg.comp}%`
     $('auMaxV').textContent = `+${cfg.maxGain} dB`
     $('auPill').checked = cfg.pillShow
-    $('auPillHover').checked = cfg.pillHover
-    $('auPillHover').disabled = !cfg.pillShow
     $('auSpeed').value = cfg.speed
     $('auLimiter').checked = cfg.limiter
     $('auRev').value = cfg.reverb.on ? cfg.reverb.id : ''

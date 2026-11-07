@@ -19,6 +19,25 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => un?.())
 
+// 浏览器扩展的笔记、高亮、导入的字幕同步到清影（进备份）：单份上限可以调
+const extMb = ref(10)
+const ext = ref<{ size: number; ts: number; error: string; rejectedSize: number } | null>(null)
+async function loadExt() {
+  const s = await api.getSettings().catch(() => null)
+  if (s) extMb.value = s.extDataMb || 10
+  ext.value = await api.extDataStatus().catch(() => null)
+}
+onMounted(loadExt)
+async function saveExtMb() {
+  try {
+    const s = await api.getSettings()
+    await api.saveSettings({ ...s, extDataMb: Math.min(200, Math.max(1, Math.round(Number(extMb.value) || 10))) }, s)
+    ElMessage.success('已保存，扩展下次同步时生效')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+
 function stamp() {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
@@ -70,7 +89,7 @@ async function restore() {
   try {
     const info = await api.backupImport(src)
     await ElMessageBox.confirm(
-      `这是清影 ${info.appVersion} 的备份（${formatBytes(info.size)}）。还原会用备份里的媒体库记录、标签、订阅、直播间和设置替换现在的内容（现在的数据会保留一份 .before-restore 副本）。需要重启清影才能生效，现在重启？`,
+      `这是清影 ${info.appVersion} 的备份（${formatBytes(info.size)}）。还原会用备份里的媒体库记录、标签、订阅、直播间、设置，以及生词本、术语库、AI 专家、摘录、翻译记忆替换现在的内容（现在的数据会保留一份 .before-restore 副本）。需要重启清影才能生效，现在重启？`,
       '还原备份',
       { confirmButtonText: '重启并还原', cancelButtonText: '稍后重启', type: 'warning' },
     )
@@ -103,11 +122,20 @@ async function restore() {
     </section>
     <section>
       <h4>备份与还原</h4>
-      <p class="mute">备份包含媒体库记录、标签、评分、订阅、直播间、解析历史、收到的链接和设置；不包含下载的文件本身，也不包含登录 Cookie 和手机配对令牌（换电脑后需要重新登录、重新配对）。</p>
+      <p class="mute">备份包含媒体库记录、标签、评分、订阅、直播间、解析历史、收到的链接、设置，以及生词本（含复习记录和原声）、术语库、AI 专家、摘录、翻译记忆；不包含下载的文件本身、各种缓存，也不包含登录 Cookie、API 密钥和手机配对令牌（换电脑后需要重新登录、重新填密钥、重新配对）。</p>
       <div class="row">
         <el-button size="small" @click="backup">创建备份…</el-button>
         <el-button size="small" @click="restore">从备份还原…</el-button>
       </div>
+    </section>
+    <section>
+      <h4>浏览器扩展的数据</h4>
+      <p class="mute">扩展里的笔记、高亮和导入的字幕改动后会同步一份到清影（随备份一起保存；新装扩展或刚连上清影时自动取回）。超过上限的那次不同步，扩展里的数据不受影响。</p>
+      <div class="row">
+        单份上限 <el-input-number v-model="extMb" size="small" :min="1" :max="200" :step="5" controls-position="right" @change="saveExtMb" /> MB
+        <span class="mute">{{ ext?.ts ? `清影里现在存着 ${formatBytes(ext.size)}` : '还没有同步过' }}</span>
+      </div>
+      <p v-if="ext?.error" class="err">{{ ext.error }}</p>
     </section>
   </div>
 </template>
@@ -126,8 +154,13 @@ p {
   margin: 0 0 8px;
   font-size: 12px;
 }
+.err {
+  color: var(--el-color-danger);
+  margin-top: 6px;
+}
 .row {
   display: flex;
+  font-size: 12px;
   gap: 10px;
   align-items: center;
 }

@@ -381,6 +381,107 @@ pub fn export(data_dir: &Path, format: &str) -> AppResult<(String, &'static str)
 
 // ---------- 命令 ----------
 
+// ---------- 原声（录下的这一句，导出 Anki 时一起打包） ----------
+
+/// 原声文件放在数据目录里，一个词一个文件（存在清影这边，换浏览器、清浏览器数据都不会丢，也进备份）。
+pub fn clip_dir(data_dir: &Path) -> std::path::PathBuf {
+    data_dir.join("vocab-clips")
+}
+
+/// 词 → 文件名里用的部分：小写，字母数字之外换成下划线。
+pub fn clip_key(word: &str) -> String {
+    let k: String = word.trim().to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).take(60).collect();
+    k.trim_matches('_').to_string()
+}
+
+const CLIP_MAX: usize = 2 * 1024 * 1024;
+
+/// 保存一段原声。`data` 是 `data:audio/webm;base64,...`。
+pub fn save_clip(data_dir: &Path, word: &str, data: &str) -> AppResult<String> {
+    use base64::Engine;
+    let key = clip_key(word);
+    if key.is_empty() {
+        return Err(AppError::invalid("没有词"));
+    }
+    let (head, b64) = data.split_once(',').ok_or_else(|| AppError::invalid("录音格式不对"))?;
+    let ext = if head.contains("ogg") {
+        "ogg"
+    } else if head.contains("mp4") || head.contains("m4a") || head.contains("aac") {
+        "m4a"
+    } else {
+        "webm"
+    };
+    let bytes = base64::engine::general_purpose::STANDARD.decode(b64.trim()).map_err(|_| AppError::invalid("录音数据不对"))?;
+    if bytes.is_empty() || bytes.len() > CLIP_MAX {
+        return Err(AppError::invalid("这一句太长了，没有保存（最长约 2 MB）"));
+    }
+    let dir = clip_dir(data_dir);
+    std::fs::create_dir_all(&dir)?;
+    // 同一个词只留最新的一段
+    for old in clips(data_dir).into_iter().filter(|(k, _)| *k == key) {
+        let _ = std::fs::remove_file(dir.join(old.1));
+    }
+    let name = format!("clearclip_{key}.{ext}");
+    std::fs::write(dir.join(&name), bytes)?;
+    Ok(name)
+}
+
+/// 已有原声：（词的 key，文件名）。
+pub fn clips(data_dir: &Path) -> Vec<(String, String)> {
+    let Ok(rd) = std::fs::read_dir(clip_dir(data_dir)) else { return vec![] };
+    rd.flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let stem = name.strip_prefix("clearclip_")?.rsplit_once('.')?.0.to_string();
+            Some((stem, name))
+        })
+        .collect()
+}
+
+/// Anki 包：卡片文本（有原声的词在背面加 `[sound:文件名]`）+ 原声文件，打成 zip。没有原声返回 None。
+pub fn anki_package(data_dir: &Path) -> AppResult<Option<Vec<u8>>> {
+    use std::io::Write;
+    let have: std::collections::HashMap<String, String> = clips(data_dir).into_iter().collect();
+    if have.is_empty() {
+        return Ok(None);
+    }
+    let words = list(data_dir, "", "all", 5000)?;
+    let (text, _) = export(data_dir, "anki")?;
+    let mut used: Vec<String> = vec![];
+    let lines: Vec<String> = text
+        .lines()
+        .zip(words.iter())
+        .map(|(ln, w)| match have.get(&clip_key(&w.word)) {
+            Some(name) => {
+                let mut cols: Vec<String> = ln.split('\t').map(str::to_string).collect();
+                if cols.len() > 1 {
+                    cols[1] += &format!(" [sound:{name}]");
+                }
+                used.push(name.clone());
+                cols.join("\t")
+            }
+            None => ln.to_string(),
+        })
+        .collect();
+    if used.is_empty() {
+        return Ok(None);
+    }
+    let mut buf = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("生词本.txt", opts).map_err(|e| AppError::msg(e.to_string()))?;
+        zip.write_all(lines.join("\n").as_bytes())?;
+        for name in used {
+            let bytes = std::fs::read(clip_dir(data_dir).join(&name))?;
+            zip.start_file(name.as_str(), opts).map_err(|e| AppError::msg(e.to_string()))?;
+            zip.write_all(&bytes)?;
+        }
+        zip.finish().map_err(|e| AppError::msg(e.to_string()))?;
+    }
+    Ok(Some(buf.into_inner()))
+}
+
 #[tauri::command]
 pub fn vocab_list(state: St<'_>, query: Option<String>, filter: Option<String>) -> AppResult<Vec<Word>> {
     list(&state.data_dir, query.as_deref().unwrap_or(""), filter.as_deref().unwrap_or("all"), 2000)
@@ -409,6 +510,14 @@ pub fn vocab_review(state: St<'_>, id: i64, grade: u8) -> AppResult<Word> {
 /// 导出到文件，返回写入的路径。
 #[tauri::command]
 pub fn vocab_export(state: St<'_>, format: String, path: String) -> AppResult<String> {
+    // Anki 而且录过原声：导出成 zip（卡片 + 原声）
+    if format == "anki" {
+        if let Some(zip) = anki_package(&state.data_dir)? {
+            let p = std::path::Path::new(&path).with_extension("zip");
+            std::fs::write(&p, zip)?;
+            return Ok(p.to_string_lossy().into_owned());
+        }
+    }
     let (text, _) = export(&state.data_dir, &format)?;
     std::fs::write(&path, text)?;
     Ok(path)
@@ -417,6 +526,23 @@ pub fn vocab_export(state: St<'_>, format: String, path: String) -> AppResult<St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clips_are_saved_per_word_and_packed_into_the_anki_zip() {
+        use base64::Engine;
+        let d = std::env::temp_dir().join(format!("cc-clip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        assert_eq!(clip_key(" Hello-World "), "hello_world");
+        let data = format!("data:audio/webm;codecs=opus;base64,{}", base64::engine::general_purpose::STANDARD.encode(b"RIFFfake"));
+        assert_eq!(save_clip(&d, "Hello", &data).unwrap(), "clearclip_hello.webm");
+        // 同一个词再录一次：只留最新的
+        let ogg = format!("data:audio/ogg;base64,{}", base64::engine::general_purpose::STANDARD.encode(b"OggS"));
+        assert_eq!(save_clip(&d, "hello", &ogg).unwrap(), "clearclip_hello.ogg");
+        assert_eq!(clips(&d), vec![("hello".to_string(), "clearclip_hello.ogg".to_string())]);
+        assert!(save_clip(&d, "x", "not a data url").is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn tmp() -> std::path::PathBuf {
         // 存储是进程内全局的，测试共用一个目录

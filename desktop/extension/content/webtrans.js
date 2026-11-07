@@ -50,7 +50,6 @@
   }
 
   const uiRoot = () => (S.ui ||= mount(`
-    .sel { position: fixed; z-index: 2147483647; padding: 3px 9px; font-size: 12px; }
     .card { position: fixed; z-index: 2147483647; width: min(380px, calc(100vw - 24px)); max-height: 60vh; overflow: auto; background: #fff; color: #1d2420;
       border: 1px solid #cfd5d1; border-radius: 10px; box-shadow: 0 12px 32px #0003; padding: 10px 12px; }
     .card .src { color: #5d6862; font-size: 12px; max-height: 4.5em; overflow: hidden; margin-bottom: 6px; }
@@ -287,6 +286,10 @@
     status()
     const r = await send({ type: 'cc-tr', texts: batch.map((b) => b.text), target: T.engineTarget(S.cfg, T.pickEngine(S.cfg)), engine: T.pickEngine(S.cfg), page: pageInfo() })
     S.inflight--
+    if (r.ok && r.fallback && !S.fallbackTold) {
+      S.fallbackTold = true
+      globalThis.ccUI.toast(uiRoot(), `清影没开，这一页先用 ${T.ENGINE_NAMES[r.fallback] || r.fallback} 备用翻译（不带术语库）`, false, 5000)
+    }
     if (!r.ok) {
       S.err = r.error || '翻译失败了'
       for (const it of batch) markFail(it.id)
@@ -503,50 +506,31 @@
   }
 
   // ---------- 划词翻译 ----------
+  // 划词后的入口只有划词工具条的“翻译”（以前这里还有一个单独的“译”小按钮，和工具条重复）；
+  // 工具条、右键菜单“翻译选中的文字”都打开下面这同一张卡片（多个服务对比、转到翻译窗、存为笔记）。
 
-  let selBtn = null
   let selCard = null
-  const closeSel = () => {
-    selBtn?.remove()
-    selBtn = null
-  }
   const closeCard = () => {
     selCard?.remove()
     selCard = null
   }
 
-  document.addEventListener('mouseup', (e) => {
-    if (!S.cfg.select || globalThis.ccSelbarOn) return
-    if (e.composedPath().some((n) => n === S.ui?.host)) return
-    setTimeout(() => {
-      closeSel()
-      const sel = getSelection()
-      const text = String(sel || '').trim()
-      if (text.length < 2 || text.length > 3000 || !sel.rangeCount) return
-      const el = sel.anchorNode?.parentElement
-      if (el && (el.closest('input,textarea') || el.isContentEditable)) return
-      const r = sel.getRangeAt(0).getBoundingClientRect()
-      selBtn = h('button', { class: 'sel', text: '译', title: '翻译选中的文字', onmousedown: (ev) => ev.preventDefault(), onclick: () => (closeSel(), translateSelection(text, r)) })
-      selBtn.style.left = `${Math.min(Math.max(6, r.right), innerWidth - 40)}px`
-      selBtn.style.top = `${Math.min(r.bottom + 6, innerHeight - 30)}px`
-      uiRoot().add(selBtn)
-    }, 10)
-  }, true)
   document.addEventListener('mousedown', (e) => {
-    if (!e.composedPath().some((n) => n === S.ui?.host)) {
-      closeSel()
-      closeCard()
-    }
+    if (!e.composedPath().some((n) => n === S.ui?.host)) closeCard()
   }, true)
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && (closeSel(), closeCard()), true)
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && closeCard(), true)
 
   async function translateSelection(text, rect) {
     closeCard()
     const list = h('div', { class: 'cmp' })
     const copyBtn = h('button', { class: 'sec', text: '复制', disabled: true })
     const cmpBtn = h('button', { class: 'sec', text: '对比其他服务', onclick: () => compareMore() })
+    const noteBtn = h('button', { class: 'sec', text: '存为笔记', disabled: true, onclick: async () => {
+      const r = await send({ type: 'cc-note', text: `${text}\n\n翻译：\n${best}\n\n来源：${document.title}\n${location.href}` })
+      noteBtn.textContent = r.ok ? (r.pairing ? '请先在清影里允许配对' : '已存为笔记') : r.error || '保存失败'
+    } })
     selCard = h('div', { class: 'card' }, h('div', { class: 'src', text: text.slice(0, 200) }), list,
-      h('div', { class: 'bar' }, h('span', { class: 'grow', text: T.nameOf(S.cfg.target) }), T.activeEngines(S.cfg).length > 1 ? cmpBtn : null, h('button', { class: 'sec', text: '翻译窗', title: '在可拖动的翻译窗里继续（可改文字、换语言）', onclick: () => openBox(text) }), copyBtn, h('button', { class: 'sec', text: '关闭', onclick: closeCard })))
+      h('div', { class: 'bar' }, h('span', { class: 'grow', text: T.nameOf(S.cfg.target) }), T.activeEngines(S.cfg).length > 1 ? cmpBtn : null, h('button', { class: 'sec', text: '翻译窗', title: '在可拖动的翻译窗里继续（可改文字、换语言）', onclick: () => openBox(text) }), noteBtn, copyBtn, h('button', { class: 'sec', text: '关闭', onclick: closeCard })))
     const box = rect || { left: innerWidth / 2 - 190, bottom: innerHeight / 3 }
     selCard.style.left = `${Math.max(8, Math.min(box.left, innerWidth - 400))}px`
     selCard.style.top = `${Math.max(8, Math.min(box.bottom + 8, innerHeight - 200))}px`
@@ -577,6 +561,7 @@
       if (tr !== text && !best) {
         best = tr
         copyBtn.disabled = false
+        noteBtn.disabled = false
       }
       // 每行点一下复制自己的译文
       if (tr !== text) {
@@ -611,7 +596,6 @@
   }
   function openBox(text0) {
     closeCard()
-    closeSel()
     if (tbox) {
       const ta = tbox.querySelector('textarea')
       if (text0) ta.value = text0
@@ -797,7 +781,7 @@
     else if (action === 'box') {
       const t = String(extra.text || getSelection() || '').trim()
       if (window === window.top || t) openBox(t)
-    } else if (action === 'selection') translateSelection(String(extra.text || getSelection() || '').trim() || '', null)
+    } else if (action === 'selection') translateSelection(String(extra.text || getSelection() || '').trim() || '', extra.rect && typeof extra.rect === 'object' ? extra.rect : null)
     return { on: S.on }
   }
 
@@ -835,6 +819,7 @@
     }
   }
 
-  globalThis.ccWebTrans = { reinit, handle, state: S }
+  // translateSelection：划词工具条在同一个页面里直接调用（不用绕后台）
+  globalThis.ccWebTrans = { reinit, handle, state: S, translateSelection: (text, rect) => handle('selection', { text, rect }) }
   init()
 })()

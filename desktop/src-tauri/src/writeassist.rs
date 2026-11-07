@@ -244,15 +244,8 @@ fn save_geometry(app: &AppHandle, w: &tauri::WebviewWindow) {
         return;
     }
     let Some(st) = app.try_state::<Arc<AppState>>() else { return };
-    let mut s = st.settings_raw();
     let win = [p.x, p.y, sz.width as i32, sz.height as i32];
-    if s.writing.win == win {
-        return;
-    }
-    s.writing.win = win;
-    if s.save(&st.settings_path).is_ok() {
-        *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
-    }
+    let _ = st.update_settings(|s| s.writing.win = win);
 }
 
 /// 把结果交出去：`replace` 为真时写回原来的程序，否则只放进剪贴板。
@@ -292,11 +285,12 @@ pub fn write_off_this_app(state: tauri::State<'_, Arc<AppState>>) -> Result<Stri
     if exe.is_empty() {
         return Err("还没有在任何程序里出现过浮标".into());
     }
-    let mut s = state.settings_raw();
-    s.writing.off_apps.push(exe.clone());
-    s.writing.sanitize();
-    s.save(&state.settings_path).map_err(|e| e.message)?;
-    *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+    state
+        .update_settings(|s| {
+            s.writing.off_apps.push(exe.clone());
+            s.writing.sanitize();
+        })
+        .map_err(|e| e.message)?;
     Ok(exe)
 }
 
@@ -386,12 +380,12 @@ pub fn write_prefs(state: tauri::State<'_, Arc<AppState>>, last_action: String, 
 }
 
 fn save_prefs(state: &AppState, f: impl FnOnce(&mut WritingSettings)) -> Result<(), String> {
-    let mut s = state.settings_raw();
-    f(&mut s.writing);
-    s.writing.sanitize();
-    s.save(&state.settings_path).map_err(|e| e.message)?;
-    *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
-    Ok(())
+    state
+        .update_settings(|s| {
+            f(&mut s.writing);
+            s.writing.sanitize();
+        })
+        .map_err(|e| e.message)
 }
 
 /// 打开清影主窗口（去改快捷键等设置）。
@@ -402,10 +396,8 @@ pub fn write_open_settings(app: AppHandle) {
 
 #[tauri::command]
 pub fn write_pause(app: AppHandle, state: tauri::State<'_, Arc<AppState>>, minutes: i64) -> Result<(), String> {
-    let mut s = state.settings_raw();
-    s.writing.paused_until = if minutes > 0 { now_secs() + minutes * 60 } else { 0 };
-    s.save(&state.settings_path).map_err(|e| e.message)?;
-    *state.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+    let until = if minutes > 0 { now_secs() + minutes * 60 } else { 0 };
+    state.update_settings(|s| s.writing.paused_until = until).map_err(|e| e.message)?;
     let _ = app;
     Ok(())
 }

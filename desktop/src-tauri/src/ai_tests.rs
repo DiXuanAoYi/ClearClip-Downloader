@@ -663,3 +663,55 @@ async fn pool_routes_translation_to_machine_translation_but_skips_it_for_other_r
     assert_eq!(t.texts[0].as_deref(), Some("你好"));
     assert!(pool2.snapshot(crate::db::now())["deepl"].fail >= 1);
 }
+
+#[tokio::test]
+async fn image_requests_go_to_vision_models_first() {
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let s1 = seen.clone();
+    let text_only = mock(Arc::new(move |_, body, _| {
+        let v: Value = serde_json::from_slice(body).unwrap();
+        s1.lock().unwrap().push(v["model"].as_str().unwrap().to_string());
+        (400, r#"{"error":{"message":"image input not supported"}}"#.into())
+    }))
+    .await;
+    let s2 = seen.clone();
+    let vision = mock(Arc::new(move |_, body, _| {
+        let v: Value = serde_json::from_slice(body).unwrap();
+        s2.lock().unwrap().push(v["model"].as_str().unwrap().to_string());
+        (200, reply("看到了"))
+    }))
+    .await;
+    // 纯文字模型优先级更高，但请求带图片：先试能看图的
+    let ep = pooled(vec![cand_for("txt", &text_only, "qwen2.5-7b-instruct"), cand_for("vl", &vision, "qwen-vl-max")], Arc::new(AiPool::default()));
+    let out = chat_img(&ep, "", "s", "看图", "data:image/png;base64,AAAA").await.unwrap();
+    assert_eq!(out, "看到了");
+    assert_eq!(*seen.lock().unwrap(), vec!["qwen-vl-max"], "没有先浪费一次在纯文字模型上");
+    // 池里一个能看图的都没有：明确告诉用户
+    let only_text = pooled(vec![cand_for("txt", &text_only, "qwen2.5-7b-instruct")], Arc::new(AiPool::default()));
+    let err = chat_img(&only_text, "", "s", "看图", "data:image/png;base64,AAAA").await.unwrap_err();
+    assert!(err.message.contains("能看图"), "{}", err.message);
+}
+
+#[test]
+fn monthly_character_quota_takes_a_service_out_of_rotation() {
+    use crate::ai_pool::{month_of, rank, Cand, Task};
+    let now = 1_793_990_000; // 2026-11
+    assert_eq!(month_of(now), 2026 * 12 + 10);
+    let pool = AiPool::default();
+    pool.record_chars("deepl", 499_990, now);
+    pool.record_chars("deepl", 20, now);
+    assert_eq!(pool.chars_used("deepl", now), 500_010);
+    assert_eq!(pool.chars_used("deepl", now + 40 * 86400), 0, "下个月重新算");
+    let c = |id: &str, limit: u64, used: u64| Cand {
+        id: id.into(),
+        priority: 10,
+        daily_limit: 0,
+        monthly_chars: limit,
+        chars_used: used,
+        tasks: vec![],
+        usable: true,
+    };
+    let cands = vec![c("deepl", 500_000, pool.chars_used("deepl", now)), c("llm", 0, 0)];
+    let order = rank(&cands, &Default::default(), Task::Translate, now);
+    assert_eq!(order, vec![1], "本月额度用完的机器翻译不再被挑中");
+}

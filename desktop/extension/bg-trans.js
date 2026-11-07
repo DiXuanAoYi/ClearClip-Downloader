@@ -256,6 +256,7 @@ async function translateTexts(texts, { target, engine, page = null, domain = fal
   const cache = await trCacheMap()
   const out = texts.map((t) => cache[ccTrans.cacheKey(keyEngine, target, t)]?.[0] ?? null)
   const todo = out.map((v, i) => (v == null ? i : -1)).filter((i) => i >= 0)
+  let fallback = ''
   if (todo.length) {
     const src = todo.map((i) => texts[i])
     let res
@@ -266,6 +267,13 @@ async function translateTexts(texts, { target, engine, page = null, domain = fal
       await trSlot()
       try {
         res = await trClearclip(src, target, ctx, page?.host || '')
+      } catch (e) {
+        // 清影没开：用你自己开着的备用服务（DeepLX / 自定义接口）。谷歌不自动顶上，免得网页文字在你不知道时发给谷歌
+        const cfg = await getTransCfg()
+        const backup = ccTrans.activeEngines(cfg).find((x) => x === 'deeplx' || x === 'custom')
+        if (e.code !== 'offline' || !backup) throw e
+        fallback = backup
+        res = backup === 'deeplx' ? await trDeeplx(src, target) : await trCustom(src, target, '')
       } finally {
         trFree()
       }
@@ -273,11 +281,11 @@ async function translateTexts(texts, { target, engine, page = null, domain = fal
     todo.forEach((i, k) => {
       out[i] = res[k]
       // 原样返回（没翻译）的不进缓存，免得以后换了模型也一直是原文
-      if (res[k] && res[k].trim() !== src[k].trim()) cache[ccTrans.cacheKey(keyEngine, target, texts[i])] = [res[k], Date.now()]
+      if (!fallback && res[k] && res[k].trim() !== src[k].trim()) cache[ccTrans.cacheKey(keyEngine, target, texts[i])] = [res[k], Date.now()]
     })
     trFlushSoon()
   }
-  return { texts: out, cached: texts.length - todo.length, domain: dom?.domain || '' }
+  return { texts: out, cached: texts.length - todo.length, domain: dom?.domain || '', fallback }
 }
 
 async function clearTransCache() {

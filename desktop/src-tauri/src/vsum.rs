@@ -91,6 +91,8 @@ pub struct Req {
     pub comments: Vec<Cmt>,
     /// imgtrans：要识别并翻译的图片（data URL）
     pub image: String,
+    /// imgtrans：识字方式。空 / vision = 视觉大模型一步完成；enhanced / system / api / local = 本机识字 + 翻译任务（见 imagetext.rs）
+    pub ocr: String,
 }
 
 /// 自定义提示词的长度上限。
@@ -145,16 +147,26 @@ fn new_job() -> (u64, Arc<AtomicBool>) {
     (id, cancel)
 }
 
-/// 校验请求并在后台开始处理，返回任务编号。
-pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
+/// 准备好的一次 AI 请求：选好的服务、模型、默认语言、术语和专家都已经放进请求里。
+pub struct Prepared {
+    st: Arc<crate::AppState>,
+    ep: ai::Endpoint,
+    model: String,
+    default_lang: String,
+    batch: usize,
+    req: Req,
+    auto_extract: Option<String>,
+    extract_text: Option<String>,
+}
+
+enum Prep {
+    Ready(Box<Prepared>),
+    /// 不用调模型就有结果（没有模型时查词退回离线词频表）
+    Done(Value),
+}
+
+fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
     use tauri::Manager;
-    check(&req)?;
-    if req.kind == "tracks" {
-        return start_tracks(app, req);
-    }
-    if req.kind == "transcribe" || req.kind == "subtitles" {
-        return start_transcribe(app, req);
-    }
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
     let task = match req.kind.as_str() {
@@ -165,15 +177,7 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
     let mut ep = match ai::chat_endpoint_for(&st, &settings, task) {
         Ok(ep) => ep,
         // 查词没有可用模型时，退到离线词频表（只有词汇等级，没有释义）
-        Err(_) if req.kind == "lookup" => {
-            let (id, _) = new_job();
-            with_job(id, |j| {
-                j.done = 1;
-                j.total = 1;
-                j.result = Some(crate::vocab::offline_lookup(req.text.trim()));
-            });
-            return Ok(id);
-        }
+        Err(_) if req.kind == "lookup" => return Ok(Prep::Done(crate::vocab::offline_lookup(req.text.trim()))),
         Err(e) => return Err(e),
     };
     if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
@@ -219,27 +223,164 @@ pub fn start(app: &tauri::AppHandle, mut req: Req) -> AppResult<u64> {
             req.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n")
         }
     });
-    let st2 = st.clone();
-    let (id, cancel) = new_job();
-    tauri::async_runtime::spawn(async move {
-        let progress = move |done: usize, total: usize| -> AppResult<()> {
-            if cancel.load(Ordering::Relaxed) {
-                return Err(AppError::msg("已取消"));
+    Ok(Prep::Ready(Box::new(Prepared { st, ep, model, default_lang, batch, req, auto_extract, extract_text })))
+}
+
+/// 执行准备好的请求。`progress` 返回错误就中止（取消）。
+async fn execute(p: Prepared, progress: Progress<'_>) -> AppResult<Value> {
+    let Prepared { st, ep, model, default_lang, batch, req, auto_extract, extract_text } = p;
+    let out = match tm_profile(&req) {
+        Some(profile) => translate_with_tm(&st, profile, &ep, &model, &default_lang, batch, &req, progress).await,
+        None => process(&ep, &model, &default_lang, batch, &req, progress).await,
+    };
+    if let (Some(url), Some(text), true) = (auto_extract, extract_text, out.is_ok()) {
+        let lang = if req.lang.trim().is_empty() { default_lang.clone() } else { req.lang.trim().to_string() };
+        if let Ok(found) = crate::glossary::extract(&ep, &model, &lang, &text).await {
+            let host = url::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or(url);
+            let _ = crate::glossary::file_found(&st.glossary, found, &host, crate::db::now());
+        }
+    }
+    out
+}
+
+/// 哪些请求走翻译记忆：字幕翻译、网页翻译（屏幕翻译的网址是 `app:软件名`，算“界面文字”）。
+fn tm_profile(req: &Req) -> Option<crate::tm::Profile> {
+    use crate::tm::Profile;
+    match req.kind.as_str() {
+        "translate" if req.system.trim().is_empty() => Some(Profile::Subtitle),
+        "webtrans" if req.system.trim().is_empty() => Some(if req.url.starts_with("app:") { Profile::Ui } else { Profile::Web }),
+        _ => None,
+    }
+}
+
+/// 先查翻译记忆，只把没命中的句子交给模型，译完写回记忆。结果格式和直接翻译一样。
+#[allow(clippy::too_many_arguments)]
+async fn translate_with_tm(
+    st: &crate::AppState,
+    profile: crate::tm::Profile,
+    ep: &Endpoint,
+    model: &str,
+    default_lang: &str,
+    batch: usize,
+    req: &Req,
+    progress: Progress<'_>,
+) -> AppResult<Value> {
+    let target = if !req.lang.trim().is_empty() {
+        req.lang.trim().to_string()
+    } else if req.kind == "translate" && is_chinese(&req.lines) {
+        "English".to_string()
+    } else {
+        default_lang.to_string()
+    };
+    let tv = crate::tm::terms_version(st);
+    let lines: Vec<&Line> = req.lines.iter().filter(|l| !l.text.trim().is_empty()).collect();
+    let texts: Vec<String> = lines.iter().map(|l| l.text.trim().to_string()).collect();
+    let hits = crate::tm::lookup(&st.data_dir, profile, &target, &tv, &texts);
+    let rest: Vec<Line> = lines.iter().zip(&hits).filter(|(_, h)| h.is_none()).map(|(l, _)| (*l).clone()).collect();
+    let mut got: std::collections::HashMap<u64, String> = std::collections::HashMap::new();
+    let mut failed = 0;
+    if !rest.is_empty() {
+        let sub = Req { lines: rest.clone(), ..req.clone() };
+        let out = process(ep, model, default_lang, batch, &sub, progress).await?;
+        failed = out["failed"].as_u64().unwrap_or(0);
+        for l in out["lines"].as_array().into_iter().flatten() {
+            if let (Some(t), Some(text)) = (l["t"].as_u64(), l["text"].as_str()) {
+                got.insert(t, text.to_string());
             }
+        }
+        let pairs: Vec<(String, String)> = rest.iter().filter_map(|l| got.get(&l.t).map(|tr| (l.text.trim().to_string(), tr.clone()))).collect();
+        crate::tm::store(&st.data_dir, profile, &target, &tv, "pool", &pairs);
+    } else {
+        progress(1, 1)?;
+    }
+    let out: Vec<Value> = lines
+        .iter()
+        .zip(hits)
+        .map(|(l, h)| json!({"t": l.t, "text": h.or_else(|| got.get(&l.t).cloned()).unwrap_or_else(|| l.text.trim().to_string())}))
+        .collect();
+    Ok(json!({"lines": out, "failed": failed}))
+}
+
+/// 桌面端内部直接调用（屏幕翻译、截图翻译等）：不进任务表、不用轮询，直接等结果。`stop` 置位就中止。
+pub async fn run_now(app: &tauri::AppHandle, req: Req, stop: &AtomicBool) -> AppResult<Value> {
+    check(&req)?;
+    if matches!(req.kind.as_str(), "tracks" | "transcribe" | "subtitles") {
+        return Err(AppError::invalid("这类请求要走后台任务"));
+    }
+    match prepare(app, req)? {
+        Prep::Done(v) => Ok(v),
+        Prep::Ready(p) => {
+            let progress = |_: usize, _: usize| -> AppResult<()> {
+                if stop.load(Ordering::Relaxed) {
+                    return Err(AppError::msg("已停止"));
+                }
+                Ok(())
+            };
+            execute(*p, &progress).await
+        }
+    }
+}
+
+/// 校验请求并在后台开始处理，返回任务编号（给浏览器扩展、HTTP 接口用：它们拿编号来轮询）。
+pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
+    check(&req)?;
+    if req.kind == "tracks" {
+        return start_tracks(app, req);
+    }
+    if req.kind == "transcribe" || req.kind == "subtitles" {
+        return start_transcribe(app, req);
+    }
+    if req.kind == "imgtrans" && crate::imagetext::is_local(req.ocr.trim()) {
+        return start_image_local(app, req);
+    }
+    let prep = prepare(app, req)?;
+    let (id, cancel) = new_job();
+    match prep {
+        Prep::Done(v) => {
+            with_job(id, |j| {
+                j.done = 1;
+                j.total = 1;
+                j.result = Some(v);
+            });
+        }
+        Prep::Ready(p) => {
+            tauri::async_runtime::spawn(async move {
+                let progress = move |done: usize, total: usize| -> AppResult<()> {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Err(AppError::msg("已取消"));
+                    }
+                    with_job(id, |j| {
+                        j.done = done;
+                        j.total = total.max(1);
+                    });
+                    Ok(())
+                };
+                let out = execute(*p, &progress).await;
+                with_job(id, |j| match out {
+                    Ok(v) => j.result = Some(v),
+                    Err(e) => j.error = Some(e.message),
+                });
+            });
+        }
+    }
+    Ok(id)
+}
+
+/// 截图翻译走本机识字：识字 → 按版面并段 → 翻译任务（术语库、专家、翻译记忆），结果格式和视觉模型一样。
+fn start_image_local(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
+    use tauri::Manager;
+    let st = app.state::<Arc<crate::AppState>>().inner().clone();
+    let (id, cancel) = new_job();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let progress = move |done: usize, total: usize| {
             with_job(id, |j| {
                 j.done = done;
                 j.total = total.max(1);
+                j.note = if done == 0 { "正在识字…".into() } else { "正在翻译…".into() };
             });
-            Ok(())
         };
-        let out = process(&ep, &model, &default_lang, batch, &req, &progress).await;
-        if let (Some(url), Some(text), true) = (auto_extract, extract_text, out.is_ok()) {
-            let lang = if req.lang.trim().is_empty() { default_lang.clone() } else { req.lang.trim().to_string() };
-            if let Ok(found) = crate::glossary::extract(&ep, &model, &lang, &text).await {
-                let host = url::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or(url);
-                let _ = crate::glossary::file_found(&st2.glossary, found, &host, crate::db::now());
-            }
-        }
+        let out = crate::imagetext::translate_image(&app, &st, &req, &cancel, progress).await;
         with_job(id, |j| match out {
             Ok(v) => j.result = Some(v),
             Err(e) => j.error = Some(e.message),
@@ -738,7 +879,9 @@ fn lookup_system(lang: &str) -> String {
          {{\"lemma\": base form, \"phonetic\": IPA between slashes or \"\" if not a word of a language with IPA, \"pos\": short part of speech such as n. / v. / adj. / phr., \
          \"meaning\": common dictionary meaning in {lang} (max 25 characters, 2-3 senses separated by ；), \
          \"context_meaning\": what it means in THIS sentence in {lang} (max 40 characters, empty if identical to meaning), \
-         \"note\": optional one short usage tip in {lang} (collocation, register, false friend), else \"\"}}. \
+         \"note\": optional one short usage tip in {lang} (collocation, register, false friend), else \"\", \
+         \"examples\": exactly 2 short, natural example sentences in the WORD's own language that use the lemma, in different contexts (not the given SENTENCE), \
+         each {{\"text\": the sentence, \"tr\": its translation in {lang}}}}}. \
          The transcript may contain recognition errors: if WORD looks like a mis-heard word, give the likely intended word in \"lemma\" and explain in \"note\". No markdown, no extra text."
     )
 }
@@ -1575,8 +1718,16 @@ pub fn prompt_version(st: &crate::AppState) -> String {
     use sha2::{Digest, Sha256};
     let s = st.settings();
     let glossaries: Vec<_> = st.glossary.snapshot().glossaries.into_iter().filter(|g| g.enabled).collect();
+    // 翻译真正会用到的服务：池里启用的、适用于翻译的条目（模型、类型），加上旧的默认设置。
+    // 以前只算 s.ai.model，迁移到模型池后它一直是空的，换模型时扩展的缓存不会失效。
+    let route: Vec<serde_json::Value> =
+        s.ai.pool
+            .iter()
+            .filter(|e| e.enabled && (e.tasks.is_empty() || e.tasks.iter().any(|t| t == "translate")))
+            .map(|e| serde_json::json!([e.id, e.kind, e.model, e.base_url, e.priority]))
+            .collect();
     let material = serde_json::json!({
-        "model": s.ai.model, "expert": s.ai.expert, "auto": s.ai.expert_auto, "glossaryOn": s.ai.glossary_on,
+        "model": s.ai.model, "route": route, "expert": s.ai.expert, "auto": s.ai.expert_auto, "glossaryOn": s.ai.glossary_on,
         "experts": st.experts.all(), "glossaries": glossaries,
     });
     hex::encode(&Sha256::digest(material.to_string().as_bytes())[..4])

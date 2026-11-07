@@ -24,7 +24,7 @@ async function call(path, body) {
       body: body ? JSON.stringify(body) : undefined,
     })
   } catch {
-    throw new Error('连接不到清影。请确认清影正在运行，并已开启“手机与浏览器扩展”。')
+    throw Object.assign(new Error('连接不到清影。请确认清影正在运行，并已开启“手机与浏览器扩展”。'), { code: 'offline' })
   }
   const j = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)

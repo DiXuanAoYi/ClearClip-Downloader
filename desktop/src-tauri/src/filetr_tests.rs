@@ -278,3 +278,22 @@ fn scan_blocks_round_trip_through_the_sidecar() {
     assert_ne!(scan_path(d, f, "简体中文", "vision"), scan_path(d, f, "简体中文", "enhanced"));
     assert_ne!(scan_path(d, f, "简体中文", "vision"), scan_path(d, f, "English", "vision"));
 }
+
+#[test]
+fn background_is_sampled_around_the_block_with_the_pdf_y_axis_flipped() {
+    // 页面 100×200 点，渲染成 100×200 像素：上半白、下半深蓝；左下角的块（PDF 坐标 y 朝上）应取到深蓝，上方的块取到白
+    let (w, h) = (100usize, 200usize);
+    let mut rgba = vec![255u8; w * h * 4];
+    for y in 100..h {
+        for x in 0..w {
+            let i = (y * w + x) * 4;
+            rgba[i..i + 4].copy_from_slice(&[10, 20, 120, 255]);
+        }
+    }
+    let bottom_block = (10.0, 20.0, 60.0, 50.0); // PDF 点：靠近页面底部 → 图片下半
+    let top_block = (10.0, 150.0, 60.0, 180.0); // 靠近页面顶部 → 图片上半
+    assert_eq!(sample_rect_bg(&rgba, w, h, (100.0, 200.0), bottom_block), [10, 20, 120]);
+    assert_eq!(sample_rect_bg(&rgba, w, h, (100.0, 200.0), top_block), [255, 255, 255]);
+    // 框超出页面也不会越界
+    assert_eq!(sample_rect_bg(&rgba, w, h, (100.0, 200.0), (-5.0, -5.0, 500.0, 500.0)).len(), 3);
+}

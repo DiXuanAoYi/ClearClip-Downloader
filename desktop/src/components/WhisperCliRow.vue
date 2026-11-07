@@ -32,7 +32,7 @@ async function pick() {
   if (typeof r !== 'string') return
   try {
     const s = await api.getSettings()
-    await api.saveSettings({ ...s, ai: { ...s.ai, whisperBin: r } })
+    await api.saveSettings({ ...s, ai: { ...s.ai, whisperBin: r } }, s)
     await reload()
   } catch (e) {
     ElMessage.error(errorText(e))

@@ -512,6 +512,11 @@ export interface JobSnap {
   error: string | null
   note: string | null
   finishedAt: number | null
+  /** 稳定的类型编号（filetr / dictation …）；按它筛选，不要用显示用的 op */
+  kind: string
+  lane: 'interactive' | 'ai' | 'heavy'
+  input: string | null
+  params: Record<string, unknown> | null
 }
 
 export interface MediaInfoLite {
@@ -664,6 +669,8 @@ export interface PoolEntry {
   tasks: string[]
   priority: number
   dailyLimit: number
+  /** 每月字符上限（0 = 不限），机器翻译用 */
+  monthlyChars: number
 }
 
 export interface PoolPreset {
@@ -690,6 +697,7 @@ export interface PoolStatus {
   coolReason: string
   badKey: boolean
   lastError: string
+  charsUsed: number
 }
 
 export interface AiSettings {
@@ -1036,6 +1044,7 @@ export interface Settings {
   danmakuAss: boolean
   verifyDownloads: boolean
   videoCacheMb: number
+  extDataMb: number
   videoCacheAuto: boolean
   library: LibrarySettings
   danmaku: DanmakuStyle
@@ -2135,6 +2144,7 @@ export interface ScreenSettings {
   fontScale: number
   bilingual: boolean
   skipSame: boolean
+  skipIcons: boolean
   opacity: number
   subPlace: 'cover' | 'bar'
   subBilingual: boolean
@@ -2321,9 +2331,12 @@ export interface VideoCacheFull {
 export interface Excerpt {
   id: string
   text: string
+  /** 来源：程序名或网页标题 */
   app: string
   note: string
   created: number
+  /** 网页地址（浏览器里存的才有） */
+  url?: string
 }
 
 export interface ModelInfo {
@@ -2336,4 +2349,14 @@ export interface ProbeResult {
   ms: number
   text: string
   vision: boolean | null
+}
+
+/** PDF 版面画布：一页的原页图和每块的位置、背景色、原文、译文 */
+export interface PdfLayout {
+  pages: number
+  viewPage: number
+  w: number
+  h: number
+  image: string
+  blocks: { index: number; rect: [number, number, number, number]; size: number; rgb: [number, number, number]; bg: [number, number, number]; src: string; trans: string }[]
 }

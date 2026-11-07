@@ -20,7 +20,6 @@ use crate::AppState;
 type St<'a> = State<'a, Arc<AppState>>;
 
 pub const OV: &str = "live-overlay";
-pub const BAR: &str = "live-bar";
 pub const SUBBAR: &str = "live-subbar";
 pub const PICK: &str = "live-pick";
 pub const EVT_BLOCKS: &str = "live://blocks";
@@ -417,53 +416,14 @@ pub fn close_subbar(app: &AppHandle) {
 }
 
 fn save_live(st: &AppState, f: impl FnOnce(&mut LiveSettings)) {
-    let mut s = st.settings_raw();
-    f(&mut s.live);
-    s.live.sanitize();
-    if s.save(&st.settings_path).is_ok() {
-        *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
-    }
+    let _ = st.update_settings(|s| {
+        f(&mut s.live);
+        s.live.sanitize();
+    });
 }
 
-// ---------- 小悬浮钮 ----------
-
-const BAR_BTN: i32 = 44;
-const BAR_W: i32 = 560;
-
-/// 屏幕边上的小悬浮钮：平时是一个圆钮，点开是控制条。
-pub fn ensure_bar(app: &AppHandle, on: bool) {
-    if !on || !livewin::SUPPORTED {
-        if let Some(w) = app.get_webview_window(BAR) {
-            let _ = w.destroy();
-        }
-        return;
-    }
-    if app.get_webview_window(BAR).is_some() {
-        return;
-    }
-    let Some(w) = small_window(app, BAR, "livebar", "清影屏幕翻译控制条", true) else { return };
-    let (sw, sh, ox, oy) = app
-        .primary_monitor()
-        .ok()
-        .flatten()
-        .map(|m| (m.size().width as i32, m.size().height as i32, m.position().x, m.position().y))
-        .unwrap_or((1920, 1080, 0, 0));
-    place(&w, [ox + sw - BAR_BTN - 12, oy + sh / 3, BAR_BTN, BAR_BTN]);
-    crate::winframe::show_no_activate(&w);
-}
-
-#[tauri::command]
-pub fn sc_bar_expand(app: AppHandle, expanded: bool) {
-    use tauri::{PhysicalPosition, PhysicalSize};
-    let Some(w) = app.get_webview_window(BAR) else { return };
-    let (Ok(p), Ok(m)) = (w.outer_position(), w.current_monitor()) else { return };
-    let (mx, mw) = m.map(|m| (m.position().x, m.size().width as i32)).unwrap_or((0, 1920));
-    let width = if expanded { BAR_W } else { BAR_BTN };
-    // 展开后会超出屏幕右边就往左挪；收起时不挪回（位置由用户拖）
-    let x = if expanded && p.x + width > mx + mw { (mx + mw - width - 8).max(mx) } else { p.x };
-    let _ = w.set_size(PhysicalSize::new(width as u32, BAR_BTN as u32));
-    let _ = w.set_position(PhysicalPosition::new(x, p.y));
-}
+// ---------- 悬浮窗 ----------
+// 屏幕翻译的控制以前在一个单独的小悬浮钮里；现在并进清影的悬浮窗（tray.rs 的 FLOAT），桌面上只有一个。
 
 // ---------- 会话循环 ----------
 
@@ -656,7 +616,8 @@ impl Runner {
 
     fn recognize(&self, live: &LiveSettings, frame: &Frame, engine: &str) -> AppResult<Vec<livecore::OLine>> {
         let cx = crate::ocr::Ctx { data_dir: &self.st.data_dir, client: &self.st.dl_client, live };
-        crate::ocr::recognize(&cx, engine, &frame.bgra, frame.w, frame.h)
+        let lines = crate::ocr::recognize(&cx, engine, &frame.bgra, frame.w, frame.h)?;
+        Ok(if live.skip_icons { livecore::drop_icons(lines, Some((&frame.bgra, frame.w, frame.h))) } else { lines })
     }
 
     fn history(&mut self, live: &LiveSettings, mode: &str, items: &[(String, String)]) {
@@ -1317,7 +1278,7 @@ pub fn sc_ack_manga(state: St<'_>) {
 #[tauri::command]
 pub fn sc_bar(app: AppHandle, state: St<'_>, on: bool) {
     save_live(&state, |l| l.float_button = on);
-    ensure_bar(&app, on);
+    crate::tray::sync_float(&app);
 }
 
 #[derive(Serialize)]
@@ -1348,6 +1309,7 @@ pub async fn sc_try(state: St<'_>, target: Option<Target>) -> AppResult<TryResul
         let engine = if live.ocr == "vision" { "system".to_string() } else { live.ocr.clone() };
         let cx = crate::ocr::Ctx { data_dir: &st.data_dir, client: &st.dl_client, live: &live };
         let lines = crate::ocr::recognize(&cx, &engine, &f.bgra, f.w, f.h)?;
+        let lines = if live.skip_icons { livecore::drop_icons(lines, Some((&f.bgra, f.w, f.h))) } else { lines };
         let groups = livecore::group_lines(&lines);
         Ok(TryResult { lines: groups.into_iter().map(|g| g.text).collect(), ms: t0.elapsed().as_millis() as u64, w: f.w, h: f.h, engine })
     })

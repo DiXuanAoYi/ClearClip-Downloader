@@ -5,7 +5,6 @@
   const { h, send, mount, toast } = globalThis.ccUI
   const api = globalThis.browser ?? globalThis.chrome
   const SEL = globalThis.ccSel
-  globalThis.ccSelbarOn = true // 网页翻译里那个只有“译”字的小按钮让位给这条工具条
   globalThis.ccSelbarRun = true
 
   const CSS = `
@@ -25,10 +24,12 @@
     .card .ask { display: flex; gap: 6px; margin-top: 8px; }
     .card .ask input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; background: var(--card); color: var(--fg); }
     .card .err { color: var(--bad); }
+    .card .body.wcard { display: flex; white-space: normal; line-height: 1.5 }
+    .card .body.wcard .hd { font-weight: 400; align-items: baseline }
     .menu2 { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px #0003; padding: 4px; min-width: 140px; }
     .menu2 button { display: block; width: 100%; text-align: left; background: transparent; color: inherit; font-weight: 400; }
     .menu2 button:hover { background: #d9762b24; }
-  `
+  ` + (globalThis.ccWordCard?.CSS || '')
   let ui = null
   const uiRoot = () => (ui ||= mount(CSS))
 
@@ -199,18 +200,8 @@
   const clip = (s, n) => (s.length > n ? `${s.slice(0, n)}…` : s)
 
   async function pollJob(req) {
-    const sub = await send({ type: 'cc-ai-run', req })
-    if (!sub.ok) throw new Error(sub.error || '提交失败')
     const me = ++st.job
-    st.job = me
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 500))
-      if (st.job !== me || !st.card) throw new Error('已取消')
-      const j = await send({ type: 'cc-ai-job', id: sub.id })
-      if (!j.ok) throw new Error(j.error || '查询失败')
-      if (j.state === 'done') return j.result
-      if (j.state === 'error' || j.state === 'canceled') throw new Error(j.error || '失败了')
-    }
+    return globalThis.ccUI.aiRun(req, { interval: 500, stop: () => st.job !== me || !st.card })
   }
 
   /** 打开结果卡片。run(setBody) 负责产生内容；extra(ft, getText) 往底部加按钮。 */
@@ -237,7 +228,7 @@
       ft.append(copyBtn,
         h('button', { class: 'sec', text: '存为笔记', onclick: async () => {
           const r = await send({ type: 'cc-note', text: `${st.text}\n\n${title}：\n${out}\n\n来源：${document.title}\n${location.href}` })
-          toast(uiRoot(), r.ok ? (r.pairing ? '请先在电脑上的清影里点“允许”完成配对' : '已存为清影便签') : r.error || '保存失败', !r.ok)
+          toast(uiRoot(), r.ok ? (r.pairing ? '请先在电脑上的清影里点“允许”完成配对' : '已存进清影的摘录') : r.error || '保存失败', !r.ok)
         } }))
       extra?.(ft, () => out, card)
     } catch (e) {
@@ -246,29 +237,38 @@
     place(card, st.rect || { left: innerWidth / 2 - 190, bottom: innerHeight / 3, top: innerHeight / 3 })
   }
 
-  const doTranslate = () => openCard('翻译', async (set) => {
-    const r = await send({ type: 'cc-tr', texts: [st.text], page: { host: location.host, title: document.title, sample: '' } })
-    if (!r.ok) throw new Error(r.error || '翻译失败了')
-    const t = r.texts?.[0] || ''
-    set(t === st.text ? '这段文字已经是目标语言，不用翻译。' : t)
-  })
+  // 翻译：和网页翻译的划词卡片是同一张（多个服务对比、转到翻译窗、存为笔记）
+  const doTranslate = async () => {
+    const text = st.text
+    const r0 = st.rect || { left: innerWidth / 2 - 190, right: innerWidth / 2 + 190, top: innerHeight / 3, bottom: innerHeight / 3 }
+    const rect = { left: r0.left, right: r0.right, top: r0.top, bottom: r0.bottom }
+    close()
+    if (globalThis.ccWebTrans?.translateSelection) return void globalThis.ccWebTrans.translateSelection(text, rect)
+    const r = await send({ type: 'cc-wt-sel', text, rect })
+    if (!r.ok) toast(uiRoot(), r.error || '翻译失败了', true)
+  }
 
   const doDefine = () => {
-    if (SEL.isWord(st.text)) {
-      return openCard('释义', async (set) => {
-        const res = await pollJob({ kind: 'lookup', text: st.text, context: st.sentence, title: document.title })
-        if (res.offline) return set('清影里没有可用的 AI 模型，只能显示词汇等级：' + (res.level || ''))
-        const lines = [`${res.lemma || st.text}　${res.phonetic || ''}`.trim(), [res.pos, res.meaning].filter(Boolean).join(' '), res.context_meaning && `在这句话里：${res.context_meaning}`, res.note].filter(Boolean)
-        st.lookup = res
-        set(lines.join('\n'))
-      }, (ft) => {
-        const b = h('button', { text: '加入生词本', onclick: async () => {
-          const res = st.lookup || {}
-          const r = await send({ type: 'cc-vocab', op: 'add', word: { word: res.lemma || st.text, phonetic: res.phonetic || '', pos: res.pos || '', meaning: res.meaning || '', ctxMeaning: res.context_meaning || '', sentence: st.sentence, sourceTitle: document.title, sourceUrl: location.href, timeSec: 0 } })
-          b.textContent = r.ok ? '已加入生词本' : r.error || '失败'
-          b.disabled = !!r.ok
-        } })
-        ft.prepend(b)
+    if (SEL.isWord(st.text) && globalThis.ccWordCard) {
+      const WC = globalThis.ccWordCard
+      // 和字幕层的查词浮窗是同一张词卡（释义、本句意思、本句、例句、加入生词本）
+      return openCard('释义', async (set, bodyEl) => {
+        const me = ++st.job
+        const res = await WC.lookup(st.text, st.sentence, { stop: () => st.job !== me || !st.card })
+        set([`${res.lemma || st.text}　${res.phonetic || ''}`.trim(), [res.pos, res.meaning].filter(Boolean).join(' '), res.context_meaning && `在这句话里：${res.context_meaning}`].filter(Boolean).join('\n'))
+        const { nodes } = WC.render({
+          h,
+          word: st.text,
+          sentence: st.sentence,
+          res,
+          onSave: async (lemma) => {
+            const r = await WC.save(lemma, res, { sentence: st.sentence })
+            if (!r.ok) toast(uiRoot(), r.error || '加入生词本失败', true)
+            return !!r.ok
+          },
+        })
+        bodyEl.classList.add('wcard')
+        bodyEl.replaceChildren(...nodes)
       })
     }
     return openCard('释义', async (set) => {
@@ -353,9 +353,9 @@
     close('menu')
     const m = h('div', { class: 'layer menu2' },
       h('button', { text: '复制', onclick: () => (navigator.clipboard?.writeText(st.text), close()) }),
-      h('button', { text: '存为清影便签', onclick: async () => {
+      h('button', { text: '存进清影摘录', onclick: async () => {
         const r = await send({ type: 'cc-note', text: `${st.text}\n\n来源：${document.title}\n${location.href}` })
-        toast(uiRoot(), r.ok ? '已存为清影便签' : r.error || '保存失败', !r.ok)
+        toast(uiRoot(), r.ok ? '已存进清影的摘录' : r.error || '保存失败', !r.ok)
         close()
       } }),
       h('button', { text: '本页高亮 → 复制 Markdown', onclick: async () => {

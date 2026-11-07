@@ -145,10 +145,17 @@ function toEdit() {
   app.goToolbox([props.item.path], undefined, { tab: 'edit' })
 }
 
-function toAi(aiMode: 'transcribe' | 'translate' | 'summarize' | 'correct') {
+function toAi(aiMode: 'transcribe' | 'summarize' | 'correct') {
   if (!props.item) return
   emit('update:modelValue', false)
   app.goToolbox([props.item.path], undefined, { tab: 'ai', aiMode })
+}
+
+/** 翻译字幕：交给「文件翻译」页（和翻译文档同一个地方，能预览、改译文）。 */
+function toFiletr() {
+  if (!props.item) return
+  emit('update:modelValue', false)
+  app.goFiletr([props.item.path])
 }
 
 function cover(i: LibraryItem) {
@@ -176,7 +183,7 @@ function cover(i: LibraryItem) {
         <el-button v-if="item.exists && item.kind === 'video'" size="small" @click="toEdit">放进剪辑…</el-button>
         <el-button v-if="item.exists && (item.kind === 'video' || item.kind === 'audio')" size="small" @click="toAi('transcribe')">生成字幕</el-button>
         <template v-if="item.exists && item.kind === 'subtitle' && !item.path.endsWith('.xml')">
-          <el-button size="small" @click="toAi('translate')">翻译字幕</el-button>
+          <el-button size="small" @click="toFiletr">翻译字幕</el-button>
           <el-button size="small" @click="toAi('correct')">AI 纠错</el-button>
           <el-button size="small" @click="toAi('summarize')">摘要与章节</el-button>
         </template>

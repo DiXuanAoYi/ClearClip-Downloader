@@ -320,6 +320,8 @@ pub struct Settings {
     pub verify_downloads: bool,
     /// 视频缓存（扩展同步来的摘要和双语字幕）占用上限，MB
     pub video_cache_mb: u64,
+    /// 浏览器扩展同步过来的用户数据（笔记、高亮、导入的字幕）单份上限，MB
+    pub ext_data_mb: u64,
     /// 收藏生词时自动把该视频的缓存同步到清影
     pub video_cache_auto: bool,
     /// 媒体库：回收站、整理规则
@@ -683,6 +685,8 @@ pub struct LiveSettings {
     pub bilingual: bool,
     /// 数字、符号、已经是目标语言的文字不翻
     pub skip_same: bool,
+    /// 图标不是文字：像图标的识字结果丢掉、行首的图标去掉，不翻译
+    pub skip_icons: bool,
     /// 译文层不透明度（百分比 30–100）
     pub opacity: u8,
     // ---- 字幕模式 ----
@@ -748,6 +752,7 @@ impl Default for LiveSettings {
             font_scale: 100,
             bilingual: false,
             skip_same: true,
+            skip_icons: true,
             opacity: 100,
             sub_place: "cover".into(),
             sub_bilingual: true,
@@ -898,6 +903,8 @@ pub struct PoolEntry {
     pub priority: u32,
     /// 每天最多请求多少次（0 = 不限），用来避开免费额度
     pub daily_limit: u32,
+    /// 每月最多翻译多少字符（0 = 不限）。机器翻译的免费额度按字符算，按次数挡不住超额
+    pub monthly_chars: u64,
 }
 
 impl Default for PoolEntry {
@@ -914,6 +921,7 @@ impl Default for PoolEntry {
             tasks: vec![],
             priority: 10,
             daily_limit: 0,
+            monthly_chars: 0,
         }
     }
 }
@@ -1290,6 +1298,7 @@ impl Default for Settings {
             danmaku_ass: true,
             verify_downloads: true,
             video_cache_mb: crate::videocache::DEFAULT_LIMIT_MB,
+            ext_data_mb: crate::datareg::EXT_DEFAULT_MB,
             video_cache_auto: true,
             library: LibrarySettings::default(),
             danmaku: DanmakuStyle::default(),
@@ -1577,5 +1586,60 @@ mod tests {
         // 旧配置里没有 live 字段也能读
         let s: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.live.mode, "standard");
+    }
+}
+
+/// 三方合并：`base` 是界面打开表单时的那份，`ours` 是界面要保存的，`theirs` 是现在后端的。
+/// 界面没改的字段用后端最新的（别处的改动保留）；界面改了的用界面的；对象逐层合并，数组和值整体比较。
+pub fn merge3(base: &serde_json::Value, ours: &serde_json::Value, theirs: &serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    if ours == base {
+        return theirs.clone();
+    }
+    if theirs == base {
+        return ours.clone();
+    }
+    match (base, ours, theirs) {
+        (Value::Object(b), Value::Object(o), Value::Object(t)) => {
+            let mut out = serde_json::Map::new();
+            let keys: std::collections::BTreeSet<&String> = b.keys().chain(o.keys()).chain(t.keys()).collect();
+            for k in keys {
+                let null = Value::Null;
+                let (bv, ov, tv) = (b.get(k).unwrap_or(&null), o.get(k).unwrap_or(&null), t.get(k).unwrap_or(&null));
+                let v = merge3(bv, ov, tv);
+                if !(v.is_null() && !o.contains_key(k) && !t.contains_key(k)) {
+                    out.insert(k.clone(), v);
+                }
+            }
+            Value::Object(out)
+        }
+        // 两边都改了同一个值：以界面这次保存的为准（这是用户刚刚明确做的修改）
+        _ => ours.clone(),
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::merge3;
+    use serde_json::json;
+
+    #[test]
+    fn keeps_changes_made_elsewhere_while_the_page_was_open() {
+        let base = json!({"ai": {"model": "a", "pool": [1]}, "writing": {"hotkey": "Alt+J", "pausedUntil": 0, "win": [0, 0, 0, 0]}, "theme": "system"});
+        // 设置页：改了模型和主题
+        let ours = json!({"ai": {"model": "b", "pool": [1]}, "writing": {"hotkey": "Alt+J", "pausedUntil": 0, "win": [0, 0, 0, 0]}, "theme": "dark"});
+        // 期间写作窗记住了位置、托盘暂停了写作
+        let theirs = json!({"ai": {"model": "a", "pool": [1]}, "writing": {"hotkey": "Alt+J", "pausedUntil": 99, "win": [1, 2, 3, 4]}, "theme": "system"});
+        let m = merge3(&base, &ours, &theirs);
+        assert_eq!(m["ai"]["model"], "b");
+        assert_eq!(m["theme"], "dark");
+        assert_eq!(m["writing"]["pausedUntil"], 99, "别处的改动保留");
+        assert_eq!(m["writing"]["win"], json!([1, 2, 3, 4]));
+        // 两边改了同一个值：用界面的
+        let ours2 = json!({"ai": {"model": "c", "pool": [1]}});
+        let theirs2 = json!({"ai": {"model": "d", "pool": [2]}});
+        let m2 = merge3(&json!({"ai": {"model": "a", "pool": [1]}}), &ours2, &theirs2);
+        assert_eq!(m2["ai"]["model"], "c");
+        assert_eq!(m2["ai"]["pool"], json!([2]), "数组整体比较：界面没改就用后端的");
     }
 }

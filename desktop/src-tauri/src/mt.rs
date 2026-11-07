@@ -109,6 +109,71 @@ pub fn translate_request(system: &str, user: &Value) -> Option<(String, Vec<Stri
     Some((lang, texts))
 }
 
+/// 从提示词里取出术语表（`glossary::prompt_block` 的格式：`- 原文 => 译法`，`(keep as is)` 表示保留原文）。
+pub fn glossary_of(system: &str) -> Vec<(String, String)> {
+    let Some(block) = system.split("\nGlossary").nth(1) else { return vec![] };
+    block
+        .lines()
+        .filter_map(|l| l.strip_prefix("- "))
+        .filter_map(|l| l.split_once(" => "))
+        .map(|(s, t)| {
+            let t = t.split("  (").next().unwrap_or(t).trim();
+            let t = if t == "(keep as is)" { s.trim() } else { t };
+            (s.trim().to_string(), t.to_string())
+        })
+        .filter(|(s, _)| !s.is_empty())
+        .collect()
+}
+
+/// 机器翻译不认提示词：把术语换成占位符送去翻译，回来再换成规定的译法。返回处理后的文字和每段用到的（占位符, 译法）。
+pub fn protect_terms(texts: &[String], terms: &[(String, String)]) -> (Vec<String>, Vec<Vec<(String, String)>>) {
+    let mut out = vec![];
+    let mut maps = vec![];
+    for t in texts {
+        let mut s = t.clone();
+        let mut m = vec![];
+        // 长的术语先换，免得短的把长的拆开
+        let mut sorted: Vec<&(String, String)> = terms.iter().collect();
+        sorted.sort_by_key(|(src, _)| std::cmp::Reverse(src.chars().count()));
+        for (src, tgt) in sorted {
+            let lower = s.to_lowercase();
+            let needle = src.to_lowercase();
+            if needle.is_empty() || !lower.contains(&needle) || lower.len() != s.len() {
+                continue;
+            }
+            let ph = format!("{{T{}}}", m.len());
+            let mut res = String::new();
+            let mut rest = s.as_str();
+            let mut rest_l = lower.as_str();
+            while let Some(i) = rest_l.find(&needle) {
+                res.push_str(&rest[..i]);
+                res.push_str(&ph);
+                rest = &rest[i + needle.len()..];
+                rest_l = &rest_l[i + needle.len()..];
+            }
+            res.push_str(rest);
+            s = res;
+            m.push((ph, tgt.clone()));
+        }
+        out.push(s);
+        maps.push(m);
+    }
+    (out, maps)
+}
+
+pub fn restore_terms(texts: Vec<String>, maps: &[Vec<(String, String)>]) -> Vec<String> {
+    texts
+        .into_iter()
+        .zip(maps)
+        .map(|(mut t, m)| {
+            for (ph, tgt) in m {
+                t = t.replace(ph.as_str(), tgt);
+            }
+            t
+        })
+        .collect()
+}
+
 fn strip_slash(s: &str) -> &str {
     s.trim_end_matches('/')
 }
@@ -270,6 +335,20 @@ mod tests {
         assert_eq!(Kind::parse(""), Kind::Chat);
         assert!(Kind::parse("google").is_mt());
         assert!(!Kind::parse("openai").is_mt());
+    }
+
+    #[test]
+    fn glossary_terms_survive_machine_translation_via_placeholders() {
+        let terms = [crate::glossary::Term { source: "Rust".into(), target: "锈语言".into(), ..Default::default() }];
+        let refs: Vec<&crate::glossary::Term> = terms.iter().collect();
+        let sys = format!("Translate into 简体中文. JSON array{}", crate::glossary::prompt_block(&refs));
+        let g = glossary_of(&sys);
+        assert_eq!(g, vec![("Rust".to_string(), "锈语言".to_string())]);
+        let (texts, maps) = protect_terms(&["I love rust and RUST.".to_string(), "nothing".to_string()], &g);
+        assert_eq!(texts, ["I love {T0} and {T0}.", "nothing"]);
+        // 机器翻译把占位符原样带回来
+        let back = restore_terms(vec!["我爱 {T0} 和 {T0}。".into(), "无".into()], &maps);
+        assert_eq!(back, ["我爱 锈语言 和 锈语言。", "无"]);
     }
 
     #[test]

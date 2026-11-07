@@ -122,8 +122,10 @@ assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: 
   assert.equal(V.pickTrack(tracks2, [], { spoken: 'en', title: 'How attention works' }).lang, 'en')
   // 不知道语音语言，标题是英文：偏英文
   assert.equal(V.pickTrack(tracks2, [], { title: 'How attention works' }).lang, 'en')
-  // 标题是中文：偏中文
-  assert.equal(V.pickTrack(tracks2, [], { title: '注意力机制讲解' }).lang, 'zh-Hans')
+  // 标题是中文，但有自动字幕（语音识别）轨：自动字幕的语言就是视频说的语言，选它（中文标题的英语视频不能给中文轨）
+  assert.equal(V.pickTrack(tracks2, [], { title: '注意力机制讲解' }).lang, 'en')
+  // 标题是中文，也没有自动字幕轨：偏中文
+  assert.equal(V.pickTrack([{ lang: 'zh-Hans', auto: false }, { lang: 'en', auto: false }], [], { title: '注意力机制讲解' }).lang, 'zh-Hans')
   // 有英文人工字幕时人工优先
   const both = [...tracks2, { lang: 'en', name: 'English', auto: false }]
   assert.equal(V.pickTrack(both, [], { spoken: 'en' }).auto, false)

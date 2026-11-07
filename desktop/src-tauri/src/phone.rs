@@ -259,10 +259,7 @@ pub fn ensure_paired(app: &AppHandle, device: &str, name: &str, peer: &SocketAdd
 }
 
 fn update_phone_settings(app: &AppHandle, f: impl FnOnce(&mut crate::settings::PhoneSettings)) -> AppResult<()> {
-    let state = st(app);
-    let mut s = state.settings.write().unwrap_or_else(|e| e.into_inner());
-    f(&mut s.phone);
-    s.save(&state.settings_path)
+    st(app).update_settings(|s| f(&mut s.phone))
 }
 
 /// 开启或关闭手机发送。
@@ -456,9 +453,12 @@ async fn read_head(sock: &mut TcpStream) -> Option<(Request, Option<u64>, Vec<u8
     Some((req, len, buf[head_end + 4..].to_vec()))
 }
 
-/// 请求正文上限：普通接口 64 KB；已授权的视频摘要接口要带整篇文稿，放宽到 2 MiB；已授权的 `/api/send` 放宽到 16 MiB（便签）。
-fn body_limit(authorized: bool, path: &str) -> usize {
-    if authorized && (path.starts_with("/api/v1/ai/") || path.starts_with("/api/v1/videocache/")) {
+/// 请求正文上限：普通接口 64 KB；已授权的视频摘要接口要带整篇文稿，放宽到 2 MiB；已授权的 `/api/send` 放宽到 16 MiB（便签）；
+/// 扩展数据同步按设置里的上限（`ext_max`，再留一点 JSON 外壳的余量）。
+fn body_limit(authorized: bool, path: &str, ext_max: usize) -> usize {
+    if authorized && path == "/api/v1/extdata" {
+        ext_max + 64 * 1024
+    } else if authorized && (path.starts_with("/api/v1/ai/") || path.starts_with("/api/v1/videocache/") || path == "/api/v1/vocab/clip") {
         AI_BODY
     } else if authorized && path == "/api/send" {
         NOTE_BODY
@@ -570,7 +570,7 @@ async fn handle(app: AppHandle, mut sock: TcpStream, peer: SocketAddr) {
         json(&mut sock, "403 Forbidden", serde_json::json!({"error": "访问令牌无效，请重新扫码"})).await;
         return;
     }
-    let max_body = body_limit(authorized, &req.path);
+    let max_body = body_limit(authorized, &req.path, crate::datareg::ext_limit_bytes(state.settings().ext_data_mb));
     let Ok(Some(body)) = tokio::time::timeout(SMALL_TIMEOUT, read_body(&mut sock, len.unwrap_or(0), leftover, max_body)).await else {
         json(&mut sock, "413 Payload Too Large", serde_json::json!({"error": "内容太大。较大的内容请作为文件发送。"})).await;
         return;
@@ -638,14 +638,25 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             }
             let text: String = body.text.trim().chars().take(4000).collect();
             if body.note || providers::extract_urls(&text).is_empty() {
-                // 没有链接（或明确是摘录）：作为文字便签保存在电脑的“收到的文件”里（需要先配对）
+                // 没有链接（或明确是摘录）：扩展的摘录进“摘录”，其余作为文字便签保存在“收到的文件”里（都需要先配对）
                 if text.is_empty() {
                     json(sock, "400 Bad Request", serde_json::json!({"error": "内容是空的"})).await;
                 } else if !ensure_paired(&app, &device, &name, &peer) {
                     json(sock, "403 Forbidden", serde_json::json!({"state": "pending_pair", "error": "请先在电脑上点“允许”完成配对"})).await;
                 } else {
-                    match transfer::receive_note(&app, &device, &name, &body.text) {
-                        Ok(id) => json(sock, "200 OK", serde_json::json!({"id": id, "state": "note"})).await,
+                    // 浏览器扩展明确要存的（摘录选中文字、存为笔记）进“摘录”；手机发来的普通文字还是“收到的文件”里的便签
+                    let r = if body.note {
+                        crate::excerpts::add_from_browser(&state.data_dir, &body.text, &name).map(|e| serde_json::json!({"id": e.id, "state": "excerpt"}))
+                    } else {
+                        transfer::receive_note(&app, &device, &name, &body.text).map(|id| serde_json::json!({"id": id, "state": "note"}))
+                    };
+                    match r {
+                        Ok(v) => {
+                            if body.note {
+                                let _ = app.emit(crate::excerpts::EVT_CHANGED, ());
+                            }
+                            json(sock, "200 OK", v).await
+                        }
                         Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
                     }
                 }
@@ -985,13 +996,17 @@ mod tests {
 
     #[test]
     fn only_authorized_ai_routes_get_the_large_body_limit() {
-        assert_eq!(body_limit(true, "/api/v1/ai/run"), AI_BODY);
-        assert_eq!(body_limit(false, "/api/v1/ai/run"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/send"), NOTE_BODY);
-        assert_eq!(body_limit(false, "/api/send"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/cookies"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/v1/tasks"), MAX_BODY);
-        assert_eq!(body_limit(true, "/api/v1/aix"), MAX_BODY);
+        const EXT: usize = 10 * 1024 * 1024;
+        assert_eq!(body_limit(true, "/api/v1/ai/run", EXT), AI_BODY);
+        assert_eq!(body_limit(false, "/api/v1/ai/run", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/send", EXT), NOTE_BODY);
+        assert_eq!(body_limit(false, "/api/send", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/cookies", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/v1/tasks", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/v1/aix", EXT), MAX_BODY);
+        assert_eq!(body_limit(true, "/api/v1/vocab/clip", EXT), AI_BODY, "原声录音");
+        assert_eq!(body_limit(true, "/api/v1/extdata", EXT), EXT + 64 * 1024, "扩展数据同步按设置的上限");
+        assert_eq!(body_limit(false, "/api/v1/extdata", EXT), MAX_BODY);
     }
 
     #[tokio::test]

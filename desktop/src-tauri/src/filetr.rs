@@ -450,7 +450,7 @@ fn write_zip(src: &Path, dst: &Path, replaced: &std::collections::HashMap<String
     Ok(())
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Opts {
     /// true：原文 + 译文对照；false：只留译文
@@ -472,10 +472,11 @@ impl Default for Opts {
 }
 
 impl Opts {
-    /// 识字方式只认三种，其余当视觉模型。
+    /// 识字方式只认四种（增强识字 / Windows 自带 / 识字接口 / 视觉模型），其余当视觉模型。
     pub fn engine(&self) -> &'static str {
         match self.ocr.as_str() {
             "enhanced" => "enhanced",
+            "system" => "system",
             "api" => "api",
             _ => "vision",
         }
@@ -531,13 +532,7 @@ pub fn lines_to_text(lines: &[crate::livecore::OLine]) -> String {
 
 /// 用 `engine`（enhanced / api）识别一张 BGRA 图，返回带位置的行。
 async fn recognize_lines(st: &crate::AppState, engine: &str, bgra: Vec<u8>, w: usize, h: usize) -> AppResult<Vec<crate::livecore::OLine>> {
-    let (dir, client, live, engine) = (st.data_dir.clone(), st.dl_client.clone(), st.settings().live.clone(), engine.to_string());
-    tokio::task::spawn_blocking(move || {
-        let cx = crate::ocr::Ctx { data_dir: &dir, client: &client, live: &live };
-        crate::ocr::recognize(&cx, &engine, &bgra, w, h)
-    })
-    .await
-    .map_err(|e| AppError::msg(e.to_string()))?
+    crate::imagetext::recognize(st, engine, bgra, w, h).await
 }
 
 /// 一张图的 (mime, 字节)。
@@ -756,6 +751,27 @@ async fn write_pdf_layout(
             at += 1;
         }
     }
+    // 译文先用原文所在处的背景色盖一层再写（和版面画布里看到的一样）：原文就算有一部分没被删干净（图片里的字、描边字）也不会透出来
+    {
+        let sizes: Vec<(f32, f32)> = pages.iter().map(|p| (p.w, p.h)).collect();
+        let (lib2, inp) = (lib.to_path_buf(), input.to_path_buf());
+        let mut taken = std::mem::take(&mut plans);
+        plans = tokio::task::spawn_blocking(move || {
+            for (pi, plan) in taken.iter_mut().enumerate() {
+                if plan.items.is_empty() {
+                    continue;
+                }
+                if let Ok((w, h, rgba)) = crate::pdfx::render_page(&lib2, &inp, pi, 900) {
+                    for it in &mut plan.items {
+                        it.bg = Some(sample_rect_bg(&rgba, w, h, sizes[pi], it.rect));
+                    }
+                }
+            }
+            taken
+        })
+        .await
+        .map_err(|e| AppError::msg(e.to_string()))?;
+    }
     let font = crate::pdfx::load_font(&ctx.st.data_dir)?;
     let tag = if mode == crate::pdfx::Mode::Interleave { "双语" } else { "译文" };
     let out = ai::out_beside(input, base, tag, "pdf");
@@ -968,11 +984,20 @@ async fn run_pdf_scanned(
     Ok(out)
 }
 
-/// 翻译用的系统提示词和术语（和网页翻译同款：术语库 + AI 专家）。
-fn trans_setup(st: &crate::AppState, settings: &crate::settings::Settings, target: &str) -> (String, Vec<crate::glossary::Term>) {
+/// 翻译用的系统提示词和术语（术语库 + AI 专家）。字幕文件用字幕档案（和工具箱、摘要面板一样），其余用文档档案。
+fn trans_setup(st: &crate::AppState, settings: &crate::settings::Settings, target: &str, profile: crate::tm::Profile) -> (String, Vec<crate::glossary::Term>) {
     let terms = if settings.ai.glossary_on { st.glossary.terms_for("", ai::lang_tag(target)) } else { vec![] };
     let guide = st.experts.resolve(&settings.ai.expert, settings.ai.expert_auto, "").map(|e| crate::experts::guide_block(&e)).unwrap_or_default();
-    (format!("{}{}", crate::vsum::webtrans_system(target), guide), terms)
+    let base = if profile == crate::tm::Profile::Subtitle { ai::translate_system(target) } else { crate::vsum::webtrans_system(target) };
+    (format!("{base}{guide}"), terms)
+}
+
+fn profile_of(kind: Kind) -> crate::tm::Profile {
+    if kind == Kind::Sub {
+        crate::tm::Profile::Subtitle
+    } else {
+        crate::tm::Profile::Document
+    }
 }
 
 /// 翻译一批文字；返回和输入等长，失败的那条是 None。
@@ -984,28 +1009,35 @@ async fn translate_texts(
     texts: &[String],
     check: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
 ) -> AppResult<ai::Translated> {
-    let (system, terms) = trans_setup(st, settings, target);
+    let (system, terms) = trans_setup(st, settings, target, crate::tm::Profile::Document);
     let work: Vec<Cue> = texts.iter().enumerate().map(|(k, t)| Cue { start: k as u64, end: k as u64 + 1, lines: vec![t.clone()] }).collect();
     ai::map_cues_g(ep, &settings.ai.model, &system, &work, settings.ai.batch_size.clamp(8, 30), &terms, check).await
 }
 
-/// “版面预览”一页的结果：原页和译文页的图（data URL）。
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PagePreview {
-    pub orig: String,
-    pub trans: String,
-    /// PDF 总页数
-    pub pages: usize,
-    /// 这一页有几处译文被写上去
-    pub items: usize,
+/// 版面里的一块：原文、译文和它在页面上的位置（PDF 点，左 / 下 / 右 / 上）。
+struct LBlock {
+    /// 这一块在阅读器那一页里的序号（编辑译文用）
+    index: usize,
+    rect: (f32, f32, f32, f32),
+    size: f32,
+    rgb: [u8; 3],
+    bg: Option<[u8; 3]>,
+    remove: Vec<usize>,
+    src: String,
+    trans: String,
 }
 
-/// 真正把译文画到原页上看效果（不生成文件）：用缓存里的译文（含在阅读器里改过的），
-/// 渲染“原页”和“译文页”两张图，位置对不对一眼就能看出来。`page` 是 PDF 的页序号（从 0 起）。
-pub async fn page_preview(st: &crate::AppState, input: &Path, target: &str, ocr: &str, page: usize) -> AppResult<PagePreview> {
-    use crate::pdfx::{Item, PagePlan};
-    use base64::Engine;
+struct Collected {
+    lib: PathBuf,
+    pages: usize,
+    /// 阅读器里对应的页序号（文字版 PDF 里没有文字的页不占位）
+    view_page: usize,
+    size: (f32, f32),
+    blocks: Vec<LBlock>,
+}
+
+/// 取出 PDF 某一页的版面块和缓存里的译文（含阅读器里改过的、扫描页的位置）。`page` 从 0 起。
+async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &str, page: usize) -> AppResult<Collected> {
     let lib = crate::pdfx::find_lib(&st.data_dir).ok_or_else(|| AppError::invalid("版面预览需要 PDF 排版组件：在“文件翻译”页点“安装 PDF 排版组件”。"))?;
     let (l2, in2) = (lib.clone(), input.to_path_buf());
     let pages = tokio::task::spawn_blocking(move || crate::pdfx::extract(&l2, &in2)).await.map_err(|e| AppError::msg(e.to_string()))??;
@@ -1013,7 +1045,9 @@ pub async fn page_preview(st: &crate::AppState, input: &Path, target: &str, ocr:
         return Err(AppError::invalid("没有这一页。"));
     }
     let view = load_cache(&cache_path(&st.data_dir, input, target)).ok_or_else(|| AppError::invalid("这份文件还没有译文，先点“翻译”。"))?;
-    let mut plan = PagePlan::default();
+    let size = (pages[page].w, pages[page].h);
+    let mut blocks = vec![];
+    let mut view_page = page;
     if !pages[page].blocks.is_empty() {
         // 文字版：缓存里的译文按“有文字的页、页内的块”顺序排成一长串
         let flat: Vec<&Option<String>> = view.pages.iter().flat_map(|p| p.trans.iter()).collect();
@@ -1022,12 +1056,19 @@ pub async fn page_preview(st: &crate::AppState, input: &Path, target: &str, ocr:
             return Err(AppError::invalid("译文和当前 PDF 对不上（可能换了文件或排版方式），重新翻译一次。"));
         }
         let before: usize = pages[..page].iter().map(|p| p.blocks.len()).sum();
+        view_page = pages[..page].iter().filter(|p| !p.blocks.is_empty()).count();
         for (k, b) in pages[page].blocks.iter().enumerate() {
-            if let Some(Some(t)) = flat.get(before + k) {
-                if !t.trim().is_empty() {
-                    plan.items.push(Item { remove: b.runs.clone(), rect: (b.l, b.b, b.r, b.t), size: b.size, rgb: b.rgb, bg: None, text: t.clone() });
-                }
-            }
+            let trans = flat.get(before + k).and_then(|t| t.as_deref()).unwrap_or("").to_string();
+            blocks.push(LBlock {
+                index: k,
+                rect: (b.l, b.b, b.r, b.t),
+                size: b.size,
+                rgb: b.rgb,
+                bg: None,
+                remove: b.runs.clone(),
+                src: b.text.clone(),
+                trans,
+            });
         }
     } else {
         // 扫描页：旁路文件里有位置，阅读器里改过的译文优先
@@ -1036,37 +1077,130 @@ pub async fn page_preview(st: &crate::AppState, input: &Path, target: &str, ocr:
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .ok_or_else(|| AppError::invalid("这一页还没有识字、翻译结果，先点“翻译”。"))?;
-        if let Some(blocks) = sc.get(page) {
-            let edited = view.pages.get(page).filter(|v| v.trans.len() == blocks.len());
-            for (k, b) in blocks.iter().enumerate() {
-                let text = edited.and_then(|v| v.trans[k].clone()).unwrap_or_else(|| b.trans.clone());
-                if let (Some(rect), false) = (b.rect, text.trim().is_empty()) {
-                    plan.items.push(Item { remove: vec![], rect, size: b.size, rgb: b.rgb, bg: b.bg, text });
-                }
+        if let Some(list) = sc.get(page) {
+            let edited = view.pages.get(page).filter(|v| v.trans.len() == list.len());
+            for (k, b) in list.iter().enumerate() {
+                let Some(rect) = b.rect else { continue };
+                let trans = edited.map(|v| v.trans[k].clone().unwrap_or_default()).unwrap_or_else(|| b.trans.clone());
+                blocks.push(LBlock { index: k, rect, size: b.size, rgb: b.rgb, bg: b.bg, remove: vec![], src: b.src.clone(), trans });
             }
         }
     }
-    let items = plan.items.len();
+    Ok(Collected { lib, pages: pages.len(), view_page, size, blocks })
+}
+
+/// 在渲染好的整页图上取一块文字的背景色（PDF 点 → 像素；PDF 的 y 轴朝上）。
+pub(crate) fn sample_rect_bg(rgba: &[u8], w: usize, h: usize, page: (f32, f32), rect: (f32, f32, f32, f32)) -> [u8; 3] {
+    let (sx, sy) = (w as f32 / page.0.max(1.0), h as f32 / page.1.max(1.0));
+    let px = |v: f32, max: usize| (v.max(0.0) as usize).min(max.saturating_sub(1));
+    crate::pdfx::sample_bg(rgba, w, h, (px(rect.0 * sx, w), px((page.1 - rect.3) * sy, h), px(rect.2 * sx, w), px((page.1 - rect.1) * sy, h)))
+}
+
+/// 版面预览 / 画布用的一页数据：原页图 + 每块的位置、背景色、原文和译文。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutBlock {
+    pub index: usize,
+    /// 左、下、右、上（PDF 点）
+    pub rect: [f32; 4],
+    pub size: f32,
+    pub rgb: [u8; 3],
+    pub bg: [u8; 3],
+    pub src: String,
+    pub trans: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageLayout {
+    /// PDF 总页数
+    pub pages: usize,
+    /// 阅读器里这一页的序号（编辑译文时用）
+    pub view_page: usize,
+    pub w: f32,
+    pub h: f32,
+    /// 原页图（data URL）
+    pub image: String,
+    pub blocks: Vec<LayoutBlock>,
+}
+
+/// 画布：把某一页渲染成图，连同每一块的位置、背景色和译文一起交给界面，界面里可以切换原文 / 译文、缩放平移、直接改译文。
+pub async fn page_layout(st: &crate::AppState, input: &Path, target: &str, ocr: &str, page: usize) -> AppResult<PageLayout> {
+    use base64::Engine;
+    let c = collect_page(st, input, target, ocr, page).await?;
+    let (pages, view_page, size) = (c.pages, c.view_page, c.size);
+    let (lib, inp, mut blocks) = (c.lib, input.to_path_buf(), c.blocks);
+    let (img, blocks) = tokio::task::spawn_blocking(move || -> AppResult<(Vec<u8>, Vec<LBlock>)> {
+        let (w, h, rgba) = crate::pdfx::render_page(&lib, &inp, page, 1400)?;
+        for b in &mut blocks {
+            b.bg.get_or_insert_with(|| sample_rect_bg(&rgba, w, h, size, b.rect));
+        }
+        Ok((crate::pdfx::png_of_rgba(w, h, &rgba)?, blocks))
+    })
+    .await
+    .map_err(|e| AppError::msg(e.to_string()))??;
+    let image = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&img));
+    let blocks = blocks
+        .into_iter()
+        .map(|b| LayoutBlock {
+            index: b.index,
+            rect: [b.rect.0, b.rect.1, b.rect.2, b.rect.3],
+            size: b.size,
+            rgb: b.rgb,
+            bg: b.bg.unwrap_or([255, 255, 255]),
+            src: b.src,
+            trans: b.trans,
+        })
+        .collect();
+    Ok(PageLayout { pages, view_page, w: size.0, h: size.1, image, blocks })
+}
+
+/// “导出效果”：把译文真的写到原页上（和生成的文件一样的做法：删旧文字、盖背景色、写译文）再渲染，不生成文件。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PagePreview {
+    pub orig: String,
+    pub trans: String,
+    pub pages: usize,
+    pub items: usize,
+}
+
+pub async fn page_preview(st: &crate::AppState, input: &Path, target: &str, ocr: &str, page: usize) -> AppResult<PagePreview> {
+    use crate::pdfx::{Item, PagePlan};
+    use base64::Engine;
+    let c = collect_page(st, input, target, ocr, page).await?;
+    let (pages, size) = (c.pages, c.size);
     let font = crate::pdfx::load_font(&st.data_dir)?;
-    let inp = input.to_path_buf();
-    let (a, b) = tokio::task::spawn_blocking(move || -> AppResult<(Vec<u8>, Vec<u8>)> {
+    let (lib, inp, blocks) = (c.lib, input.to_path_buf(), c.blocks);
+    let (a, b, items) = tokio::task::spawn_blocking(move || -> AppResult<(Vec<u8>, Vec<u8>, usize)> {
         let (w, h, rgba) = crate::pdfx::render_page(&lib, &inp, page, 900)?;
+        let mut plan = PagePlan::default();
+        for b in blocks.iter().filter(|b| !b.trans.trim().is_empty()) {
+            let bg = b.bg.unwrap_or_else(|| sample_rect_bg(&rgba, w, h, size, b.rect));
+            plan.items.push(Item { remove: b.remove.clone(), rect: b.rect, size: b.size, rgb: b.rgb, bg: Some(bg), text: b.trans.clone() });
+        }
+        let n = plan.items.len();
         let orig = crate::pdfx::png_of_rgba(w, h, &rgba)?;
-        let (w, h, rgba) = crate::pdfx::render_translated(&lib, &font, &inp, page, &plan, 900)?;
-        Ok((orig, crate::pdfx::png_of_rgba(w, h, &rgba)?))
+        let (tw, th, trgba) = crate::pdfx::render_translated(&lib, &font, &inp, page, &plan, 900)?;
+        Ok((orig, crate::pdfx::png_of_rgba(tw, th, &trgba)?, n))
     })
     .await
     .map_err(|e| AppError::msg(e.to_string()))??;
     let url = |p: &[u8]| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(p));
-    Ok(PagePreview { orig: url(&a), trans: url(&b), pages: pages.len(), items })
+    Ok(PagePreview { orig: url(&a), trans: url(&b), pages, items })
 }
 
 /// 阅读器里改了一段译文：写回缓存。空白 = 去掉这段译文（下次生成时保留原文，或重新翻译）。
 pub fn edit_seg(data_dir: &Path, input: &Path, target: &str, page: usize, index: usize, text: &str) -> AppResult<()> {
     let cp = cache_path(data_dir, input, target);
     let mut v = load_cache(&cp).ok_or_else(|| AppError::not_found("这个文件还没有译文，先翻译。"))?;
+    let src = v.pages.get(page).and_then(|p| p.src.get(index)).cloned().unwrap_or_default();
     let slot = v.pages.get_mut(page).and_then(|p| p.trans.get_mut(index)).ok_or_else(|| AppError::not_found("找不到这一段。"))?;
     let t = text.trim();
+    // 人工改过的译文进翻译记忆：以后在网页、字幕、别的文件里遇到同一句也用它
+    if let Some(kind) = kind_of(input) {
+        crate::tm::store_edited(data_dir, profile_of(kind), target, &src, t);
+    }
     *slot = if t.is_empty() { None } else { Some(t.to_string()) };
     v.failed = v.pages.iter().map(|p| p.trans.iter().filter(|t| t.is_none()).count()).sum();
     save_cache(&cp, &v);
@@ -1170,13 +1304,25 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     ctx.note(format!("共 {} 段、{} 页，译成{}；已有 {} 段译文可直接用", texts.len(), sizes.len(), target, cached));
 
     // 2. 翻译（术语库 + AI 专家 + 网页翻译同款提示词），一页一页地译，每页译完就存缓存
-    let (system, terms) = trans_setup(&ctx.st, &settings, &target);
+    let profile = profile_of(kind);
+    let (system, terms) = trans_setup(&ctx.st, &settings, &target, profile);
+    let tv = crate::tm::terms_version(&ctx.st);
     let mut view = View { input: input.to_string_lossy().into_owned(), target: target.clone(), bilingual: opts.bilingual, pages: vec![], failed: 0 };
     let mut at = 0usize;
     let mut failed = 0usize;
     for (pi, n) in sizes.iter().enumerate() {
         ctx.check()?;
-        let todo: Vec<usize> = (at..at + n).filter(|i| trans[*i].is_none()).collect();
+        let mut todo: Vec<usize> = (at..at + n).filter(|i| trans[*i].is_none()).collect();
+        // 翻译记忆：别处（网页、字幕、别的文件）译过的句子、人工改过的译文直接用
+        if !todo.is_empty() {
+            let src: Vec<String> = todo.iter().map(|i| texts[*i].clone()).collect();
+            for (i, hit) in todo.iter().zip(crate::tm::lookup(&ctx.st.data_dir, profile, &target, &tv, &src)) {
+                if hit.is_some() {
+                    trans[*i] = hit;
+                }
+            }
+            todo.retain(|i| trans[*i].is_none());
+        }
         if !todo.is_empty() {
             let have = trans.iter().filter(|t| t.is_some()).count();
             ctx.note(format!("共 {} 页 · 正在译第 {} 页 · 已缓存 {} 段", sizes.len(), pi + 1, have));
@@ -1186,6 +1332,8 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
             for (k, i) in todo.iter().enumerate() {
                 trans[*i] = t.texts.get(k).cloned().flatten().filter(|x| !x.trim().is_empty());
             }
+            let pairs: Vec<(String, String)> = todo.iter().filter_map(|i| trans[*i].clone().map(|t| (texts[*i].clone(), t))).collect();
+            crate::tm::store(&ctx.st.data_dir, profile, &target, &tv, "pool", &pairs);
         }
         failed += (at..at + n).filter(|i| trans[*i].is_none()).count();
         view.pages.push(ViewPage { src: texts[at..at + n].to_vec(), trans: trans[at..at + n].to_vec() });

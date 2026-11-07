@@ -100,14 +100,17 @@ function updateBar() {
   $('searchOne').disabled = !(n === 1 && chosen()[0]?.kind === 'image')
 }
 
+/** 检测到的视频流（和弹窗里以前那份列表同样的排序和名字：清晰度高的在前）。 */
+const streams = () => (typeof arrangeSniffed === 'function' ? arrangeSniffed(data.sniffed) : data.sniffed).filter((x) => x.kind !== 'image').slice(0, 20)
+
 function renderStreams() {
   $('streams').classList.toggle('hidden', !data.sniffed.length)
   $('streamList').innerHTML = ''
-  for (const s of data.sniffed.filter((x) => x.kind !== 'image').slice(0, 10)) {
+  for (const s of streams()) {
     const row = document.createElement('div')
     row.className = 'it'
     const name = document.createElement('span')
-    name.textContent = s.label
+    name.textContent = s.label || sniffLabel(s)
     name.title = s.url
     const btn = document.createElement('button')
     btn.textContent = '发送'
@@ -320,6 +323,30 @@ $('rescan').onclick = async () => {
     ;(api.storage.session || api.storage.local).remove(key)
     window.close()
   } else msg(r.error || '重新扫描失败', 'err')
+}
+
+// 以前在弹窗里的两个批量入口，收到这里
+$('streamAll').onclick = () => sendItems(streams().map((x) => ({ kind: 'video', url: x.url })))
+async function onPage(action) {
+  const tabId = data.tabId
+  if (tabId == null) return msg('原网页已经关闭', 'err')
+  const r = await chrome_send({ type: 'cc-run', action, tabId })
+  if (!r.ok) return msg(r.error || '没有完成', 'err')
+  return r
+}
+$('pickOnPage').onclick = async () => {
+  if (!(await onPage('picker'))) return
+  // 回到原网页去点选
+  try {
+    await api.tabs.update(data.tabId, { active: true })
+  } catch {
+    /* 切不过去就让用户自己切 */
+  }
+  msg('已在原网页里打开点选：点图片、视频、链接来勾选，勾完点那里的“发送”', 'ok')
+}
+$('pageLinks').onclick = async () => {
+  const r = await onPage('batch-links')
+  if (r) msg(`已把 ${r.count} 条链接发到清影，请在电脑上选择要下载的`, 'ok')
 }
 
 load()

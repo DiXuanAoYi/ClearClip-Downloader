@@ -1,4 +1,4 @@
-// Markdown 预览页：显示提取结果，可以修改后保存成文件、复制，或作为文字便签发给清影。
+// Markdown 预览页：显示提取结果，可以修改后保存成文件、复制，或存进清影的摘录。
 const $ = (id) => document.getElementById(id)
 const msg = (t, cls = '') => { $('msg').textContent = t; $('msg').className = cls }
 const sessionStore = api.storage.session || api.storage.local
@@ -40,7 +40,7 @@ $('toApp').onclick = async () => {
   try {
     const c = await getConfig()
     const r = await call('/api/send', { text: $('md').value.slice(0, 20000), device: c.device, name: browserName(), note: true })
-    msg(r.state === 'pending_pair' ? '第一次使用：请在电脑上点“允许”完成配对' : '已发送，在清影的“收到的文件”里查看', 'ok')
+    msg(r.state === 'pending_pair' ? '第一次使用：请在电脑上点“允许”完成配对' : '已存进清影的摘录（生词与摘录 → 摘录）', 'ok')
   } catch (e) {
     msg(e.message, 'err')
   }

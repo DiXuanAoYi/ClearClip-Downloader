@@ -27,18 +27,9 @@
       <button id="send">发送当前页面</button>
       <button id="cookies" class="sec">同步此网站的登录 Cookie</button>
       <div id="syncInfo" class="mute"></div>
-      <div id="sniffBox" class="hidden">
-        <label>检测到的内容（<span id="sniffCount">0</span>）</label>
-        <div id="sniffList"></div>
-        <div id="sniffBar">
-          <button id="sniffAll" class="sec">全选</button>
-          <button id="sniffSend">发送所选</button>
-        </div>
-      </div>
+      <div id="sniffBox" class="hidden mute">检测到 <b id="sniffCount">0</b> 个视频流 / 文件，在下面的“页面媒体总览”里勾选发送</div>
       <div id="pageTools" class="rowBtns">
-        <button id="openOverview" class="sec">页面媒体总览</button>
-        <button id="startPick" class="sec">批量选取</button>
-        <button id="batchLinks" class="sec" title="收集本页所有视频链接，在清影里打开批量添加面板">本页所有视频链接 → 批量下载</button>
+        <button id="openOverview" class="sec" title="页面里的图片、视频、音频和检测到的视频流都在这里，勾选后一起发送；也能在页面上点选、或把本页所有视频链接交给清影">页面媒体总览 / 批量发送</button>
       </div>
       <div id="vsumTools" class="rowBtns">
         <button id="startVsum" class="sec">视频摘要 / 总结（Alt+Shift+S）</button>
@@ -79,8 +70,7 @@
 
     <section id="v-audio" class="view hidden">
       <label class="row spread"><span><b>响度标准化</b><br /><span class="mute">统一不同视频的音量，默认开启</span></span><input id="auOn" type="checkbox" /></label>
-      <label class="row spread"><span><b>在视频上显示音效按钮</b><br /><span class="mute">视频角上的“音效 -16 LUFS”小按钮。关掉后音效仍然生效，可在这里调整，或在视频页按 Alt+Shift+A 打开面板</span></span><input id="auPill" type="checkbox" /></label>
-      <label class="row spread"><span><b>只在鼠标移到视频时显示</b></span><input id="auPillHover" type="checkbox" /></label>
+      <label class="row spread"><span><b>在视频胶囊上显示音效状态</b><br /><span class="mute">鼠标移到视频上时，右下角的清影胶囊里显示“● 音效 -16 LUFS”。关掉后音效仍然生效，可以从胶囊的 ⋮ 菜单、这里，或按 Alt+Shift+A 打开面板</span></span><input id="auPill" type="checkbox" /></label>
       <div id="auState" class="card"></div>
       <div id="auMeter" class="card">
         <div class="meterRow"><span class="mute">输入</span><div class="meterBar"><i id="auIn"></i></div><b id="auInV" class="mono"></b></div>
@@ -169,9 +159,9 @@
     <label>访问令牌（X-Token）</label><input id="token" type="password" />
     <button id="save">保存并测试</button>
 
-    <h2>便签</h2>
-    <label>存成清影便签的字数上限（0 = 不限制）</label><input id="noteLimit" type="number" min="0" step="1000" placeholder="0" />
-    <p class="mute">用于视频摘要“存进清影的便签”。默认不限制；填了数字，超出的部分会被截掉。</p>
+    <h2>摘录</h2>
+    <label>存进清影摘录的字数上限（0 = 不限制）</label><input id="noteLimit" type="number" min="0" step="1000" placeholder="0" />
+    <p class="mute">用于“存为笔记”、视频摘要“存进清影的摘录”等。默认不限制；填了数字，超出的部分会被截掉。</p>
 
     <h2>功能开关</h2>
     <p class="mute">“常驻”表示在你打开的每个网页里运行，默认关闭；“无页面注入”的功能只在后台和弹窗里工作。</p>
@@ -179,9 +169,9 @@
     <label class="row"><input id="notifyDone" type="checkbox" /> 下载完成时弹出通知</label>
 
     <h2>网页翻译</h2>
-    <p class="mute">整页双语对照、单击 Ctrl 翻译鼠标指着的段落、选中文字点“译”、输入框里连按三次空格翻译。只翻译看得见的段落，翻过的内容会缓存在本机。</p>
+    <p class="mute">整页双语对照、单击 Ctrl 翻译鼠标指着的段落、选中文字用划词工具条的“翻译”（多个服务对比）、输入框里连按三次空格翻译。只翻译看得见的段落，翻过的内容会缓存在本机。</p>
     <label>翻译引擎</label>
-    <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option><option value="deeplx">DeepLX / DeepL（要先在下面填好）</option><option value="custom">自定义接口（OpenAI 兼容：DeepSeek、通义、Ollama 等；要先在下面填好）</option></select>
+    <select id="trEngine"><option value="clearclip">清影（用“设置 → AI”里的大模型，内容只发给你自己配置的模型）</option><option value="google">谷歌翻译（免费，不用配置；页面文字会发给谷歌）</option><option value="deeplx">DeepLX / DeepL（要先在下面填好；选“清影”时，清影没开会自动用它备用）</option><option value="custom">自定义接口（OpenAI 兼容；建议在清影的模型池里加，这里留作清影没开时的备用）</option></select>
     <div class="rowBtns">
       <div class="col"><label>目标语言</label><select id="trTarget2"></select></div>
       <div class="col"><label>译文样式</label><select id="trStyle"><option value="card">底色块（醒目）</option><option value="dim">淡色</option><option value="underline">虚线下划线</option><option value="highlight">高亮</option><option value="plain">和原文一样</option></select></div>
@@ -193,7 +183,6 @@
     <div class="rowBtns">
       <div class="col"><label>按住多久直接翻译</label><select id="trHold"><option value="0">不用，只认单击</option><option value="300">0.3 秒</option><option value="450">0.45 秒（默认）</option><option value="700">0.7 秒</option><option value="1000">1 秒</option></select></div>
     </div>
-    <label class="row"><input id="trSelect" type="checkbox" /> 选中文字后显示“译”按钮</label>
     <label>各翻译服务单独设置（语言留“沿用”就用上面的目标语言）</label>
     <div class="row"><label class="row"><input id="svcOn_clearclip" type="checkbox" /> 清影（大模型）</label><select id="svcLang_clearclip"></select></div>
     <textarea id="svcPrompt_clearclip" rows="2" placeholder="给大模型的额外要求，如：保留专有名词原文；语气口语化（最多 500 字，可留空）"></textarea>
@@ -262,7 +251,7 @@
     <label class="row"><input id="unlockAll" type="checkbox" /> 解除复制 / 右键限制：所有网站都开启（不建议）</label>
     <label>解除限制只对这些网站生效（每行一个，含子域名）</label>
     <textarea id="ruleUnlock" placeholder="example.com"></textarea>
-    <label>不显示视频悬浮下载按钮的网站</label>
+    <label>视频胶囊里不显示“下载”的网站</label>
     <textarea id="ruleFloat"></textarea>
     <label>不启用播放增强的网站</label>
     <textarea id="ruleVideo"></textarea>

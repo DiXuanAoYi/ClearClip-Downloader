@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
-import type { Settings, ShotEntry, UpdateInfo } from '../types'
+import type { Settings, UpdateInfo } from '../types'
 import { previewFilename } from '../utils/format'
+import { clone, merge3 } from '../utils/merge3'
 import AccountsPanel from '../components/AccountsPanel.vue'
 import NetworkPanel from '../components/NetworkPanel.vue'
 import ComponentsPanel from '../components/ComponentsPanel.vue'
@@ -24,6 +25,17 @@ import { LANGUAGES } from '../i18n'
 
 const app = useAppStore()
 const form = ref<Settings>(JSON.parse(JSON.stringify(app.settings!)))
+// 表单打开时（或上次同步时）的那份设置：保存时给后端做三方合并；别处改了设置就把改动合进表单
+let formBase: Settings = clone(app.settings!)
+watch(
+  () => app.settingsRev,
+  () => {
+    if (!app.settings) return
+    const merged = merge3(formBase, form.value, app.settings)
+    formBase = clone(app.settings)
+    if (JSON.stringify(merged) !== JSON.stringify(form.value)) form.value = merged
+  },
+)
 const saving = ref(false)
 const update = ref<UpdateInfo | null>(null)
 const checking = ref(false)
@@ -90,7 +102,8 @@ watch(
 async function save() {
   saving.value = true
   try {
-    await app.save(form.value)
+    await app.save(form.value, formBase)
+    formBase = clone(app.settings!)
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -144,19 +157,6 @@ function insertVar(v: string) {
   form.value.filenameTemplate += v
 }
 
-const shotHist = ref<ShotEntry[]>([])
-async function loadShotHist() {
-  shotHist.value = await api.shotHistList().catch(() => [])
-}
-async function toggleShotNote(h: ShotEntry) {
-  await api.shotHistSave(h.at, !h.saved).catch(() => {})
-  await loadShotHist()
-}
-async function clearShotHist() {
-  await api.shotHistClear(true).catch(() => {})
-  await loadShotHist()
-}
-onMounted(loadShotHist)
 </script>
 
 <template>
@@ -365,18 +365,7 @@ onMounted(loadShotHist)
               <small class="mute">按下后整屏冻结，框选要翻译的区域，用视觉模型识字翻译并盖回原位。需要在“AI”里选一个能看图的模型；留空表示不使用。</small>
             </div>
             <div class="kv"><span>翻译后自动复制译文</span><el-switch v-model="form.shotAutoCopy" /></div>
-            <div class="kv"><span>记录最近的截图翻译<small class="mute block">只存文字，不存图片</small></span><el-switch v-model="form.shotHistory" /></div>
-            <div class="field">
-              <label>最近的截图翻译</label>
-              <div v-if="!shotHist.length" class="mute">还没有记录。</div>
-              <div v-for="h in shotHist.slice(0, 8)" :key="h.at" class="shotrow">
-                <div class="shotsrc mute">{{ h.src }}</div>
-                <div class="shottr">{{ h.text }}</div>
-                <small class="mute">{{ h.saved ? '★ 笔记 · ' : '' }}{{ new Date(h.at).toLocaleString() }}</small>
-                <el-button size="small" link @click="toggleShotNote(h)">{{ h.saved ? '取消笔记' : '存为笔记' }}</el-button>
-              </div>
-              <el-button v-if="shotHist.length" size="small" @click="clearShotHist">清空（保留笔记）</el-button>
-            </div>
+            <div class="kv"><span>记录最近的截图翻译<small class="mute block">只存文字，不存图片。在 <el-button link type="primary" size="small" @click="app.view = 'screen'">屏幕翻译 → 翻译历史</el-button> 里和实时翻译的历史一起看</small></span><el-switch v-model="form.shotHistory" /></div>
             <div class="kv">
               <span>识别所有网址<small class="mute block">关闭时只识别内置平台和下面列出的网站，避免复制普通网址时频繁弹窗</small></span>
               <el-switch v-model="form.clipboardAllSites" />
@@ -637,7 +626,7 @@ onMounted(loadShotHist)
               </el-radio-group>
             </div>
             <div class="kv"><span>关闭窗口时最小化到托盘</span><el-switch v-model="form.closeToTray" /></div>
-            <div class="kv"><span>悬浮拖拽窗<small class="mute block">桌面上的小窗口：把浏览器里的链接拖进去就开始下载，也可以点一下后按 Ctrl+V 粘贴；双击回到主窗口</small></span><el-switch v-model="form.floatBall" /></div>
+            <div class="kv"><span>悬浮窗<small class="mute block">桌面上的清影小窗口：把浏览器里的链接拖进去就开始下载，也可以点一下后按 Ctrl+V 粘贴；双击回到主窗口。在“屏幕翻译”里开了“悬浮窗里放屏幕翻译控制”的话，这个窗里还有屏幕翻译的开关（不管这里开没开都会显示）</small></span><el-switch v-model="form.floatBall" /></div>
             <div class="kv"><span>开机自动启动<small class="mute block">在托盘运行，用于订阅的定期检查</small></span><el-switch v-model="form.launchAtLogin" /></div>
             <div class="kv"><span>订阅与追更<small class="mute block">在“订阅”页面管理</small></span><el-switch v-model="form.subscriptionsEnabled" /></div>
             <div class="kv"><span>启动时检查更新</span><el-switch v-model="form.checkUpdate" /></div>
@@ -842,7 +831,4 @@ h3 {
 a {
   color: var(--cc-acc);
 }
-.shotrow { border-top: 1px solid var(--el-border-color-lighter); padding: 6px 0; display: grid; gap: 2px; }
-.shotsrc { font-size: 12px; white-space: pre-wrap; max-height: 3em; overflow: hidden; }
-.shottr { font-weight: 600; white-space: pre-wrap; max-height: 4.5em; overflow: hidden; }
 </style>

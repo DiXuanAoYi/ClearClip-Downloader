@@ -51,10 +51,10 @@ function nextId(base: string) {
   return id
 }
 function addPreset(p: PoolPreset) {
-  ai.value.pool.push({ id: nextId(p.id), preset: p.id, kind: p.kind === 'openai' ? '' : p.kind, name: p.name, baseUrl: p.baseUrl, model: p.model, sttModel: STT_MODELS[p.id] || '', enabled: true, tasks: [...p.tasks], priority: 10, dailyLimit: 0 })
+  ai.value.pool.push({ id: nextId(p.id), preset: p.id, kind: p.kind === 'openai' ? '' : p.kind, name: p.name, baseUrl: p.baseUrl, model: p.model, sttModel: STT_MODELS[p.id] || '', enabled: true, tasks: [...p.tasks], priority: 10, dailyLimit: 0, monthlyChars: p.kind === 'deepl' ? 500000 : p.kind === 'google' ? 500000 : p.kind === 'microsoft' ? 2000000 : 0 })
 }
 function addCustom() {
-  ai.value.pool.push({ id: nextId('custom'), preset: 'custom', kind: '', name: '自定义服务', baseUrl: '', model: '', sttModel: '', enabled: true, tasks: [], priority: 20, dailyLimit: 0 })
+  ai.value.pool.push({ id: nextId('custom'), preset: 'custom', kind: '', name: '自定义服务', baseUrl: '', model: '', sttModel: '', enabled: true, tasks: [], priority: 20, dailyLimit: 0, monthlyChars: 0 })
 }
 function remove(e: PoolEntry) {
   api.secretSet(`ai.pool.${e.id}`, '').catch(() => {})
@@ -232,6 +232,10 @@ function state(e: PoolEntry): { text: string; cls: string } {
         <div class="field two">
           <div><label>优先级</label><el-input-number v-model="e.priority" size="small" :min="0" :max="999" controls-position="right" /></div>
           <div><label>每天上限（0 = 不限）</label><el-input-number v-model="e.dailyLimit" size="small" :min="0" :step="100" controls-position="right" /></div>
+          <div v-if="isMt(e)">
+            <label>每月字符上限（0 = 不限）<span class="mute"> · 本月已用 {{ (status[e.id]?.charsUsed ?? 0).toLocaleString() }}</span></label>
+            <el-input-number v-model="e.monthlyChars" size="small" :min="0" :step="100000" controls-position="right" />
+          </div>
         </div>
       </div>
       <div class="acts">

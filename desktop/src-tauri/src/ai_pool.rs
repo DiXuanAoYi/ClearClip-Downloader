@@ -321,8 +321,9 @@ pub fn migrate_default(st: &crate::AppState) {
     });
     s.ai.base_url.clear();
     s.ai.model.clear();
-    if s.save(&st.settings_path).is_ok() {
-        *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+    // 启动时跑一次：把整理好的 ai 分区写回（只动 ai，别的分区以锁里的最新值为准）
+    let ai = s.ai;
+    if st.update_settings(|cur| cur.ai = ai).is_ok() {
         log::info!("已把旧的默认 AI 服务并进模型池");
     }
 }
@@ -350,6 +351,16 @@ pub struct Runtime {
 #[derive(Default)]
 pub struct AiPool {
     inner: Mutex<HashMap<String, Runtime>>,
+    /// 本月已翻译的字符数：服务 → (月份, 字符数)。存盘，重启后接着算
+    chars: Mutex<HashMap<String, (i64, u64)>>,
+    chars_path: std::sync::OnceLock<std::path::PathBuf>,
+}
+
+/// 东八区的年月（2026 年 11 月 = 2026*12+10）。
+pub fn month_of(now: i64) -> i64 {
+    use chrono::{Datelike, TimeZone};
+    let t = chrono::FixedOffset::east_opt(8 * 3600).and_then(|z| z.timestamp_opt(now, 0).single());
+    t.map(|t| t.year() as i64 * 12 + t.month0() as i64).unwrap_or(0)
 }
 
 /// 东八区的“第几天”：免费额度大多按北京时间零点重置。
@@ -435,6 +446,40 @@ impl AiPool {
         });
     }
 
+    /// 读出存盘的字符用量（启动时调用一次）。
+    pub fn load_chars(&self, data_dir: &std::path::Path) {
+        let p = data_dir.join("pool-usage.json");
+        if let Ok(m) = std::fs::read(&p).map_err(|_| ()).and_then(|b| serde_json::from_slice::<HashMap<String, (i64, u64)>>(&b).map_err(|_| ())) {
+            *self.chars.lock().unwrap_or_else(|e| e.into_inner()) = m;
+        }
+        let _ = self.chars_path.set(p);
+    }
+
+    /// 记下这次翻译了多少字符（机器翻译按字符计费）。
+    pub fn record_chars(&self, id: &str, n: u64, now: i64) {
+        let month = month_of(now);
+        let snap = {
+            let mut g = self.chars.lock().unwrap_or_else(|e| e.into_inner());
+            let e = g.entry(id.to_string()).or_insert((month, 0));
+            if e.0 != month {
+                *e = (month, 0);
+            }
+            e.1 += n;
+            g.clone()
+        };
+        if let Some(p) = self.chars_path.get() {
+            if let Ok(b) = serde_json::to_vec(&snap) {
+                let _ = std::fs::write(p, b);
+            }
+        }
+    }
+
+    /// 本月已用字符。
+    pub fn chars_used(&self, id: &str, now: i64) -> u64 {
+        let month = month_of(now);
+        self.chars.lock().unwrap_or_else(|e| e.into_inner()).get(id).filter(|e| e.0 == month).map_or(0, |e| e.1)
+    }
+
     /// 清除某个服务的冷却和计数（用户改了密钥，或手动点“重置”）。
     pub fn reset(&self, id: &str) {
         self.inner.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
@@ -449,6 +494,9 @@ pub struct Cand {
     pub id: String,
     pub priority: u32,
     pub daily_limit: u32,
+    /// 每月字符上限（0 = 不限）和本月已用
+    pub monthly_chars: u64,
+    pub chars_used: u64,
     /// 适用的任务；空 = 全部
     pub tasks: Vec<String>,
     /// 有密钥或是本机服务
@@ -458,7 +506,15 @@ pub struct Cand {
 pub fn from_entry(e: &PoolEntry, usable: bool) -> Cand {
     // 机器翻译服务只参与翻译
     let tasks = if crate::mt::Kind::parse(&e.kind).is_mt() { vec!["translate".to_string()] } else { e.tasks.clone() };
-    Cand { id: e.id.clone(), priority: e.priority, daily_limit: e.daily_limit, tasks, usable: usable && e.enabled }
+    Cand {
+        id: e.id.clone(),
+        priority: e.priority,
+        daily_limit: e.daily_limit,
+        monthly_chars: e.monthly_chars,
+        chars_used: 0,
+        tasks,
+        usable: usable && e.enabled,
+    }
 }
 
 /// 按规则排出可以依次尝试的服务（返回 `cands` 的下标）。
@@ -475,6 +531,9 @@ pub fn rank(cands: &[Cand], rt: &HashMap<String, Runtime>, task: Task, now: i64)
             }
             let used = r.filter(|r| r.day == day_of(now)).map_or(0, |r| r.used);
             if c.daily_limit > 0 && used >= c.daily_limit {
+                return None;
+            }
+            if c.monthly_chars > 0 && c.chars_used >= c.monthly_chars {
                 return None;
             }
             Some((i, c.priority, used))
@@ -505,7 +564,7 @@ mod tests {
     use super::*;
 
     fn cand(id: &str, priority: u32) -> Cand {
-        Cand { id: id.into(), priority, daily_limit: 0, tasks: vec![], usable: true }
+        Cand { id: id.into(), priority, daily_limit: 0, monthly_chars: 0, chars_used: 0, tasks: vec![], usable: true }
     }
 
     const NOW: i64 = 1_800_000_000;

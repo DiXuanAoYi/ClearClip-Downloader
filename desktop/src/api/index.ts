@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { ECue } from '../utils/subedit'
 import type {
   FileTransView,
+  PdfLayout,
   ShotEntry,
   ScreenStatus,
   ScreenTarget,
@@ -153,7 +154,8 @@ import type {
 export const api = {
   appInfo: () => invoke<AppInfo>('get_app_info'),
   getSettings: () => invoke<Settings>('get_settings'),
-  saveSettings: (settings: Settings) => invoke<SaveSettingsResult>('save_settings', { settings }),
+  /** base：表单打开时的那份设置；带上它后端做三方合并，不会覆盖别处的改动 */
+  saveSettings: (settings: Settings, base?: Settings | null) => invoke<SaveSettingsResult>('save_settings', { settings, base: base ?? null }),
 
   detectLinks: (text: string) => invoke<DetectedLink[]>('detect_links', { text }),
   resolve: (text: string) => invoke<MediaInfo>('resolve_link', { text }),
@@ -277,11 +279,14 @@ export const api = {
   duplicatesSimilar: () => invoke<DupGroup[]>('duplicates_similar'),
   cuesSearch: (query: string) => invoke<CueHit[]>('cues_search', { query }),
   cuesReindex: () => invoke<number>('cues_reindex'),
+  extDataStatus: () => invoke<{ size: number; ts: number; error: string; rejectedSize: number }>('ext_data_status'),
   backupExport: (dest: string) => invoke<void>('backup_export', { dest }),
   backupImport: (src: string) => invoke<BackupInfo>('backup_import', { src }),
   restartApp: () => invoke<void>('restart_app'),
 
   secretSet: (name: string, value: string) => invoke<void>('secret_set', { name, value }),
+  tmStats: () => invoke<[number, number]>('tm_stats'),
+  tmClear: () => invoke<number>('tm_clear'),
   secretHas: (name: string) => invoke<boolean>('secret_has', { name }),
   aiStatus: () => invoke<AiStatus>('ai_status'),
   aiTest: () => invoke<string>('ai_test'),
@@ -303,6 +308,7 @@ export const api = {
   excerptRemove: (id: string) => invoke<void>('excerpt_remove', { id }),
   excerptNote: (id: string, note: string) => invoke<void>('excerpt_note', { id, note }),
   excerptMarkdown: () => invoke<string>('excerpt_markdown'),
+  excerptExport: (dest: string) => invoke<void>('excerpt_export', { dest }),
   aiPoolCopyKey: (from: string, to: string) => invoke<void>('ai_pool_copy_key', { from, to }),
   glossaryState: () => invoke<GlossaryData>('glossary_state'),
   glossarySave: (glossary: Glossary) => invoke<Glossary>('glossary_save', { glossary }),
@@ -332,6 +338,7 @@ export const api = {
   filetrPreview: (path: string) => invoke<FileTransView>('filetr_preview', { path }),
   filetrView: (path: string, target?: string) => invoke<FileTransView | null>('filetr_view', { path, target }),
   filetrStart: (path: string, opts: { bilingual: boolean; target?: string; pdfMode?: string; ocr?: string; preview?: boolean }) => invoke<number>('filetr_start', { path, opts }),
+  filetrPageLayout: (path: string, target: string, ocr: string, page: number) => invoke<PdfLayout>('filetr_page_layout', { path, target, ocr, page }),
   filetrPagePreview: (path: string, target: string, ocr: string, page: number) => invoke<{ orig: string; trans: string; pages: number; items: number }>('filetr_page_preview', { path, target, ocr, page }),
   filetrEdit: (path: string, target: string, page: number, index: number, text: string) => invoke<void>('filetr_edit', { path, target, page, index, text }),
   filetrRetranslate: (path: string, target: string, page: number, index: number) => invoke<string>('filetr_retranslate', { path, target, page, index }),
@@ -446,7 +453,7 @@ export const api = {
   glossaryForApp: (exe: string) => invoke<Glossary>('glossary_for_app', { exe }),
   scAckManga: () => invoke<void>('sc_ack_manga'),
   scBar: (on: boolean) => invoke<void>('sc_bar', { on }),
-  scBarExpand: (expanded: boolean) => invoke<void>('sc_bar_expand', { expanded }),
+  floatExpand: (expanded: boolean) => invoke<void>('float_expand', { expanded }),
   scTry: (target?: ScreenTarget) => invoke<ScreenTry>('sc_try', { target }),
   scHistory: (n?: number) => invoke<ScreenEntry[]>('sc_history', { n }),
   scHistoryClear: () => invoke<void>('sc_history_clear'),
@@ -521,6 +528,8 @@ export const api = {
 }
 
 export const events = {
+  /** 摘录变了（浏览器扩展存进来一条） */
+  onExcerptsChanged: (cb: () => void): Promise<UnlistenFn> => listen('excerpts://changed', () => cb()),
   onModelProgress: (cb: (p: ModelProgress) => void): Promise<UnlistenFn> => listen<ModelProgress>('ml://download', (e) => cb(e.payload)),
   onTasks: (cb: (tasks: TaskSnapshot[]) => void): Promise<UnlistenFn> => listen<TaskSnapshot[]>('tasks://updated', (e) => cb(e.payload)),
   onProgress: (cb: (task: TaskSnapshot) => void): Promise<UnlistenFn> => listen<TaskSnapshot>('tasks://progress', (e) => cb(e.payload)),
@@ -544,6 +553,8 @@ export const events = {
   onLibraryProgress: (cb: (p: { task: string; done: number; total: number }) => void): Promise<UnlistenFn> =>
     listen<{ task: string; done: number; total: number }>('library://progress', (e) => cb(e.payload)),
   onTrackProgress: (cb: (p: { id: number; percent: number }) => void): Promise<UnlistenFn> => listen<{ id: number; percent: number }>('edit://track', (e) => cb(e.payload)),
+  /** 设置在别处（写作窗、屏幕翻译、托盘、另一个窗口）被改了 */
+  onSettingsChanged: (cb: (s: Settings) => void): Promise<UnlistenFn> => listen<Settings>('settings-changed', (e) => cb(e.payload)),
   onMediaJobs: (cb: (jobs: JobSnap[]) => void): Promise<UnlistenFn> => listen<JobSnap[]>('media://jobs', (e) => cb(e.payload)),
   onLibraryChanged: (cb: () => void): Promise<UnlistenFn> => listen('library://changed', () => cb()),
   onLock: (cb: (locked: boolean) => void): Promise<UnlistenFn> => listen<{ locked: boolean }>('security://lock', (e) => cb(e.payload.locked)),

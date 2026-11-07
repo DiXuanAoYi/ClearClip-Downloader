@@ -15,6 +15,8 @@ const MINI_H: f64 = 196.0;
 /// 悬浮拖拽窗的尺寸（逻辑像素）
 const FLOAT_W: f64 = 156.0;
 const FLOAT_H: f64 = 64.0;
+/// 点开屏幕翻译控制后的宽度
+const FLOAT_W_OPEN: f64 = 780.0;
 
 pub struct TrayWatchItem(pub CheckMenuItem<Wry>);
 
@@ -84,10 +86,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             }
             "wpause" => {
                 let st = app.state::<Arc<AppState>>();
-                let mut s = st.settings_raw();
-                s.writing.paused_until = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) + 3600;
-                if s.save(&st.settings_path).is_ok() {
-                    *st.settings.write().unwrap_or_else(|e| e.into_inner()) = s;
+                let until = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0) + 3600;
+                if st.update_settings(|s| s.writing.paused_until = until).is_ok() {
                     crate::writebadge::hide(app);
                 }
             }
@@ -312,6 +312,36 @@ fn build_small_window(app: &AppHandle, spec: &SmallWindow) -> tauri::Result<()> 
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
     Ok(())
+}
+
+/// 桌面上只有一个清影悬浮窗：拖链接下载；在 Windows 上还带屏幕翻译的控制（以前是另一个“屏幕翻译悬浮钮”）。
+/// “设置 → 通用 → 悬浮窗”和“屏幕翻译 → 悬浮窗里放屏幕翻译控制”任一个开着就显示。
+pub fn float_wanted(s: &crate::settings::Settings) -> bool {
+    s.float_ball || (s.live.float_button && crate::livewin::SUPPORTED)
+}
+
+/// 按设置和锁定状态显示 / 关掉悬浮窗。
+pub fn sync_float(app: &AppHandle) {
+    let Some(st) = app.try_state::<Arc<AppState>>() else { return };
+    let on = float_wanted(&st.settings_raw()) && !crate::security::status(&st).locked;
+    apply_float(app, on);
+}
+
+/// 悬浮窗点开屏幕翻译控制时变宽，收起时变回原来的宽度；保持右边缘不动（窗口一般贴在屏幕右侧）。
+#[tauri::command]
+pub fn float_expand(app: AppHandle, expanded: bool) {
+    use tauri::{LogicalPosition, Position, Size};
+    let Some(w) = app.get_webview_window(FLOAT.label) else { return };
+    let scale = w.scale_factor().unwrap_or(1.0);
+    let (Ok(p), Ok(sz)) = (w.outer_position(), w.inner_size()) else { return };
+    let cur_w = sz.width as f64 / scale;
+    let want = if expanded { FLOAT_W_OPEN } else { FLOAT_W };
+    if (cur_w - want).abs() < 1.0 {
+        return;
+    }
+    let x = (p.x as f64 / scale + cur_w - want).max(0.0);
+    let _ = w.set_size(Size::Logical(LogicalSize::new(want, FLOAT_H)));
+    let _ = w.set_position(Position::Logical(LogicalPosition::new(x, p.y as f64 / scale)));
 }
 
 /// 显示或隐藏悬浮拖拽窗；显示时放在屏幕右侧、迷你窗上方。

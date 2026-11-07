@@ -22,6 +22,18 @@ fn check_secret_name(name: &str) -> AppResult<()> {
     }
 }
 
+/// 翻译记忆：一共几条、其中几条是人工改过的。
+#[tauri::command]
+pub fn tm_stats(state: St<'_>) -> (u64, u64) {
+    crate::tm::count(&state.data_dir)
+}
+
+/// 清空翻译记忆里的机器译文（人工改过的保留），返回清掉几条。
+#[tauri::command]
+pub fn tm_clear(state: St<'_>) -> AppResult<u64> {
+    crate::tm::clear_machine(&state.data_dir)
+}
+
 #[tauri::command]
 pub fn secret_set(state: St<'_>, name: String, value: String) -> AppResult<()> {
     check_secret_name(&name)?;
@@ -81,6 +93,8 @@ pub struct PoolStatus {
     pub cool_reason: String,
     pub bad_key: bool,
     pub last_error: String,
+    /// 本月已翻译的字符（机器翻译额度）
+    pub chars_used: u64,
 }
 
 /// 模型池里每个服务（含“默认”）今天用了多少次、是否在冷却、最近的错误。
@@ -103,6 +117,7 @@ pub fn ai_pool_status(state: St<'_>) -> Vec<PoolStatus> {
                 cool_reason: if r.cool_until > now { r.cool_reason } else { String::new() },
                 bad_key: r.bad_key,
                 last_error: r.last_error,
+                chars_used: state.ai_pool.chars_used(&id, now),
                 id,
             }
         })
@@ -204,7 +219,10 @@ pub fn filetr_start(app: AppHandle, path: String, opts: crate::filetr::Opts) -> 
     if crate::filetr::kind_of(&p).is_none() {
         return Err(AppError::invalid("支持 TXT、Markdown、PDF、SRT / VTT / ASS 字幕、Word(docx)、EPUB，以及图片（PNG / JPG / WebP）。"));
     }
-    Ok(media_tools::spawn_job(&app, title_of(&p), "文件翻译", move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
+    // 记下源文件和选项：文件翻译页切走再回来，靠它认出“这个任务是哪个文件、是不是只预览”
+    let meta =
+        media_tools::JobMeta { kind: Some("filetr"), input: Some(p.to_string_lossy().into_owned()), params: serde_json::to_value(&opts).unwrap_or_default() };
+    Ok(media_tools::spawn_job_meta(&app, title_of(&p), "文件翻译", meta, move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
 }
 
 /// 文件翻译：不翻译，只把文件切成页，给阅读器先看原文。
@@ -222,7 +240,14 @@ pub fn filetr_view(state: St<'_>, path: String, target: Option<String>) -> AppRe
     Ok(crate::filetr::view_for(&state.data_dir, &p, &t))
 }
 
-/// 文件翻译：把译文画到原页上，返回原页和译文页两张图（版面预览）。
+/// 文件翻译：版面画布的一页数据（原页图 + 每块的位置、背景色、原文、译文）。
+#[tauri::command]
+pub async fn filetr_page_layout(state: St<'_>, path: String, target: String, ocr: Option<String>, page: usize) -> AppResult<crate::filetr::PageLayout> {
+    let p = existing_file(&path)?;
+    crate::filetr::page_layout(&state, &p, target.trim(), ocr.as_deref().unwrap_or("vision"), page).await
+}
+
+/// 文件翻译：导出效果——把译文真的写到原页上再渲染，返回原页和译文页两张图。
 #[tauri::command]
 pub async fn filetr_page_preview(state: St<'_>, path: String, target: String, ocr: Option<String>, page: usize) -> AppResult<crate::filetr::PagePreview> {
     let p = existing_file(&path)?;

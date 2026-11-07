@@ -203,11 +203,39 @@ pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply
         }
         ("GET", "/api/v1/vocab/export") => {
             let f = req.query.get("format").cloned().unwrap_or_else(|| "csv".into());
+            // Anki 而且录过原声：多给一个 zip（卡片 + 原声），扩展直接存下来
+            let zip = if f == "anki" { crate::vocab::anki_package(&state.data_dir).ok().flatten() } else { None };
             match crate::vocab::export(&state.data_dir, &f) {
-                Ok((text, ext)) => ok(json!({"text": text, "ext": ext})),
+                Ok((text, ext)) => {
+                    use base64::Engine;
+                    let mut v = json!({"text": text, "ext": ext});
+                    if let Some(z) = zip {
+                        v["zip"] = json!(base64::engine::general_purpose::STANDARD.encode(z));
+                        v["clips"] = json!(crate::vocab::clips(&state.data_dir).len());
+                    }
+                    ok(v)
+                }
                 Err(e) => err("500 Internal Server Error", &e.message),
             }
         }
+        // 原声：扩展录下的一句，存在清影这边
+        ("POST", "/api/v1/vocab/clip") => {
+            let v: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            match crate::vocab::save_clip(&state.data_dir, v["word"].as_str().unwrap_or(""), v["data"].as_str().unwrap_or("")) {
+                Ok(name) => ok(json!({"name": name})),
+                Err(e) => err("400 Bad Request", &e.message),
+            }
+        }
+        // 浏览器扩展的用户数据（笔记、高亮、本地导入的字幕）：同步过来进备份，换浏览器 / 重装扩展时取回
+        ("POST", "/api/v1/extdata") => {
+            let v: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            match crate::datareg::ext_save(&state.data_dir, &v["data"], crate::datareg::ext_limit_bytes(state.settings().ext_data_mb)) {
+                Ok(ts) => ok(json!({"ts": ts})),
+                Err(e) => err("400 Bad Request", &e.message),
+            }
+        }
+        ("GET", "/api/v1/extdata") => ok(crate::datareg::ext_load(&state.data_dir)),
+        ("GET", "/api/v1/vocab/clips") => ok(json!({"words": crate::vocab::clips(&state.data_dir).into_iter().map(|(k, _)| k).collect::<Vec<_>>()})),
         // 视频缓存（浏览器扩展用）：同步摘要 / 双语字幕快照，恢复时取回
         ("POST", "/api/v1/videocache/put") => match serde_json::from_slice::<crate::videocache::Put>(&req.body) {
             Ok(p) => match crate::videocache::put(&state.data_dir, &p, state.settings().video_cache_mb) {

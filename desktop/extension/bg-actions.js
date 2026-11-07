@@ -188,7 +188,7 @@ async function startPicker(tab) {
 /** 打开视频摘要面板（再次注入 = 关闭）。 */
 async function startVsum(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用视频摘要')
-  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsum.js'])
+  await injectFiles(tab.id, ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'])
 }
 
 /** 在当前页面的视频上叠字幕层（再次注入 = 关闭）。 */
@@ -199,7 +199,7 @@ async function startShot(tab) {
 
 async function startSubLayer(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用字幕层')
-  await injectFiles(tab.id, ['content/ui.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/sublayer.js'])
+  await injectFiles(tab.id, ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js'])
 }
 
 // ---------- 以图搜图 ----------
@@ -325,6 +325,10 @@ const HANDLERS = {
         return { ...(await call('/api/v1/vocab/unfamiliar', { words: Array.isArray(m.words) ? m.words.slice(0, 400) : [], minRank: Number(m.minRank) || 0 })) }
       case 'export':
         return { ...(await call(`/api/v1/vocab/export?format=${enc(String(m.format || 'csv'))}`)) }
+      case 'clip':
+        return { ...(await call('/api/v1/vocab/clip', { word: String(m.word || '').slice(0, 80), data: String(m.data || '') })) }
+      case 'clips':
+        return { ...(await call('/api/v1/vocab/clips')) }
       default:
         throw new Error('不支持的操作')
     }
@@ -363,11 +367,32 @@ const HANDLERS = {
     )
     return { results, engines: ccTrans.activeEngines(cfg), names: ccTrans.ENGINE_NAMES }
   },
+  // 划词工具条的“翻译”：在选区所在的那个页面（框架）里打开网页翻译的划词卡片；那里还没有翻译脚本就先注入
+  'cc-wt-sel': async (m, sender) => {
+    const tab = sender?.tab
+    if (!tab) throw new Error('找不到页面')
+    const frameId = sender.frameId ?? 0
+    const r0 = m.rect && typeof m.rect === 'object' ? m.rect : null
+    const rect = r0 ? { left: Number(r0.left) || 0, right: Number(r0.right) || 0, top: Number(r0.top) || 0, bottom: Number(r0.bottom) || 0 } : null
+    const msg = { type: 'cc-wt', action: 'selection', text: String(m.text || '').slice(0, 5000), rect }
+    const ready = (r) => r && typeof r === 'object' && 'on' in r
+    try {
+      if (ready(await api.tabs.sendMessage(tab.id, msg, { frameId }))) return {}
+    } catch {
+      // 还没注入
+    }
+    await api.scripting.executeScript({ target: { tabId: tab.id, frameIds: [frameId] }, files: TR_FILES })
+    await sleep(60)
+    if (!ready(await api.tabs.sendMessage(tab.id, msg, { frameId }))) throw new Error('划词翻译没有启动（这个页面可能不允许扩展运行脚本）')
+    return {}
+  },
   'cc-open-transbox': async (m, sender) => (await openTransBox(sender?.tab || null, String(m.text || '').slice(0, 5000)), {}),
   // 视频摘要读到字幕后，把文稿作为字幕层叠在视频上
   'cc-sublayer-open': async (_m, sender) => (sender?.tab && (await startSubLayer(sender.tab)), {}),
+  // 视频胶囊菜单里的“视频摘要”（再注入一次会关掉，所以胶囊只在没打开时显示这一项）
+  'cc-vsum-open': async (_m, sender) => (sender?.tab && (await startVsum(sender.tab)), {}),
   'cc-tr-clear': async () => (await clearTransCache(), {}),
-  // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）
+  // 把笔记存进清影的“摘录”；字数上限在设置里（0 = 不限制，默认）
   'cc-note': async (m) => {
     const { noteLimit } = await api.storage.local.get('noteLimit')
     const max = Math.max(0, Math.floor(Number(noteLimit) || 0))
@@ -465,7 +490,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
     } else if (id === 'cc-qr') await openQr(tab, tab.url)
     else if (id === 'cc-clip') {
       const r = await pageSave('clip', tab, info.selectionText)
-      notify(r.pairing ? '请在电脑上允许配对' : '已摘录到清影', r.pairing ? '第一次使用需要在清影里点“允许”' : '在清影的“收到的文件”里查看')
+      notify(r.pairing ? '请在电脑上允许配对' : '已摘录到清影', r.pairing ? '第一次使用需要在清影里点“允许”' : '在清影的“生词与摘录 → 摘录”里查看')
       await flashBadge(tab?.id, !r.pairing)
     } else if (id.startsWith('cc-save:')) {
       const r = await pageSave(id.slice('cc-save:'.length), tab, '')
@@ -530,7 +555,39 @@ api.commands?.onCommand.addListener(async (cmd) => {
   }
 })
 
+// ---------- 扩展的用户数据同步到清影（笔记、高亮、本地导入的字幕）：进清影的备份；新装扩展时自动取回 ----------
+
+const EXT_KEYS = ['vsumNotes', 'hlData', 'vsumLocal']
+let extPushTimer = 0
+function pushExtDataSoon() {
+  clearTimeout(extPushTimer)
+  extPushTimer = setTimeout(async () => {
+    try {
+      const data = await api.storage.local.get(EXT_KEYS)
+      await call('/api/v1/extdata', { data })
+    } catch {
+      // 清影没开：下次改动时再同步
+    }
+  }, 15000)
+}
+async function pullExtData() {
+  try {
+    const r = await call('/api/v1/extdata')
+    const have = await api.storage.local.get(EXT_KEYS)
+    const fill = {}
+    for (const k of EXT_KEYS) {
+      const v = r?.data?.[k]
+      const empty = have[k] == null || (Array.isArray(have[k]) ? !have[k].length : typeof have[k] === 'object' && !Object.keys(have[k]).length)
+      if (v != null && empty) fill[k] = v
+    }
+    if (Object.keys(fill).length) await api.storage.local.set(fill)
+  } catch {
+    // 清影没开或没配对：不取回
+  }
+}
+
 api.runtime.onInstalled.addListener(async (d) => {
+  if (d?.reason === 'install') pullExtData()
   // 升级上来的用户保持原来的样子：视频上的音效按钮继续显示（新安装默认不显示）
   if (d?.reason === 'update') {
     try {
@@ -539,6 +596,15 @@ api.runtime.onInstalled.addListener(async (d) => {
       if (features && typeof features === 'object' && typeof features.videoMaster !== 'boolean') {
         const was = features.speed !== false || features.speedMemory !== false || features.seek !== false || features.videoTools === true || features.videoAdvanced === true
         await api.storage.local.set({ features: { ...features, videoMaster: was } })
+      }
+      // 1.18 起“解除复制 / 右键限制”默认只对开启过的网站生效。以前默认是所有网站，升级时改掉一次并提示（还能在设置里改回来）
+      const { siteRules, unlockMigrated } = await api.storage.local.get(['siteRules', 'unlockMigrated'])
+      if (!unlockMigrated) {
+        if (!siteRules || siteRules.unlockAll !== false) {
+          await api.storage.local.set({ siteRules: { ...(siteRules || {}), unlockAll: false } })
+          notify('解除复制限制改为按网站开启', '以前对所有网站生效，会影响在线文档、设计工具的右键和拖放。现在只对你开启过的网站生效：在弹窗“工具”里对当前网站打开，或在设置里改回“所有网站”。')
+        }
+        await api.storage.local.set({ unlockMigrated: true })
       }
       const { audioCfg } = await api.storage.local.get('audioCfg')
       if (!audioCfg || typeof audioCfg.pillShow !== 'boolean') await api.storage.local.set({ audioCfg: { ...(audioCfg || {}), pillShow: true } })
@@ -558,5 +624,8 @@ api.storage.onChanged.addListener((ch, area) => {
   }
   if (ch.engines) rebuildMenusSoon()
   if (ch.siteRules || ch.transCfg) syncResident()
+  if (EXT_KEYS.some((k) => ch[k])) pushExtDataSoon()
+  // 刚连上清影（填了令牌 / 配对成功）：本地还没有的笔记、高亮从清影取回
+  if (ch.token?.newValue && !ch.token.oldValue) pullExtData()
 })
 syncResident()

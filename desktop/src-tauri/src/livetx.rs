@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::io::Write as _;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -95,27 +95,10 @@ pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, exe
             "lines": lines,
         }))
         .map_err(|e| AppError::msg(e.to_string()))?;
-        let id = crate::vsum::start(app, req)?;
-        let t0 = Instant::now();
-        let res = loop {
-            if stop.load(Ordering::Relaxed) {
-                crate::vsum::cancel(id);
-                return Err(AppError::msg("已停止"));
-            }
-            match crate::vsum::job_json(id) {
-                Some(j) => match j["state"].as_str() {
-                    Some("done") => break j["result"].clone(),
-                    Some("error") => return Err(AppError::msg(j["error"].as_str().unwrap_or("翻译失败").to_string())),
-                    _ => {}
-                },
-                None => return Err(AppError::msg("翻译任务丢失")),
-            }
-            if t0.elapsed() > Duration::from_secs(90) {
-                crate::vsum::cancel(id);
-                return Err(AppError::msg("翻译超时"));
-            }
-            std::thread::sleep(Duration::from_millis(80));
-        };
+        // 直接等结果（以前是把请求塞进给扩展用的任务表，再每 80 毫秒查一次）
+        let fut = crate::vsum::run_now(app, req, stop);
+        let res =
+            tauri::async_runtime::block_on(async { tokio::time::timeout(Duration::from_secs(90), fut).await }).map_err(|_| AppError::msg("翻译超时"))??;
         let got = res["lines"].as_array().cloned().unwrap_or_default();
         for item in got {
             let (Some(k), Some(tr)) = (item["t"].as_u64(), item["text"].as_str()) else { continue };
