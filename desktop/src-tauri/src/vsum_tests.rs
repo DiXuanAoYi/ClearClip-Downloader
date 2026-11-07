@@ -478,3 +478,20 @@ async fn comments_are_analysed_and_quotes_attached() {
     assert_eq!(run(&base, &a).await.unwrap()["answer"], "答案");
     assert!(check(&Req { kind: "comments".into(), ..Default::default() }).is_err());
 }
+
+#[test]
+fn aligned_must_be_in_translation() {
+    assert_eq!(keep_aligned("坚韧的", "这是一个坚韧的花园。"), "坚韧的");
+    assert_eq!(keep_aligned("“坚韧的”。", "这是一个坚韧的花园。"), "坚韧的");
+    assert_eq!(keep_aligned("顽强", "这是一个坚韧的花园。"), "");
+    assert_eq!(keep_aligned("坚韧", ""), "");
+    assert_eq!(keep_aligned("", "这是一个坚韧的花园。"), "");
+}
+
+#[test]
+fn lookup_req_takes_translation() {
+    let r: Req = serde_json::from_value(serde_json::json!({ "kind": "lookup", "text": "resilient", "trans": "坚韧的花园" })).unwrap();
+    assert_eq!(r.trans, "坚韧的花园");
+    let r: Req = serde_json::from_value(serde_json::json!({ "kind": "lookup", "text": "resilient" })).unwrap();
+    assert!(r.trans.is_empty());
+}

@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const VSUM = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js']
+const VSUM = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js']
 const SUB = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js']
 const SEL = ['content/ui.js', 'selbar-logic.js', 'content/wordcard.js', 'content/selbar.js']
 let pass = 0
@@ -168,19 +168,35 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const w = window.__roots.map((r) => r.querySelector('.cap .w')).find(Boolean)
     w.click()
   })
-  await page.waitForFunction(() => (window.__roots || []).some((r) => r.querySelector('.bub.open .ms')), null, { timeout: 5000 }).catch(() => {})
+  await page.waitForFunction(() => (window.__roots || []).some((r) => r.querySelector('.wc-pop.open .ms')), null, { timeout: 5000 }).catch(() => {})
   const bub = await inRoots(() => {
-    const b = window.__roots.map((r) => r.querySelector('.bub')).find(Boolean)
-    return { open: b.classList.contains('open'), card: b.classList.contains('wcard'), text: b.innerText, actions: b.querySelectorAll('.row2 button').length }
+    const b = window.__roots.filter((r) => r.querySelector('.cap')).map((r) => r.querySelector('.wc-pop')).find(Boolean)
+    const x = b.getBoundingClientRect()
+    return { open: b.classList.contains('open'), card: b.classList.contains('wcard'), text: b.innerText, actions: b.querySelectorAll('.row2 button').length, inView: x.top >= 0 && x.left >= 0 && x.bottom <= innerHeight && x.right <= innerWidth, old: window.__roots.some((r) => r.querySelector('.bub')) }
   })
   ok('字幕层查词浮窗是共用词卡', bub.open && bub.card && /有韧性的/.test(bub.text) && /在这句话里/.test(bub.text) && /本句/.test(bub.text) && /例句/.test(bub.text), JSON.stringify(bub))
   ok('字幕层自己的按钮还在（跳到这句 / 原声 / 朗读 / 复制 / 录原声）', bub.actions === 5, String(bub.actions))
-  await page.evaluate(() => window.__roots.map((r) => r.querySelector('.bub .heart')).find(Boolean).click())
+  ok('字幕层查词浮窗完整在窗口里，旧的浮窗没有了', bub.inView && !bub.old, JSON.stringify(bub))
+  // 单词靠近窗口顶部、上下都放不下：放到单词的左边或右边，不裁切
+  const side = await page.evaluate(() => {
+    const el = document.createElement('div')
+    el.style.cssText = 'position:fixed;height:500px'
+    document.body.append(el)
+    const H = innerHeight
+    const r = { left: 300, right: 360, width: 60, top: H / 2 - 10, bottom: H / 2 + 10, height: 20 }
+    Object.defineProperty(el, 'scrollHeight', { value: H - 100 })
+    globalThis.ccWordCard.place(el, r)
+    const b = el.getBoundingClientRect()
+    el.remove()
+    return { left: b.left, top: b.top, bottom: b.bottom, right: b.right, H, W: innerWidth }
+  })
+  ok('上下放不下时浮窗放到单词旁边且在窗口内', side.left >= 360 && side.top >= 0 && side.bottom <= side.H && side.right <= side.W, JSON.stringify(side))
+  await page.evaluate(() => window.__roots.filter((r) => r.querySelector('.cap')).map((r) => r.querySelector('.wc-pop .heart')).find(Boolean).click())
   await page.waitForTimeout(300)
   const added = await page.evaluate(() => window.__added)
   ok('字幕层词卡加入生词本带上本句和时间', added?.meaning === '有韧性的' && added.sentence === 'Another track line.' && added.timeSec === 0, JSON.stringify(added))
   const bubHidden = await page.evaluate(() => {
-    const b = window.__roots.map((r) => r.querySelector('.bub')).find(Boolean)
+    const b = window.__roots.filter((r) => r.querySelector('.cap')).map((r) => r.querySelector('.wc-pop')).find(Boolean)
     b.classList.remove('open')
     return getComputedStyle(b).display
   })
