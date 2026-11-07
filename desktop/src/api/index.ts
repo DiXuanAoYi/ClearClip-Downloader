@@ -308,6 +308,7 @@ export const api = {
   excerptRemove: (id: string) => invoke<void>('excerpt_remove', { id }),
   excerptNote: (id: string, note: string) => invoke<void>('excerpt_note', { id, note }),
   excerptMarkdown: () => invoke<string>('excerpt_markdown'),
+  excerptExport: (dest: string) => invoke<void>('excerpt_export', { dest }),
   aiPoolCopyKey: (from: string, to: string) => invoke<void>('ai_pool_copy_key', { from, to }),
   glossaryState: () => invoke<GlossaryData>('glossary_state'),
   glossarySave: (glossary: Glossary) => invoke<Glossary>('glossary_save', { glossary }),
@@ -452,7 +453,7 @@ export const api = {
   glossaryForApp: (exe: string) => invoke<Glossary>('glossary_for_app', { exe }),
   scAckManga: () => invoke<void>('sc_ack_manga'),
   scBar: (on: boolean) => invoke<void>('sc_bar', { on }),
-  scBarExpand: (expanded: boolean) => invoke<void>('sc_bar_expand', { expanded }),
+  floatExpand: (expanded: boolean) => invoke<void>('float_expand', { expanded }),
   scTry: (target?: ScreenTarget) => invoke<ScreenTry>('sc_try', { target }),
   scHistory: (n?: number) => invoke<ScreenEntry[]>('sc_history', { n }),
   scHistoryClear: () => invoke<void>('sc_history_clear'),
@@ -527,6 +528,8 @@ export const api = {
 }
 
 export const events = {
+  /** 摘录变了（浏览器扩展存进来一条） */
+  onExcerptsChanged: (cb: () => void): Promise<UnlistenFn> => listen('excerpts://changed', () => cb()),
   onModelProgress: (cb: (p: ModelProgress) => void): Promise<UnlistenFn> => listen<ModelProgress>('ml://download', (e) => cb(e.payload)),
   onTasks: (cb: (tasks: TaskSnapshot[]) => void): Promise<UnlistenFn> => listen<TaskSnapshot[]>('tasks://updated', (e) => cb(e.payload)),
   onProgress: (cb: (task: TaskSnapshot) => void): Promise<UnlistenFn> => listen<TaskSnapshot>('tasks://progress', (e) => cb(e.payload)),

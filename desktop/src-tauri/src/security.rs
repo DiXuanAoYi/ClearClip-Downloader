@@ -157,7 +157,7 @@ pub fn unlock(app: &AppHandle, st: &AppState, password: &str) -> AppResult<()> {
     }
     st.lock.throttle.ok();
     st.lock.set(false);
-    crate::tray::apply_float(app, st.settings_raw().float_ball);
+    crate::tray::sync_float(app);
     let _ = app.emit(EVT_LOCK, serde_json::json!({ "locked": false }));
     Ok(())
 }

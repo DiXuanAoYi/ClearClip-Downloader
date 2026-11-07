@@ -392,7 +392,7 @@ const HANDLERS = {
   // 视频胶囊菜单里的“视频摘要”（再注入一次会关掉，所以胶囊只在没打开时显示这一项）
   'cc-vsum-open': async (_m, sender) => (sender?.tab && (await startVsum(sender.tab)), {}),
   'cc-tr-clear': async () => (await clearTransCache(), {}),
-  // 把笔记存成清影里的文字便签；字数上限在设置里（0 = 不限制，默认）
+  // 把笔记存进清影的“摘录”；字数上限在设置里（0 = 不限制，默认）
   'cc-note': async (m) => {
     const { noteLimit } = await api.storage.local.get('noteLimit')
     const max = Math.max(0, Math.floor(Number(noteLimit) || 0))
@@ -490,7 +490,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
     } else if (id === 'cc-qr') await openQr(tab, tab.url)
     else if (id === 'cc-clip') {
       const r = await pageSave('clip', tab, info.selectionText)
-      notify(r.pairing ? '请在电脑上允许配对' : '已摘录到清影', r.pairing ? '第一次使用需要在清影里点“允许”' : '在清影的“收到的文件”里查看')
+      notify(r.pairing ? '请在电脑上允许配对' : '已摘录到清影', r.pairing ? '第一次使用需要在清影里点“允许”' : '在清影的“生词与摘录 → 摘录”里查看')
       await flashBadge(tab?.id, !r.pairing)
     } else if (id.startsWith('cc-save:')) {
       const r = await pageSave(id.slice('cc-save:'.length), tab, '')

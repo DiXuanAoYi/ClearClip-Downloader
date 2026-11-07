@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText } from './api'
+import type { ScreenStatus } from './types'
 import { useLanguage } from './i18n/useLanguage'
 import { useAppStore, useQueueStore } from './stores/app'
 import { formatSpeed } from './utils/format'
 
-/** 悬浮拖拽窗：把浏览器里的链接（或一段带链接的文字）拖到这里就开始下载；点一下再按 Ctrl+V 也行。 */
+/**
+ * 清影悬浮窗（桌面上只有这一个）：把浏览器里的链接（或一段带链接的文字）拖到这里就开始下载；点一下再按 Ctrl+V 也行。
+ * 在 Windows 上还有一个“译”：点开是屏幕翻译的控制（开始 / 停止、暂停、模式、重新框选、存译图、显示 / 隐藏译文）。
+ * 以前屏幕翻译的控制是屏幕边上另一个单独的悬浮钮。
+ */
 const app = useAppStore()
 useLanguage()
 const queue = useQueueStore()
@@ -87,40 +93,106 @@ function onPaste(e: ClipboardEvent) {
   void addText(e.clipboardData?.getData('text/plain') ?? '')
 }
 
+/** 关掉悬浮窗：两处开关（设置 → 悬浮窗、屏幕翻译 → 悬浮窗里放屏幕翻译控制）一起关。 */
 async function hide() {
-  if (app.settings) await app.patch({ floatBall: false })
+  try {
+    const s = await api.getSettings()
+    await api.saveSettings({ ...s, floatBall: false, live: { ...s.live, floatButton: false } }, s)
+  } catch (e) {
+    say(errorText(e), true)
+  }
 }
+
+// ---------- 屏幕翻译的控制 ----------
+const sc = ref<ScreenStatus | null>(null)
+const scOpen = ref(false)
+const fps = ref(3)
+const MODES: [string, string][] = [
+  ['standard', '标准'],
+  ['subtitle', '字幕'],
+  ['manga', '漫画'],
+]
+const scShown = computed(() => !!sc.value?.supported && (app.settings?.live.floatButton ?? false))
+async function setScOpen(v: boolean) {
+  scOpen.value = v
+  await api.floatExpand(v).catch(() => {})
+}
+async function act(kind: string, arg = '') {
+  try {
+    if (kind === 'toggle') await api.scToggle()
+    else if (kind === 'mode') await api.scSetMode(arg)
+    else if (kind === 'pause') await api.scPause()
+    else if (kind === 'pick') await api.scPick()
+    else if (kind === 'shot') await api.scShot()
+    else await api.scHide()
+  } catch {
+    /* 错误由后端状态文字呈现 */
+  }
+}
+function calcFps() {
+  const l = app.settings?.live
+  fps.value = l ? (sc.value?.mode === 'subtitle' ? l.subFps : l.fps) : 3
+}
+let offs: UnlistenFn[] = []
 
 onMounted(async () => {
   await app.load()
   await queue.start()
   window.addEventListener('paste', onPaste)
+  sc.value = await api.scStatus().catch(() => null)
+  calcFps()
+  offs = [await api.onScreenState((s) => ((sc.value = s), calcFps()))]
 })
-onBeforeUnmount(() => window.removeEventListener('paste', onPaste))
+onBeforeUnmount(() => {
+  window.removeEventListener('paste', onPaste)
+  offs.forEach((f) => f())
+})
 </script>
 
 <template>
-  <div
-    class="ball"
-    :class="{ over, bad, busy }"
-    data-tauri-drag-region
-    tabindex="0"
-    @dragenter.prevent="over = true"
-    @dragover.prevent="over = true"
-    @dragleave="over = false"
-    @drop.prevent="onDrop"
-    @dblclick="api.showMain()"
-  >
-    <span class="ic" data-tauri-drag-region>⬇</span>
-    <span class="tx" data-tauri-drag-region :title="text">{{ text }}</span>
-    <button class="x" type="button" title="关闭悬浮窗" @click.stop="hide">×</button>
+  <div class="wrap">
+    <div
+      class="ball"
+      :class="{ over, bad, busy }"
+      data-tauri-drag-region
+      tabindex="0"
+      @dragenter.prevent="over = true"
+      @dragover.prevent="over = true"
+      @dragleave="over = false"
+      @drop.prevent="onDrop"
+      @dblclick="api.showMain()"
+    >
+      <span class="ic" data-tauri-drag-region>⬇</span>
+      <span class="tx" data-tauri-drag-region :title="text">{{ text }}</span>
+      <button v-if="scShown" class="tr" :class="{ on: sc?.running, open: scOpen }" type="button" :title="sc?.running ? '屏幕翻译进行中：点开控制' : '屏幕翻译'" @click.stop="setScOpen(!scOpen)">译</button>
+      <button class="x" type="button" title="关闭悬浮窗" @click.stop="hide">×</button>
+    </div>
+    <div v-if="scShown && scOpen" class="panel">
+      <button @click="act('toggle')">{{ sc?.running ? '停止' : '开始' }}</button>
+      <button v-if="sc?.running" @click="act('pause')">{{ sc?.paused ? '▶ 继续' : '⏸ 暂停' }}</button>
+      <button v-for="m in MODES" :key="m[0]" :class="{ sel: sc?.mode === m[0] }" @click="act('mode', m[0])">{{ m[1] }}</button>
+      <button title="重新框选" @click="act('pick')">▭ 重选</button>
+      <button v-if="sc?.running" title="把译文叠在画面上存成图片（也会复制到剪贴板）" @click="act('shot')">📷 存译图</button>
+      <button @click="act('hide')">{{ sc?.hidden ? '显示译文' : '隐藏译文' }}</button>
+      <span v-if="sc?.running" class="live">{{ sc.paused ? '已暂停' : `${fps} 帧/秒` }}</span>
+      <button title="收起" @click="setScOpen(false)">‹</button>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.ball {
+.wrap {
   position: fixed;
   inset: 0;
+  display: flex;
+  gap: 6px;
+}
+.ball {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 156px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -167,6 +239,61 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPaste))
 }
 .x:hover {
   color: var(--cc-fg);
+}
+.tr {
+  all: unset;
+  cursor: pointer;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #3a4a63;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 24px;
+}
+.tr.on {
+  background: #1f9d55;
+}
+.tr.open {
+  box-shadow: 0 0 0 2px var(--cc-acc);
+}
+.panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 14px;
+  background: rgba(30, 36, 48, 0.94);
+  overflow: hidden;
+}
+.panel button {
+  border: 0;
+  border-radius: 12px;
+  padding: 0 8px;
+  height: 28px;
+  background: transparent;
+  color: #e6ebf3;
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.panel button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.panel button.sel {
+  background: #2f6fed;
+  color: #fff;
+}
+.live {
+  color: #f0a064;
+  padding: 0 6px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 @keyframes spin {
   to {

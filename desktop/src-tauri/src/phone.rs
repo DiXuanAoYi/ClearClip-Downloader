@@ -638,14 +638,25 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             }
             let text: String = body.text.trim().chars().take(4000).collect();
             if body.note || providers::extract_urls(&text).is_empty() {
-                // 没有链接（或明确是摘录）：作为文字便签保存在电脑的“收到的文件”里（需要先配对）
+                // 没有链接（或明确是摘录）：扩展的摘录进“摘录”，其余作为文字便签保存在“收到的文件”里（都需要先配对）
                 if text.is_empty() {
                     json(sock, "400 Bad Request", serde_json::json!({"error": "内容是空的"})).await;
                 } else if !ensure_paired(&app, &device, &name, &peer) {
                     json(sock, "403 Forbidden", serde_json::json!({"state": "pending_pair", "error": "请先在电脑上点“允许”完成配对"})).await;
                 } else {
-                    match transfer::receive_note(&app, &device, &name, &body.text) {
-                        Ok(id) => json(sock, "200 OK", serde_json::json!({"id": id, "state": "note"})).await,
+                    // 浏览器扩展明确要存的（摘录选中文字、存为笔记）进“摘录”；手机发来的普通文字还是“收到的文件”里的便签
+                    let r = if body.note {
+                        crate::excerpts::add_from_browser(&state.data_dir, &body.text, &name).map(|e| serde_json::json!({"id": e.id, "state": "excerpt"}))
+                    } else {
+                        transfer::receive_note(&app, &device, &name, &body.text).map(|id| serde_json::json!({"id": id, "state": "note"}))
+                    };
+                    match r {
+                        Ok(v) => {
+                            if body.note {
+                                let _ = app.emit(crate::excerpts::EVT_CHANGED, ());
+                            }
+                            json(sock, "200 OK", v).await
+                        }
                         Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
                     }
                 }

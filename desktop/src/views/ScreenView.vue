@@ -5,11 +5,11 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
-import type { AppGlossaryPack, OcrStatus, ScreenEntry, ScreenSettings, ScreenStatus, ScreenTarget, ScreenTry, ScreenWindow } from '../types'
+import type { AppGlossaryPack, OcrStatus, ScreenEntry, ScreenSettings, ScreenStatus, ScreenTarget, ScreenTry, ScreenWindow, ShotEntry } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import { clone, merge3 } from '../utils/merge3'
 
-/** 实时屏幕翻译：翻译别的软件和游戏画面上的文字。控制在这里，也可以用悬浮钮、托盘和快捷键。 */
+/** 实时屏幕翻译：翻译别的软件和游戏画面上的文字。控制在这里，也可以用悬浮窗里的“译”、托盘和快捷键。 */
 const app = useAppStore()
 const form = ref<ScreenSettings>(JSON.parse(JSON.stringify(app.settings!.live)) as ScreenSettings)
 // 最近一次同步的整份设置：只把“屏幕翻译”这一块当作自己的修改交给后端合并（框选位置、程序配置等由后端写，不会被覆盖）
@@ -80,8 +80,39 @@ async function refresh() {
     /* 非桌面环境 */
   }
 }
+// 翻译历史：实时屏幕翻译和截图翻译放在一起（以前截图翻译的历史在“设置”里看）
+const shotHist = ref<ShotEntry[]>([])
+const histKind = ref<'all' | 'live' | 'shot'>('all')
+type HistRow = { key: string; at: number; label: string; src: string; text: string; shot?: ShotEntry }
+const histRows = computed<HistRow[]>(() => {
+  const live: HistRow[] = histKind.value === 'shot' ? [] : hist.value.map((h, i) => ({ key: `l${i}`, at: h.at, label: `${modeName(h.mode)}${h.exe ? ' · ' + h.exe : ''}`, src: h.src, text: h.text }))
+  const shot: HistRow[] = histKind.value === 'live' ? [] : shotHist.value.map((h) => ({ key: `s${h.at}`, at: Math.floor(h.at / 1000), label: `截图翻译${h.saved ? ' · ★ 已存摘录' : ''}`, src: h.src, text: h.text, shot: h }))
+  return [...live, ...shot].sort((a, b) => b.at - a.at)
+})
 async function loadHist() {
   hist.value = await api.scHistory(200).catch(() => [])
+  shotHist.value = await api.shotHistList().catch(() => [])
+}
+const shotRec = ref(app.settings?.shotHistory ?? true)
+watch(() => app.settings?.shotHistory, (v) => v != null && (shotRec.value = v))
+async function saveShotRec(v: string | number | boolean) {
+  try {
+    const s = await api.getSettings()
+    await api.saveSettings({ ...s, shotHistory: !!v }, s)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+/** 截图翻译的一条：存进摘录（并标记，清空历史时保留）。 */
+async function shotToExcerpt(h: ShotEntry) {
+  try {
+    if (!h.saved) await api.excerptAdd(`${h.src}\n→ ${h.text}`, '截图翻译')
+    await api.shotHistSave(h.at, !h.saved)
+    await loadHist()
+    ElMessage.success(h.saved ? '已取消标记（摘录里那条不受影响）' : '已存进摘录')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
 }
 async function loadWins() {
   wins.value = await api.scWindows().catch(() => [])
@@ -267,8 +298,9 @@ function removeProfile(exe: string) {
   form.value.profiles = form.value.profiles.filter((p) => p.exe !== exe)
 }
 async function clearHist() {
-  await api.scHistoryClear().catch(() => {})
-  hist.value = []
+  if (histKind.value !== 'shot') await api.scHistoryClear().catch(() => {})
+  if (histKind.value !== 'live') await api.shotHistClear(true).catch(() => {})
+  await loadHist()
 }
 async function copy(t: string) {
   try {
@@ -369,7 +401,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         <div class="kv"><span>同时显示原文（小字）</span><el-switch v-model="form.bilingual" /></div>
         <div class="kv"><span>数字、符号、已经是目标语言的文字不翻<small class="mute block">省请求，也避免把专有名词翻坏</small></span><el-switch v-model="form.skipSame" /></div>
         <div class="kv"><span>图标不识别、不翻译<small class="mute block">人像、齿轮、铃铛这类图标常被认成“8”“©”“Q”之类的字：单独的图标直接丢掉，文字前面的图标去掉</small></span><el-switch v-model="form.skipIcons" /></div>
-        <div class="kv"><span>屏幕边上放一个小悬浮钮<small class="mute block">点开能开始 / 停止、切模式、重新框选、隐藏译文；也可以只用托盘和快捷键</small></span><el-switch :model-value="form.floatButton" @change="onBar" /></div>
+        <div class="kv"><span>清影悬浮窗里放屏幕翻译控制<small class="mute block">桌面上的清影悬浮窗（也是拖链接下载的那个）里多一个“译”：点开能开始 / 停止、切模式、重新框选、隐藏译文；也可以只用托盘和快捷键</small></span><el-switch :model-value="form.floatButton" @change="onBar" /></div>
         <div class="grid">
           <div class="field"><label>开始 / 停止</label><el-input v-model="form.hotkey" size="small" class="mono" /></div>
           <div class="field"><label>重新框选</label><el-input v-model="form.hotkeyPick" size="small" class="mono" /></div>
@@ -546,9 +578,20 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           <el-button size="small" @click="clearHist">清空</el-button>
           <el-button size="small" @click="clearCache">清译文缓存</el-button>
         </div>
-        <div v-if="!hist.length" class="mute">暂无记录。</div>
-        <div v-for="(h, i) in hist" :key="i" class="hrow" @click="copy(h.text)">
-          <div class="ht"><span class="mute">{{ formatDateTime(h.at) }} · {{ modeName(h.mode) }}{{ h.exe ? ' · ' + h.exe : '' }}</span></div>
+        <div class="row">
+          <el-radio-group v-model="histKind" size="small">
+            <el-radio-button value="all">全部</el-radio-button>
+            <el-radio-button value="live">实时翻译</el-radio-button>
+            <el-radio-button value="shot">截图翻译</el-radio-button>
+          </el-radio-group>
+          <div class="kv" style="flex: 1"><span>记录截图翻译<small class="mute block">只存文字，不存图片；清空时保留存进摘录的</small></span><el-switch v-model="shotRec" @change="saveShotRec" /></div>
+        </div>
+        <div v-if="!histRows.length" class="mute">暂无记录。</div>
+        <div v-for="h in histRows" :key="h.key" class="hrow" @click="copy(h.text)">
+          <div class="ht">
+            <span class="mute">{{ formatDateTime(h.at) }} · {{ h.label }}</span>
+            <el-button v-if="h.shot" size="small" link @click.stop="shotToExcerpt(h.shot)">{{ h.shot.saved ? '取消标记' : '存进摘录' }}</el-button>
+          </div>
           <div class="hs">{{ h.src }}</div>
           <div>{{ h.text }}</div>
         </div>

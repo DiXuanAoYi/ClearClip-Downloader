@@ -67,7 +67,16 @@ async function pdfxDo(what: 'install' | 'font' | 'remove') {
     pdfxBusy.value = ''
   }
 }
+// 别的页面（媒体库里字幕的“翻译字幕”、工具箱）交过来的文件
+async function takeRequest() {
+  const paths = app.filetrRequest
+  if (!paths?.length) return
+  app.filetrRequest = null
+  await addFiles(paths)
+}
+watch(() => app.filetrRequest, () => void takeRequest())
 onMounted(() => {
+  void takeRequest()
   void pdfxRefresh()
   void ocrRefresh()
   try {

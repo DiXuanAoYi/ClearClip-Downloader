@@ -30,7 +30,14 @@ export const useAppStore = defineStore('app', () => {
   /** 命令面板请求解析页解析这段文字；处理后清空 */
   const pendingParse = ref<string | null>(null)
   /** 请求工具箱打开并预选文件（媒体库里的“用工具箱处理”）；处理后清空 */
-  const toolboxRequest = ref<{ paths: string[]; tool?: string; tab?: ToolboxTab; aiMode?: 'transcribe' | 'translate' | 'summarize' | 'correct'; hint?: string; lut?: string } | null>(null)
+  const toolboxRequest = ref<{ paths: string[]; tool?: string; tab?: ToolboxTab; aiMode?: 'transcribe' | 'summarize' | 'correct'; hint?: string; lut?: string } | null>(null)
+
+  /** 请求文件翻译页翻译这些文件（媒体库里字幕的“翻译字幕”）；处理后清空 */
+  const filetrRequest = ref<string[] | null>(null)
+  function goFiletr(paths: string[]) {
+    filetrRequest.value = paths
+    view.value = 'filetr'
+  }
 
   /** 请求打开“批量添加”面板（链接已提取好）；面板打开后清空 */
   const batchRequest = ref<BatchRequest | null>(null)
@@ -49,7 +56,7 @@ export const useAppStore = defineStore('app', () => {
     view.value = 'settings'
   }
 
-  function goToolbox(paths: string[], tool?: string, extra?: { tab?: ToolboxTab; aiMode?: 'transcribe' | 'translate' | 'summarize' | 'correct'; hint?: string; lut?: string }) {
+  function goToolbox(paths: string[], tool?: string, extra?: { tab?: ToolboxTab; aiMode?: 'transcribe' | 'summarize' | 'correct'; hint?: string; lut?: string }) {
     toolboxRequest.value = { paths, tool, ...extra }
     view.value = 'tools'
   }
@@ -130,7 +137,7 @@ export const useAppStore = defineStore('app', () => {
   }
   media.addEventListener('change', applyTheme)
 
-  return { settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, queueBatch, goQueueBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme, settingsRev }
+  return { filetrRequest, goFiletr, settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, queueBatch, goQueueBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme, settingsRev }
 })
 
 /** 下载队列，监听后端事件保持同步。 */

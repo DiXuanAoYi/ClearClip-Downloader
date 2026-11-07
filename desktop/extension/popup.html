@@ -27,18 +27,9 @@
       <button id="send">发送当前页面</button>
       <button id="cookies" class="sec">同步此网站的登录 Cookie</button>
       <div id="syncInfo" class="mute"></div>
-      <div id="sniffBox" class="hidden">
-        <label>检测到的内容（<span id="sniffCount">0</span>）</label>
-        <div id="sniffList"></div>
-        <div id="sniffBar">
-          <button id="sniffAll" class="sec">全选</button>
-          <button id="sniffSend">发送所选</button>
-        </div>
-      </div>
+      <div id="sniffBox" class="hidden mute">检测到 <b id="sniffCount">0</b> 个视频流 / 文件，在下面的“页面媒体总览”里勾选发送</div>
       <div id="pageTools" class="rowBtns">
-        <button id="openOverview" class="sec">页面媒体总览</button>
-        <button id="startPick" class="sec">批量选取</button>
-        <button id="batchLinks" class="sec" title="收集本页所有视频链接，在清影里打开批量添加面板">本页所有视频链接 → 批量下载</button>
+        <button id="openOverview" class="sec" title="页面里的图片、视频、音频和检测到的视频流都在这里，勾选后一起发送；也能在页面上点选、或把本页所有视频链接交给清影">页面媒体总览 / 批量发送</button>
       </div>
       <div id="vsumTools" class="rowBtns">
         <button id="startVsum" class="sec">视频摘要 / 总结（Alt+Shift+S）</button>
@@ -168,9 +159,9 @@
     <label>访问令牌（X-Token）</label><input id="token" type="password" />
     <button id="save">保存并测试</button>
 
-    <h2>便签</h2>
-    <label>存成清影便签的字数上限（0 = 不限制）</label><input id="noteLimit" type="number" min="0" step="1000" placeholder="0" />
-    <p class="mute">用于视频摘要“存进清影的便签”。默认不限制；填了数字，超出的部分会被截掉。</p>
+    <h2>摘录</h2>
+    <label>存进清影摘录的字数上限（0 = 不限制）</label><input id="noteLimit" type="number" min="0" step="1000" placeholder="0" />
+    <p class="mute">用于“存为笔记”、视频摘要“存进清影的摘录”等。默认不限制；填了数字，超出的部分会被截掉。</p>
 
     <h2>功能开关</h2>
     <p class="mute">“常驻”表示在你打开的每个网页里运行，默认关闭；“无页面注入”的功能只在后台和弹窗里工作。</p>

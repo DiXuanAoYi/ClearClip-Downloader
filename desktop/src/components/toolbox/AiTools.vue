@@ -9,9 +9,9 @@ import type { AiStatus, Chapter, JobSnap } from '../../types'
 import { parseChapterLines } from '../../utils/time'
 import FileInput from './FileInput.vue'
 
-const props = defineProps<{ preset?: string[]; mode?: 'transcribe' | 'translate' | 'summarize' | 'correct' }>()
+const props = defineProps<{ preset?: string[]; mode?: 'transcribe' | 'summarize' | 'correct' }>()
 const app = useAppStore()
-const mode = ref<'transcribe' | 'translate' | 'summarize' | 'correct' | 'file'>(props.mode ?? 'transcribe')
+const mode = ref<'transcribe' | 'summarize' | 'correct'>(props.mode ?? 'transcribe')
 const status = ref<AiStatus | null>(null)
 const media = ref<string[]>(props.mode === 'transcribe' ? [...(props.preset ?? [])] : [])
 const subs = ref<string[]>(props.mode && props.mode !== 'transcribe' ? [...(props.preset ?? [])] : [])
@@ -34,9 +34,6 @@ const FORMATS = [
 ]
 const correctMode = ref<'conservative' | 'aggressive' | 'rules'>('conservative')
 const busy = ref(false)
-const docs = ref<string[]>([])
-const docBilingual = ref(true)
-const docLang = ref('')
 const summaryJob = ref<number | null>(null)
 const summaryText = ref('')
 const chaptersText = ref('')
@@ -87,14 +84,6 @@ async function go() {
       if (!subs.value.length) return ElMessage.warning('请先选择字幕文件。')
       await api.subgenCorrect(subs.value[0], correctMode.value)
       ElMessage.success('已开始纠错，完成后生成“已修正”的新字幕，原字幕不会被修改，改动明细保存在 .改动.json 里。')
-    } else if (mode.value === 'file') {
-      if (!docs.value.length) return ElMessage.warning('请先选择要翻译的文件。')
-      await api.filetrStart(docs.value[0], { bilingual: docBilingual.value, target: docLang.value || undefined })
-      ElMessage.success('已开始翻译，进度在下方；完成后新文件保存在原文件旁边，原文件不会被修改。')
-    } else if (mode.value === 'translate') {
-      if (!subs.value.length) return ElMessage.warning('请先选择字幕文件。')
-      await api.aiTranslate(subs.value[0])
-      ElMessage.success('已开始翻译，完成后会生成新的字幕文件，原字幕不会被修改。')
     } else {
       if (!subs.value.length) return ElMessage.warning('请先选择字幕文件。')
       summaryText.value = ''
@@ -138,10 +127,9 @@ async function writeChapters() {
       <el-radio-group v-model="mode" size="small">
         <el-radio-button value="transcribe">生成字幕</el-radio-button>
         <el-radio-button value="correct">AI 纠错</el-radio-button>
-        <el-radio-button value="translate">翻译字幕</el-radio-button>
-        <el-radio-button value="file">翻译文件</el-radio-button>
         <el-radio-button value="summarize">摘要与章节</el-radio-button>
       </el-radio-group>
+      <span class="mute tr-hint">翻译字幕、文档在 <el-button link type="primary" size="small" @click="app.goFiletr(subs.length ? [...subs] : [])">文件翻译</el-button> 页（能先预览、改译文）</span>
     </div>
     <div class="panel card">
       <template v-if="mode === 'transcribe'">
@@ -204,35 +192,6 @@ async function writeChapters() {
             <el-radio-button value="rules">只用规则</el-radio-button>
           </el-radio-group>
         </label>
-      </template>
-      <template v-else-if="mode === 'file'">
-        <h3>翻译文件</h3>
-        <p class="mute desc">整份翻译 TXT、Markdown、Word（docx）、EPUB 电子书、PDF 和字幕。Word / EPUB / Markdown 的排版、图片、目录、样式原样保留；PDF 只能读出文字，输出为 TXT（扫描版 PDF 读不出文字）。用的是“设置 → AI”里的模型、术语库和翻译专家。</p>
-        <el-alert v-if="status && !status.chatReady" type="warning" :closable="false" show-icon title="还没有配置对话模型">
-          <el-button link type="primary" size="small" @click="app.goSettings('ai')">去“设置 → AI”配置</el-button>
-        </el-alert>
-        <FileInput v-model="docs" :extensions="['txt', 'md', 'markdown', 'docx', 'epub', 'pdf', 'srt', 'vtt', 'ass', 'ssa']" label="文档、电子书或字幕" />
-        <label class="row">
-          <span>输出</span>
-          <el-radio-group v-model="docBilingual" size="small">
-            <el-radio-button :value="true">双语对照（原文 + 译文）</el-radio-button>
-            <el-radio-button :value="false">只要译文</el-radio-button>
-          </el-radio-group>
-        </label>
-        <label class="row">
-          <span>翻译成</span>
-          <el-select v-model="docLang" size="small" clearable filterable allow-create style="width: 200px" :placeholder="`跟随设置（${app.settings?.ai.targetLang}）`">
-            <el-option v-for="l in TARGET_LANGS" :key="l" :label="l" :value="l" />
-          </el-select>
-        </label>
-      </template>
-      <template v-else-if="mode === 'translate'">
-        <h3>翻译字幕</h3>
-        <p class="mute desc">用大模型把字幕翻译成“设置 → AI”里选定的语言（现在是 {{ app.settings?.ai.targetLang }}，{{ app.settings?.ai.bilingual ? '双语对照' : '只保留译文' }}）。</p>
-        <el-alert v-if="status && !status.chatReady" type="warning" :closable="false" show-icon title="还没有配置对话模型">
-          <el-button link type="primary" size="small" @click="app.goSettings('ai')">去“设置 → AI”配置</el-button>
-        </el-alert>
-        <FileInput v-model="subs" :kinds="['subtitle']" :extensions="['srt', 'vtt', 'ass', 'ssa']" label="字幕文件" />
       </template>
       <template v-else>
         <h3>摘要与章节</h3>
@@ -333,4 +292,5 @@ h4 {
   gap: 8px;
   align-items: flex-start;
 }
+.tr-hint { margin-left: 10px; font-size: 12px; }
 </style>

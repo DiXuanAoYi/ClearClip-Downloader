@@ -316,11 +316,11 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('卡片、金句、改写都出来了', true)
     const rewrite = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1).req)
     ok('改写请求带格式与摘要 Markdown', rewrite.format === 'xhs' && rewrite.text.includes('这个视频介绍了 Rust') && rewrite.text.includes('t=41s'), rewrite.text?.slice(0, 120))
-    // 存便签
-    await clickText(page, '存进清影的便签')
+    // 存进摘录
+    await clickText(page, '存进清影的摘录')
     await settle(page, 300)
     const note = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-note'))
-    ok('便签内容是 Markdown 笔记', note && note.text.startsWith('# Demo "video"') && note.text.includes('Rust 又快又安全'), note?.text?.slice(0, 80))
+    ok('摘录内容是 Markdown 笔记（末尾带来源）', note && note.text.startsWith('# Demo "video"') && note.text.includes('Rust 又快又安全') && /\n来源：.*\nhttps:\/\/www.youtube.com/.test(note.text), note?.text?.slice(-120))
 
     // 缓存：同样的摘要不再请求
     const before = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)

@@ -34,7 +34,7 @@
         h('div', { class: 'tools' },
           h('button', { class: 'sec', text: '下载 Markdown', onclick: () => saveFile(V.fileName(S.data.title, 'md'), V.toMarkdown(exportData(true)), 'text/markdown') }),
           h('button', { class: 'sec', text: '复制到剪贴板（含文稿）', onclick: () => copy(V.toMarkdown(exportData(true)), ' Markdown') }),
-          h('button', { class: 'sec', text: '存进清影的便签', onclick: saveNote }),
+          h('button', { class: 'sec', text: '存进清影的摘录', onclick: saveNote }),
           h('button', { class: 'sec', text: '发到 Obsidian', onclick: toObsidian }),
         ),
         ),
@@ -141,8 +141,8 @@
     }
 
     async function saveNote() {
-      const r = await send({ type: 'cc-note', text: V.toMarkdown(exportData()) })
-      toast(ui, r.ok ? (r.pairing ? '请在电脑上允许配对' : '已存进清影的“收到的文件”') : r.error, !r.ok, 4200)
+      const r = await send({ type: 'cc-note', text: `${V.toMarkdown(exportData())}\n\n来源：${S.data.title || document.title}\n${S.data.url || location.href}` })
+      toast(ui, r.ok ? (r.pairing ? '请在电脑上允许配对' : '已存进清影的摘录（生词与摘录 → 摘录）') : r.error, !r.ok, 4200)
     }
 
     /** Obsidian：obsidian://new?name=…&content=…（内容太长时改为复制 + 只建空笔记）。 */

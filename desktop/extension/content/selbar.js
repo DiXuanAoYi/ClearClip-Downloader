@@ -228,7 +228,7 @@
       ft.append(copyBtn,
         h('button', { class: 'sec', text: '存为笔记', onclick: async () => {
           const r = await send({ type: 'cc-note', text: `${st.text}\n\n${title}：\n${out}\n\n来源：${document.title}\n${location.href}` })
-          toast(uiRoot(), r.ok ? (r.pairing ? '请先在电脑上的清影里点“允许”完成配对' : '已存为清影便签') : r.error || '保存失败', !r.ok)
+          toast(uiRoot(), r.ok ? (r.pairing ? '请先在电脑上的清影里点“允许”完成配对' : '已存进清影的摘录') : r.error || '保存失败', !r.ok)
         } }))
       extra?.(ft, () => out, card)
     } catch (e) {
@@ -353,9 +353,9 @@
     close('menu')
     const m = h('div', { class: 'layer menu2' },
       h('button', { text: '复制', onclick: () => (navigator.clipboard?.writeText(st.text), close()) }),
-      h('button', { text: '存为清影便签', onclick: async () => {
+      h('button', { text: '存进清影摘录', onclick: async () => {
         const r = await send({ type: 'cc-note', text: `${st.text}\n\n来源：${document.title}\n${location.href}` })
-        toast(uiRoot(), r.ok ? '已存为清影便签' : r.error || '保存失败', !r.ok)
+        toast(uiRoot(), r.ok ? '已存进清影的摘录' : r.error || '保存失败', !r.ok)
         close()
       } }),
       h('button', { text: '本页高亮 → 复制 Markdown', onclick: async () => {

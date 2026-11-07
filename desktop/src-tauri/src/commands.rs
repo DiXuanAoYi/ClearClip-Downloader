@@ -151,8 +151,8 @@ pub async fn save_settings(app: AppHandle, state: St<'_>, settings: Settings, ba
     if old.language != s.language {
         tray::apply_language(&app, crate::i18n::is_en(&s.language));
     }
-    if old.float_ball != s.float_ball {
-        tray::apply_float(&app, s.float_ball);
+    if tray::float_wanted(&old) != tray::float_wanted(&s) {
+        tray::sync_float(&app);
     }
     if old.security.content_protection != s.security.content_protection {
         crate::security::apply_window_protection(&app, s.security.content_protection);

@@ -178,7 +178,7 @@ async function openMarkdown(tab) {
   await api.tabs.create({ url: api.runtime.getURL(`capture.html?k=${encodeURIComponent(key)}`), index: tab.index + 1 })
 }
 
-/** 摘录：选中的文字 + 来源，存成清影里的文字便签。 */
+/** 摘录：选中的文字 + 来源，存进清影的“摘录”（生词与摘录 → 摘录）。 */
 async function clipSelection(tab, selected) {
   let text = String(selected || '').trim()
   if (!text) {

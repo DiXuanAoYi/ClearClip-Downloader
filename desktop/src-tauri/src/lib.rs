@@ -439,6 +439,14 @@ pub fn run() {
             ai_pool::migrate_default(&app.state::<Arc<AppState>>());
             download::restore(&handle);
             batch::restore(&handle);
+            // 以前浏览器扩展存成“收到的文件”文字便签的摘录，搬进“摘录”（只做一次）
+            {
+                let st = app.state::<Arc<AppState>>();
+                let n = excerpts::migrate_browser_notes(&st.data_dir, &st.db);
+                if n > 0 {
+                    log::info!("moved {n} browser notes into excerpts");
+                }
+            }
             if let Ok(n) = app.state::<Arc<AppState>>().db.inbox_prune(settings.inbox.keep_days, settings.inbox.max_items) {
                 if n > 0 {
                     log::info!("pruned {n} old inbox items");
@@ -475,8 +483,9 @@ pub fn run() {
             library_cmds::spawn_maintenance(&handle);
             security::spawn_idle_watch(&handle);
             security::apply_window_protection(&handle, settings.security.content_protection);
-            tray::apply_float(&handle, settings.float_ball && !locked);
-            livetr::ensure_bar(&handle, settings.live.float_button && !locked);
+            if !locked {
+                tray::sync_float(&handle);
+            }
             spawn_account_reminders(handle.clone());
 
             tray::create(&handle)?;
@@ -751,6 +760,7 @@ pub fn run() {
             excerpts::excerpt_remove,
             excerpts::excerpt_note,
             excerpts::excerpt_markdown,
+            excerpts::excerpt_export,
             edit::highlights::edit_highlights,
             edit::highlights::edit_highlights_llm,
             edit::analyze::edit_waveform,
@@ -830,7 +840,7 @@ pub fn run() {
             livetr::sc_shot_save,
             livetr::sc_ack_manga,
             livetr::sc_bar,
-            livetr::sc_bar_expand,
+            tray::float_expand,
             livetr::sc_try,
             livetr::sc_history,
             livetr::sc_history_clear,

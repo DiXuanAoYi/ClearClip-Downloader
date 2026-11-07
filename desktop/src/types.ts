@@ -2331,9 +2331,12 @@ export interface VideoCacheFull {
 export interface Excerpt {
   id: string
   text: string
+  /** 来源：程序名或网页标题 */
   app: string
   note: string
   created: number
+  /** 网页地址（浏览器里存的才有） */
+  url?: string
 }
 
 export interface ModelInfo {
