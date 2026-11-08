@@ -630,8 +630,12 @@ mod tests {
         download(&build_download_client(), &HttpRequest::new(url), part, meta, &mut rx, &opts(segments), |_, _, _| {}).await
     }
 
+    /// 记住的域名信息按域名（不含端口）存：测试服务器都是 127.0.0.1，会记住或依赖它（限流上限、不支持分段）的测试要一个一个来，免得互相影响。
+    static HOSTMEM_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[tokio::test]
     async fn a_rate_limited_host_gets_fewer_parallel_connections_and_is_remembered() {
+        let _turn = HOSTMEM_TESTS.lock().await;
         let base = serve().await;
         let host = hostmem::host_of(&base);
         hostmem::forget(&host);
@@ -652,6 +656,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_host_without_range_support_is_remembered_and_not_probed_again() {
+        let _turn = HOSTMEM_TESTS.lock().await;
         let base = serve().await;
         let host = hostmem::host_of(&base);
         hostmem::forget(&host);
@@ -751,6 +756,7 @@ mod tests {
 
     #[tokio::test]
     async fn segmented_download_produces_identical_file() {
+        let _turn = HOSTMEM_TESTS.lock().await;
         let base = serve().await;
         let part = tmp("seg");
         let mut meta = ResumeMeta::default();
@@ -761,6 +767,7 @@ mod tests {
 
     #[tokio::test]
     async fn segmented_download_resumes_after_pause() {
+        let _turn = HOSTMEM_TESTS.lock().await;
         let base = serve().await;
         let part = tmp("segpause");
         let (tx, mut rx) = watch::channel(CTRL_RUN);
@@ -785,6 +792,7 @@ mod tests {
 
     #[tokio::test]
     async fn segmented_resume_falls_back_when_file_changed() {
+        let _turn = HOSTMEM_TESTS.lock().await;
         let base = serve().await;
         let part = tmp("segchanged");
         // 伪造一份针对旧版本（ETag v0）的分段进度
