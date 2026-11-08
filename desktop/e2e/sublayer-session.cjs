@@ -257,6 +257,31 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
   })
   ok('划词“翻译”打开网页翻译的卡片', trCard && /^译:resilient/.test(trCard.out) && ['翻译窗', '存为笔记'].every((x) => trCard.btns.includes(x)), JSON.stringify(trCard))
 
+  // 8. 划词高亮：深色网页上的白字，高亮后字变成黑色（高亮底色都是浅色）
+  await page.evaluate(() => {
+    for (const r of window.__roots || []) r.querySelector('.card')?.remove()
+    const p = document.createElement('p')
+    p.id = 'dark'
+    p.style.cssText = 'background:#111;color:#fff'
+    p.textContent = 'White words on a dark page should stay readable.'
+    document.body.append(p)
+    const tn = p.firstChild
+    const rng = document.createRange()
+    rng.setStart(tn, 0)
+    rng.setEnd(tn, 11)
+    getSelection().removeAllRanges()
+    getSelection().addRange(rng)
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 100, clientY: 420 }))
+  })
+  await page.waitForFunction(() => (window.__roots || []).some((r) => r.querySelector('.bar .sw')), null, { timeout: 4000 }).catch(() => {})
+  await page.evaluate(() => window.__roots.map((r) => r.querySelector('.bar .sw')).find(Boolean)?.click())
+  await page.waitForFunction(() => document.querySelector('#dark span[data-cc-hl]'), null, { timeout: 4000 }).catch(() => {})
+  const hlc = await page.evaluate(() => {
+    const sp = document.querySelector('#dark span[data-cc-hl]')
+    return sp ? { text: sp.textContent, color: getComputedStyle(sp).color, bg: getComputedStyle(sp).backgroundColor } : null
+  })
+  ok('高亮后的字是黑色（深色网页的白字也看得清）', hlc?.text === 'White words' && hlc.color === 'rgb(17, 17, 17)' && hlc.bg !== 'rgba(0, 0, 0, 0)', JSON.stringify(hlc))
+
   ok('没有页面错误', !errors.length, errors.join(' | '))
   await browser.close()
   console.log(`\n${pass} 通过，${fail} 失败`)
