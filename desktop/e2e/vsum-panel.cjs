@@ -378,6 +378,14 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const popBox = () => page.evaluate(() => { const p = window.__roots.map((r) => r.querySelector('.wc-pop.open')).find(Boolean); return p ? { ...p.getBoundingClientRect().toJSON(), text: p.innerText, vw: innerWidth, vh: innerHeight } : null })
     const w0 = await wordAt(0)
     ok('文稿原文里的英文单词可以悬停查词', !!w0 && /^[A-Za-z]/.test(w0.w), JSON.stringify(w0))
+    // 视频正在播放（测试页的视频没有片源，这里换成能记录暂停 / 播放的）
+    await page.evaluate(() => {
+      const v = document.querySelector('video')
+      let paused = false
+      Object.defineProperty(v, 'paused', { get: () => paused, configurable: true })
+      v.pause = () => void (paused = true)
+      v.play = () => ((paused = false), Promise.resolve())
+    })
     await page.mouse.move(w0.x, w0.y)
     await page.waitForFunction(() => window.__roots.some((r) => /欢迎/.test(r.querySelector('.wc-pop.open')?.textContent || '')), null, { timeout: 8000 }).catch(() => {})
     const pb = await popBox()
@@ -387,10 +395,21 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('查词浮窗有跳到这句、朗读、复制', pb && /跳到这句/.test(pb.text) && /朗读/.test(pb.text) && /复制/.test(pb.text), pb && pb.text)
     const lk = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run' && c.req.kind === 'lookup').at(-1)?.req)
     ok('查词请求带单词和这一句', lk && lk.text === w0.w && /Welcome|Rust/.test(lk.context || ''), JSON.stringify(lk))
+    ok('悬停单词时视频暂停', await page.evaluate(() => document.querySelector('video').paused === true))
     ok('以前的整句译文小窗没有了', await page.evaluate(() => !window.__roots.some((r) => r.querySelector('.hov'))))
     await page.mouse.move(5, 5)
     await settle(page, 600)
     ok('鼠标移开后查词浮窗关闭', !(await popBox()))
+    ok('词卡关闭后视频接着播', await page.evaluate(() => document.querySelector('video').paused === false))
+    // 用户自己暂停的视频：悬停、移开都不去动它
+    await page.evaluate(() => document.querySelector('video').pause())
+    const w0b = await wordAt(0)
+    await page.mouse.move(w0b.x, w0b.y)
+    await settle(page, 900)
+    await page.mouse.move(5, 5)
+    await settle(page, 900)
+    ok('用户自己暂停的视频，悬停和移开后仍然是暂停', await page.evaluate(() => document.querySelector('video').paused === true))
+    await page.evaluate(() => document.querySelector('video').play())
     await page.evaluate(() => {
       const i = window.__roots.map((r) => r.querySelector('input#tsearch')).find(Boolean)
       i.value = 'rust'

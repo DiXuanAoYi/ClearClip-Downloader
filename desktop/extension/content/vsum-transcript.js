@@ -71,7 +71,37 @@
     }
 
     // 文稿里鼠标停在英文单词上：弹出和视频字幕层同一个查词浮窗；双语时把这个词在另一行里对应的译文标出来
-    const wpop = WC.popover(ui, { onHide: clearHl })
+    const wpop = WC.popover(ui, {
+      onHide: () => {
+        clearHl()
+        resumeAfterWord()
+      },
+    })
+    // 悬停在单词上（词卡打开）时暂停视频，词卡关闭后接着播；只恢复我们自己暂停的，用户自己暂停的不动。
+    // 从一个词移到下一个词时词卡会先关再开，所以恢复稍等一下，期间又开了新词就取消。
+    let pausedByWord = false
+    let resumeTimer = 0
+    function pauseForWord() {
+      clearTimeout(resumeTimer)
+      const v = isVideo() ? video() : null
+      if (v && !v.paused && !v.ended) {
+        v.pause()
+        pausedByWord = true
+      }
+    }
+    function resumeAfterWord() {
+      if (!pausedByWord) return
+      clearTimeout(resumeTimer)
+      resumeTimer = setTimeout(() => {
+        if (!pausedByWord) return
+        pausedByWord = false
+        try {
+          Promise.resolve(video()?.play()).catch(() => {})
+        } catch {
+          /* 页面不让播就算了 */
+        }
+      }, 250)
+    }
     let hovTimer = 0
     let hl = null
     let saved = null
@@ -105,6 +135,7 @@
       const isOrig = sentence === l.text
       const word = el.textContent
       clearHl()
+      pauseForWord()
       hl = { word: el, other, otherText: trans }
       el.classList.add('on')
       if (!saved) {
