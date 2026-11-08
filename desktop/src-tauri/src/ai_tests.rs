@@ -501,8 +501,8 @@ async fn glossary_terms_reach_only_the_batches_that_mention_them() {
     .await;
     let cues = vec![cue(0, "The Kubernetes pod restarted"), cue(1000, "nothing special"), cue(2000, "pod again")];
     let terms = vec![
-        crate::glossary::Term { source: "pod".into(), target: "容器组".into(), note: String::new() },
-        crate::glossary::Term { source: "Helm".into(), target: "Helm".into(), note: String::new() },
+        crate::glossary::Term { source: "pod".into(), target: "容器组".into(), note: String::new(), ..Default::default() },
+        crate::glossary::Term { source: "Helm".into(), target: "Helm".into(), note: String::new(), ..Default::default() },
     ];
     let t = translate_cues_g(&ep(&base), "m", "简体中文", &cues, 2, &terms, &|_, _| Ok(())).await.unwrap();
     assert_eq!(t.failed, 0);

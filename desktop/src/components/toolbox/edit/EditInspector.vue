@@ -21,6 +21,8 @@ import EditSpeedCurve from './EditSpeedCurve.vue'
 import EditTranscript from './EditTranscript.vue'
 import EditSlider from './EditSlider.vue'
 import TimeInput from './TimeInput.vue'
+import { LOUDNESS_PRESETS } from '../../../utils/loudness'
+import { REVERBS, reverbId, reverbOf } from '../../../utils/reverb'
 
 const props = defineProps<{ ed: EditApi; rg: RegionApi }>()
 const emit = defineEmits<{ goto: [ms: number] }>()
@@ -164,7 +166,7 @@ function setTransitionMs(ms: number) {
 const appliedOverlap = computed(() => placed.value?.overlapMs ?? 0)
 
 /** 把这个片段的设置应用到其他所有片段（撤回一次就能还原） */
-function applyAll(what: 'transition' | 'tone' | 'turn') {
+function applyAll(what: 'transition' | 'tone' | 'turn' | 'lut') {
   const n = ed.applyToAll(what)
   ElMessage.success(n ? `已应用到其他 ${n} 个片段。` : '其他片段已经是这样了。')
 }
@@ -178,6 +180,24 @@ const multiClip = computed(() => ed.project.value.clips.length > 1)
 function resetTone() {
   pc({ brightness: 0, contrast: 1, saturation: 1 }, 'tone')
 }
+// ---------- LUT / 混响 / 防抖 ----------
+
+async function pickLut() {
+  const r = await open({ multiple: false, filters: [{ name: 'LUT（.cube）', extensions: ['cube'] }] })
+  if (typeof r !== 'string') return
+  try {
+    await api.lutInspect(r)
+  } catch (e) {
+    return ElMessage.error(errorText(e))
+  }
+  pc({ lut: r, lutMix: clip.value?.lut ? clip.value.lutMix : 1 }, 'lut')
+}
+const STABS = [
+  { v: 'off', label: '不防抖' },
+  { v: 'light', label: '轻微' },
+  { v: 'normal', label: '标准' },
+  { v: 'strong', label: '强力' },
+] as const
 const toned = computed(() => !!clip.value && (clip.value.brightness !== 0 || clip.value.contrast !== 1 || clip.value.saturation !== 1))
 
 // ---------- 叠加素材 ----------
@@ -354,6 +374,13 @@ function setRes(key: string) {
 function setOut(patch: Partial<EditOutput>) {
   ed.mutate((p) => Object.assign(p.out, patch), `out:${Object.keys(patch).join(',')}`)
 }
+/** 响度的选项：行业预设里不同的目标值（同一个值只列一次） */
+const LOUD_OPTS = [...new Map(LOUDNESS_PRESETS.map((p) => [p.lufs, `${p.lufs} LUFS（${p.name}）`])).entries()].map(([v, label]) => ({ v, label }))
+const ranged = computed(() => out.value.fromMs > 0 || out.value.toMs > 0)
+function setRanged(on: boolean) {
+  setOut(on ? { fromMs: Math.min(ed.playhead.value, Math.max(0, ed.total.value - 1000)), toMs: Math.min(ed.total.value, ed.playhead.value + 5000) } : { fromMs: 0, toMs: 0 })
+}
+const rangeTo = computed(() => (out.value.toMs > 0 ? Math.min(out.value.toMs, ed.total.value) : ed.total.value))
 const FPS = [0, 24, 25, 30, 50, 60]
 const fpsOptions = computed(() => (FPS.includes(out.value.fps) ? FPS : [...FPS, out.value.fps]))
 
@@ -476,6 +503,13 @@ async function pickDir() {
           <EditField label="">
             <el-checkbox :model-value="clip.mute" @update:model-value="(v: unknown) => pc({ mute: !!v }, 'mute')">静音这个片段</el-checkbox>
           </EditField>
+          <EditField label="混响" hint="给这个片段的声音加空间感；预览里听得到（精确预览），实时播放听不到">
+            <el-select :model-value="reverbId(clip.reverb)" size="small" style="width: 160px" :disabled="clip.mute" @update:model-value="(v: string) => pc({ reverb: v === 'custom' ? clip!.reverb : reverbOf(v) }, 'rev')">
+              <el-option value="off" label="不加" />
+              <el-option v-for="r in REVERBS" :key="r.id" :value="r.id" :label="r.name" />
+              <el-option v-if="reverbId(clip.reverb) === 'custom'" value="custom" label="自定义" />
+            </el-select>
+          </EditField>
         </template>
         <div v-else-if="!clip.freeze" class="mute small pad">这个素材没有声音。</div>
       </template>
@@ -512,6 +546,18 @@ async function pickDir() {
       <EditField label="">
         <el-button size="small" link type="primary" :disabled="!toned" @click="resetTone">调色归零</el-button>
         <el-button v-if="multiClip" size="small" link type="primary" @click="applyAll('tone')">应用到全部片段</el-button>
+      </EditField>
+      <EditField label="LUT" hint="套一张 .cube 调色（LUT 工作室做的，或别处下载的）。“实时画面”里看不到，切到“精确预览”或导出后看">
+        <el-button size="small" @click="pickLut">{{ clip.lut ? '换一张…' : '选择 .cube…' }}</el-button>
+        <span v-if="clip.lut" class="mute small ellipsis" :title="clip.lut">{{ baseName(clip.lut) }}</span>
+        <el-button v-if="clip.lut" size="small" link @click="pc({ lut: '', lutMix: 1 }, 'lut')">去掉</el-button>
+        <el-button v-if="clip.lut && multiClip" size="small" link type="primary" @click="applyAll('lut')">应用到全部片段</el-button>
+      </EditField>
+      <EditSlider v-if="clip.lut" label="LUT 强度" :model-value="clip.lutMix" :min="0" :max="1" :step="0.01" :scale="100" unit="%" @update:model-value="(v) => pc({ lutMix: v }, 'lutmix')" />
+      <EditField v-if="clip.kind === 'video'" label="防抖" :hint="clip.reverse || clip.freeze ? '倒放、定格的片段不做防抖' : '导出前先把这段画面分析一遍，会慢一些；预览里看不到。画面会略微放大以裁掉晃动的黑边'">
+        <el-select :model-value="clip.stabilize" size="small" style="width: 140px" :disabled="clip.reverse || clip.freeze" @update:model-value="(v: EditClip['stabilize']) => pc({ stabilize: v }, 'stab')">
+          <el-option v-for="o in STABS" :key="o.v" :value="o.v" :label="o.label" />
+        </el-select>
       </EditField>
 
       <EditField label="位置" hint="叠加轨上的素材可以放在画面的任意位置、任意大小，和主轨同时出现">
@@ -756,6 +802,13 @@ async function pickDir() {
       <EditField label="">
         <el-checkbox :model-value="audio.duck" @update:model-value="(v: unknown) => pa({ duck: !!v }, 'ad')">片段里有人声时自动压低这条配乐</el-checkbox>
       </EditField>
+      <EditField label="混响">
+        <el-select :model-value="reverbId(audio.reverb)" size="small" style="width: 160px" @update:model-value="(v: string) => pa({ reverb: v === 'custom' ? audio!.reverb : reverbOf(v) }, 'arev')">
+          <el-option value="off" label="不加" />
+          <el-option v-for="r in REVERBS" :key="r.id" :value="r.id" :label="r.name" />
+          <el-option v-if="reverbId(audio.reverb) === 'custom'" value="custom" label="自定义" />
+        </el-select>
+      </EditField>
       <EditField label="节拍" hint="找出配乐的拍子，时间线上显示成小竖线，拖东西时会吸附上去；也可以让主轨按拍子切换">
         <el-button size="small" :loading="beatBusy" @click="findBeats">{{ audio.beats ? '重新分析' : '分析节拍' }}</el-button>
         <span v-if="audio.beats" class="mute small">约 {{ audio.beats.bpm }} BPM · {{ audio.beats.beatsMs.length }} 拍{{ audio.beats.confidence < LOW_BEAT_CONFIDENCE ? '（节奏不清晰，可能不准）' : '' }}</span>
@@ -804,43 +857,81 @@ async function pickDir() {
       <EditField label="文件名">
         <el-input :model-value="ed.project.value.title" size="small" placeholder="留空则用第一个片段的名字" clearable @update:model-value="(v: string) => ed.mutate((p) => (p.title = v), 'title')" />
       </EditField>
-      <EditField label="画面尺寸">
+      <EditField label="导出" hint="当前这一帧的图片在底部的“截取当前帧”">
+        <el-radio-group :model-value="out.kind === 'frame' ? 'video' : out.kind" size="small" @update:model-value="(v: string | number | boolean | undefined) => setOut({ kind: v as EditOutput['kind'] })">
+          <el-radio-button value="video">视频</el-radio-button>
+          <el-radio-button value="gif">GIF 动图</el-radio-button>
+          <el-radio-button value="audio">只导出声音</el-radio-button>
+        </el-radio-group>
+      </EditField>
+      <EditField label="范围" :hint="out.kind === 'gif' ? 'GIF 最长 60 秒' : ''">
+        <el-radio-group :model-value="ranged" size="small" @update:model-value="(v: string | number | boolean | undefined) => setRanged(!!v)">
+          <el-radio-button :value="false">整条时间线</el-radio-button>
+          <el-radio-button :value="true">其中一段</el-radio-button>
+        </el-radio-group>
+      </EditField>
+      <EditField v-if="ranged" label="从 / 到">
+        <TimeInput :model-value="out.fromMs" :max="Math.max(0, rangeTo - MIN_MS)" @update:model-value="(v) => setOut({ fromMs: v })" />
+        <el-button size="small" link @click="setOut({ fromMs: Math.min(ed.playhead.value, Math.max(0, rangeTo - MIN_MS)) })">取播放位置</el-button>
+        <span>–</span>
+        <TimeInput :model-value="rangeTo" :min="out.fromMs + MIN_MS" :max="ed.total.value" @update:model-value="(v) => setOut({ toMs: v })" />
+        <el-button size="small" link @click="setOut({ toMs: Math.max(ed.playhead.value, out.fromMs + MIN_MS) })">取播放位置</el-button>
+      </EditField>
+      <EditField v-if="out.kind !== 'gif'" label="声音响度" hint="把整条成片的音量调到统一水平（响度标准化）">
+        <el-select :model-value="out.loudness" size="small" style="width: 300px" @update:model-value="(v: number) => setOut({ loudness: v })">
+          <el-option :value="0" label="不处理" />
+          <el-option v-for="o in LOUD_OPTS" :key="o.v" :value="o.v" :label="o.label" />
+        </el-select>
+      </EditField>
+      <template v-if="out.kind === 'gif'">
+        <EditField label="GIF 宽度">
+          <el-select :model-value="out.gifWidth" size="small" style="width: 160px" @update:model-value="(v: number) => setOut({ gifWidth: v })">
+            <el-option v-for="w in [240, 320, 480, 640, 800]" :key="w" :value="w" :label="`${w} 像素`" />
+          </el-select>
+        </EditField>
+        <EditField label="GIF 帧率" hint="帧率越高越流畅，文件也越大">
+          <el-select :model-value="out.gifFps" size="small" style="width: 160px" @update:model-value="(v: number) => setOut({ gifFps: v })">
+            <el-option v-for="f in [8, 10, 12, 15, 20, 25]" :key="f" :value="f" :label="`${f} 帧/秒`" />
+          </el-select>
+        </EditField>
+      </template>
+      <EditField v-if="out.kind !== 'audio'" label="画面尺寸">
         <el-select :model-value="resKey" size="small" style="width: 220px" @update:model-value="setRes">
           <el-option v-for="r in RES" :key="r.key" :value="r.key" :label="r.label" />
           <el-option value="custom" label="自定义…" />
         </el-select>
       </EditField>
-      <EditField v-if="resKey === 'custom'" label="宽 × 高">
+      <EditField v-if="resKey === 'custom' && out.kind !== 'audio'" label="宽 × 高">
         <el-input-number :model-value="out.width" :min="64" :max="7680" :step="2" size="small" controls-position="right" @update:model-value="(v: number | undefined) => setOut({ width: v ?? 0 })" />
         <span>×</span>
         <el-input-number :model-value="out.height" :min="64" :max="7680" :step="2" size="small" controls-position="right" @update:model-value="(v: number | undefined) => setOut({ height: v ?? 0 })" />
       </EditField>
-      <EditField label="帧率">
+      <EditField v-if="out.kind === 'video'" label="帧率">
         <el-select :model-value="out.fps" size="small" style="width: 160px" @update:model-value="(v: number) => setOut({ fps: v })">
           <el-option v-for="f in fpsOptions" :key="f" :value="f" :label="f ? `${f} 帧/秒` : '跟随第一个视频'" />
         </el-select>
       </EditField>
-      <EditField label="画面适配" hint="片段和输出画面比例不同时怎么处理">
+      <EditField v-if="out.kind !== 'audio'" label="画面适配" hint="片段和输出画面比例不同时怎么处理">
         <el-select :model-value="out.fit" size="small" style="width: 220px" @update:model-value="(v: EditOutput['fit']) => setOut({ fit: v })">
           <el-option value="contain" label="完整显示，留黑边" />
           <el-option value="cover" label="铺满画面，裁掉多余部分" />
           <el-option value="blur" label="完整显示，背景用模糊画面" />
         </el-select>
       </EditField>
-      <EditField label="画质">
+      <EditField v-if="out.kind === 'video'" label="画质">
         <el-radio-group :model-value="out.quality" size="small" @update:model-value="(v: string | number | boolean | undefined) => setOut({ quality: v as EditOutput['quality'] })">
           <el-radio-button value="small">体积小</el-radio-button>
           <el-radio-button value="balanced">均衡</el-radio-button>
           <el-radio-button value="high">高画质</el-radio-button>
         </el-radio-group>
       </EditField>
-      <EditField label="编码">
+      <EditField v-if="out.kind === 'video'" label="编码">
         <el-radio-group :model-value="out.codec" size="small" @update:model-value="(v: string | number | boolean | undefined) => setOut({ codec: v as EditOutput['codec'] })">
           <el-radio-button value="h264">H.264（通用）</el-radio-button>
           <el-radio-button value="hevc">H.265（更小）</el-radio-button>
         </el-radio-group>
       </EditField>
-      <EditField label="格式">
+      <EditField v-if="out.kind === 'video'" label="格式">
         <el-radio-group :model-value="out.format" size="small" @update:model-value="(v: string | number | boolean | undefined) => setOut({ format: v as EditOutput['format'] })">
           <el-radio-button value="mp4">MP4</el-radio-button>
           <el-radio-button value="mkv">MKV</el-radio-button>

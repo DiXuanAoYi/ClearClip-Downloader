@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use super::build::{build, EditPlan, Mode, Source};
 use super::fonts;
-use super::job::fit_to_sources;
+use super::job::{bake_lut_strength, fit_to_sources};
 use super::region::render_mask;
 use super::spec::{AudioTrack, Clip, ClipKind, Project, TextItem, Transition, TRANSITIONS};
 use crate::media_tools::muxer_args;
@@ -116,6 +116,12 @@ pub(super) async fn render_with_model(ff: &Path, caps: &Caps, d: &Path, p: Proje
         job.model = matte_model.expect("要有抠图模型").to_path_buf();
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         crate::ml::matte::render_matte(ff, &job, &cancel, |_| {}).await.expect("抠图");
+    }
+    for st in &plan.stabs {
+        std::fs::create_dir_all(d.join("tmp")).unwrap();
+        let mut a = base_args();
+        a.extend(st.clone());
+        run_ffmpeg_capture(ff, &a, Duration::from_secs(300)).await.unwrap_or_else(|e| panic!("防抖分析失败：{e}\n参数：{a:?}"));
     }
     let mut a = base_args();
     a.extend(plan.args.clone());
@@ -558,5 +564,168 @@ async fn hevc_and_mkv_outputs_when_the_encoder_exists() {
     let (out, plan) = render(&ff, &caps, &d, p, Mode::Export).await;
     assert_eq!(plan.ext, "mkv");
     assert_eq!(facts_of(&ff, &out).await.video.unwrap().codec, "hevc");
+    let _ = std::fs::remove_dir_all(d);
+}
+
+// ---------- 导出方式（GIF / 只导出声音 / 一帧图片）、导出一段、响度、LUT、混响、防抖 ----------
+
+fn two_colours(m: &Media) -> Project {
+    // 红 0–1.5 秒，绿 1.5–2.5 秒
+    Project { clips: vec![clip(&m.red, 0, 1500), clip(&m.green, 0, 1000)], ..Default::default() }
+}
+
+#[tokio::test]
+async fn gif_of_a_range_has_that_length_and_both_colours() {
+    let (ff, d, caps, m) = need!(setup("gif").await);
+    if !caps.has_filter("palettegen") || !caps.has_filter("paletteuse") {
+        return;
+    }
+    let mut p = two_colours(&m);
+    p.out.kind = "gif".into();
+    p.out.from_ms = 1000;
+    p.out.to_ms = 2000;
+    p.out.gif_width = 160;
+    let (out, plan) = render(&ff, &caps, &d, p, Mode::Export).await;
+    assert_eq!(plan.ext, "gif");
+    assert_eq!(plan.out_ms, 1000);
+    let f = facts_of(&ff, &out).await;
+    assert!(f.audio.is_none(), "GIF 没有声音");
+    assert_eq!(f.video.as_ref().map(|v| v.width), Some(160));
+    assert!(close(f.duration_ms, 1000, 200), "时长 {:?}", f.duration_ms);
+    assert!(is_red(rgb_at(&ff, &out, 0.2).await), "{:?}", rgb_at(&ff, &out, 0.2).await);
+    assert!(is_green(rgb_at(&ff, &out, 0.8).await), "{:?}", rgb_at(&ff, &out, 0.8).await);
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[tokio::test]
+async fn audio_only_export_has_no_picture_and_loudness_is_applied() {
+    let (ff, d, caps, m) = need!(setup("audioonly").await);
+    let mut p = two_colours(&m);
+    p.out.kind = "audio".into();
+    p.out.loudness = -16.0;
+    let (out, plan) = render(&ff, &caps, &d, p, Mode::Export).await;
+    assert_eq!(plan.ext, "m4a");
+    assert!(plan.args.iter().any(|a| a.contains("loudnorm=I=-16")), "{:?}", plan.args);
+    let f = facts_of(&ff, &out).await;
+    assert!(f.video.is_none() && f.audio.is_some(), "只有声音");
+    assert!(a_duration(&ff, &out).await.abs_diff(2500) <= 150);
+    // 只有画面没有声音的工程不能只导出声音
+    let mut p = Project { clips: vec![clip(&m.blue, 0, 1000)], ..Default::default() };
+    p.out.kind = "audio".into();
+    let p = p.checked().unwrap();
+    let mut src = HashMap::new();
+    src.insert(p.clips[0].path.clone(), Source::from_facts(&facts_of(&ff, &m.blue).await));
+    let e = build(&p, &src, &caps, &d.join("tmp"), Mode::Export, None).unwrap_err();
+    assert!(e.to_string().contains("没有声音"), "{e}");
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[tokio::test]
+async fn one_frame_is_exported_as_a_png_at_the_playhead() {
+    let (ff, d, caps, m) = need!(setup("frame").await);
+    let mut p = two_colours(&m);
+    p.out.kind = "frame".into();
+    p.out.from_ms = 2000;
+    let (out, plan) = render(&ff, &caps, &d, p, Mode::Export).await;
+    assert_eq!(plan.ext, "png");
+    let f = facts_of(&ff, &out).await;
+    assert_eq!(f.video.as_ref().map(|v| (v.width, v.height)), Some((320, 240)));
+    assert!(is_green(rgb_at(&ff, &out, 0.0).await), "{:?}", rgb_at(&ff, &out, 0.0).await);
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[tokio::test]
+async fn a_video_range_and_loudness_keep_picture_and_sound_in_step() {
+    let (ff, d, caps, m) = need!(setup("range").await);
+    let mut p = two_colours(&m);
+    p.out.from_ms = 1000;
+    p.out.to_ms = 2200;
+    p.out.loudness = -14.0;
+    let (out, plan) = render(&ff, &caps, &d, p, Mode::Export).await;
+    assert_eq!((plan.ext, plan.out_ms), ("mp4", 1200));
+    let f = facts_of(&ff, &out).await;
+    assert!(close(f.duration_ms, 1200, 150), "时长 {:?}", f.duration_ms);
+    assert!(a_duration(&ff, &out).await.abs_diff(1200) <= 150);
+    assert!(is_red(rgb_at(&ff, &out, 0.2).await) && is_green(rgb_at(&ff, &out, 0.9).await));
+    let _ = std::fs::remove_dir_all(d);
+}
+
+/// 一张把红和蓝对调的 LUT（2×2×2）。
+fn swap_rb_cube(d: &Path) -> PathBuf {
+    let mut t = String::from("LUT_3D_SIZE 2\n");
+    for b in 0..2 {
+        for g in 0..2 {
+            for r in 0..2 {
+                t.push_str(&format!("{b} {g} {r}\n"));
+            }
+        }
+    }
+    let p = d.join("swap.cube");
+    std::fs::write(&p, t).unwrap();
+    p
+}
+
+#[tokio::test]
+async fn a_clip_lut_recolours_the_picture_and_strength_blends_it() {
+    let (ff, d, caps, m) = need!(setup("lut").await);
+    if !caps.has_filter("lut3d") {
+        return;
+    }
+    let cube = swap_rb_cube(&d);
+    let mut c = clip(&m.red, 0, 1000);
+    c.lut = cube.to_string_lossy().into_owned();
+    let (out, _) = render(&ff, &caps, &d, Project { clips: vec![c.clone()], ..Default::default() }, Mode::Export).await;
+    let px = rgb_at(&ff, &out, 0.5).await;
+    assert!(is_blue(px), "红色套了“红蓝对调”应该变蓝：{px:?}");
+    // 强度 50%：红和蓝各一半
+    c.lut_mix = 0.5;
+    let mut p = Project { clips: vec![c], ..Default::default() };
+    bake_lut_strength(&mut p, &d.join("tmp")).unwrap();
+    assert!(p.clips[0].lut.ends_with(".cube") && p.clips[0].lut != cube.to_string_lossy());
+    let (out, _) = render(&ff, &caps, &d, p, Mode::Export).await;
+    let px = rgb_at(&ff, &out, 0.5).await;
+    assert!(px.0 > 90 && px.2 > 90 && px.0.abs_diff(px.2) < 50 && px.1 < 60, "一半红一半蓝：{px:?}");
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[tokio::test]
+async fn reverb_on_a_clip_and_on_music_keeps_the_length() {
+    let (ff, d, caps, m) = need!(setup("reverb").await);
+    let mut c = clip(&m.red, 0, 1500);
+    c.reverb = Some(crate::audiofx::ReverbSpec::default());
+    let mut p = Project { clips: vec![c, clip(&m.green, 0, 1000)], ..Default::default() };
+    p.audio = vec![AudioTrack {
+        path: m.music.to_string_lossy().into_owned(),
+        reverb: Some(crate::audiofx::ReverbSpec { time_ms: 1500, ..Default::default() }),
+        ..Default::default()
+    }];
+    let (out, plan) = render(&ff, &caps, &d, p, Mode::Export).await;
+    let g = plan.args.iter().find(|a| a.contains("afir") || a.contains("aecho")).cloned().unwrap_or_default();
+    assert!(!g.is_empty(), "滤镜图里有混响：{:?}", plan.args);
+    assert!(close(facts_of(&ff, &out).await.duration_ms, 2500, 150));
+    assert!(a_duration(&ff, &out).await.abs_diff(2500) <= 150, "混响不会把声音拉长");
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[tokio::test]
+async fn stabilised_clips_are_analysed_first_and_keep_their_length() {
+    let (ff, d, caps, m) = need!(setup("stab").await);
+    if !caps.vidstab() && !caps.has_filter("deshake") {
+        return;
+    }
+    let mut c = clip(&m.green, 500, 2500);
+    c.stabilize = "normal".into();
+    let (out, plan) = render(&ff, &caps, &d, Project { clips: vec![c.clone()], ..Default::default() }, Mode::Export).await;
+    if caps.vidstab() {
+        assert_eq!(plan.stabs.len(), 1, "vidstab 要先分析一遍");
+        assert!(plan.args.iter().any(|a| a.contains("vidstabtransform")));
+    } else {
+        assert!(plan.stabs.is_empty() && plan.args.iter().any(|a| a.contains("deshake")));
+    }
+    assert!(close(facts_of(&ff, &out).await.duration_ms, 2000, 150));
+    assert!(is_green(rgb_at(&ff, &out, 1.0).await));
+    // 预览不做防抖
+    let (_, prev) = render(&ff, &caps, &d, Project { clips: vec![c], ..Default::default() }, Mode::Preview).await;
+    assert!(prev.stabs.is_empty() && !prev.args.iter().any(|a| a.contains("vidstab") || a.contains("deshake")));
     let _ = std::fs::remove_dir_all(d);
 }

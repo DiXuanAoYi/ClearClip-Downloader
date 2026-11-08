@@ -6,6 +6,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
 import { useAppStore } from '../stores/app'
 import type { ListResult, SubItem, SubSettings, Subscription } from '../types'
+import { SUB_DEFAULTS } from '../utils/subs'
 import { formatDateTime, formatDuration } from '../utils/format'
 import ErrorAlert from '../components/ErrorAlert.vue'
 import { errorKind } from '../api'
@@ -16,23 +17,7 @@ const app = useAppStore()
 const subs = ref<Subscription[]>([])
 let unlisten: UnlistenFn | undefined
 
-const DEFAULTS: SubSettings = {
-  intervalHours: 6,
-  firstRun: 'new_only',
-  firstN: 5,
-  maxAuto: 20,
-  include: [],
-  exclude: [],
-  minDurationS: null,
-  maxDurationS: null,
-  maxAgeDays: null,
-  quality: null,
-  dir: '',
-  template: '',
-  notify: true,
-  keepLatest: 0,
-  keepDays: 0,
-}
+const DEFAULTS: SubSettings = SUB_DEFAULTS
 
 // ---------- 列表 ----------
 

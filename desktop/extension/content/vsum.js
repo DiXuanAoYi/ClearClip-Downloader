@@ -1057,7 +1057,7 @@
   const TABS_ = globalThis.ccVsumTabs
   const { getSel, tabTranscript } = TABS_.transcript({
     S, V, actsBar, addNote, copy, h, isVideo, langSelect, onSelect, outLabel, render, saveFile, savePrefs, seek,
-    sel, send, setData, syncSubLayer, task, tick, toast, trackBar, translateDoc, ui
+    sel, send, setData, syncSubLayer, task, tick, toast, trackBar, translateDoc, ui, video
   })
   const { exportData, tabMore } = TABS_.more({
     S, Src, V, applyAppearance, copy, forgetLocal, grp, h, importFile, isVideo, loadArticleFromSelection,

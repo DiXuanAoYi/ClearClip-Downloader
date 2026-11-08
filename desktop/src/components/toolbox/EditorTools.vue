@@ -119,7 +119,9 @@ watch(
   () => props.preset,
   (v) => {
     if (!v?.length) return
-    addClips([...v])
+    // 从工具箱“快速处理”或媒体库送来的文件：视频、图片放主轨，音频放配乐轨
+    const music = v.filter((x) => editMediaKind(x) === 'audio')
+    addClips(v.filter((x) => editMediaKind(x) !== 'audio')).then(() => (music.length ? addMusic(music) : undefined))
     emit('consumed')
   },
   { immediate: true },
@@ -389,13 +391,20 @@ function checkMedia(): boolean {
   return false
 }
 
-async function exportNow() {
+const EXPORT_LABEL: Record<string, string> = { video: '导出视频', gif: '导出 GIF', audio: '导出声音', frame: '导出视频' }
+const exportLabel = computed(() => EXPORT_LABEL[ed.project.value.out.kind] ?? '导出视频')
+
+/** 导出。`frame`：只截取播放头处这一帧（PNG），不改工程里的导出设置。 */
+async function exportNow(frame = false) {
   if (!hasClips.value || exporting.value) return
   if (!checkMedia()) return
   exporting.value = true
   try {
-    await api.mediaJobStart({ op: 'edit', project: JSON.parse(projectKey.value), inputs: [], outputDir: outDir.value || null })
-    ElMessage.success('已开始导出，进度见下方的“处理进度”。')
+    const project = JSON.parse(projectKey.value)
+    if (frame) project.out = { ...project.out, kind: 'frame', fromMs: Math.round(ed.playhead.value), toMs: 0 }
+    else if (project.out.kind === 'frame') project.out.kind = 'video'
+    await api.mediaJobStart({ op: 'edit', project, inputs: [], outputDir: outDir.value || null })
+    ElMessage.success(frame ? `正在截取 ${msText(ed.playhead.value)} 这一帧，完成后在媒体库里。` : '已开始导出，进度见下方的“处理进度”。')
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -428,7 +437,9 @@ function visible(): boolean {
 function onKey(e: KeyboardEvent) {
   if (!visible()) return
   const t = e.target as HTMLElement | null
-  if (t?.closest('textarea, select, [contenteditable="true"], .el-overlay, .el-popper')) return
+  // 刚点过的下拉菜单（“添加素材”等）收起时焦点会在菜单项上停一下：Ctrl 组合键（撤回等）照常生效，方向键、回车留给菜单
+  const menuMod = !!t?.closest('.el-dropdown-menu') && (e.ctrlKey || e.metaKey)
+  if (!menuMod && t?.closest('textarea, select, [contenteditable="true"], .el-overlay, .el-popper')) return
   const input = t?.closest('input') as HTMLInputElement | null
   if (input) {
     // 点过单选 / 复选按钮（比如检查器的标签页）后焦点会留在上面：快捷键照常生效，空格、方向键和回车留给它们自己用
@@ -720,7 +731,10 @@ onBeforeUnmount(() => releaseDrop?.())
         <span v-else-if="hasContent" class="mute">（工程还没有保存）</span>
         <span v-if="sizeWarn" class="warn">{{ sizeWarn }}</span>
       </div>
-      <el-button type="primary" :disabled="!hasClips" :loading="exporting" @click="exportNow">导出视频</el-button>
+      <div class="exbtns">
+        <el-button :disabled="!hasClips" title="把播放头处这一帧（含文字、叠加、调色）存成 PNG 图片" @click="exportNow(true)">截取当前帧</el-button>
+        <el-button type="primary" :disabled="!hasClips" :loading="exporting" @click="exportNow()">{{ exportLabel }}</el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -854,6 +868,11 @@ onBeforeUnmount(() => releaseDrop?.())
   justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
+}
+.exbtns {
+  display: flex;
+  gap: 8px;
+  flex: none;
 }
 .info {
   display: flex;

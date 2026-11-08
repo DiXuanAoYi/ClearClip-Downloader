@@ -218,9 +218,20 @@ pub fn sc_audio_start(app: tauri::AppHandle, state: tauri::State<'_, std::sync::
             if let Err(e) = win::run(&app2, &st, &stop) {
                 crate::livetr::emit_state(&app2, &format!("系统声音字幕出错：{}", e.message));
             }
-            RUNNING.store(false, Ordering::Relaxed);
-            crate::livetr::close_subbar_if_idle(&app2);
-            crate::livetr::emit_state(&app2, "");
+            // 只收拾自己的：停了又马上重新开始时，新的那次已经登记好了，不能把它标成“没在运行”
+            let mine = {
+                let mut g = STOP.lock().unwrap_or_else(|e| e.into_inner());
+                let mine = g.as_ref().map_or(true, |s| std::sync::Arc::ptr_eq(s, &stop));
+                if mine {
+                    *g = None;
+                }
+                mine
+            };
+            if mine {
+                RUNNING.store(false, Ordering::Relaxed);
+                crate::livetr::close_subbar_if_idle(&app2);
+                crate::livetr::emit_state(&app2, "");
+            }
         });
     }
     let _ = &app;

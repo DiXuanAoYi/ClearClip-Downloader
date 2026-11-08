@@ -3,10 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { open, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errorText } from '../api'
-import type { AiSettings, CommunityGlossary, ExtractSite, Glossary, GlossaryCandidate, GlossaryData, GlossaryTerm } from '../types'
+import type { AiSettings, CommunityGlossary, ExtractSite, Glossary, GlossaryCandidate, GlossaryData } from '../types'
+import GlossaryTermTree from './GlossaryTermTree.vue'
+import { countTerms } from '../utils/termtree'
 
 const ai = defineModel<AiSettings>({ required: true })
-const data = ref<GlossaryData>({ glossaries: [], candidates: [], sites: [] })
+const data = ref<GlossaryData>({ glossaries: [], candidates: [], sites: [], folders: [] })
 const tab = ref<'mine' | 'extract' | 'community'>('mine')
 const busy = ref(false)
 
@@ -49,35 +51,105 @@ async function clearTm() {
   }
 }
 
+// ---------- 文件夹（多层，用 / 分隔）----------
+const collapsed = ref<Set<string>>(new Set())
+/** 所有文件夹路径（含每一层的上级），按层级排好。 */
+const allFolders = computed(() => {
+  const set = new Set<string>()
+  const add = (p: string) => {
+    const parts = p.split('/').filter(Boolean)
+    for (let i = 1; i <= parts.length; i++) set.add(parts.slice(0, i).join('/'))
+  }
+  data.value.folders.forEach(add)
+  data.value.glossaries.forEach((g) => g.folder && add(g.folder))
+  return [...set].sort((a, b) => a.localeCompare(b, 'zh'))
+})
+type TreeRow = { kind: 'folder'; path: string; name: string; depth: number; count: number } | { kind: 'glossary'; g: Glossary; depth: number }
+const depthOf = (p: string) => (p ? p.split('/').length : 0)
+const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')
+const hiddenBy = (p: string) => [...collapsed.value].some((c) => p !== c && (p + '/').startsWith(c + '/'))
+/** 树形列表：文件夹在前、术语库在后，每层按名称排；折叠的文件夹里的东西不显示。 */
+const tree = computed<TreeRow[]>(() => {
+  const rows: TreeRow[] = []
+  const walk = (dir: string) => {
+    for (const f of allFolders.value.filter((x) => parentOf(x) === dir)) {
+      const count = data.value.glossaries.filter((g) => g.folder === f || g.folder.startsWith(f + '/')).length
+      rows.push({ kind: 'folder', path: f, name: f.split('/').pop() || f, depth: depthOf(f) - 1, count })
+      if (!collapsed.value.has(f)) walk(f)
+    }
+    for (const g of data.value.glossaries.filter((x) => (x.folder || '') === dir)) rows.push({ kind: 'glossary', g, depth: depthOf(dir) })
+  }
+  walk('')
+  return rows.filter((r) => r.kind === 'glossary' || !hiddenBy(r.path))
+})
+function toggleFolder(p: string) {
+  const s = new Set(collapsed.value)
+  if (s.has(p)) s.delete(p)
+  else s.add(p)
+  collapsed.value = s
+}
+async function newFolder(parent = '') {
+  let name: string
+  try {
+    name = (await ElMessageBox.prompt(parent ? `在“${parent}”里新建文件夹（可以用 / 一次建多层）` : '新建文件夹（可以用 / 一次建多层，如 游戏/原神）', '新建文件夹', { inputPlaceholder: '文件夹名' })).value
+  } catch {
+    return
+  }
+  if (!name?.trim()) return
+  try {
+    data.value = await api.glossaryFolderAdd(parent ? `${parent}/${name}` : name)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+async function renameFolder(p: string) {
+  let to: string
+  try {
+    to = (await ElMessageBox.prompt('新的位置和名称（用 / 表示上下级，可以移到别的文件夹里）', '重命名 / 移动文件夹', { inputValue: p })).value
+  } catch {
+    return
+  }
+  if (!to?.trim() || to.trim() === p) return
+  try {
+    data.value = await api.glossaryFolderRename(p, to)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+async function removeFolder(p: string) {
+  try {
+    await ElMessageBox.confirm(`删除文件夹“${p}”？里面的术语库和子文件夹会挪到上一层，不会被删除。`, '删除文件夹', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    data.value = await api.glossaryFolderRemove(p)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+
 // ---------- 术语库列表与编辑 ----------
 const editing = ref<Glossary | null>(null)
-const matchText = ref('')
-const search = ref('')
-const shown = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  const terms = editing.value?.terms || []
-  return q ? terms.filter((t) => t.source.toLowerCase().includes(q) || t.target.toLowerCase().includes(q)) : terms
-})
+/** 编辑区重新挂载用（打开另一个术语库、并入 CSV 之后） */
+const editKey = ref(0)
+const treeRef = ref<{ tree: () => Glossary['terms'] } | null>(null)
+/** 当前这条术语的路径（原文 / 译文），显示在底栏 */
+const curPath = ref<{ src: string[]; tgt: string[] }>({ src: [], tgt: [] })
 
-function blank(): Glossary {
-  return { id: '', name: '', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', terms: [], updated: 0 }
+function blank(folder = ''): Glossary {
+  return { id: '', name: '', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', terms: [], updated: 0, folder }
 }
-function edit(g?: Glossary) {
-  editing.value = g ? JSON.parse(JSON.stringify(g)) : blank()
-  matchText.value = (editing.value?.matches || []).join('\n')
-  search.value = ''
-}
-function addRow() {
-  editing.value?.terms.unshift({ source: '', target: '', note: '' })
-  search.value = ''
-}
-function dropRow(t: GlossaryTerm) {
-  if (editing.value) editing.value.terms = editing.value.terms.filter((x) => x !== t)
+function edit(g?: Glossary, folder = '') {
+  editing.value = g ? JSON.parse(JSON.stringify(g)) : blank(folder)
+  curPath.value = { src: [], tgt: [] }
+  editKey.value++
 }
 async function saveEditing() {
   const g = editing.value
   if (!g) return
-  g.matches = matchText.value.split('\n').map((s) => s.trim()).filter(Boolean)
+  g.terms = treeRef.value?.tree() ?? g.terms
+  g.matches = g.matches.map((s) => s.trim()).filter(Boolean)
   busy.value = true
   try {
     await api.glossarySave(g)
@@ -100,7 +172,7 @@ async function toggle(g: Glossary) {
 }
 async function remove(g: Glossary) {
   try {
-    await ElMessageBox.confirm(`删除术语库“${g.name}”（${g.terms.length} 条）？`, '删除术语库', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+    await ElMessageBox.confirm(`删除术语库“${g.name}”（${countTerms(g.terms)} 条）？`, '删除术语库', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
   } catch {
     return
   }
@@ -112,7 +184,7 @@ async function importCsv(into = '') {
   if (typeof f !== 'string') return
   try {
     const g = await api.glossaryImportFile(f, '', into, into ? '' : '')
-    ElMessage.success(`已导入 ${g.terms.length} 条`)
+    ElMessage.success(`已导入 ${countTerms(g.terms)} 条`)
     await reload()
     if (into && editing.value) edit(data.value.glossaries.find((x) => x.id === into))
   } catch (e) {
@@ -225,7 +297,7 @@ async function install(c: CommunityGlossary) {
   try {
     const g = await api.glossaryCommunityInstall(c.id)
     await reload()
-    ElMessage.success(`已安装“${g.name}”（${g.terms.length} 条，${langName(g.lang)}）`)
+    ElMessage.success(`已安装“${g.name}”（${countTerms(g.terms)} 条，${langName(g.lang)}）`)
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -257,19 +329,30 @@ function onTab(name: string | number) {
       <el-tab-pane :label="`术语库（${data.glossaries.length}）`" name="mine">
         <div class="bar">
           <el-button size="small" type="primary" @click="edit()">新建术语库</el-button>
+          <el-button size="small" @click="newFolder()">新建文件夹</el-button>
           <el-button size="small" @click="importCsv()">导入 CSV…</el-button>
         </div>
-        <div v-if="!data.glossaries.length" class="empty mute">还没有术语库。点“新建术语库”自己写，或去“社区术语库”一键安装。</div>
-        <div v-for="g in data.glossaries" :key="g.id" class="item" :class="{ off: !g.enabled }">
-          <el-switch v-model="g.enabled" size="small" @change="toggle(g)" />
-          <div class="info">
-            <div class="nm">{{ g.name }} <el-tag size="small" effect="plain">{{ ORIGIN[g.origin] }}</el-tag></div>
-            <small class="mute">{{ g.terms.length }} 条 · {{ langName(g.lang) }} · {{ g.matches.length ? '仅 ' + g.matches.slice(0, 3).join('、') + (g.matches.length > 3 ? '…' : '') : '所有网站' }}</small>
+        <div v-if="!data.glossaries.length && !allFolders.length" class="empty mute">还没有术语库。点“新建术语库”自己写，或去“社区术语库”一键安装。</div>
+        <template v-for="r in tree" :key="r.kind === 'folder' ? 'f:' + r.path : r.g.id">
+          <div v-if="r.kind === 'folder'" class="item folder" :style="{ paddingLeft: r.depth * 18 + 'px' }">
+            <button class="fold" type="button" :aria-label="collapsed.has(r.path) ? '展开' : '折叠'" @click="toggleFolder(r.path)">{{ collapsed.has(r.path) ? '▸' : '▾' }}</button>
+            <div class="info" @click="toggleFolder(r.path)"><div class="nm">📁 {{ r.name }} <small class="mute">{{ r.count }} 个术语库</small></div></div>
+            <el-button size="small" link type="primary" @click="edit(undefined, r.path)">新建术语库</el-button>
+            <el-button size="small" link @click="newFolder(r.path)">新建子文件夹</el-button>
+            <el-button size="small" link @click="renameFolder(r.path)">重命名 / 移动</el-button>
+            <el-button size="small" link type="danger" @click="removeFolder(r.path)">删除</el-button>
           </div>
-          <el-button size="small" link type="primary" @click="edit(g)">编辑</el-button>
-          <el-button size="small" link @click="exportCsv(g)">导出</el-button>
-          <el-button size="small" link type="danger" @click="remove(g)">删除</el-button>
-        </div>
+          <div v-else class="item" :class="{ off: !r.g.enabled }" :style="{ paddingLeft: r.depth * 18 + 'px' }">
+            <el-switch v-model="r.g.enabled" size="small" @change="toggle(r.g)" />
+            <div class="info">
+              <div class="nm">{{ r.g.name }} <el-tag size="small" effect="plain">{{ ORIGIN[r.g.origin] }}</el-tag></div>
+              <small class="mute">{{ countTerms(r.g.terms) }} 条 · {{ langName(r.g.lang) }} · {{ r.g.matches.length ? '仅 ' + r.g.matches.slice(0, 3).join('、') + (r.g.matches.length > 3 ? '…' : '') : '所有网站' }}</small>
+            </div>
+            <el-button size="small" link type="primary" @click="edit(r.g)">编辑</el-button>
+            <el-button size="small" link @click="exportCsv(r.g)">导出</el-button>
+            <el-button size="small" link type="danger" @click="remove(r.g)">删除</el-button>
+          </div>
+        </template>
       </el-tab-pane>
 
       <!-- 智能提取 -->
@@ -302,7 +385,7 @@ function onTab(name: string | number) {
             </el-table>
             <div class="row act">
               <el-select v-model="addTo" size="small" placeholder="加入到…" class="sel">
-                <el-option v-for="g in data.glossaries" :key="g.id" :value="g.id" :label="g.name" />
+                <el-option v-for="g in data.glossaries" :key="g.id" :value="g.id" :label="g.folder ? `${g.folder} / ${g.name}` : g.name" />
                 <el-option :value="NEW" label="＋ 新建术语库" />
               </el-select>
               <el-input v-if="addTo === NEW || !addTo" v-model="newName" size="small" class="sel" placeholder="新术语库名称" />
@@ -321,7 +404,7 @@ function onTab(name: string | number) {
             <el-table-column label="直接加入" min-width="140">
               <template #default="{ row }">
                 <el-select v-model="row.glossary" size="small" clearable placeholder="先待确认" @change="saveSites(data.sites)">
-                  <el-option v-for="g in data.glossaries" :key="g.id" :value="g.id" :label="g.name" />
+                  <el-option v-for="g in data.glossaries" :key="g.id" :value="g.id" :label="g.folder ? `${g.folder} / ${g.name}` : g.name" />
                 </el-select>
               </template>
             </el-table-column>
@@ -352,31 +435,66 @@ function onTab(name: string | number) {
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog :model-value="!!editing" :title="editing?.id ? '编辑术语库' : '新建术语库'" width="760px" top="6vh" @close="editing = null">
-      <div v-if="editing" class="edit">
-        <div class="grid">
-          <div class="field"><label>名称</label><el-input v-model="editing.name" size="small" /></div>
-          <div class="field"><label>适用的目标语言</label><el-select v-model="editing.lang" size="small"><el-option v-for="l in LANGS" :key="l.v" :value="l.v" :label="l.l" /></el-select></div>
+    <el-dialog :model-value="!!editing" width="960px" top="4vh" class="gl-edit" :show-close="false" @close="editing = null">
+      <template #header>
+        <div class="ehead">
+          <div class="et">
+            <h2>{{ editing?.id ? '编辑术语库' : '新建术语库' }}</h2>
+            <span v-if="editing" class="pz-note">{{ [editing.folder, editing.name].filter(Boolean).join(' / ') }}</span>
+          </div>
+          <button type="button" class="eclose" aria-label="关闭" @click="editing = null">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
         </div>
-        <div class="field"><label>说明</label><el-input v-model="editing.description" size="small" /></div>
-        <div class="field"><label>只在这些网站生效（每行一个；留空 = 所有网站）</label><el-input v-model="matchText" type="textarea" :rows="2" class="mono" placeholder="youtube.com&#10;*.bilibili.com&#10;https://github.com/*" /></div>
-        <div class="row">
-          <el-input v-model="search" size="small" clearable placeholder="搜索术语" class="sel" />
-          <el-button size="small" @click="addRow">添加一行</el-button>
-          <el-button v-if="editing?.id" size="small" @click="importCsv(editing?.id || '')">并入 CSV…</el-button>
-          <small class="mute">共 {{ editing?.terms.length }} 条；译文留空 = 保持原文不翻译</small>
+      </template>
+      <div v-if="editing" class="ebody">
+        <div class="einfo">
+          <label class="field"><span>名称</span><el-input v-model="editing.name" placeholder="例如：清影界面" /></label>
+          <label class="field"><span>适用的目标语言</span><el-select v-model="editing.lang" placeholder="任意语言"><el-option v-for="l in LANGS" :key="l.v" :value="l.v" :label="l.l" /></el-select></label>
+          <label class="field">
+            <span>文件夹</span>
+            <el-select v-model="editing.folder" filterable allow-create clearable default-first-option placeholder="最外层">
+              <el-option v-for="f in allFolders" :key="f" :value="f" :label="f" />
+            </el-select>
+          </label>
+          <label class="field">
+            <span>只在这些网站 / 软件生效</span>
+            <el-select v-model="editing.matches" multiple filterable allow-create default-first-option collapse-tags collapse-tags-tooltip :reserve-keyword="false" placeholder="全部（留空）" no-data-text="输入网址规则后回车，如 youtube.com、*.bilibili.com">
+              <el-option v-for="m in editing.matches" :key="m" :value="m" :label="m" />
+            </el-select>
+          </label>
+          <label class="field wide"><span>说明</span><el-input v-model="editing.description" placeholder="可选：这个术语库是做什么用的" /></label>
         </div>
-        <el-table :data="shown.slice(0, 300)" size="small" max-height="340">
-          <el-table-column label="原文" min-width="160"><template #default="{ row }"><el-input v-model="row.source" size="small" /></template></el-table-column>
-          <el-table-column label="译文" min-width="160"><template #default="{ row }"><el-input v-model="row.target" size="small" /></template></el-table-column>
-          <el-table-column label="说明" min-width="120"><template #default="{ row }"><el-input v-model="row.note" size="small" /></template></el-table-column>
-          <el-table-column width="56"><template #default="{ row }"><el-button size="small" link type="danger" @click="dropRow(row)">删</el-button></template></el-table-column>
-        </el-table>
-        <small v-if="shown.length > 300" class="mute">只显示前 300 条，请用搜索缩小范围。</small>
+        <GlossaryTermTree :key="editKey" ref="treeRef" :terms="editing.terms" :can-import="!!editing.id" @path="(s, t) => (curPath = { src: s, tgt: t })" @import-csv="importCsv(editing?.id || '')" />
       </div>
       <template #footer>
-        <el-button size="small" @click="editing = null">取消</el-button>
-        <el-button size="small" type="primary" :loading="busy" @click="saveEditing">保存</el-button>
+        <div class="efoot">
+          <div class="einfo2">
+            <div class="cur">
+              <template v-if="curPath.src.length">
+                <span class="pz-note">当前</span>
+                <template v-for="(p, k) in curPath.src" :key="k">
+                  <span v-if="k" class="sepr">›</span>
+                  <b v-if="k === curPath.src.length - 1">{{ p }}</b>
+                  <span v-else>{{ p }}</span>
+                </template>
+                <span class="sepr eq">=</span>
+                <span class="mono tp">{{ curPath.tgt.join(' › ') }}</span>
+              </template>
+              <span v-else class="pz-note">点一条术语，这里显示它的完整路径。译文留空 = 保持原文不翻译。</span>
+            </div>
+            <div class="keys">
+              <span class="lg">层级底色 <i class="sw lv0" />1 <i class="sw lv1" />2 <i class="sw lv2" />3+</span>
+              <span><kbd>Enter</kbd> 加同级</span>
+              <span><kbd>Tab</kbd> 变成下级</span>
+              <span><kbd>Shift+Tab</kbd> 升一层</span>
+              <span><kbd>Alt+↑↓</kbd> 上下移动</span>
+              <span><kbd>Alt+←→</kbd> 收起 / 展开</span>
+            </div>
+          </div>
+          <el-button class="fb" @click="editing = null">取消</el-button>
+          <el-button type="primary" class="pz-strong fb" :loading="busy" @click="saveEditing">保存</el-button>
+        </div>
       </template>
     </el-dialog>
   </section>
@@ -394,6 +512,8 @@ h4 { margin: 0; font-size: 13px; }
 .sel { width: 180px; }
 .item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--cc-border, rgba(128,128,128,.2)); }
 .item.off { opacity: .6; }
+.item.folder .info { cursor: pointer; }
+.fold { all: unset; cursor: pointer; width: 16px; text-align: center; color: var(--cc-mute); }
 .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .nm { font-size: 13px; }
 .box { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 14px; border-bottom: 1px solid var(--cc-border, rgba(128,128,128,.2)); }
@@ -406,4 +526,39 @@ h4 { margin: 0; font-size: 13px; }
 .bd { margin-left: 6px; }
 @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
 .tmrow { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; }
+
+/* 编辑术语库（分层术语） */
+.ehead { display: flex; align-items: center; justify-content: space-between; }
+.et { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.et h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.eclose { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--cc-mute); cursor: pointer; }
+.eclose:hover { background: var(--cc-hover); color: var(--cc-fg); }
+.ebody { display: flex; flex-direction: column; height: min(640px, 70vh); }
+.einfo { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 0 24px 16px; }
+.einfo .wide { grid-column: 1 / -1; }
+.einfo .field > span { font-size: 12px; color: var(--cc-fg2); }
+.efoot { display: flex; align-items: center; gap: 16px; text-align: left; }
+.einfo2 { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.cur { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; overflow: hidden; }
+.cur b { font-weight: 600; }
+.sepr { color: var(--cc-mute); }
+.sepr.eq { margin: 0 4px; }
+.tp { color: var(--cc-acc-text); overflow: hidden; text-overflow: ellipsis; }
+.keys { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 11.5px; color: var(--cc-mute); }
+.keys kbd { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border: 1px solid var(--cc-line); border-radius: 4px; background: var(--cc-fill); font-family: var(--cc-mono); font-size: 11px; color: var(--cc-fg2); }
+.lg { display: inline-flex; align-items: center; gap: 4px; }
+.sw { display: inline-block; width: 14px; height: 10px; border-radius: 3px; }
+.sw.lv0 { background: var(--cc-lv0); box-shadow: inset 0 0 0 1px var(--cc-lvline0); }
+.sw.lv1 { background: var(--cc-lv1); box-shadow: inset 0 0 0 1px var(--cc-lvline1); }
+.sw.lv2 { background: var(--cc-lv2); box-shadow: inset 0 0 0 1px var(--cc-lvline2); }
+.fb { height: 36px; margin: 0; }
+@media (max-width: 760px) { .einfo { grid-template-columns: 1fr 1fr; } }
+</style>
+
+<style>
+/* el-dialog 的外壳挂在 body 上：去掉默认内边距，让工具条和底栏顶到边 */
+.gl-edit { padding: 0; overflow: hidden; border-radius: 12px; }
+.gl-edit .el-dialog__header { padding: 18px 24px 14px; margin: 0; }
+.gl-edit .el-dialog__body { padding: 0; }
+.gl-edit .el-dialog__footer { padding: 14px 24px; border-top: 1px solid var(--cc-line); background: var(--cc-foot); }
 </style>

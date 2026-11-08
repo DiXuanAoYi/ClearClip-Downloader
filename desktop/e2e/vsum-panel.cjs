@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
+const FILES = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -72,6 +72,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
               tracks: { tracks: [{ code: 'en', name: 'English（人工）', auto: false }, { code: 'zh-Hans', name: '中文（自动生成）', auto: true }], audio: true },
               rewrite: { text: '改写后的文案' },
               explain: { text: 'Rust 是一门系统语言。' },
+              lookup: { lemma: String(window.__job.text || '').toLowerCase(), phonetic: '/ˈwelkəm/', pos: 'v.', meaning: '欢迎；迎接', context_meaning: '欢迎', examples: [], aligned: window.__job.trans ? '译' : '' },
               note: { quote: '整理后的完整句子。' },
               refine: { quote: '优化后的笔记。' },
               punctuate: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: l.text + '。' })), failed: 0 },
@@ -211,13 +212,24 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '文稿')
     if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-transcript.png' })
     ok('文稿列出 3 行', (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 3)
-    // 文稿里鼠标停在一句上：旁边出现小悬浮窗，给出这句的译文
-    await page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln')).find(Boolean); el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false })) })
-    await page.waitForFunction(() => window.__roots.some((r) => r.querySelector('.hov .out')?.textContent.includes('译:')), null, { timeout: 8000 }).catch(() => {})
-    ok('文稿里鼠标停在一句上出现小悬浮窗并给出译文', await page.evaluate(() => window.__roots.some((r) => /译:/.test(r.querySelector('.hov .out')?.textContent || ''))))
-    await page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln')).find(Boolean); el.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false })) })
-    await settle(page, 500)
-    ok('鼠标移开后小悬浮窗消失', await page.evaluate(() => !window.__roots.some((r) => r.querySelector('.hov'))))
+    // 文稿里鼠标停在英文单词上：弹出和字幕层同一个查词浮窗；以前那个整句译文小窗没有了
+    const wordAt = (n) => page.evaluate((n) => { const el = window.__roots.flatMap((r) => [...r.querySelectorAll('#lines .ln i.w')])[n]; if (!el) return null; el.scrollIntoView({ block: 'center' }); const b = el.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, w: el.textContent } }, n)
+    const popBox = () => page.evaluate(() => { const p = window.__roots.map((r) => r.querySelector('.wc-pop.open')).find(Boolean); return p ? { ...p.getBoundingClientRect().toJSON(), text: p.innerText, vw: innerWidth, vh: innerHeight } : null })
+    const w0 = await wordAt(0)
+    ok('文稿原文里的英文单词可以悬停查词', !!w0 && /^[A-Za-z]/.test(w0.w), JSON.stringify(w0))
+    await page.mouse.move(w0.x, w0.y)
+    await page.waitForFunction(() => window.__roots.some((r) => /欢迎/.test(r.querySelector('.wc-pop.open')?.textContent || '')), null, { timeout: 8000 }).catch(() => {})
+    const pb = await popBox()
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-word.png' })
+    ok('悬停单词弹出查词浮窗（音标、释义、收藏）', pb && /欢迎/.test(pb.text) && /ˈwelkəm/.test(pb.text) && /♡/.test(pb.text), pb && pb.text.slice(0, 200))
+    ok('查词浮窗完整在窗口里（不被裁切）', pb && pb.top >= 0 && pb.left >= 0 && pb.bottom <= pb.vh && pb.right <= pb.vw, JSON.stringify(pb && { t: pb.top, l: pb.left, b: pb.bottom, r: pb.right }))
+    ok('查词浮窗有跳到这句、朗读、复制', pb && /跳到这句/.test(pb.text) && /朗读/.test(pb.text) && /复制/.test(pb.text), pb && pb.text)
+    const lk = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run' && c.req.kind === 'lookup').at(-1)?.req)
+    ok('查词请求带单词和这一句', lk && lk.text === w0.w && /Welcome|Rust/.test(lk.context || ''), JSON.stringify(lk))
+    ok('以前的整句译文小窗没有了', await page.evaluate(() => !window.__roots.some((r) => r.querySelector('.hov'))))
+    await page.mouse.move(5, 5)
+    await settle(page, 600)
+    ok('鼠标移开后查词浮窗关闭', !(await popBox()))
     await page.evaluate(() => {
       const i = window.__roots.map((r) => r.querySelector('input#tsearch')).find(Boolean)
       i.value = 'rust'
@@ -239,16 +251,19 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.evaluate((f) => { const x = eval('(' + f + ')')(); x.value = 'both'; x.dispatchEvent(new Event('change')) }, viewSel.toString())
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('译:Welcome')), null, { timeout: 8000 })
     ok('选双语：自动去翻译，每行原文下方出现译文（原文没有被替换）', (await text(page, '#lines')).includes('Welcome') && (await text(page, '#lines')).includes('译:Welcome'))
-    // 鼠标放在原文上，下面对应的译文高亮
-    const rect = await page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln .mn')).find(Boolean); const b = el.getBoundingClientRect(); return { x: b.x + 10, y: b.y + b.height / 2 } })
-    const bgOf = () => page.evaluate(() => { const el = window.__roots.map((r) => r.querySelector('.ln .tr')).find(Boolean); return getComputedStyle(el).backgroundColor })
+    // 双语：鼠标停在原文的英文单词上，下面译文里对应的词高亮；浮窗关了高亮也去掉
+    const w1 = await wordAt(0)
+    await page.mouse.move(w1.x, w1.y)
+    await page.waitForFunction(() => window.__roots.some((r) => r.querySelector('.ln .tr mark.al')), null, { timeout: 8000 }).catch(() => {})
+    if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + '-word-both.png' })
+    const al = await page.evaluate(() => { const m = window.__roots.map((r) => r.querySelector('.ln .tr mark.al')).find(Boolean); return m ? { text: m.textContent, bg: getComputedStyle(m).backgroundColor, line: m.closest('.ln').dataset.i } : null })
+    ok('双语：悬停单词时译文里对应的词高亮', al && al.text === '译' && al.bg !== 'rgba(0, 0, 0, 0)' && al.line === '0', JSON.stringify(al))
+    const lk2 = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run' && c.req.kind === 'lookup').at(-1)?.req)
+    ok('双语查词请求带上这一句的译文', lk2 && /^译:/.test(lk2.trans || ''), JSON.stringify(lk2))
+    ok('悬停的单词本身也标出来', await page.evaluate(() => window.__roots.some((r) => r.querySelector('.ln .mn i.w.on'))))
     await page.mouse.move(5, 5)
-    const idle = await bgOf()
-    await page.mouse.move(rect.x, rect.y)
-    await settle(page, 250)
-    const lit = await bgOf()
-    ok('鼠标放在原文上：对应译文高亮', idle !== lit && lit !== 'rgba(0, 0, 0, 0)', idle + ' → ' + lit)
-    await page.mouse.move(5, 5)
+    await settle(page, 600)
+    ok('浮窗关闭后译文高亮去掉、文字不变', await page.evaluate(() => !window.__roots.some((r) => r.querySelector('mark.al, i.w.on')) && window.__roots.some((r) => /^译:Welcome/.test(r.querySelector('.ln .tr')?.textContent || ''))))
     ok('翻译后每行下方有译文', true)
     // 生词页：切到这一页就主动刷新（不再有“刷新”按钮）
     const vocabCalls = () => page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-vocab' && c.op === 'list').length)

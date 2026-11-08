@@ -52,7 +52,7 @@ fn terms_of(p: &Pack) -> Vec<Term> {
         .filter_map(|l| {
             let (s, t) = l.split_once('|')?;
             let (s, t) = (s.trim(), t.trim());
-            (!s.is_empty()).then(|| Term { source: s.into(), target: t.into(), note: String::new() })
+            (!s.is_empty()).then(|| Term::new(s, t))
         })
         .collect()
 }
@@ -81,6 +81,7 @@ pub fn glossary_of(p: &Pack, now: i64) -> Glossary {
         lang: "zh-CN".into(),
         terms: terms_of(p),
         updated: now,
+        folder: "软件界面".into(),
     }
 }
 

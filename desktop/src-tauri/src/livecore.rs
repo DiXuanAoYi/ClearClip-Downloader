@@ -185,7 +185,10 @@ fn group_horizontal(sorted: &[OLine]) -> Vec<Group> {
             let em = g.em.min(l.h);
             let gap = l.y - g.bottom();
             let ratio = l.h / g.em;
-            let near = gap >= -em * 0.5 && gap <= em * 0.85;
+            // 段落里换行的那几行：上一行是长的（写满了才换行），行距在 0.85 个字以内。
+            // 菜单、列表、侧栏这种一行一项的短文字，行距再近也不是一段——除非挨得非常紧（≤0.35 个字，多行按钮 / 标题）。
+            let prev_w = g.spans.last().map_or(g.w, |s| s.1 - s.0);
+            let near = gap >= -em * 0.5 && (gap <= em * 0.35 || (gap <= em * 0.85 && prev_w >= em * 8.0));
             let same_size = (0.62..1.6).contains(&ratio);
             let ov = overlap_len(g.x, g.right(), l.x, l.right());
             let aligned = ov >= 0.25 * g.w.min(l.w) || (l.x - g.x).abs() <= em * 2.0 || (l.cx() - (g.x + g.w / 2.0)).abs() <= em * 3.0;
@@ -643,10 +646,49 @@ pub fn ink_bbox(bgra: &[u8], w: usize, h: usize, x: f32, y: f32, rw: f32, rh: f3
     Some([bx0 as f32, by0 as f32, ow, oh])
 }
 
+/// 把文字框收紧到真正有字迹的地方（只收不放）。增强识字（PaddleOCR）为了识得准，检测框会向外扩一大圈（约 1.6 倍），
+/// 直接拿来排版的话字高被算成两三倍：译文字号太大，上下相邻的几行也会被并成一段。这里按框外一圈的底色，
+/// 找出框里和底色差得多的像素，取它们的外接框。找不到像样的字迹（太淡、太少）就原样返回。
+pub fn tighten_to_ink(bgra: &[u8], w: usize, h: usize, b: [f32; 4]) -> [f32; 4] {
+    let [x, y, bw, bh] = b;
+    if w == 0 || h == 0 || bgra.len() < w * h * 4 || bw < 4.0 || bh < 4.0 {
+        return b;
+    }
+    let (bg, _) = sample_colors(bgra, w, h, x, y, bw, bh);
+    let x0 = (x.max(0.0) as usize).min(w - 1);
+    let y0 = (y.max(0.0) as usize).min(h - 1);
+    let x1 = ((x + bw).ceil().max(0.0) as usize).min(w);
+    let y1 = ((y + bh).ceil().max(0.0) as usize).min(h);
+    if x1 <= x0 + 1 || y1 <= y0 + 1 {
+        return b;
+    }
+    let mut rows = vec![0usize; y1 - y0];
+    let mut cols = vec![0usize; x1 - x0];
+    for yy in y0..y1 {
+        for xx in x0..x1 {
+            if dist(px(bgra, w, xx, yy), bg) > 90 {
+                rows[yy - y0] += 1;
+                cols[xx - x0] += 1;
+            }
+        }
+    }
+    // 只有零星一两个点的行 / 列不算（压缩噪点、抗锯齿的边）
+    let first = |v: &[usize]| v.iter().position(|&n| n >= 2);
+    let last = |v: &[usize]| v.iter().rposition(|&n| n >= 2);
+    let (Some(r0), Some(r1), Some(c0), Some(c1)) = (first(&rows), last(&rows), first(&cols), last(&cols)) else { return b };
+    let (nw, nh) = ((c1 - c0 + 1) as f32, (r1 - r0 + 1) as f32);
+    if nh < bh * 0.2 || nw < bw * 0.15 {
+        return b;
+    }
+    [(x0 + c0) as f32, (y0 + r0) as f32, nw, nh]
+}
+
 // ---------- 图标：不是文字，不识别也不翻译 ----------
 
 /// 常被识字引擎当成“字”的图标形状（人像、齿轮、铃铛、心形、方框……认出来多半是这些符号）。
 const ICON_GLYPHS: &str = "©®@°•·○●◯◎□■▢▣◇◆♡♥☆★✓✔✗✘⊙⊕⊗⊘⊞⊟⌂⏻☰≡※¤§¶†‡⚙⛭☐☑☒◐◑◒◓♪♫⬚⬜⬛▶◀▲▼►◄";
+/// 方框类图标常被认成的汉字（银行卡 → 日、窗口 / 显示器 → 口、网格 → 田……）。单独出现、或者跟在一串外文前面时当成图标。
+const CJK_ICON_LOOKALIKES: &str = "口囗日曰目田回凹凸品门";
 /// 两个字母的正常界面文字（不当成图标）。
 const SHORT_WORDS: &[&str] =
     &["ok", "no", "go", "up", "on", "to", "by", "me", "my", "we", "us", "hi", "in", "is", "it", "of", "or", "so", "tv", "pc", "id", "ai", "ui", "vs"];
@@ -659,6 +701,10 @@ fn is_text_script(c: char) -> bool {
 pub fn is_icon_like(l: &OLine) -> bool {
     let cs: Vec<char> = l.text.chars().filter(|c| !c.is_whitespace()).collect();
     if cs.is_empty() {
+        return true;
+    }
+    // 单独一个“口 / 田 / 回”之类的方块字、框又是方的：多半是图标（“日”“目”“门”单独出现也可能是真字，只在跟着外文时才算）
+    if cs.len() == 1 && "口囗田回凹凸".contains(cs[0]) && l.w <= l.h * 1.3 {
         return true;
     }
     if cs.iter().any(|c| is_text_script(*c)) {
@@ -729,20 +775,34 @@ pub fn drop_icons(lines: Vec<OLine>, img: Option<(&[u8], usize, usize)>) -> Vec<
             let chars: Vec<char> = l.text.chars().collect();
             let total = chars.len().max(1) as f32;
             // 行首一个图标符号（后面可以有也可以没有空格）
-            let lead_glyph = chars.first().is_some_and(|c| ICON_GLYPHS.contains(*c));
+            // 也包括方块字紧贴着外文（“口Desktop”，识字没认出中间的空格）
+            let glued_cjk = chars.len() > 2 && CJK_ICON_LOOKALIKES.contains(chars[0]) && chars[1].is_ascii_alphabetic();
+            let lead_glyph = chars.first().is_some_and(|c| ICON_GLYPHS.contains(*c)) || glued_cjk;
             // 行首单独一个字母 / 数字，后面是空格和一个像样的词
             let mut it = l.text.splitn(2, ' ');
             let (head, rest) = (it.next().unwrap_or(""), it.next().unwrap_or("").trim_start());
-            let lone = head.chars().count() == 1 && !head.chars().any(is_text_script) && rest.chars().filter(|c| c.is_alphabetic()).count() >= 2;
+            let latin_rest = rest.chars().filter(|c| c.is_ascii_alphabetic()).count() >= 2 && !rest.chars().any(is_text_script);
+            let lone = head.chars().count() == 1
+                && ((!head.chars().any(is_text_script) && rest.chars().filter(|c| c.is_alphabetic()).count() >= 2)
+                    // “日 Billing”“口 Desktop app”：方块字后面跟着外文，是图标
+                    || (head.chars().all(|c| CJK_ICON_LOOKALIKES.contains(c)) && latin_rest));
             if !(lead_glyph || lone) {
                 return Some(l);
             }
             let gap = img.and_then(|(b, w, h)| ink_columns(b, w, h, &l)).and_then(|cols| icon_gap(&cols, l.h));
-            let strip = lead_glyph || gap.is_some();
+            // 方块字 + 外文：不用看空隙也能断定（中文界面不会这样写）
+            let cjk_icon = lone && head.chars().all(|c| CJK_ICON_LOOKALIKES.contains(c)) && latin_rest;
+            let strip = lead_glyph || cjk_icon || gap.is_some();
             if !strip {
                 return Some(l);
             }
-            let text: String = if lone { rest.to_string() } else { chars.iter().skip_while(|c| ICON_GLYPHS.contains(**c) || c.is_whitespace()).collect() };
+            let text: String = if lone {
+                rest.to_string()
+            } else if glued_cjk {
+                chars[1..].iter().collect()
+            } else {
+                chars.iter().skip_while(|c| ICON_GLYPHS.contains(**c) || c.is_whitespace()).collect()
+            };
             if text.trim().is_empty() {
                 return None;
             }
@@ -781,6 +841,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn inflated_detector_boxes_are_tightened_to_the_ink() {
+        // 深色底上一行浅色字：字在 (40,30)–(160,46)，检测框被扩成 (20,10)–(180,66)
+        let (w, h) = (220usize, 90usize);
+        let mut img = vec![0u8; w * h * 4];
+        for p in img.chunks_exact_mut(4) {
+            p.copy_from_slice(&[30, 30, 30, 255]);
+        }
+        for y in 30..46 {
+            for x in (40..160).filter(|x| x % 7 != 0) {
+                let i = (y * w + x) * 4;
+                img[i..i + 3].copy_from_slice(&[220, 220, 220]);
+            }
+        }
+        let t = tighten_to_ink(&img, w, h, [20.0, 10.0, 160.0, 56.0]);
+        assert!((t[0] - 40.0).abs() <= 1.0 && (t[1] - 30.0).abs() <= 1.0, "{t:?}");
+        assert!((t[3] - 16.0).abs() <= 1.0, "字高收回到真实的 16 像素：{t:?}");
+        assert!((t[2] - 120.0).abs() <= 2.0, "{t:?}");
+        // 框里没有字迹：原样返回
+        let empty = vec![30u8; w * h * 4];
+        assert_eq!(tighten_to_ink(&empty, w, h, [20.0, 10.0, 160.0, 56.0]), [20.0, 10.0, 160.0, 56.0]);
+    }
+
+    #[test]
     fn icons_are_not_text() {
         let sq = |t: &str| OLine::new(t, 0.0, 0.0, 20.0, 20.0);
         // 设置侧栏的图标被认成的“字”
@@ -798,6 +881,20 @@ mod tests {
         let out = drop_icons(vec![sq("8"), OLine::new("Account", 40.0, 0.0, 90.0, 20.0), OLine::new("© Billing", 0.0, 30.0, 110.0, 20.0)], None);
         let texts: Vec<_> = out.iter().map(|l| l.text.as_str()).collect();
         assert_eq!(texts, ["Account", "Billing"]);
+        // 图标被认成方块字：单独的“口”丢掉；“日 Billing”“口 Desktop app”去掉前面的字
+        assert!(is_icon_like(&sq("口")) && is_icon_like(&sq("田")));
+        assert!(!is_icon_like(&sq("日")), "单独的“日”可能是真字");
+        let out = drop_icons(
+            vec![
+                OLine::new("日 Billing", 0.0, 0.0, 110.0, 20.0),
+                OLine::new("口 Desktop app", 0.0, 30.0, 150.0, 20.0),
+                OLine::new("日 本语", 0.0, 60.0, 60.0, 20.0),
+            ],
+            None,
+        );
+        let texts: Vec<_> = out.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, ["Billing", "Desktop app", "日 本语"], "中文里的“日”不动");
+        assert_eq!(drop_icons(vec![OLine::new("口Desktop app", 0.0, 0.0, 150.0, 20.0)], None)[0].text, "Desktop app");
         assert!(out[1].x > 0.0, "去掉图标后框挪到文字开头");
     }
 
@@ -868,6 +965,18 @@ mod tests {
         let ls = vec![l("First line of text", 10.0, 10.0, 200.0, 20.0), l("second", 10.0, 34.0, 90.0, 20.0)];
         let g = group_lines(&ls);
         assert_eq!((g[0].lines, g[0].align), (2, 0));
+    }
+
+    #[test]
+    fn menu_and_sidebar_items_are_not_merged_into_a_paragraph() {
+        // 设置侧栏：一行一项，字高 16，行距 0.5～0.7 个字
+        let items = ["Account", "Billing", "Usage", "Appearance", "Your Claude", "Capabilities"];
+        let ls: Vec<OLine> = items.iter().enumerate().map(|(i, t)| l(t, 50.0, 100.0 + i as f32 * 26.0, t.len() as f32 * 8.0, 16.0)).collect();
+        let g = group_lines(&ls);
+        assert_eq!(g.len(), items.len(), "{:?}", g.iter().map(|x| x.text.clone()).collect::<Vec<_>>());
+        // 段落：上一行写满了换行，照样并成一段
+        let p = group_lines(&[l("This is a long paragraph line that wraps", 50.0, 100.0, 320.0, 16.0), l("onto the next line.", 50.0, 124.0, 150.0, 16.0)]);
+        assert_eq!(p.len(), 1);
     }
 
     #[test]

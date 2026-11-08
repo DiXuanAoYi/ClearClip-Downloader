@@ -8,7 +8,9 @@ import type { AudioFxPreview, AudioFxSpec, MediaInfoLite, ToolJob, ToolOp } from
 import { formatDuration } from '../../utils/format'
 import { parseClock } from '../../utils/time'
 import FileInput from './FileInput.vue'
+import { REVERBS } from '../../utils/reverb'
 import LoudnessPicker from './LoudnessPicker.vue'
+import { useAppStore } from '../../stores/app'
 
 const props = defineProps<{ preset?: string[]; tool?: string }>()
 const emit = defineEmits<{ started: [] }>()
@@ -29,7 +31,26 @@ const TOOLS: Tool[] = [
   { id: 'mute', name: '去除音轨', desc: '得到没有声音的视频，不重新编码。' },
 ]
 
+/**
+ * 剪辑里也能做的几样（裁剪、拼接、倍速、旋转翻转、去除音轨、竖屏转横屏）合成一个“快速处理”：
+ * 不用开时间线、处理一个文件很快（裁剪、拼接、去除音轨可以不重新编码）；要精细调整就“在剪辑里打开”。
+ */
+const QUICK = ['trim', 'concat', 'speed', 'rotate', 'mute', 'landscape']
+const NAV = [TOOLS[0], { id: 'quick', name: '快速处理', desc: '' }, ...TOOLS.slice(1).filter((t) => !QUICK.includes(t.id))]
+const isQuick = computed(() => QUICK.includes(tool.value))
+let lastQuick = 'trim'
+function pickNav(id: string) {
+  tool.value = id === 'quick' ? lastQuick : id
+}
+const app = useAppStore()
+/** 把选好的文件交给剪辑（主轨按顺序排好，音频放到配乐轨）。 */
+function openInEditor() {
+  if (!files.value.length) return ElMessage.warning('请先选择文件。')
+  app.goToolbox([...files.value], undefined, { tab: 'edit' })
+}
+
 const tool = ref(props.tool && TOOLS.some((t) => t.id === props.tool) ? props.tool : 'compress')
+watch(tool, (t) => QUICK.includes(t) && (lastQuick = t))
 const files = ref<string[]>(props.preset ? [...props.preset] : [])
 const info = ref<MediaInfoLite | null>(null)
 const outDir = ref('')
@@ -92,17 +113,6 @@ const p = reactive({
   concatRe: false,
 })
 
-/** 混响预设：混合 dB / 混响时间 ms / 高频保留 / 预延迟 ms */
-const REVERBS = [
-  { id: 'room', name: '房间', mix: -9, time: 500, hf: 0.7, pre: 8 },
-  { id: 'bath', name: '浴室', mix: -5, time: 1400, hf: 0.9, pre: 5 },
-  { id: 'living', name: '客厅', mix: -10, time: 700, hf: 0.55, pre: 12 },
-  { id: 'class', name: '教室', mix: -8, time: 1100, hf: 0.65, pre: 18 },
-  { id: 'studio', name: '录音棚', mix: -14, time: 350, hf: 0.5, pre: 4 },
-  { id: 'plate', name: '板式', mix: -7, time: 1800, hf: 0.85, pre: 20 },
-  { id: 'hall', name: '音乐厅', mix: -8, time: 2600, hf: 0.6, pre: 30 },
-  { id: 'church', name: '教堂', mix: -6, time: 4500, hf: 0.5, pre: 45 },
-]
 function pickReverb(id: string) {
   const r = REVERBS.find((x) => x.id === id)
   if (!r) return
@@ -243,11 +253,21 @@ async function start() {
 <template>
   <div class="vt">
     <nav class="tools" aria-label="工具">
-      <button v-for="t in TOOLS" :key="t.id" type="button" class="tool" :class="{ on: tool === t.id }" @click="tool = t.id">{{ t.name }}</button>
+      <button v-for="t in NAV" :key="t.id" type="button" class="tool" :class="{ on: t.id === 'quick' ? isQuick : tool === t.id }" @click="pickNav(t.id)">{{ t.name }}</button>
     </nav>
     <div class="panel card">
-      <h3>{{ cur.name }}</h3>
-      <p class="mute desc">{{ cur.desc }}</p>
+      <template v-if="isQuick">
+        <h3>快速处理</h3>
+        <p class="mute desc">剪辑里也能做的几样，这里不用开时间线，处理一个文件更快（裁剪、拼接、去除音轨可以不重新编码）。要精细调整、几样一起做，点“在剪辑里打开”。</p>
+        <el-radio-group v-model="tool" size="small" class="quick">
+          <el-radio-button v-for="t in TOOLS.filter((x) => QUICK.includes(x.id))" :key="t.id" :value="t.id">{{ t.name }}</el-radio-button>
+        </el-radio-group>
+        <p class="mute desc">{{ cur.desc }}</p>
+      </template>
+      <template v-else>
+        <h3>{{ cur.name }}</h3>
+        <p class="mute desc">{{ cur.desc }}</p>
+      </template>
       <FileInput v-model="files" :multiple="cur.multi" :kinds="kinds" :extensions="exts" :label="cur.multi ? '要拼接的文件（按顺序）' : '文件'" />
       <div v-if="info" class="mute meta mono">
         <template v-if="info.width">{{ info.width }}×{{ info.height }} · </template>
@@ -411,7 +431,10 @@ async function start() {
           <span class="dirbox"><el-input v-model="outDir" size="small" clearable placeholder="留空放在原文件旁边" class="w" /><el-button size="small" @click="pickDir">选择…</el-button></span>
         </label>
       </div>
-      <div class="go"><el-button type="primary" :loading="busy" :disabled="!files.length" @click="start">开始处理</el-button></div>
+      <div class="go">
+        <el-button type="primary" :loading="busy" :disabled="!files.length" @click="start">开始处理</el-button>
+        <el-button v-if="isQuick" :disabled="!files.length" title="把这些文件放到剪辑的时间线上（音频放到配乐轨），在那里裁剪、变速、旋转、加转场和文字" @click="openInEditor">在剪辑里打开</el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -455,6 +478,9 @@ async function start() {
 h3 {
   margin: 0;
   font-size: 15px;
+}
+.quick {
+  flex-wrap: wrap;
 }
 .desc {
   margin: 0;
@@ -504,5 +530,8 @@ h3 {
 }
 .go {
   margin-top: 4px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 </style>

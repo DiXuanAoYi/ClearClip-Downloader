@@ -55,12 +55,8 @@
     .cap .w:hover { background: #ffffff40 }
     .cap .w.unf { border-bottom: 2px dashed #f08a3c }
     .cap .w.sv { border-bottom: 2px solid #6fcf97 }
-    .bub { position: fixed; display: none; width: 400px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 14px 16px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 6px }
-    .bub.open { display: flex }
-    .bub.wcard { --wc-fg: #e7ecea; --wc-head: #fff; --wc-mute: #9aa6a2; --wc-soft: #14181a; --wc-acc: #f0a064; --wc-tag: #3a2c20; --wc-line: #4a5a60; --wc-ok: #6cc08a }
-    .bub .row2 button { white-space: nowrap; flex: none }
-    .bub .row2 button, .ls button, .dr button.b { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #2f383c; background: #14181a; color: #e7ecea; font-weight: 400; font-size: 12.5px }
-    .bub .row2 button.p, .ls button.p { background: #f08a3c; border-color: #f08a3c; color: #14181a; font-weight: 600 }
+    .ls button, .dr button.b { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #2f383c; background: #14181a; color: #e7ecea; font-weight: 400; font-size: 12.5px }
+    .ls button.p { background: #f08a3c; border-color: #f08a3c; color: #14181a; font-weight: 600 }
     .ls { position: fixed; display: none; width: 420px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 8px }
     .ls.open { display: flex }
     .ls .r { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
@@ -218,12 +214,12 @@
     sticky: () => pop.classList.contains('open'),
   })
   document.addEventListener('mousedown', (e) => pop.classList.contains('open') && !e.composedPath().includes(ui.host) && !Dock.owns(e) && togglePop(false), true)
-  const bub = h('div', { class: 'bub wcard' })
+  // 查词浮窗：和视频摘要文稿里悬停单词弹出的是同一个（wordcard.js）
+  const wpop = WC.popover(ui, { onHide: () => resumeAfterWord() })
   const lsEl = h('div', { class: 'ls' })
   const drEl = h('div', { class: 'dr' })
   ui.add(cap)
   ui.add(pop)
-  ui.add(bub)
   ui.add(lsEl)
   ui.add(drEl)
 
@@ -435,21 +431,6 @@
     S.ver++
   }
 
-  const lookup = (word, sentence) => WC.lookup(word, sentence, { lang: S.target, stop: () => S.closed })
-
-  const speak = (t) => {
-    try {
-      const u = new SpeechSynthesisUtterance(t)
-      u.lang = 'en-US'
-      speechSynthesis.cancel()
-      speechSynthesis.speak(u)
-    } catch {
-      // 浏览器不支持朗读
-    }
-  }
-
-  let bubTimer = 0
-  let bubFor = ''
   // 悬停 / 点词时暂停视频，词卡关闭后接着播（只恢复我们自己暂停的）
   let pausedByWord = false
   function pauseForWord() {
@@ -468,73 +449,34 @@
       /* 页面不让播就算了 */
     }
   }
-  function hideBubble(now = false) {
-    clearTimeout(bubTimer)
-    const go = () => {
-      bub.classList.remove('open')
-      bubFor = ''
-      resumeAfterWord()
-    }
-    if (now) go()
-    else bubTimer = setTimeout(go, 280)
-  }
+  const hideBubble = (now = false) => wpop.close(now)
 
-  function placeBubble(r) {
-    const bw = Math.min(400, window.innerWidth - 16)
-    bub.style.left = `${Math.max(6, Math.min(window.innerWidth - bw - 6, r.left + r.width / 2 - bw / 2))}px`
-    bub.style.maxHeight = `${Math.max(200, window.innerHeight - 24)}px`
-    bub.style.overflowY = 'auto'
-    const above = r.top > 200
-    bub.style.top = above ? 'auto' : `${r.bottom + 8}px`
-    bub.style.bottom = above ? `${window.innerHeight - r.top + 8}px` : 'auto'
-  }
-
-  async function showBubble(el) {
+  function showBubble(el) {
     const word = wordText(el)
     const li = Number(el.dataset.i)
     const sentence = String(S.lines[li]?.text || '')
-    const id = `${word}|${li}`
-    if (bubFor === id && bub.classList.contains('open')) return
-    bubFor = id
-    const r = el.getBoundingClientRect()
-    bub.replaceChildren(h('div', { class: 'hd' }, h('b', { text: word })), h('div', { class: 'tip', text: '查询中…' }))
-    bub.classList.add('open')
-    placeBubble(r)
-    let res
-    try {
-      res = await lookup(word, sentence)
-    } catch (e) {
-      if (bubFor !== id) return
-      bub.replaceChildren(h('div', { class: 'hd' }, h('b', { text: word })), h('div', { class: 'tip', text: e.message }))
-      return
-    }
-    if (bubFor !== id) return
-    const guess = res.lemma && LN.norm(res.lemma) !== LN.norm(word) ? res.lemma : word
-    const have = S.saved.has(LN.norm(guess)) || S.saved.has(LN.norm(word))
-    // 例句先放本视频里别的句子（点时间跳过去），模型给的例句由词卡接在后面
-    const lw = String(guess).toLowerCase()
-    const hit = (t) => String(t || '').toLowerCase().includes(lw) || String(t || '').toLowerCase().includes(String(word).toLowerCase())
-    const others = []
-    for (let d = 1; d < S.lines.length && others.length < 2; d++) {
-      for (const j of [li + d, li - d]) {
-        if (others.length < 2 && j >= 0 && j < S.lines.length && hit(S.lines[j].text)) others.push(j)
-      }
-    }
-    const extraExamples = others.map((j) => {
-      const txt = String(S.lines[j].text || '')
-      return h('div', { class: 'ex' }, h('span', { class: 'tag', text: '本视频' }), ...WC.markIn(h, txt, txt.toLowerCase().includes(lw) ? guess : word), document.createTextNode(' '), h('a', { text: LN.fmtTime(S.lines[j].t || 0), title: '跳到这句', onclick: () => seekLine(j, true) }))
+    wpop.open(el, {
+      id: `${word}|${li}`,
+      word,
+      sentence,
+      lookup: { lang: S.target, stop: () => S.closed },
+      build: (res) => {
+        const guess = res.lemma && LN.norm(res.lemma) !== LN.norm(word) ? res.lemma : word
+        const t0 = S.lines[li]?.t || 0
+        return {
+          saved: S.saved.has(LN.norm(guess)) || S.saved.has(LN.norm(word)),
+          onSave: (lemma) => saveWord(lemma, res, li),
+          extraExamples: WC.lineExamples(h, S.lines, li, word, guess, LN.fmtTime, (j) => seekLine(j, true)),
+          actions: [
+            h('button', { class: 'p', text: `跳到这句 ${LN.fmtTime(t0)}`, onclick: () => seekLine(li, true) }),
+            h('button', { text: '播放原声', onclick: () => playClip(li) }),
+            h('button', { text: '朗读', onclick: () => WC.speak(guess) }),
+            h('button', { text: '复制', onclick: () => navigator.clipboard?.writeText(guess).catch(() => {}) }),
+            h('button', { text: WC.hasClip(guess) ? '♪ 已录原声' : '录原声（Anki）', title: '录下这一句的原声，导出 Anki 时带上', onclick: (e) => recordClip(guess, li, e.target) }),
+          ],
+        }
+      },
     })
-    const t0 = S.lines[li]?.t || 0
-    const actions = [
-      h('button', { class: 'p', text: `跳到这句 ${LN.fmtTime(t0)}`, onclick: () => seekLine(li, true) }),
-      h('button', { text: '播放原声', onclick: () => playClip(li) }),
-      h('button', { text: '朗读', onclick: () => speak(guess) }),
-      h('button', { text: '复制', onclick: () => navigator.clipboard?.writeText(guess).catch(() => {}) }),
-      h('button', { text: clipKeyHas(guess) ? '♪ 已录原声' : '录原声（Anki）', title: '录下这一句的原声，导出 Anki 时带上', onclick: (e) => recordClip(guess, li, e.target) }),
-    ]
-    const { nodes: parts } = WC.render({ h, word, sentence, res, saved: have, onSave: (lemma) => saveWord(lemma, res, li), extraExamples, actions })
-    bub.replaceChildren(...parts)
-    placeBubble(r)
   }
 
   // ---------- 跳到这句 / 播放原声 / 录原声 ----------
@@ -552,65 +494,11 @@
     S.video.currentTime = Math.max(0, sp.start / 1000)
     S.video.play().catch(() => {})
   }
-  // 录下的原声存在清影桌面端（浏览器本地存储只有 10 MB，存不了几段）；这里只记“哪些词录过”
-  const clipCache = {}
-  const clipKey = (w) => String(w || '').trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '').slice(0, 60)
-  const clipKeyHas = (w) => !!clipCache[clipKey(w)]
-  async function loadClips() {
-    // 以前存在浏览器里的原声：搬到清影，搬完删掉
-    const old = await store.get('vocabClips', {})
-    const left = {}
-    for (const [w, data] of Object.entries(old || {})) {
-      const r = await send({ type: 'cc-vocab', op: 'clip', word: w, data })
-      if (!r.ok) left[w] = data
-    }
-    if (Object.keys(old || {}).length) await store.set('vocabClips', left)
-    const r = await send({ type: 'cc-vocab', op: 'clips' })
-    if (r.ok) for (const k of r.words || []) clipCache[k] = true
-  }
-  /** 把这一句的原声录下来（播放一遍，用 captureStream 录；跨域或受保护的视频录不了）。 */
+  /** 把这一句的原声录下来（实现在 wordcard.js，和文稿里的查词浮窗共用）。 */
   async function recordClip(word, li, btn) {
-    const v = S.video
-    const sp = LN.span(S.lines, li, S.prefs.delay)
-    if (!v || !sp) return
-    if (typeof MediaRecorder === 'undefined' || !(v.captureStream || v.mozCaptureStream)) return toast(ui, '这个浏览器不支持录音', true)
     try {
-      const stream = (v.captureStream || v.mozCaptureStream).call(v)
-      const tracks = stream.getAudioTracks()
-      if (!tracks.length) throw new Error('这个视频录不到声音（可能跨域或受保护）')
-      const rec = new MediaRecorder(new MediaStream(tracks))
-      const chunks = []
-      rec.ondataavailable = (e) => e.data.size && chunks.push(e.data)
-      const stopped = new Promise((ok) => (rec.onstop = ok))
-      btn.textContent = '录制中…'
-      const prevRate = v.playbackRate
-      v.playbackRate = 1
-      v.currentTime = Math.max(0, sp.start / 1000)
-      await v.play()
-      rec.start()
-      await new Promise((ok) => {
-        const tm = setInterval(() => {
-          if (v.currentTime * 1000 >= sp.end || v.paused || v.ended) (clearInterval(tm), ok())
-        }, 80)
-      })
-      rec.stop()
-      v.pause()
-      v.playbackRate = prevRate
-      await stopped
-      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' })
-      if (blob.size > 900000) throw new Error('这一句太长了，没有保存')
-      const data = await new Promise((ok, bad) => {
-        const fr = new FileReader()
-        fr.onload = () => ok(String(fr.result))
-        fr.onerror = () => bad(new Error('读取录音失败'))
-        fr.readAsDataURL(blob)
-      })
-      const saved = await send({ type: 'cc-vocab', op: 'clip', word, data })
-      if (!saved.ok) throw new Error(`原声没有保存：${saved.error || '连不上清影'}（原声存在清影里，先把应用开着）`)
-      clipCache[clipKey(word)] = true
-      btn.textContent = '♪ 已录原声'
+      await WC.recordClip(S.video, word, LN.span(S.lines, li, S.prefs.delay), btn)
     } catch (e) {
-      btn.textContent = '录下原声（Anki 用）'
       toast(ui, e.message || '录音失败', true, 3000)
     }
   }
@@ -659,7 +547,6 @@
   cap.addEventListener('mouseover', (e) => {
     const el = e.target?.closest?.('.w')
     if (!el) return
-    clearTimeout(bubTimer)
     clearTimeout(cap._hv)
     pauseForWord()
     cap._hv = setTimeout(() => showBubble(el), 300)
@@ -667,7 +554,7 @@
   cap.addEventListener('mouseout', (e) => {
     if (!e.target?.closest?.('.w')) return
     clearTimeout(cap._hv)
-    if (!bub.classList.contains('open')) resumeAfterWord()
+    if (!wpop.isOpen()) resumeAfterWord()
     hideBubble()
   })
   cap.addEventListener('click', (e) => {
@@ -678,8 +565,6 @@
     clearTimeout(cap._hv)
     showBubble(el)
   })
-  bub.addEventListener('mouseenter', () => clearTimeout(bubTimer))
-  bub.addEventListener('mouseleave', () => hideBubble())
 
   // ---------- 生词本抽屉 ----------
 
@@ -946,7 +831,7 @@
   globalThis.ccSubLayerRun = { destroy: api_destroy, setLines }
 
   ;(async () => {
-    loadClips()
+    WC.loadClips()
     S.prefs = L.clampPrefs(await store.get('subLayerPrefs', null))
     S.on = (await store.get('subLayerOn', true)) !== false
     S.learn = { on: true, level: 1, ...(await store.get('learnPrefs', {})) }

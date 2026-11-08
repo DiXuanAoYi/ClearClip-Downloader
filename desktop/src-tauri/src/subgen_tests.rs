@@ -5,7 +5,7 @@ fn cue(s: u64, e: u64, t: &str) -> Cue {
 }
 
 fn term(s: &str) -> Term {
-    Term { source: s.into(), target: String::new(), note: String::new() }
+    Term { source: s.into(), target: String::new(), note: String::new(), ..Default::default() }
 }
 
 #[test]

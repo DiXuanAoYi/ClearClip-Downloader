@@ -46,8 +46,12 @@ assert.deepEqual(plain(S.compose('', '', 'orig-top')), [])
 // ---- 切换与偏好
 assert.equal(S.nextMode('orig-top'), 'trans-top')
 assert.equal(S.nextMode('trans'), 'orig-top')
-assert.deepEqual(plain(S.clampPrefs(null)), { mode: 'orig-top', size: 100, bottom: 8, delay: 0, target: '' })
-assert.deepEqual(plain(S.clampPrefs({ mode: 'x', size: 9999, bottom: -5, delay: 'a', target: 7 })), { mode: 'orig-top', size: 300, bottom: 0, delay: 0, target: '' })
+assert.deepEqual(plain(S.clampPrefs(null)), { v: 2, mode: 'orig-top', size: 80, bottom: 10, delay: 0, target: '' })
+// 老版本没改过的默认（100% / 8%）换成新默认，改过的保留；新版本存的 100 / 8 是用户自己选的，保留
+assert.deepEqual([S.clampPrefs({ size: 100, bottom: 8 }).size, S.clampPrefs({ size: 100, bottom: 8 }).bottom], [80, 10])
+assert.deepEqual([S.clampPrefs({ size: 120, bottom: 8 }).size, S.clampPrefs({ size: 120, bottom: 8 }).bottom], [120, 8])
+assert.deepEqual([S.clampPrefs({ v: 2, size: 100, bottom: 8 }).size, S.clampPrefs({ v: 2, size: 100, bottom: 8 }).bottom], [100, 8])
+assert.deepEqual(plain(S.clampPrefs({ mode: 'x', size: 9999, bottom: -5, delay: 'a', target: 7 })), { v: 2, mode: 'orig-top', size: 300, bottom: 0, delay: 0, target: '' })
 assert.equal(S.clampPrefs({ delay: 999999 }).delay, 60000)
 
 // ---- 缺译文 / 分批
@@ -70,9 +74,10 @@ import { readFileSync } from 'node:fs'
 {
   const src = readFileSync(new URL('../../extension/content/sublayer.js', import.meta.url), 'utf8')
   assert.ok(/\.cap \.w \{ font: inherit;/.test(src), '词的样式要继承字幕字号')
-  assert.ok(/\.bub \{[^}]*width: 400px/.test(src), '查词浮窗宽度 400')
-  assert.ok(/\.bub \.row2 button \{ white-space: nowrap/.test(src), '按钮不换行')
   const card = readFileSync(new URL('../../extension/content/wordcard.js', import.meta.url), 'utf8')
-  assert.ok(src.includes("'本视频'") && card.includes("'例句'"), '例句：本视频其他句 + 模型例句（共用词卡）')
+  assert.ok(/\.wc-pop \{[^}]*width: 400px/.test(card), '查词浮窗宽度 400')
+  assert.ok(/\.wc-pop \.row2 button \{[^}]*white-space: nowrap/.test(card), '按钮不换行')
+  assert.ok(src.includes('WC.popover(') && !src.includes("class: 'bub"), '字幕层用共用的查词浮窗')
+  assert.ok(card.includes("'本视频'") && card.includes("'例句'"), '例句：本视频其他句 + 模型例句（共用词卡）')
   assert.ok(!/\.wcard \{[^}]*display:/.test(card), '词卡样式不能自带 display（字幕层的浮窗靠 display 开关）')
 }

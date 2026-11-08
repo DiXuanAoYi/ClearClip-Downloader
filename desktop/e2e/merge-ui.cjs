@@ -31,6 +31,11 @@ const INIT = `
   ]
   window.__shot = [{ at: 1700000500000, src: 'Start Game', text: '开始游戏', saved: false }]
   window.__live = [{ at: 1700000400, mode: 'standard', exe: 'game.exe', src: 'Options', text: '选项' }]
+  const term = (s) => ({ source: s, target: s + '译', note: '' })
+  window.__gl = { candidates: [], sites: [], folders: ['空文件夹'], glossaries: [
+    { id: 'g1', name: '原神术语', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', updated: 0, folder: '游戏/原神', terms: [{ ...term('A'), note: '上级说明', children: [{ ...term('A1'), children: [term('A1a')] }] }, term('B'), term('C')] },
+    { id: 'g2', name: '通用', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', updated: 0, folder: '', terms: [term('X')] },
+  ] }
   window.__sc = { supported: true, running: false, mode: 'standard', target: null, hidden: false, paused: false, msg: '', audio: false }
   window.__TAURI_INTERNALS__ = {
     transformCallback(cb) { const id = cbId++; cbs[id] = cb; return id },
@@ -48,7 +53,8 @@ const INIT = `
         case 'list_orphan_parts': return []
         case 'get_after_all_done': return 'none'
         case 'sc_status': return window.__sc
-        case 'sc_toggle': window.__sc = { ...window.__sc, running: !window.__sc.running }; window.__emit('live://state', window.__sc); return null
+        case 'sc_start': window.__sc = { ...window.__sc, running: true }; window.__emit('live://state', window.__sc); return window.__sc
+        case 'sc_stop': window.__sc = { ...window.__sc, running: false }; window.__emit('live://state', window.__sc); return window.__sc
         case 'float_expand': window.__expanded = args.expanded; return null
         case 'excerpt_list': return window.__excerpts
         case 'excerpt_note': window.__excerpts.find((e) => e.id === args.id).note = args.note; return null
@@ -63,6 +69,11 @@ const INIT = `
         case 'sc_windows': case 'sc_ocr_langs': case 'app_glossary_packs': return []
         case 'experts_state': return { experts: [] }
         case 'ocr_status': return { supported: true, installed: false }
+        case 'tm_stats': return [0, 0]
+        case 'glossary_state': return window.__gl
+        case 'glossary_folder_add': window.__gl.folders.push(args.path); return window.__gl
+        case 'glossary_save': window.__glSaved = args.glossary; return args.glossary
+        case 'media_job_start': window.__job = args.job; return 5
         default: return null
       }
     },
@@ -94,7 +105,10 @@ const INIT = `
     ok('控制里有开始、模式、重选、隐藏译文', ['开始', '标准', '字幕', '漫画', '▭ 重选', '隐藏译文'].every((b) => btns.includes(b)), btns.join(','))
     await page.locator('.panel button', { hasText: '开始' }).click()
     await page.waitForTimeout(200)
-    ok('点“开始”调用屏幕翻译，按钮变“停止”', (await page.evaluate(() => window.__calls.some((c) => c.cmd === 'sc_toggle'))) && (await page.locator('.panel button', { hasText: '停止' }).count()) === 1)
+    ok('点“开始”调用和主程序一样的开始，按钮变“停止”', (await page.evaluate(() => window.__calls.some((c) => c.cmd === 'sc_start'))) && (await page.locator('.panel button', { hasText: '停止' }).count()) === 1)
+    await page.locator('.panel button', { hasText: '停止' }).click()
+    await page.waitForTimeout(200)
+    ok('点“停止”就是停止（不是切换），按钮变回“开始”', (await page.evaluate(() => window.__calls.some((c) => c.cmd === 'sc_stop'))) && (await page.locator('.panel button', { hasText: '开始' }).count()) === 1)
     await page.locator('.ball .x').click()
     await page.waitForTimeout(200)
     const saved = await page.evaluate(() => window.__saved)
@@ -158,7 +172,136 @@ const INIT = `
     await page.close()
   }
 
+  // 5. 术语库：多层文件夹；“添加一行”插在当前选中的那一行下面，没选中就加在最下面
+  {
+    const page = await open('glossary')
+    const rows = await page.locator('.item').allInnerTexts()
+    const names = rows.map((r) => r.replace(/[▾▸]/g, '').trim().split('\n')[0].trim())
+    ok('术语库按文件夹分层显示（游戏 → 原神 → 原神术语，空文件夹也在）', names.some((n) => n.includes('📁 游戏')) && names.some((n) => n.includes('📁 原神')) && names.some((n) => n.includes('📁 空文件夹')) && names.indexOf(names.find((n) => n.includes('📁 原神'))) < names.findIndex((n) => n.startsWith('原神术语')), names.join(' | '))
+    const pad = await page.locator('.item', { hasText: '原神术语' }).evaluate((e) => parseInt(e.style.paddingLeft))
+    ok('第二层文件夹里的术语库缩进两层', pad === 36, String(pad))
+    await page.locator('.item.folder', { hasText: '游戏' }).first().locator('.fold').click()
+    await page.waitForTimeout(150)
+    ok('折叠“游戏”后里面的都收起来', !(await page.locator('.item', { hasText: '原神术语' }).count()))
+    await page.locator('.item.folder', { hasText: '游戏' }).first().locator('.fold').click()
+    await page.locator('.item', { hasText: '原神术语' }).getByRole('button', { name: '编辑' }).click()
+    await page.waitForTimeout(300)
+    // 分层术语：每一层一种底色、缩进；收起 / 展开；Tab / Shift+Tab；加同级 / 下级；移动；菜单；删除；撤回；搜索；拖动；保存成树
+    const rowsOf = () => page.locator('.tt .trow').evaluateAll((els) => els.map((e) => `${e.getAttribute('aria-level')}:${e.querySelector('input[data-col=source]').value}`))
+    const srcInput = (src) => page.locator('.tt .trow input[data-col=source]').evaluateAll((els, s) => els.findIndex((e) => e.value === s), src).then((i) => page.locator('.tt .trow input[data-col=source]').nth(i))
+    ok('术语按层显示：A › A1 › A1a，B、C 在第一层', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:C']), JSON.stringify(await rowsOf()))
+    const bgs = await page.locator('.tt .trow').evaluateAll((els) => els.slice(0, 3).map((e) => getComputedStyle(e).backgroundColor))
+    ok('每一层的底色不同（第一层最深）', new Set(bgs).size === 3, bgs.join(' '))
+    ok('工具条显示总数和层数', /共 5 条 · 3 层/.test(await page.locator('.tt .cnt').innerText()))
+    // 收起 A
+    await page.locator('.tt .trow').nth(0).locator('.caret').click()
+    await page.waitForTimeout(100)
+    ok('收起 A：只剩第一层，A 上标“2 条下级”', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '1:B', '1:C']) && /2 条下级/.test(await page.locator('.tt .trow').nth(0).innerText()), JSON.stringify(await rowsOf()))
+    await page.getByRole('button', { name: '全部展开' }).click()
+    await page.waitForTimeout(100)
+    ok('全部展开', (await rowsOf()).length === 5)
+    // 当前路径
+    await (await srcInput('A1a')).click()
+    await page.waitForTimeout(100)
+    ok('底栏显示当前这条的完整路径和译文路径', /A\s*›\s*A1\s*›\s*A1a/.test(await page.locator('.efoot .cur').innerText()) && /A译 › A1译 › A1a译/.test(await page.locator('.efoot .cur').innerText()), await page.locator('.efoot .cur').innerText())
+    // Tab：B 变成 A 的下级；Shift+Tab 回来
+    await (await srcInput('B')).click()
+    await page.keyboard.press('Tab')
+    await page.waitForTimeout(150)
+    ok('Tab：B 变成 A 的下级（排在 A 的下级最后）', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '2:B', '1:C']), JSON.stringify(await rowsOf()))
+    await page.keyboard.press('Shift+Tab')
+    await page.waitForTimeout(150)
+    ok('Shift+Tab：B 升回第一层', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:C']), JSON.stringify(await rowsOf()))
+    // Enter 加同级、打字、空行退格删掉
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(150)
+    await page.keyboard.type('D')
+    ok('Enter：在 B 后面加同级，光标在新行', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:D', '1:C']), JSON.stringify(await rowsOf()))
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(150)
+    await page.keyboard.press('Backspace')
+    await page.waitForTimeout(150)
+    ok('空行上退格：删掉这一行', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:D', '1:C']), JSON.stringify(await rowsOf()))
+    // Alt+↑ 上移
+    await (await srcInput('C')).click()
+    await page.keyboard.press('Alt+ArrowUp')
+    await page.waitForTimeout(150)
+    ok('Alt+↑：C 和 D 对调', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:C', '1:D']), JSON.stringify(await rowsOf()))
+    // 添加下级按钮
+    await (await srcInput('B')).click()
+    await page.getByRole('button', { name: '添加下级' }).first().click()
+    await page.waitForTimeout(150)
+    await page.keyboard.type('B1')
+    ok('添加下级：B 下面多一条 B1', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '2:B1', '1:C', '1:D']), JSON.stringify(await rowsOf()))
+    // 右键菜单 → 删除（有下级要确认）→ 只删 A → 撤回
+    await page.locator('.tt .trow').nth(0).click({ button: 'right' })
+    await page.waitForTimeout(150)
+    const items = await page.locator('.tt-menu .mi').allInnerTexts()
+    ok('右键菜单：加同级 / 下级、升降层、上下移、分组、复制路径、删除', ['添加同级', '添加下级', '升一层', '放进上一条下面', '上移', '下移', '只作分组', '复制路径', '删除'].every((w) => items.some((t) => t.startsWith(w))), items.join(' | '))
+    await page.locator('.tt-menu .mi', { hasText: '删除' }).click()
+    await page.waitForTimeout(200)
+    ok('删除有下级的术语先问一次', /它下面还有 2 条术语/.test(await page.locator('.el-dialog .del').innerText()))
+    await page.locator('.el-dialog .del .opt').first().click()
+    await page.waitForTimeout(200)
+    ok('只删 A：下级升一层', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A1', '2:A1a', '1:B', '2:B1', '1:C', '1:D']), JSON.stringify(await rowsOf()))
+    await page.locator('.tt .pz-link', { hasText: '撤回' }).click()
+    await page.waitForTimeout(150)
+    ok('撤回：A 回来了', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '2:B1', '1:C', '1:D']), JSON.stringify(await rowsOf()))
+    // 只作分组
+    await page.locator('.tt .trow').nth(5).click({ button: 'right' })
+    await page.locator('.tt-menu .mi', { hasText: '只作分组' }).click()
+    await page.waitForTimeout(100)
+    ok('只作分组：标上“分组”', /分组/.test(await page.locator('.tt .trow').nth(5).innerText()))
+    // 拖动：D 放进 C 下面
+    await page.locator('.tt .trow').nth(6).hover()
+    await page.locator('.tt .trow').nth(6).locator('.grip').dragTo(page.locator('.tt .trow').nth(5), { targetPosition: { x: 300, y: 19 } })
+    await page.waitForTimeout(200)
+    ok('拖动：D 放进 C 下面成为下级', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '2:B1', '1:C', '2:D']), JSON.stringify(await rowsOf()))
+    // 搜索：命中的连同上级一起显示
+    await page.locator('.tt .q input').fill('a1a')
+    await page.waitForTimeout(150)
+    ok('搜索：命中的 A1a 连同上级 A、A1 一起显示，上级变灰', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a']) && (await page.locator('.tt .trow.dim').count()) === 2, JSON.stringify(await rowsOf()))
+    await page.locator('.tt .q input').fill('')
+    await page.waitForTimeout(100)
+    // 保存：存成树
+    await page.getByRole('button', { name: '保存' }).click()
+    await page.waitForTimeout(300)
+    const saved = await page.evaluate(() => window.__glSaved)
+    const t = saved?.terms
+    ok('保存成树：A › A1 › A1a、B › B1、C（分组）› D', t && t[0].source === 'A' && t[0].children[0].children[0].source === 'A1a' && t[1].children[0].source === 'B1' && t[2].group === true && t[2].children[0].source === 'D' && t.length === 3, JSON.stringify(t))
+    await page.close()
+  }
+
   ok('没有页面错误', !errors.length, errors.join(' | '))
+  // 工具箱：剪辑里也能做的几样合成“快速处理”，可以一键送进剪辑
+  {
+    const page = await open('video')
+    const nav = await page.locator('nav.tools .tool').allInnerTexts()
+    ok('工具列表里有“快速处理”，没有单独的裁剪 / 拼接 / 倍速 / 旋转 / 去除音轨 / 竖屏转横屏', nav.includes('快速处理') && !['裁剪片段', '拼接', '倍速', '旋转 / 翻转', '去除音轨', '竖屏转横屏'].some((t) => nav.includes(t)), nav.join(','))
+    ok('压缩、转换格式、GIF、截图、响度、音效还在', ['压缩视频', '转换格式', '转 GIF', '截图', '响度标准化', '音效 / 混响'].every((t) => nav.includes(t)), nav.join(','))
+    ok('不是快速处理时没有“在剪辑里打开”', (await page.getByRole('button', { name: '在剪辑里打开' }).count()) === 0)
+    await page.locator('nav.tools .tool', { hasText: '快速处理' }).click()
+    await page.waitForTimeout(200)
+    const subs = await page.locator('.quick .el-radio-button').allInnerTexts()
+    ok('快速处理里有 6 项', subs.length === 6 && subs.includes('倍速') && subs.includes('竖屏转横屏'), subs.join(','))
+    await page.locator('.quick .el-radio-button', { hasText: '倍速' }).click()
+    await page.waitForTimeout(150)
+    await page.getByRole('button', { name: '开始处理' }).click()
+    await page.waitForTimeout(300)
+    const job = await page.evaluate(() => window.__job)
+    ok('选倍速开始处理：发出倍速任务', job && job.op === 'speed' && job.inputs[0] === '/m/clip.mp4', JSON.stringify(job))
+    await page.getByRole('button', { name: '在剪辑里打开' }).click()
+    await page.waitForTimeout(200)
+    const req = await page.evaluate(() => window.__app.toolboxRequest)
+    ok('“在剪辑里打开”把文件交给剪辑', req && req.tab === 'edit' && req.paths[0] === '/m/clip.mp4', JSON.stringify(req))
+    // 切到别的工具再回来，停在上次选的那一项
+    await page.locator('nav.tools .tool', { hasText: '压缩视频' }).click()
+    await page.locator('nav.tools .tool', { hasText: '快速处理' }).click()
+    await page.waitForTimeout(150)
+    ok('再回到快速处理时停在上次的“倍速”', (await page.locator('.quick .el-radio-button.is-active').innerText()) === '倍速')
+    await page.close()
+  }
+
   await browser.close()
   console.log(`\n${pass} 通过，${fail} 失败`)
   process.exit(fail ? 1 : 0)

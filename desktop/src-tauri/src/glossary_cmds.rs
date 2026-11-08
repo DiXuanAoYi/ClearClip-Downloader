@@ -96,6 +96,7 @@ pub fn glossary_for_app(state: St<'_>, exe: String) -> AppResult<Glossary> {
         matches: vec![want],
         lang: String::new(),
         updated: crate::db::now(),
+        folder: "软件界面".into(),
         ..Default::default()
     };
     let out = g.clone();
@@ -115,6 +116,44 @@ pub fn glossary_delete(state: St<'_>, id: String) -> AppResult<()> {
     })
 }
 
+/// 新建文件夹（`/` 分隔可以一次建多层）。
+#[tauri::command]
+pub fn glossary_folder_add(state: St<'_>, path: String) -> AppResult<Data> {
+    let p = glossary::clean_folder(&path);
+    if p.is_empty() {
+        return Err(crate::error::AppError::invalid("文件夹名不能为空。"));
+    }
+    state.glossary.edit(|d| {
+        if !d.folders.contains(&p) {
+            d.folders.push(p);
+            d.folders.sort();
+        }
+    })?;
+    Ok(state.glossary.snapshot())
+}
+
+/// 重命名 / 移动文件夹（连同子文件夹和里面的术语库）。
+#[tauri::command]
+pub fn glossary_folder_rename(state: St<'_>, from: String, to: String) -> AppResult<Data> {
+    let (from, to) = (glossary::clean_folder(&from), glossary::clean_folder(&to));
+    if from.is_empty() || to.is_empty() {
+        return Err(crate::error::AppError::invalid("文件夹名不能为空。"));
+    }
+    if glossary::in_folder(&to, &from) && to != from {
+        return Err(crate::error::AppError::invalid("不能把文件夹移到它自己里面。"));
+    }
+    state.glossary.edit(|d| glossary::rename_folder(d, &from, &to))?;
+    Ok(state.glossary.snapshot())
+}
+
+/// 删除文件夹：里面的术语库和子文件夹往上挪一层，术语库不会被删。
+#[tauri::command]
+pub fn glossary_folder_remove(state: St<'_>, path: String) -> AppResult<Data> {
+    let p = glossary::clean_folder(&path);
+    state.glossary.edit(|d| glossary::remove_folder(d, &p))?;
+    Ok(state.glossary.snapshot())
+}
+
 /// 导入 CSV 文本。`into` 非空 = 并入已有术语库（同名原文以新的为准），否则新建一个。
 #[tauri::command]
 pub fn glossary_import(state: St<'_>, text: String, name: String, into: String, lang: String) -> AppResult<Glossary> {
@@ -125,9 +164,7 @@ pub fn glossary_import(state: St<'_>, text: String, name: String, into: String, 
     let now = crate::db::now();
     state.glossary.edit(|d| {
         if let Some(g) = d.glossaries.iter_mut().find(|g| !into.is_empty() && g.id == into) {
-            let incoming: std::collections::HashSet<String> = terms.iter().map(|t| t.source.to_lowercase()).collect();
-            g.terms.retain(|t| !incoming.contains(&t.source.to_lowercase()));
-            g.terms.extend(terms);
+            glossary::merge_terms(&mut g.terms, terms);
             g.terms = glossary::clean_terms(std::mem::take(&mut g.terms));
             g.updated = now;
             g.clone()
@@ -346,9 +383,7 @@ pub fn glossary_resolve(state: St<'_>, ids: Vec<String>, glossary_id: String, ne
                     d.glossaries.last_mut().expect("just pushed")
                 }
             };
-            let incoming: std::collections::HashSet<String> = terms.iter().map(|t| t.source.to_lowercase()).collect();
-            g.terms.retain(|t| !incoming.contains(&t.source.to_lowercase()));
-            g.terms.extend(terms.iter().cloned());
+            glossary::merge_terms(&mut g.terms, terms.clone());
             g.terms = glossary::clean_terms(std::mem::take(&mut g.terms));
             g.name = if g.name.trim().is_empty() { "智能提取".into() } else { g.name.clone() };
             g.updated = now;

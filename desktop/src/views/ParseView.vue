@@ -6,6 +6,8 @@ import { api, errorText, events } from '../api'
 import { useAppStore, useParseStore } from '../stores/app'
 import type { Asset, BatchProgress, Clip, DetectedLink, HistoryItem, MediaInfo } from '../types'
 import { formatBytes, formatDate, formatDuration } from '../utils/format'
+import { formatClock } from '../utils/time'
+import { SUB_DEFAULTS } from '../utils/subs'
 import ErrorAlert from '../components/ErrorAlert.vue'
 import SubtitlePicker, { type SubMode } from '../components/SubtitlePicker.vue'
 import ClipPicker from '../components/ClipPicker.vue'
@@ -19,7 +21,6 @@ const links = ref<DetectedLink[]>([])
 const preview = ref(false)
 const enqueuing = ref(false)
 const audioOnly = ref(false)
-const slideOpen = ref(false)
 const slideSecs = ref(3)
 const slideMusic = ref(true)
 const sliding = ref(false)
@@ -35,7 +36,6 @@ async function makeSlideshow() {
   sliding.value = true
   try {
     const path = await api.makeSlideshow(result.value, ids, slideMusic.value && musicAsset.value ? musicAsset.value.id : null, slideSecs.value)
-    slideOpen.value = false
     ElMessage.success({ message: `已生成：${path}`, duration: 5000 })
     api.revealFile(path).catch(() => {})
   } catch (e) {
@@ -50,6 +50,9 @@ const subMode = ref<SubMode>('file')
 const preferredSubs = ref<string[]>([])
 const clip = ref<Clip | null>(null)
 const splitOn = ref(false)
+/** 切到“只要音频”前选的清晰度（切回来时恢复） */
+let prevVideo: string | null = null
+const showAllFormats = ref(false)
 const batchInfo = ref<BatchProgress | null>(null)
 let unlistenBatch: UnlistenFn | undefined
 
@@ -203,12 +206,9 @@ watch(
       loadPreferredSubs(r)
     }
     audioOnly.value = false
-    if (r && r.kind === 'video' && app.settings?.qualityPreset === 'audio') {
-      // “只要音频”：优先选单独的音频轨，没有时下载视频后提取音频
-      const audio = bestAudio(r)
-      if (audio) selected.value = new Set([audio.id])
-      else audioOnly.value = true
-    }
+    prevVideo = null
+    showAllFormats.value = false
+    if (r && r.kind === 'video' && app.settings?.qualityPreset === 'audio') setSound('audio')
   },
   { immediate: true },
 )
@@ -275,6 +275,177 @@ onMounted(async () => {
 })
 onUnmounted(() => unlistenBatch?.())
 
+// ---------- 新版界面用到的派生数据 ----------
+
+/** 声音：视频（含声音）/ 只要音频。只要音频时优先换成单独的音频轨（下载小），没有时下载视频后提取声音。 */
+const audioTrack = computed(() => (result.value ? bestAudio(result.value) : undefined))
+const usingAudioTrack = computed(() => audioOnly.value && !!audioTrack.value && selected.value.has(audioTrack.value.id) && !videoSelected.value)
+function setSound(mode: 'video' | 'audio') {
+  const r = result.value
+  if (!r) return
+  const next = new Set(selected.value)
+  const track = bestAudio(r)
+  if (mode === 'audio') {
+    if (audioOnly.value) return
+    audioOnly.value = true
+    if (track) {
+      prevVideo = videoFormats.value.find((v) => next.has(v.id))?.id ?? null
+      for (const v of videoFormats.value) next.delete(v.id)
+      next.add(track.id)
+    }
+  } else {
+    if (!audioOnly.value) return
+    audioOnly.value = false
+    if (track && next.has(track.id) && !videoFormats.value.some((v) => next.has(v.id))) {
+      next.delete(track.id)
+      const back = prevVideo ?? videoFormats.value[0]?.id
+      if (back) next.add(back)
+    }
+    prevVideo = null
+  }
+  selected.value = next
+}
+const audioFmt = computed(() => (app.settings?.audioFormat ?? 'mp3').toUpperCase())
+
+/** 清晰度列表：多于 6 种时先显示 6 种 */
+const shownFormats = computed(() => (showAllFormats.value ? videoFormats.value : videoFormats.value.slice(0, 6)))
+const defaultVideoId = computed(() => videoFormats.value[0]?.id ?? '')
+const topVideoId = computed(() => [...videoFormats.value].sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || (b.filesize ?? 0) - (a.filesize ?? 0))[0]?.id ?? '')
+function formatSpec(a: Asset) {
+  const parts: string[] = []
+  if (a.width && a.height) parts.push(`${a.width}×${a.height}`)
+  const codec = prettyCodec(a.vcodec)
+  if (codec && !a.label.includes(codec)) parts.push(codec)
+  if (a.fps) parts.push(`${a.fps}fps`)
+  if (a.hasAudio === false) parts.push('需合并音频')
+  if (a.protocol === 'hls') parts.push('M3U8')
+  if (a.protocol === 'ytdlp') parts.push('yt-dlp 下载')
+  return parts.join(' · ') || a.ext.toUpperCase()
+}
+function sizeOf(a: Asset) {
+  if (a.filesize) return formatBytes(a.filesize)
+  if (a.bitrate) return `${a.bitrate} kbps`
+  return '—'
+}
+
+/** 封面：竖图（图集、竖屏视频）放在 4:3 的框里居中，横图按 16:9；都不裁切 */
+const portrait = computed(() => {
+  const r = result.value
+  if (!r) return false
+  return r.kind === 'images' || (!!r.width && !!r.height && r.height > r.width)
+})
+const coverBadge = computed(() => {
+  const r = result.value
+  if (!r) return ''
+  if (r.kind === 'images') return `图集 ${images.value.length} 张`
+  const h = Math.max(r.height ?? 0, ...videoFormats.value.map((v) => Math.min(v.height ?? 0, v.width ?? 0) || (v.height ?? 0)))
+  const short = r.width && r.height ? Math.min(r.width, r.height) : h
+  const q = Math.max(short, 0)
+  if (q >= 2160) return '4K'
+  if (q >= 1440) return '2K'
+  if (q >= 1080) return '1080P'
+  if (q >= 720) return '720P'
+  return ''
+})
+const extractorText = computed(() => {
+  const e = result.value?.extractor
+  if (!e || e === 'native') return '无水印'
+  if (e.startsWith('yt-dlp')) return 'yt-dlp 解析'
+  if (e === 'generic') return '网页嗅探'
+  return ''
+})
+/** 附带下载：图集里的背景音乐单独一块，只要音频时用到的音频轨不重复列出 */
+const extrasShown = computed(() => extras.value.filter((a) => !(result.value?.kind === 'images' && a.id === musicAsset.value?.id)))
+
+const SUBMODE_TEXT: Record<SubMode, string> = { file: '单独文件', soft: '内嵌到视频', burn: '烧录进画面' }
+const pickedSubs = computed(() => (audioOnly.value ? [] : subtitleAssets.value.filter((a) => selected.value.has(a.id))))
+/** 底部摘要：会下载哪些 */
+const summary = computed(() => {
+  const r = result.value
+  if (!r) return ''
+  const parts: string[] = []
+  const v = videoFormats.value.find((x) => selected.value.has(x.id))
+  if (audioOnly.value) parts.push(`音频（转 ${audioFmt.value}）`)
+  else if (v) parts.push(`${v.label} 视频`)
+  if (images.value.length && selectedImages.value) parts.push(`${selectedImages.value} 张图片`)
+  if (pickedSubs.value.length) parts.push(`${pickedSubs.value.length} 条字幕（${SUBMODE_TEXT[subMode.value]}）`)
+  for (const a of extras.value) {
+    if (!selected.value.has(a.id)) continue
+    if (usingAudioTrack.value && a.id === audioTrack.value?.id) continue
+    parts.push(a.id === musicAsset.value?.id && r.kind === 'images' ? '背景音乐' : a.label)
+  }
+  let text = parts.join(' + ')
+  if (canClip.value && clip.value) text += ` · 只下载 ${formatClock(clip.value.startMs)}–${clip.value.endMs ? formatClock(clip.value.endMs) : '结尾'}`
+  if (canClip.value && splitOn.value && r.chapters.length) text += ' · 按章节拆分'
+  return text
+})
+const summaryHead = computed(() => summary.value.split(' + ')[0])
+const summaryRest = computed(() => summary.value.slice(summaryHead.value.length))
+/** 大约多大：选中的都有大小时给出总数，部分没有时说“至少” */
+const sizeText2 = computed(() => {
+  const r = result.value
+  if (!r) return ''
+  let sum = 0
+  let unknown = 0
+  for (const a of r.assets) {
+    if (!selected.value.has(a.id) || a.kind === 'subtitle') continue
+    if (a.filesize) sum += a.filesize
+    else unknown++
+    const pair = a.pairAudio ? r.assets.find((x) => x.id === a.pairAudio) : undefined
+    if (pair && !selected.value.has(pair.id)) {
+      if (pair.filesize) sum += pair.filesize
+      else unknown++
+    }
+  }
+  if (!sum) return unknown ? '大小未知' : ''
+  return unknown ? `至少 ${formatBytes(sum)}` : `约 ${formatBytes(sum)}`
+})
+/** 保存位置（和后端一样：下载目录，按平台分子文件夹；列表再加一层列表名） */
+const saveDir = computed(() => {
+  const s = app.settings
+  const r = result.value
+  if (!s || !r) return ''
+  const sep = s.downloadDir.includes('\\') ? '\\' : '/'
+  const parts = [s.downloadDir.replace(/[\\/]+$/, '')]
+  if (s.subfolderByPlatform && r.platformName) parts.push(r.platformName)
+  if (r.kind === 'playlist') parts.push(r.title)
+  return parts.filter(Boolean).join(sep)
+})
+const PRESET_TEXT: Record<string, string> = { best: '最高清晰度', max1080: '不超过 1080p', small: '体积小', audio: '只要音频' }
+const presetText = computed(() => PRESET_TEXT[app.settings?.qualityPreset ?? 'best'] ?? '按设置')
+const subPolicyText = computed(() => {
+  const m = app.settings?.subtitleMode ?? 'off'
+  if (m === 'off') return '不下载字幕'
+  return `偏好语言 · ${m === 'file' ? '单独文件' : m === 'embed' ? '内嵌到视频' : '烧录进画面'}`
+})
+const nothingPicked = computed(() => !result.value?.assets.some((a) => selected.value.has(a.id)))
+
+function openSource() {
+  if (result.value?.sourceUrl) api.openUrl(result.value.sourceUrl).catch((e) => ElMessage.error(errorText(e)))
+}
+const subscribing = ref(false)
+async function subscribe() {
+  const r = result.value
+  if (!r) return
+  subscribing.value = true
+  try {
+    await api.subsAdd(r.sourceUrl, r.title || null, { ...SUB_DEFAULTS, include: [], exclude: [] })
+    ElMessage.success('已订阅：以后有新视频会自动下载，可以在“订阅”里改设置。')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    subscribing.value = false
+  }
+}
+function invertImages() {
+  const next = new Set(selected.value)
+  for (const a of images.value) {
+    if (next.has(a.id)) next.delete(a.id)
+    else next.add(a.id)
+  }
+  selected.value = next
+}
+
 function toggle(id: string) {
   const next = new Set(selected.value)
   if (next.has(id)) next.delete(id)
@@ -302,20 +473,6 @@ function prettyCodec(c: string | null): string {
   return c.split('.')[0].toUpperCase()
 }
 
-function formatMeta(a: Asset) {
-  const parts: string[] = []
-  if (a.width && a.height) parts.push(`${a.width}×${a.height}`)
-  const codec = prettyCodec(a.vcodec)
-  if (codec && !a.label.includes(codec)) parts.push(codec)
-  if (a.fps) parts.push(`${a.fps}fps`)
-  if (a.filesize) parts.push(formatBytes(a.filesize))
-  else if (a.bitrate) parts.push(`${a.bitrate} kbps`)
-  if (a.hasAudio === false) parts.push('需合并音频')
-  if (a.protocol === 'hls') parts.push('M3U8')
-  if (a.protocol === 'ytdlp') parts.push('yt-dlp 下载')
-  return parts.join(' · ') || a.ext.toUpperCase()
-}
-
 function selectAllImages(on: boolean) {
   const next = new Set(selected.value)
   for (const a of images.value) {
@@ -327,7 +484,8 @@ function selectAllImages(on: boolean) {
 
 async function download() {
   if (!result.value) return
-  const ids = result.value.assets.filter((a) => selected.value.has(a.id)).map((a) => a.id)
+  // 只要音频时不下载字幕（界面上字幕那块是灰的）
+  const ids = result.value.assets.filter((a) => selected.value.has(a.id) && !(audioOnly.value && a.kind === 'subtitle')).map((a) => a.id)
   if (ids.length === 0) {
     ElMessage.warning('请至少选择一项要下载的内容。')
     return
@@ -404,185 +562,313 @@ function recentKind(r: HistoryItem) {
   if (r.kind === 'images') return `图集 ${r.info.assets.filter((a) => a.kind === 'image').length} 张`
   return '视频'
 }
-
-function sizeText(a: Asset) {
-  if (a.width && a.height) return `${a.width}×${a.height}`
-  return a.ext.toUpperCase()
-}
 </script>
 
 <template>
   <div class="page">
+    <!-- 粘贴栏 -->
     <div class="paste">
-      <el-input
-        v-model="parse.text"
-        type="textarea"
-        :autosize="{ minRows: 1, maxRows: 4 }"
-        resize="none"
-        placeholder="粘贴分享文案或任意视频网页链接（抖音、B站、YouTube…），按 Enter 解析"
-        class="paste-input"
-        @keydown="onKey"
-      />
-      <el-button type="primary" size="large" :loading="parse.loading" @click="parse.parse()">解析</el-button>
-      <el-button v-if="parse.text || parse.result" size="large" @click="parse.clear()">清空</el-button>
+      <div class="pastebox">
+        <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>
+        <el-input
+          v-model="parse.text"
+          type="textarea"
+          :autosize="{ minRows: 1, maxRows: 4 }"
+          resize="none"
+          placeholder="粘贴分享文案或任意视频网页链接（抖音、B站、YouTube…），按 Enter 解析"
+          aria-label="分享链接"
+          class="paste-input"
+          @keydown="onKey"
+        />
+      </div>
+      <el-button type="primary" class="pz-strong go" :loading="parse.loading" @click="parse.parse()">解析</el-button>
+      <el-button v-if="parse.text || parse.result" class="clr" @click="parse.clear()">清空</el-button>
     </div>
     <div class="hint">
       <span v-if="app.settings?.watchClipboard" class="ok">● 剪贴板监听已开启</span>
       <span v-else>剪贴板监听已关闭</span>
-      <span>支持：{{ supported }}</span>
       <span>Enter 解析 · Shift+Enter 换行</span>
-      <span v-if="app.settings?.shortcut">全局快捷键 {{ app.settings.shortcut.replace('CommandOrControl', 'Ctrl') }}</span>
+      <span v-if="app.settings?.shortcut">全局快捷键 <span class="mono">{{ app.settings.shortcut.replace('CommandOrControl', 'Ctrl') }}</span></span>
+      <el-popover placement="bottom-start" :width="360" trigger="click">
+        <template #reference>
+          <button type="button" class="pz-link">支持哪些网站</button>
+        </template>
+        <div class="sites">{{ supported || '读取中…' }}</div>
+      </el-popover>
     </div>
 
     <div v-if="links.length > 1" class="batch card">
       <span>检测到 <b>{{ links.length }}</b> 条链接</span>
-      <span class="mute">先预览（去重、标出已下载过的），再整批加入队列。</span>
-      <el-button type="primary" plain @click="app.openBatch(links.map((l) => l.url), '粘贴')">批量添加…</el-button>
+      <span class="pz-note">先预览（去重、标出已下载过的），再整批加入队列。</span>
+      <el-button @click="app.openBatch(links.map((l) => l.url), '粘贴')">批量添加…</el-button>
     </div>
 
     <ErrorAlert v-if="parse.error" :message="parse.error" :kind="parse.errorKind" :site="parse.errorSite" />
 
-    <div v-if="parse.loading && !result" class="result card skeleton">
-      <el-skeleton animated :rows="5" />
+    <div v-if="parse.loading && !result" class="layout">
+      <div class="work card skeleton"><el-skeleton animated :rows="6" /></div>
+      <div class="dl card skeleton"><el-skeleton animated :rows="8" /></div>
     </div>
 
-    <section v-if="result" class="result card">
-      <div class="cover-wrap" @click="preview = true">
-        <img v-if="result.cover" :src="result.cover" class="thumb cover" referrerpolicy="no-referrer" alt="" />
-        <div v-else class="thumb cover" />
-        <span v-if="result.kind === 'video'" class="play">▶</span>
-        <span v-if="result.durationMs" class="dur mono">{{ formatDuration(result.durationMs) }}</span>
-      </div>
-      <div class="meta">
-        <div class="chips">
-          <span class="chip acc">{{ result.platformName }} · {{ kindText }}</span>
-          <span v-if="result.extractor === 'native' || !result.extractor" class="chip">无水印</span>
-          <span v-else-if="result.extractor.startsWith('yt-dlp')" class="chip">yt-dlp 解析</span>
-          <span v-else-if="result.extractor === 'generic'" class="chip">网页嗅探</span>
-          <span v-if="result.width && result.height" class="chip">{{ result.width }}×{{ result.height }}</span>
+    <div v-if="result" class="layout">
+      <!-- 左：作品 -->
+      <section class="work card" aria-label="作品信息">
+        <button type="button" class="cover" :class="{ portrait }" :aria-label="result.kind === 'images' ? '大图预览' : '预览'" @click="preview = true" @dblclick.stop>
+          <img v-if="result.cover" :src="result.cover" referrerpolicy="no-referrer" alt="" />
+          <span v-else class="nocover">没有封面</span>
+          <span v-if="result.kind === 'video' || result.kind === 'audio'" class="play" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" /></svg>
+          </span>
+          <span v-if="isPlaylist" class="count"><span class="mono">{{ entries.length }}</span><small>个视频</small></span>
+          <span v-if="coverBadge" class="badge">{{ coverBadge }}</span>
+          <span v-if="result.durationMs" class="dur mono">{{ formatDuration(result.durationMs) }}</span>
+        </button>
+        <div class="info">
+          <h1 class="title selectable" :title="result.title">{{ result.title }}</h1>
+          <div class="who">
+            <span v-if="result.author" class="author">{{ result.author }}</span>
+            <span v-if="result.author && result.publishedAt">·</span>
+            <span v-if="result.publishedAt">{{ formatDate(result.publishedAt) }} 发布</span>
+          </div>
+          <div class="tags">
+            <span class="pz-tag acc">{{ result.platformName }} · {{ kindText }}</span>
+            <span v-if="extractorText" class="pz-tag">{{ extractorText }}</span>
+            <span v-if="result.width && result.height" class="pz-tag mono">{{ result.width }}×{{ result.height }}</span>
+            <span v-if="result.chapters?.length" class="pz-tag">{{ result.chapters.length }} 个章节</span>
+            <span v-if="subtitleAssets.length" class="pz-tag">{{ subtitleAssets.length }} 条字幕</span>
+            <span v-if="result.kind === 'images' && musicAsset" class="pz-tag">背景音乐</span>
+            <span v-if="isPlaylist && downloadedEntries.size" class="pz-tag ok">之前下载过 {{ downloadedEntries.size }} 个</span>
+          </div>
+          <div class="acts">
+            <template v-if="isPlaylist">
+              <el-button class="grow" :loading="subscribing" @click="subscribe">订阅更新</el-button>
+            </template>
+            <template v-else>
+              <el-button class="grow" @click="preview = true">{{ result.kind === 'images' ? '大图预览' : '预览' }}</el-button>
+              <el-button class="grow" @click="copyLinks">复制直链</el-button>
+            </template>
+            <el-button class="icon" aria-label="打开原网页" title="打开原网页" @click="openSource">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M14 4h6v6" /><path d="M20 4l-9 9" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+            </el-button>
+          </div>
         </div>
-        <h3 class="title selectable">{{ result.title }}</h3>
-        <div class="mute">
-          <span v-if="result.author">@{{ result.author }}</span>
-          <span v-if="result.publishedAt">{{ result.author ? ' · ' : '' }}{{ formatDate(result.publishedAt) }} 发布</span>
-        </div>
+      </section>
 
-        <div v-if="images.length" class="grid-head">
-          <span>已选 {{ selectedImages }} / {{ images.length }} 张</span>
-          <el-button link type="primary" @click="selectAllImages(selectedImages < images.length)">
-            {{ selectedImages < images.length ? '全选' : '全不选' }}
-          </el-button>
+      <!-- 右：下载内容 -->
+      <section class="dl card" :aria-label="isPlaylist ? '选择要下载的视频' : '下载内容'">
+        <div class="dhead">
+          <h2>{{ isPlaylist ? '选择要下载的视频' : '下载内容' }}</h2>
+          <span class="pz-note">{{ isPlaylist ? (downloadedEntries.size && app.settings?.skipExisting ? '默认选中没下载过的' : '默认全选') : result.kind === 'images' ? '点图片取消 / 选中，双击看大图' : '按设置默认选好了，改完点“下载所选”' }}</span>
         </div>
-        <div v-if="images.length" class="grid">
-          <button
-            v-for="img in images"
-            :key="img.id"
-            type="button"
-            class="ph"
-            :class="{ sel: selected.has(img.id) }"
-            :aria-pressed="selected.has(img.id)"
-            :aria-label="img.label"
-            @click="toggle(img.id)"
-          >
-            <img :src="img.url" referrerpolicy="no-referrer" loading="lazy" alt="" />
-            <span class="no mono">{{ (img.index ?? 0) + 1 }}</span>
-          </button>
-        </div>
-
-        <div v-if="videoFormats.length" class="fmt-head">{{ videoFormats.length > 1 ? `清晰度（${videoFormats.length} 种）` : '视频' }}</div>
-        <div v-if="videoFormats.length" class="formats" role="radiogroup">
-          <button
-            v-for="v in videoFormats"
-            :key="v.id"
-            type="button"
-            role="radio"
-            class="opt fmt"
-            :class="{ on: selected.has(v.id) }"
-            :aria-checked="selected.has(v.id)"
-            @click="pickVideo(v.id)"
-          >
-            <span>{{ v.label }}</span>
-            <small class="mono">{{ formatMeta(v) }}</small>
-          </button>
-        </div>
-        <div v-if="extras.length" class="fmt-head">其他内容</div>
-        <div class="opts">
-          <button
-            v-for="a in extras"
-            :key="a.id"
-            type="button"
-            class="opt"
-            :class="{ on: selected.has(a.id) }"
-            :aria-pressed="selected.has(a.id)"
-            @click="toggle(a.id)"
-          >
-            <span>{{ a.label }}</span>
-            <small class="mono">{{ sizeText(a) }}</small>
-          </button>
-        </div>
-
-        <SubtitlePicker
-          v-if="subtitleAssets.length && !isPlaylist"
-          v-model:mode="subMode"
-          :assets="subtitleAssets"
-          :selected="selected"
-          :has-video="videoSelected"
-          :preferred="preferredSubs"
-          @toggle="toggle"
-          @pick="pickSubs"
-        />
-        <div v-if="!subtitleAssets.length && videoFormats.length && !isPlaylist && app.settings" class="nosub" data-testid="parse-nosub">
-          <span class="mute">这个视频没有可下载的字幕。</span>
-          <el-switch
-            :model-value="app.settings.ai.autoTranscribe"
-            size="small"
-            inline-prompt
-            active-text="开"
-            inactive-text="关"
-            @update:model-value="(v: string | number | boolean) => toggleAutoSub(!!v)"
-          />
-          <span>下载完成后用 AI 自动生成字幕</span>
-          <small class="mute">（需要在“设置 → AI”配好本机 whisper 或云端识别；也可以下载完后在队列里点“生成字幕”）</small>
-        </div>
-        <ClipPicker v-if="canClip" v-model:clip="clip" v-model:split="splitOn" :duration-ms="result.durationMs" :chapters="result.chapters ?? []" />
 
         <template v-if="isPlaylist">
-          <PlaylistPicker v-model:selected="entrySel" :entries="entries" :downloaded="downloadedEntries" />
-          <small class="mute">每个条目会按设置里的默认清晰度下载（{{ app.settings?.subtitleMode === 'off' ? '不含字幕' : '同时处理偏好语言的字幕' }}），保存到以列表名命名的文件夹。</small>
-          <div class="row">
-            <el-button type="primary" :loading="enqueuing" :disabled="!!batchInfo && !batchInfo.finished" @click="downloadEntries">
-              {{ batchInfo && !batchInfo.finished ? `解析中 ${batchInfo.done}/${batchInfo.total}` : `下载所选 ${entrySel.size} 条` }}
-            </el-button>
+          <div class="sec">
+            <PlaylistPicker v-model:selected="entrySel" :entries="entries" :downloaded="downloadedEntries" />
+          </div>
+          <div class="sec">
+            <div class="pz-sh">
+              <span class="pz-st">每个视频怎么下</span>
+              <span class="pz-sa"><button type="button" class="pz-link" @click="app.goSettings('download')">改默认设置</button></span>
+            </div>
+            <div class="fields">
+              <div class="fld"><span>清晰度</span><b>按设置（{{ presetText }}）</b></div>
+              <div class="fld"><span>字幕</span><b>{{ subPolicyText }}</b></div>
+              <div class="fld"><span>声音</span><b>{{ app.settings?.qualityPreset === 'audio' ? `只要音频 · ${audioFmt}` : '视频（含声音）' }}</b></div>
+            </div>
           </div>
         </template>
 
-        <div v-if="!isPlaylist && result.kind !== 'images'" class="kv-line">
-          <el-checkbox v-model="audioOnly">只保留音频（下载后转为 {{ (app.settings?.audioFormat ?? 'mp3').toUpperCase() }}）</el-checkbox>
-        </div>
+        <template v-else>
+          <!-- 清晰度：单选列表 -->
+          <div v-if="videoFormats.length" class="sec" :class="{ off: usingAudioTrack }">
+            <div class="pz-sh">
+              <span class="pz-st">清晰度<small>{{ videoFormats.length }} 种</small></span>
+              <span v-if="videoFormats.length > 6" class="pz-sa"><button type="button" class="pz-link" @click="showAllFormats = !showAllFormats">{{ showAllFormats ? '收起' : `显示全部 ${videoFormats.length} 种` }}</button></span>
+            </div>
+            <p v-if="usingAudioTrack" class="pz-note">只要音频：下载单独的音频轨（{{ audioTrack?.label }}），不需要选清晰度。</p>
+            <p v-else-if="audioOnly" class="pz-note">这个视频没有单独的音频轨：会先下载所选清晰度再提取声音，选低一点的更快。</p>
+            <div class="rows" role="radiogroup" aria-label="清晰度">
+              <button
+                v-for="v in shownFormats"
+                :key="v.id"
+                type="button"
+                role="radio"
+                class="frow"
+                :class="{ on: selected.has(v.id) }"
+                :aria-checked="selected.has(v.id)"
+                :disabled="usingAudioTrack"
+                @click="pickVideo(v.id)"
+              >
+                <span class="dot" />
+                <span class="fname">
+                  <span class="ellipsis">{{ v.label }}</span>
+                  <span v-if="v.id === defaultVideoId" class="pz-tag" :class="{ acc: selected.has(v.id) }">默认</span>
+                  <span v-else-if="v.id === topVideoId" class="pz-tag">最高</span>
+                </span>
+                <span class="mono spec ellipsis">{{ formatSpec(v) }}</span>
+                <span class="mono size">{{ sizeOf(v) }}</span>
+              </button>
+            </div>
+          </div>
 
-        <div v-if="!isPlaylist" class="row">
-          <el-button type="primary" :loading="enqueuing" @click="download">下载所选</el-button>
-          <el-button @click="copyLinks">复制直链</el-button>
-          <el-button v-if="images.length > 1" @click="slideOpen = true">合成视频</el-button>
-          <el-button @click="preview = true">预览</el-button>
-        </div>
-      </div>
-    </section>
+          <!-- 声音 -->
+          <div v-if="result.kind === 'video'" class="sec">
+            <div class="pz-sh"><span class="pz-st">声音</span></div>
+            <div class="inline">
+              <div class="pz-seg" role="radiogroup" aria-label="声音">
+                <button type="button" role="radio" :aria-checked="!audioOnly" :class="{ on: !audioOnly }" @click="setSound('video')">视频（含声音）</button>
+                <button type="button" role="radio" :aria-checked="audioOnly" :class="{ on: audioOnly }" @click="setSound('audio')">只要音频 · {{ audioFmt }}</button>
+              </div>
+              <span class="pz-note">选“只要音频”时下载后转成 {{ audioFmt }}，不下载字幕</span>
+            </div>
+          </div>
 
-    <section v-if="!result && !parse.loading && parse.recent.length" class="recent">
-      <div class="label rhead">
-        <span>最近解析</span>
-        <el-button link size="small" @click="clearRecent">清空</el-button>
+          <!-- 图片 -->
+          <div v-if="images.length" class="sec">
+            <div class="pz-sh">
+              <span class="pz-st">图片<small>已选 {{ selectedImages }} / {{ images.length }}</small></span>
+              <span class="pz-sa">
+                <button type="button" class="pz-link" @click="selectAllImages(true)">全选</button>
+                <button type="button" class="pz-link" @click="selectAllImages(false)">全不选</button>
+                <button type="button" class="pz-link" @click="invertImages">反选</button>
+              </span>
+            </div>
+            <div class="grid">
+              <button
+                v-for="img in images"
+                :key="img.id"
+                type="button"
+                class="ph"
+                :class="{ sel: selected.has(img.id) }"
+                :aria-pressed="selected.has(img.id)"
+                :aria-label="img.label"
+                @click="toggle(img.id)"
+                @dblclick="preview = true"
+              >
+                <img :src="img.url" referrerpolicy="no-referrer" loading="lazy" alt="" />
+                <span class="ck" aria-hidden="true" />
+                <span class="no mono">{{ (img.index ?? 0) + 1 }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 背景音乐（图集） -->
+          <div v-if="result.kind === 'images' && musicAsset" class="sec">
+            <div class="pz-sh"><span class="pz-st">背景音乐</span></div>
+            <div class="inline">
+              <el-button class="round" circle aria-label="试听背景音乐" @click="preview = true">
+                <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor" /></svg>
+              </el-button>
+              <div class="music">
+                <span class="ellipsis">{{ musicAsset.label }}</span>
+                <span class="mono pz-note">{{ musicAsset.ext.toUpperCase() }}<template v-if="musicAsset.filesize"> · {{ formatBytes(musicAsset.filesize) }}</template></span>
+              </div>
+              <button type="button" class="pz-chip" :class="{ on: selected.has(musicAsset.id) }" :aria-pressed="selected.has(musicAsset.id)" @click="toggle(musicAsset.id)"><span class="pz-box" />一起下载</button>
+            </div>
+          </div>
+
+          <!-- 字幕 -->
+          <div v-if="subtitleAssets.length" class="sec" :class="{ off: audioOnly }">
+            <SubtitlePicker
+              v-model:mode="subMode"
+              :assets="subtitleAssets"
+              :selected="selected"
+              :has-video="videoSelected"
+              :preferred="preferredSubs"
+              :disabled="audioOnly ? '只要音频时不下载字幕。' : ''"
+              @toggle="toggle"
+              @pick="pickSubs"
+            />
+          </div>
+          <div v-else-if="videoFormats.length && app.settings && !audioOnly" class="sec" data-testid="parse-nosub">
+            <div class="pz-sh"><span class="pz-st">字幕</span></div>
+            <div class="inline">
+              <span class="pz-note">这个视频没有可下载的字幕。</span>
+              <el-switch :model-value="app.settings.ai.autoTranscribe" @update:model-value="(v: string | number | boolean) => toggleAutoSub(!!v)" />
+              <span>下载完成后用 AI 自动生成字幕</span>
+            </div>
+            <span class="pz-note">需要在“设置 → AI”配好本机 whisper 或云端识别；也可以下载完后在队列里点“生成字幕”。</span>
+          </div>
+
+          <!-- 范围 -->
+          <div v-if="result.kind === 'video' || result.kind === 'audio'" class="sec" :class="{ off: !canClip }">
+            <div class="pz-sh">
+              <span class="pz-st">范围</span>
+              <span v-if="result.durationMs" class="pz-sa"><span class="mono pz-note">全长 {{ formatDuration(result.durationMs) }}</span></span>
+            </div>
+            <ClipPicker v-if="canClip" v-model:clip="clip" v-model:split="splitOn" :duration-ms="result.durationMs" :chapters="result.chapters ?? []" />
+            <p v-else class="pz-note">只要音频时下载完整的声音。</p>
+          </div>
+
+          <!-- 附带下载 / 音频 -->
+          <div v-if="extrasShown.length" class="sec">
+            <div class="pz-sh"><span class="pz-st">{{ result.kind === 'audio' ? '音频' : '附带下载' }}</span></div>
+            <div class="chips">
+              <button
+                v-for="a in extrasShown"
+                :key="a.id"
+                type="button"
+                class="pz-chip"
+                :class="{ on: selected.has(a.id) }"
+                :aria-pressed="selected.has(a.id)"
+                :disabled="usingAudioTrack && a.id === audioTrack?.id"
+                @click="toggle(a.id)"
+              >
+                <span class="pz-box" />
+                <span class="ellipsis">{{ a.label }}</span>
+                <span class="mono pz-note">{{ a.ext.toUpperCase() }}<template v-if="a.filesize"> · {{ formatBytes(a.filesize) }}</template></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 合成视频（图集） -->
+          <div v-if="images.length > 1" class="sec">
+            <div class="pz-sh"><span class="pz-st">合成视频<small>可选</small></span></div>
+            <div class="inline">
+              <label class="lbl">每张显示 <el-input-number v-model="slideSecs" :min="0.5" :max="30" :step="0.5" :controls="false" class="secs" aria-label="每张显示秒数" /> 秒</label>
+              <el-checkbox v-if="musicAsset" v-model="slideMusic">配上背景音乐</el-checkbox>
+              <span class="pz-note">用选中的 {{ selectedImages }} 张，约 {{ Math.round(selectedImages * slideSecs) }} 秒，需要 ffmpeg</span>
+              <el-button class="push" :loading="sliding" :disabled="!selectedImages" @click="makeSlideshow">生成视频</el-button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 底部操作栏 -->
+        <div class="foot">
+          <div class="sum">
+            <span v-if="isPlaylist"><b>{{ entrySel.size }} 个视频</b> · {{ presetText }} · {{ subPolicyText }}</span>
+            <span v-else-if="summary"><b>{{ summaryHead }}</b>{{ summaryRest }}</span>
+            <span v-else class="pz-note">还没有选要下载的内容</span>
+            <span class="pz-note where">
+              <template v-if="!isPlaylist && sizeText2">{{ sizeText2 }} · </template>保存到 <span class="mono ellipsis path" :title="saveDir">{{ saveDir }}</span>
+              <button type="button" class="pz-link" @click="app.goSettings('download')">更改</button>
+            </span>
+          </div>
+          <el-button v-if="isPlaylist" type="primary" class="pz-strong big" :loading="enqueuing" :disabled="(!!batchInfo && !batchInfo.finished) || !entrySel.size" @click="downloadEntries">
+            {{ batchInfo && !batchInfo.finished ? `解析中 ${batchInfo.done}/${batchInfo.total}` : `下载所选 ${entrySel.size} 个` }}
+          </el-button>
+          <el-button v-else type="primary" class="pz-strong big" :loading="enqueuing" :disabled="nothingPicked" @click="download">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11" /><path d="M7 10l5 5 5-5" /><path d="M5 20h14" /></svg>
+            <span>下载所选</span>
+          </el-button>
+        </div>
+      </section>
+    </div>
+
+    <section v-if="!result && !parse.loading && parse.recent.length" class="recent card">
+      <div class="pz-sh rhead">
+        <span class="pz-st">最近解析</span>
+        <span class="pz-sa"><button type="button" class="pz-link" @click="clearRecent">清空</button></span>
       </div>
       <button v-for="r in parse.recent" :key="r.id" type="button" class="ritem" @click="openRecent(r)">
         <img v-if="r.cover" :src="r.cover" class="thumb" referrerpolicy="no-referrer" alt="" />
         <div v-else class="thumb" />
         <span class="ellipsis">{{ r.title }}</span>
-        <small class="mono mute">{{ r.info.platformName }} · {{ recentKind(r) }}</small>
+        <span class="pz-tag">{{ r.info.platformName }} · {{ recentKind(r) }}</span>
       </button>
     </section>
 
-    <section v-if="!result && !parse.loading && !parse.recent.length && !parse.error" class="empty">
+    <section v-if="!result && !parse.loading && !parse.recent.length && !parse.error" class="empty card">
       <h3>复制分享链接，就能保存无水印作品</h3>
       <ol>
         <li>在 App 里点“分享 → 复制链接”。</li>
@@ -590,16 +876,6 @@ function sizeText(a: Asset) {
         <li>选择视频、图片或背景音乐，点击“下载所选”。</li>
       </ol>
     </section>
-
-    <el-dialog v-model="slideOpen" title="图集合成视频" width="400px" append-to-body>
-      <p class="mute">把选中的 {{ selectedImages }} 张图片合成一个视频（需要 ffmpeg），保存在下载目录。</p>
-      <div class="slide-row"><span>每张显示</span><el-input-number v-model="slideSecs" :min="0.5" :max="30" :step="0.5" size="small" /><span>秒</span></div>
-      <el-checkbox v-if="musicAsset" v-model="slideMusic">配上背景音乐</el-checkbox>
-      <template #footer>
-        <el-button @click="slideOpen = false">取消</el-button>
-        <el-button type="primary" :loading="sliding" @click="makeSlideshow">生成</el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog v-model="preview" :title="result?.title" width="720px" align-center destroy-on-close>
       <div v-if="result" class="preview">
@@ -612,7 +888,7 @@ function sizeText(a: Asset) {
           <p v-else-if="previewUrl && previewNote && !previewFail" class="mute">{{ previewNote }}</p>
         </template>
         <p v-else-if="previewError" class="selectable mute">{{ previewError }}</p>
-        <el-carousel v-else-if="images.length" height="460px" indicator-position="outside" :autoplay="false">
+        <el-carousel v-if="images.length" height="460px" indicator-position="outside" :autoplay="false">
           <el-carousel-item v-for="img in images" :key="img.id">
             <img :src="previewImages[img.id] || img.url" referrerpolicy="no-referrer" alt="" />
           </el-carousel-item>
@@ -623,302 +899,576 @@ function sizeText(a: Asset) {
 </template>
 
 <style scoped>
-.slide-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.entries {
-  max-height: 320px;
-  overflow: auto;
-  border: 1px solid var(--cc-line);
-  border-radius: 6px;
-}
-.entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  border-top: 1px dashed var(--cc-line);
-  cursor: pointer;
-  font-size: 12.5px;
-}
-.entry:first-child {
-  border-top: 0;
-}
-.entry .idx {
-  width: 28px;
-  text-align: right;
-}
-.entry .grow {
-  flex: 1;
-  min-width: 0;
-}
-.kv-line {
-  margin-top: 4px;
-}
 .page {
-  padding: 20px 24px;
+  padding: 24px 32px 32px;
+  max-width: 1104px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 980px;
+  gap: 16px;
 }
+
+/* 粘贴栏 */
 .paste {
   display: flex;
   gap: 8px;
   align-items: flex-start;
 }
-.paste-input {
+.pastebox {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--cc-line);
+  border-radius: 8px;
+  background: var(--cc-card);
+  box-sizing: border-box;
 }
-.paste-input :deep(textarea) {
-  font-family: var(--cc-mono);
-  font-size: 12.5px;
-  padding: 9px 12px;
-  min-height: 40px !important;
+.pastebox:focus-within {
+  border-color: var(--cc-acc);
 }
-.paste :deep(.el-button) {
+.pastebox .ico {
+  flex: none;
+  margin-top: 14px;
+  color: var(--cc-mute);
+}
+.paste-input :deep(.el-textarea__inner) {
+  padding: 11px 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  min-height: 42px !important;
+}
+.paste .go {
+  min-width: 88px;
+  height: 44px;
+  font-size: 14px;
+}
+.paste .clr {
+  height: 44px;
   margin-left: 0;
 }
 .hint {
-  font-size: 11.5px;
-  color: var(--cc-mute);
   display: flex;
-  gap: 16px;
   flex-wrap: wrap;
-  margin-top: -4px;
+  align-items: center;
+  gap: 6px 18px;
+  font-size: 12px;
+  color: var(--cc-mute);
+  margin-top: -8px;
 }
 .hint .ok {
   color: var(--cc-ok);
 }
+.sites {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--cc-fg2);
+  user-select: text;
+}
 .batch {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 16px;
 }
 .batch .el-button {
   margin-left: auto;
 }
-.result {
-  display: grid;
-  grid-template-columns: 168px 1fr;
-  gap: 18px;
-  padding: 16px;
+
+/* 两栏 */
+.layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+.work {
+  flex: 1 1 280px;
+  max-width: 320px;
+  overflow: hidden;
+  position: sticky;
+  top: 0;
+}
+.dl {
+  flex: 999 1 520px;
+  min-width: 0;
+  /* clip 而不是 hidden：hidden 会让底部操作栏的 sticky 失效 */
+  overflow: clip;
+  display: flex;
+  flex-direction: column;
 }
 .skeleton {
-  display: block;
+  padding: 20px;
 }
-.cover-wrap {
-  position: relative;
-  cursor: pointer;
-  align-self: start;
-}
+
+/* 作品卡 */
 .cover {
-  width: 168px;
-  aspect-ratio: 9 / 16;
+  position: relative;
   display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: 0;
+  background: var(--cc-cover);
+  cursor: pointer;
+  overflow: hidden;
+}
+.cover.portrait {
+  aspect-ratio: 4 / 3;
+}
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.nocover {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  color: #ffffff99;
+  font-size: 12px;
 }
 .play {
   position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 28px;
-  color: #fffd;
-  text-shadow: 0 2px 8px #0008;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  background: #ffffffe6;
+  color: #1d2420;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s;
 }
+.cover:hover .play {
+  transform: scale(1.06);
+}
+.count {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 38%;
+  background: #000000a6;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.count .mono {
+  font-size: 22px;
+  font-weight: 600;
+}
+.count small {
+  font-size: 12px;
+}
+.badge,
 .dur {
   position: absolute;
-  right: 6px;
-  bottom: 6px;
-  font-size: 10.5px;
-  background: #000a;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: #000000b3;
   color: #fff;
-  padding: 0 5px;
-  border-radius: 3px;
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
 }
-.meta {
-  min-width: 0;
+.badge {
+  left: 10px;
+  top: 10px;
+  font-weight: 600;
+}
+.dur {
+  right: 10px;
+  bottom: 10px;
+  font-size: 12px;
+}
+.info {
+  padding: 16px 18px 18px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-.chips {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
 }
 .title {
   margin: 0;
   font-size: 15px;
   line-height: 1.45;
   font-weight: 600;
-  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
-.grid-head {
+.who {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--cc-mute);
+}
+.who .author {
+  color: var(--cc-fg);
+}
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.acts {
+  display: flex;
+  gap: 8px;
+  padding-top: 10px;
+  margin-top: 2px;
+  border-top: 1px solid var(--cc-line-soft);
+}
+.acts .el-button {
+  margin: 0;
+  height: 36px;
+}
+.acts .grow {
+  flex: 1;
+}
+.acts .icon {
+  width: 36px;
+  padding: 0;
+}
+
+/* 下载内容 */
+.dhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   justify-content: space-between;
+  gap: 4px 12px;
+  padding: 18px 24px 14px;
+}
+.dhead h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.sec {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid var(--cc-line-soft);
+}
+.sec.off .pz-st {
+  color: var(--cc-mute);
+}
+.sec p.pz-note {
+  margin: 0;
+}
+.inline {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 10px 12px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chips .pz-chip {
+  max-width: 360px;
+}
+
+/* 清晰度列表 */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.frow {
+  display: grid;
+  grid-template-columns: 20px minmax(96px, 150px) minmax(0, 1fr) 84px;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.frow:hover:not(:disabled) {
+  background: var(--cc-hover);
+}
+.frow.on {
+  background: var(--cc-acc-soft);
+  border-color: var(--cc-acc-line);
+}
+.frow:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.frow .dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--cc-dot);
+  box-sizing: border-box;
+}
+.frow.on .dot {
+  border: 5px solid var(--cc-acc-strong);
+}
+.fname {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 600;
+}
+.spec {
   font-size: 12px;
   color: var(--cc-mute);
 }
+.frow.on .spec {
+  color: var(--cc-fg2);
+}
+.size {
+  text-align: right;
+}
+
+/* 图片 */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-  gap: 8px;
-  max-height: 320px;
-  overflow: auto;
-  padding: 2px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
 }
 .ph {
-  all: unset;
-  cursor: pointer;
   position: relative;
   aspect-ratio: 3 / 4;
-  border-radius: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
   overflow: hidden;
-  border: 2px solid transparent;
-  background: var(--cc-side);
+  background: var(--cc-fill);
+  cursor: pointer;
 }
 .ph img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
-  opacity: 0.55;
-}
-.ph.sel {
-  border-color: var(--cc-acc);
+  opacity: 0.45;
+  transition: opacity 0.15s;
 }
 .ph.sel img {
   opacity: 1;
 }
-.ph.sel::after {
-  content: '✓';
+.ph .ck {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 18px;
-  height: 18px;
+  right: 6px;
+  top: 6px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: var(--cc-acc);
-  color: #1a1208;
-  font-size: 11px;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
+  border: 2px solid #fff;
+  background: #00000040;
+  box-sizing: border-box;
+}
+.ph.sel .ck {
+  background: var(--cc-acc-strong);
+}
+.ph.sel .ck::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 7px;
+  height: 4px;
+  border: 2px solid #fff;
+  border-top: 0;
+  border-right: 0;
+  transform: rotate(-45deg);
 }
 .ph .no {
   position: absolute;
-  left: 5px;
-  bottom: 4px;
-  font-size: 10px;
+  left: 6px;
+  bottom: 6px;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #000000a6;
   color: #fff;
-  text-shadow: 0 1px 3px #000;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
-.ph:focus-visible {
-  outline: 2px solid var(--cc-acc);
-}
-.fmt-head {
-  font-size: 11.5px;
-  color: var(--cc-mute);
-  margin-bottom: -4px;
-}
-.formats {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 8px;
-}
-.opts {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 8px;
-}
-.opt {
-  all: unset;
-  cursor: pointer;
-  border: 1px solid var(--cc-line);
-  border-radius: 8px;
-  padding: 8px 10px;
+
+/* 背景音乐、合成视频、列表设置 */
+.music {
+  flex: 1;
+  min-width: 160px;
   display: flex;
   flex-direction: column;
-  font-size: 12.5px;
 }
-.opt small {
-  color: var(--cc-mute);
-  font-size: 10.5px;
+.round {
+  width: 36px;
+  height: 36px;
 }
-.opt.on {
-  border-color: var(--cc-acc);
-  background: var(--cc-acc-soft);
-}
-.opt:focus-visible {
-  outline: 2px solid var(--cc-acc);
-}
-.row {
+.lbl {
   display: flex;
+  align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--cc-fg2);
 }
-.row :deep(.el-button) {
-  margin-left: 0;
+.secs {
+  width: 64px;
 }
-.recent {
+.push {
+  margin-left: auto;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.fld {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--cc-fg2);
 }
-.recent .rhead {
+.fld b {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--cc-line);
+  border-radius: 6px;
+  background: var(--cc-fill);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--cc-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.recent .label {
-  font-size: 11px;
-  color: var(--cc-mute);
-  letter-spacing: 0.08em;
+
+/* 底部操作栏：内容长时停在窗口底部 */
+.foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--cc-line);
+  background: var(--cc-foot);
+}
+.sum {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+.sum b {
+  font-weight: 600;
+}
+.where {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.where .path {
+  max-width: 420px;
+}
+.where .pz-link {
+  margin-left: 4px;
+  flex: none;
+}
+.big {
+  min-width: 148px;
+  height: 44px;
+  font-size: 14px;
+  gap: 8px;
+}
+.big svg {
+  margin-right: 6px;
+}
+
+/* 最近解析、空状态 */
+.recent {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rhead {
+  margin-bottom: 6px;
 }
 .ritem {
-  all: unset;
-  cursor: pointer;
   display: grid;
-  grid-template-columns: 30px 1fr auto;
-  gap: 12px;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
   align-items: center;
-  padding: 7px 10px;
-  border-radius: 7px;
-  background: var(--cc-card);
-  border: 1px solid var(--cc-line);
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .ritem:hover {
-  border-color: var(--cc-acc);
+  background: var(--cc-hover);
 }
 .ritem .thumb {
-  width: 30px;
-  height: 40px;
+  width: 64px;
+  height: 36px;
+  border-radius: 4px;
 }
 .empty {
-  padding: 28px 4px;
-  color: var(--cc-mute);
+  padding: 24px 28px;
 }
 .empty h3 {
-  color: var(--cc-fg);
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   font-size: 15px;
 }
 .empty ol {
-  padding-left: 18px;
   margin: 0;
+  padding-left: 20px;
+  color: var(--cc-fg2);
   line-height: 1.9;
 }
+
+/* 预览 */
 .preview audio {
   width: 100%;
-  display: block;
 }
 .preview video,
 .preview img {
@@ -928,12 +1478,23 @@ function sizeText(a: Asset) {
   background: #000;
   display: block;
 }
-.nosub {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 12.5px;
-  padding: 6px 2px;
+
+@media (max-width: 860px) {
+  .work {
+    max-width: none;
+    position: static;
+  }
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .frow {
+    grid-template-columns: 20px minmax(0, 1fr) 72px;
+  }
+  .frow .spec {
+    display: none;
+  }
 }
 </style>

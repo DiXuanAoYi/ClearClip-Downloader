@@ -93,6 +93,11 @@ async fn read_sources(ffmpeg: &Path, p: &Project, ctx: &JobCtx) -> AppResult<Has
         src.insert(path.clone(), Source::from_facts(&f));
         ctx.check()?;
     }
+    for (n, c) in p.clips.iter().enumerate() {
+        if !c.lut.is_empty() && !Path::new(&c.lut).is_file() {
+            return Err(AppError::invalid(format!("找不到第 {} 个片段的 LUT 文件：{}", n + 1, c.lut)));
+        }
+    }
     for t in &p.texts {
         if let Some(f) = &t.font {
             if !Path::new(f).is_file() {
@@ -121,9 +126,31 @@ async fn prepare(ctx: &JobCtx, project: &Project, mode: Mode) -> AppResult<Prepa
     let sources = read_sources(&ffmpeg, &project, ctx).await?;
     let notes = fit_to_sources(&mut project, &sources)?;
     let tmp = tmp_dir(ctx);
+    bake_lut_strength(&mut project, &tmp)?;
     let font = fonts::default_font();
     let plan = build(&project, &sources, &caps, &tmp, mode, font.as_deref())?;
     Ok(Prepared { ffmpeg, caps, project, plan, notes, tmp })
+}
+
+/// LUT 强度不到 100% 的片段：把“原样”和这张 LUT 按强度混成一张新的 `.cube`（放在临时文件夹），导出时套这张。
+pub(super) fn bake_lut_strength(p: &mut Project, tmp: &Path) -> AppResult<()> {
+    let mut done: HashMap<(String, u32), String> = HashMap::new();
+    for c in p.clips.iter_mut().filter(|c| !c.lut.is_empty() && c.lut_mix < 0.995) {
+        let key = (c.lut.clone(), (c.lut_mix * 1000.0).round() as u32);
+        if let Some(path) = done.get(&key) {
+            c.lut = path.clone();
+            continue;
+        }
+        let text = std::fs::read_to_string(&c.lut).map_err(|e| AppError::invalid(format!("读不了 LUT 文件 {}：{e}", c.lut)))?;
+        let lut = crate::lut::Lut3::parse(&text).map_err(|e| AppError::invalid(format!("LUT 文件 {} 不能用：{e}", c.lut)))?;
+        std::fs::create_dir_all(tmp)?;
+        let out = tmp.join(format!("lut-{}.cube", done.len()));
+        std::fs::write(&out, lut.with_strength(c.lut_mix as f32).to_cube())?;
+        let path = out.to_string_lossy().into_owned();
+        done.insert(key, path.clone());
+        c.lut = path;
+    }
+    Ok(())
 }
 
 fn note_text(notes: &[String], plan: &EditPlan) -> String {
@@ -152,6 +179,19 @@ async fn run(ctx: &JobCtx, pre: &Prepared, out: &Path) -> AppResult<()> {
     for (k, m) in pre.plan.masks.iter().enumerate() {
         ctx.note(format!("正在生成区域遮罩（{}/{}）…", k + 1, total));
         render_mask(&pre.ffmpeg, m, || ctx.check()).await?;
+    }
+    // 防抖：先逐个片段分析抖动（vidstab 的第一遍），结果写到临时文件夹
+    let ns = pre.plan.stabs.len();
+    if ns > 0 {
+        std::fs::create_dir_all(&pre.tmp)?;
+    }
+    for (k, a) in pre.plan.stabs.iter().enumerate() {
+        ctx.note(format!("正在分析画面抖动（{}/{}）…", k + 1, ns));
+        match run_ffmpeg_progress(&pre.ffmpeg, a, None, &ctx.cancel, &ctx.wake, &|_| {}).await {
+            RunEnd::Ok => {}
+            RunEnd::Canceled => return Err(AppError::msg("canceled")),
+            RunEnd::Failed(m) => return Err(AppError::msg(format!("防抖分析失败：{m}"))),
+        }
     }
     let mut args = pre.plan.args.clone();
     args.extend(muxer_args(pre.plan.ext, out));

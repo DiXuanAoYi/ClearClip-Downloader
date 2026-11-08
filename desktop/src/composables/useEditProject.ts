@@ -673,7 +673,7 @@ export function useEditProject() {
   }
 
   /** 把选中片段的转场 / 调色 / 画面方向应用到其他所有片段，返回变了几个。 */
-  function applyToAll(what: 'transition' | 'tone' | 'turn'): number {
+  function applyToAll(what: 'transition' | 'tone' | 'turn' | 'lut'): number {
     const c = selectedClip.value
     if (!c) return 0
     let n = 0

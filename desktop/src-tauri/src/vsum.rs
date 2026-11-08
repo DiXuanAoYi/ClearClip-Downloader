@@ -75,6 +75,8 @@ pub struct Req {
     pub url: String,
     /// explain / note：前后文（每行 `[m:ss] 文字`）
     pub context: String,
+    /// lookup：这一句的译文（双语文稿里查词时带上，回答里给出这个词在译文里对应的那几个字 `aligned`）
+    pub trans: String,
     /// subtitles：只取这一个字幕轨（语言代码，来自 kind=tracks）；transcribe：填 `audio` 表示不取在线字幕、直接取音频转写
     pub track: String,
     /// 自己改过的系统提示词（单次调用的类型才生效：explain / punctuate / note / refine / ask / mindmap / rewrite）
@@ -882,8 +884,18 @@ fn lookup_system(lang: &str) -> String {
          \"note\": optional one short usage tip in {lang} (collocation, register, false friend), else \"\", \
          \"examples\": exactly 2 short, natural example sentences in the WORD's own language that use the lemma, in different contexts (not the given SENTENCE), \
          each {{\"text\": the sentence, \"tr\": its translation in {lang}}}}}. \
+         If a TRANSLATION of the sentence is given, also add \"aligned\": the exact substring of TRANSLATION (copied character for character, shortest span) that renders WORD, or \"\" if none. \
          The transcript may contain recognition errors: if WORD looks like a mis-heard word, give the likely intended word in \"lemma\" and explain in \"note\". No markdown, no extra text."
     )
+}
+
+/// 模型给的“这个词在译文里对应的字”：必须真的出现在译文里才要（首尾标点不算），否则不给，免得标错地方。
+fn keep_aligned(aligned: &str, trans: &str) -> String {
+    let a = aligned.trim().trim_matches(|c: char| c.is_ascii_punctuation() || "，。；：！？、“”‘’（）《》".contains(c)).trim();
+    if a.is_empty() || trans.is_empty() || a.chars().count() > 40 || !trans.contains(a) {
+        return String::new();
+    }
+    a.to_string()
 }
 
 fn note_system(lang: &str) -> String {
@@ -1557,7 +1569,11 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
         "lookup" => {
             progress(0, 1)?;
             let word = req.text.trim();
-            let user = format!("WORD: {}\nSENTENCE: {}\nVIDEO: {}", word, req.context.trim(), req.title.trim());
+            let mut user = format!("WORD: {}\nSENTENCE: {}\nVIDEO: {}", word, req.context.trim(), req.title.trim());
+            let trans: String = req.trans.trim().chars().take(1000).collect();
+            if !trans.is_empty() {
+                user.push_str(&format!("\nTRANSLATION: {trans}"));
+            }
             let resp = chat(ep, model, &pick_system(req, lookup_system(lang)), &user).await?;
             progress(1, 1)?;
             let mut v = serde_json::from_str::<Value>(ai::strip_fences(&resp)).map_err(|_| model_err())?;
@@ -1566,6 +1582,8 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
                 o.insert("word".into(), json!(word));
                 o.insert("rank".into(), json!(r));
                 o.insert("level".into(), json!(crate::vocab::level(r)));
+                let al = keep_aligned(o.get("aligned").and_then(Value::as_str).unwrap_or(""), &trans);
+                o.insert("aligned".into(), json!(al));
             }
             Ok(v)
         }

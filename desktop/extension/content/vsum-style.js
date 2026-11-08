@@ -22,11 +22,6 @@
     .vcard .vf { margin-top: 4px; }
     .chips { display: flex; gap: 5px; flex-wrap: wrap; margin: 6px 0; }
     .chip { background: #d9762b1f; color: #8a3f0c; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
-    .hov { position: fixed; z-index: 3; width: min(340px, calc(100vw - 16px)); background: #fff; color: #1d2420; border: 1px solid #cfd5d1; border-radius: 10px; box-shadow: 0 10px 28px #0003; padding: 8px 10px; font-size: 13px; line-height: 1.6; }
-    .hov .src { color: #5d6862; font-size: 12px; margin-bottom: 4px; }
-    .hov .out { white-space: pre-wrap; word-break: break-word; }
-    .hov .bar { display: flex; gap: 6px; margin-top: 6px; }
-    .hov button { padding: 1px 8px; font-size: 12px; }
     .ln { position: relative; display: grid; grid-template-columns: 48px 1fr; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; }
     .ln:hover { background: #d9762b14; }
     .ln.cur { background: #d9762b1f; }
@@ -39,7 +34,9 @@
     .ln .tm { color: #b4561a; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px; line-height: 20px; align-self: start; justify-self: start; }
     .ln .tr { color: #5d6862; display: block; border-radius: 4px; transition: background .12s, color .12s; }
     .ln .mn { display: block; }
-    .ln:has(.mn:hover) .tr, .ln .tr.hl { background: #fde9d4; color: #7a3a0c; }
+    .ln i.w { font-style: normal; border-radius: 3px; }
+    .ln i.w:hover, .ln i.w.on { background: #f0a06455; box-shadow: 0 1px 0 #d9762b; }
+    .ln mark.al { background: #f7c08a; color: #5a2a06; border-radius: 3px; padding: 0 2px; font-weight: 600; }
     .mute { color: #5d6862; font-size: 12px; }
     .cmbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; margin: 6px 0; }
     .cmbar i { display: block; }
@@ -160,7 +157,7 @@
       .card, .msg .b, select, input[type=text], textarea { background: #262f2a; border-color: #3a443e; color: #eef1ee; }
       button.sec { background: #262f2a; color: #eef1ee; border-color: #3a443e; }
       .ln .tr, .meta, .mute, .src { color: #a9b3ad; }
-      .ln:has(.mn:hover) .tr, .ln .tr.hl { background: #4a3322; color: #ffd9b3; }
+      .ln i.w:hover, .ln i.w.on { background: #f0a06440; } .ln mark.al { background: #8a4a1c; color: #ffe2c4; }
       .warn { background: #3a2f1e; border-color: #6b5530; }
       .cq { background: #1d2420; } .chip { color: #f0a064; background: #e28a4529; } .cmb, .cmth { background: #3a443e; border-color: #3a443e; } .cmth { background: none; } .cmleg, .cq .m { color: #a9b3ad; }
       .tg { color: #f0a064; } .tg.ok { color: #6cc08a; } .tg.no { color: #ee917b; }

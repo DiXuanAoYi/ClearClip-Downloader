@@ -5,9 +5,12 @@
 //! - 提取网站：这些网站上翻译网页 / 视频时，自动在后台提取术语，进「待确认」。
 //! - 翻译时：只把本批文字里**出现过**的术语放进提示词，省 token，也不干扰无关内容。
 //!
-//! CSV 与沉浸式翻译一致：`source,target,tgt_lng`（本程序另外认第 4 列 `note`）。
+//! - 术语可以分层（如 界面 › 文件 › 打开文件）：上级本身也是术语；翻译时命中的术语连同上级路径一起交给模型，
+//!   同一个原文在不同上级下可以有不同译法。上级可以设成“只作分组”（不当术语用）。
+//!
+//! CSV 与沉浸式翻译一致：`source,target,tgt_lng`（本程序另外认 `note`、`path`（上级路径，用 / 分隔）、`group` 三列，对方会忽略）。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -19,6 +22,8 @@ use crate::error::{AppError, AppResult};
 /// 单个术语库最多多少条；整体提示词里一次最多放多少条。
 pub const MAX_TERMS: usize = 20_000;
 pub const MAX_IN_PROMPT: usize = 40;
+/// 术语最多几层
+pub const MAX_DEPTH: usize = 6;
 const MAX_CANDIDATES: usize = 2_000;
 
 pub const COMMUNITY_RAW: &str = "https://raw.githubusercontent.com/immersive-translate/terms/main";
@@ -31,6 +36,103 @@ pub struct Term {
     /// 译文；留空表示“保持原文不翻译”
     pub target: String,
     pub note: String,
+    /// 下级术语（分层）
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<Term>,
+    /// 只作分组：不当术语用，下级照常用
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub group: bool,
+    /// 翻译时用：上级路径和上级的说明（`flatten` 填写，不存盘）
+    #[serde(skip)]
+    pub context: String,
+}
+
+impl Term {
+    pub fn new(source: &str, target: &str) -> Term {
+        Term { source: source.into(), target: target.into(), ..Default::default() }
+    }
+}
+
+/// 一组术语（含所有下级）一共多少条。
+pub fn count_terms(terms: &[Term]) -> usize {
+    terms.iter().map(|t| 1 + count_terms(&t.children)).sum()
+}
+
+/// 摊平成一层，给翻译用：只作分组的不要；有上级的在 `context` 里写上路径（原文 › … = 译文 › …）和上级的说明。
+pub fn flatten(terms: &[Term]) -> Vec<Term> {
+    fn walk(ts: &[Term], src: &mut Vec<String>, tgt: &mut Vec<String>, notes: &mut Vec<String>, out: &mut Vec<Term>) {
+        for t in ts {
+            if !t.group {
+                let mut ctx = vec![];
+                if !src.is_empty() {
+                    ctx.push(format!("in {} = {}", src.join(" › "), tgt.join(" › ")));
+                }
+                ctx.extend(notes.iter().filter(|n| !n.is_empty()).cloned());
+                out.push(Term {
+                    source: t.source.clone(),
+                    target: t.target.clone(),
+                    note: t.note.clone(),
+                    children: vec![],
+                    group: false,
+                    context: ctx.join("; "),
+                });
+            }
+            if !t.children.is_empty() {
+                src.push(t.source.clone());
+                tgt.push(if t.target.is_empty() { t.source.clone() } else { t.target.clone() });
+                notes.push(t.note.clone());
+                walk(&t.children, src, tgt, notes, out);
+                src.pop();
+                tgt.pop();
+                notes.pop();
+            }
+        }
+    }
+    let mut out = vec![];
+    walk(terms, &mut vec![], &mut vec![], &mut vec![], &mut out);
+    out
+}
+
+/// 把 `incoming` 并进 `into`：同一层里同名（不分大小写）的以新的为准，下级逐层合并；新的追加在后面。
+pub fn merge_terms(into: &mut Vec<Term>, incoming: Vec<Term>) {
+    for t in incoming {
+        let key = t.source.trim().to_lowercase();
+        if let Some(have) = into.iter_mut().find(|x| x.source.trim().to_lowercase() == key) {
+            have.target = t.target;
+            have.note = t.note;
+            have.group = t.group;
+            merge_terms(&mut have.children, t.children);
+        } else {
+            into.push(t);
+        }
+    }
+}
+
+/// 按上级路径（原文）放进树里：路径上缺的上级补成“只作分组”。
+fn insert_at(tree: &mut Vec<Term>, path: &[String], t: Term) {
+    let Some((head, rest)) = path.split_first() else {
+        // CSV 里同一层重复的原文保留靠前的；之前为了放下级补出来的分组，用这一行的内容填上
+        let key = t.source.trim().to_lowercase();
+        match tree.iter_mut().find(|x| x.source.trim().to_lowercase() == key) {
+            Some(have) if have.group && have.target.is_empty() && have.note.is_empty() => {
+                have.target = t.target;
+                have.note = t.note;
+                have.group = t.group;
+            }
+            Some(_) => {}
+            None => tree.push(t),
+        }
+        return;
+    };
+    let key = head.to_lowercase();
+    let idx = match tree.iter().position(|x| x.source.trim().to_lowercase() == key) {
+        Some(i) => i,
+        None => {
+            tree.push(Term { source: head.clone(), group: true, ..Default::default() });
+            tree.len() - 1
+        }
+    };
+    insert_at(&mut tree[idx].children, rest, t);
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,6 +152,8 @@ pub struct Glossary {
     pub lang: String,
     pub terms: Vec<Term>,
     pub updated: i64,
+    /// 所在文件夹，多层用 `/` 分隔（如 `游戏/原神`）；空 = 最外层
+    pub folder: String,
 }
 
 impl Default for Glossary {
@@ -65,6 +169,7 @@ impl Default for Glossary {
             lang: String::new(),
             terms: vec![],
             updated: 0,
+            folder: String::new(),
         }
     }
 }
@@ -108,6 +213,56 @@ pub struct Data {
     pub glossaries: Vec<Glossary>,
     pub candidates: Vec<Candidate>,
     pub sites: Vec<ExtractSite>,
+    /// 建了还没放术语库的文件夹（有术语库的文件夹由术语库自己的 `folder` 体现）
+    pub folders: Vec<String>,
+}
+
+// ---------- 文件夹 ----------
+
+/// 整理文件夹路径：`/` 分隔，去掉空段和首尾空白，最多 6 层、每层 40 字。
+pub fn clean_folder(path: &str) -> String {
+    path.split(['/', '\\'])
+        .map(|p| p.trim().chars().filter(|c| !c.is_control()).take(40).collect::<String>())
+        .filter(|p| !p.is_empty())
+        .take(6)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// `path` 是不是 `dir` 本身或它下面的。
+pub fn in_folder(path: &str, dir: &str) -> bool {
+    path == dir || path.strip_prefix(dir).is_some_and(|r| r.starts_with('/'))
+}
+
+/// 把 `from` 文件夹（连同子文件夹和里面的术语库）改到 `to` 下。
+pub fn rename_folder(d: &mut Data, from: &str, to: &str) {
+    let mv = |p: &str| if in_folder(p, from) { clean_folder(&format!("{to}{}", &p[from.len()..])) } else { p.to_string() };
+    for g in &mut d.glossaries {
+        g.folder = mv(&g.folder);
+    }
+    d.folders = d.folders.iter().map(|f| mv(f)).filter(|f| !f.is_empty()).collect();
+    d.folders.sort();
+    d.folders.dedup();
+}
+
+/// 删除文件夹：里面的术语库和子文件夹往上挪一层（不删术语库）。
+pub fn remove_folder(d: &mut Data, path: &str) {
+    let parent = path.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+    let up = |p: &str| -> String {
+        if p == path {
+            parent.clone()
+        } else if in_folder(p, path) {
+            clean_folder(&format!("{parent}/{}", &p[path.len() + 1..]))
+        } else {
+            p.to_string()
+        }
+    };
+    for g in &mut d.glossaries {
+        g.folder = up(&g.folder);
+    }
+    d.folders = d.folders.iter().filter(|f| f.as_str() != path).map(|f| up(f)).filter(|f| !f.is_empty()).collect();
+    d.folders.sort();
+    d.folders.dedup();
 }
 
 // ---------- 持久化 ----------
@@ -162,29 +317,67 @@ pub fn clean_glossary(g: &mut Glossary) {
     g.description = g.description.trim().chars().take(400).collect();
     g.matches = g.matches.iter().map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).take(100).collect();
     g.lang = g.lang.trim().to_string();
+    g.folder = clean_folder(&g.folder);
     if !matches!(g.origin.as_str(), "user" | "community" | "extracted") {
         g.origin = "user".into();
     }
     g.terms = clean_terms(std::mem::take(&mut g.terms));
 }
 
+/// 整理术语：去掉空的、同一层里重名的合并（保留靠前的，下级合在一起）、限制总条数和层数（超过 6 层的提到第 6 层）。
 pub fn clean_terms(terms: Vec<Term>) -> Vec<Term> {
-    let mut seen = HashSet::new();
-    terms
-        .into_iter()
-        .filter_map(|t| {
-            let source = t.source.trim().chars().take(200).collect::<String>();
-            if source.is_empty() {
-                return None;
-            }
-            seen.insert(source.to_lowercase()).then(|| Term {
-                source,
-                target: t.target.trim().chars().take(300).collect(),
-                note: t.note.trim().chars().take(200).collect(),
-            })
-        })
-        .take(MAX_TERMS)
-        .collect()
+    let mut budget = MAX_TERMS;
+    clean_level(terms, 1, &mut budget)
+}
+
+fn clean_level(terms: Vec<Term>, depth: usize, budget: &mut usize) -> Vec<Term> {
+    // 先摊开：原文为空的行不要，但它的下级提上来
+    let mut flat: Vec<Term> = vec![];
+    let mut stack: Vec<Term> = terms.into_iter().rev().collect();
+    while let Some(mut t) = stack.pop() {
+        t.source = t.source.trim().chars().filter(|c| !c.is_control()).take(200).collect();
+        if t.source.is_empty() {
+            stack.extend(std::mem::take(&mut t.children).into_iter().rev());
+            continue;
+        }
+        // 已经是最深一层：下级提到这一层，排在它后面
+        if depth >= MAX_DEPTH && !t.children.is_empty() {
+            let kids = std::mem::take(&mut t.children);
+            flat.push(t);
+            stack.extend(kids.into_iter().rev());
+            continue;
+        }
+        flat.push(t);
+    }
+    // 同一层重名的合并
+    let mut order: Vec<Term> = vec![];
+    let mut at: HashMap<String, usize> = HashMap::new();
+    for t in flat {
+        let key = t.source.to_lowercase();
+        if let Some(&i) = at.get(&key) {
+            order[i].children.extend(t.children);
+        } else {
+            at.insert(key, order.len());
+            order.push(t);
+        }
+    }
+    let mut out = vec![];
+    for t in order {
+        if *budget == 0 {
+            break;
+        }
+        *budget -= 1;
+        let children = clean_level(t.children, depth + 1, budget);
+        out.push(Term {
+            source: t.source,
+            target: t.target.trim().chars().take(300).collect(),
+            note: t.note.trim().chars().take(200).collect(),
+            children,
+            group: t.group,
+            context: String::new(),
+        });
+    }
+    out
 }
 
 // ---------- CSV ----------
@@ -214,7 +407,9 @@ fn csv_row(line: &str) -> Vec<String> {
 pub fn parse_csv(text: &str) -> Vec<Term> {
     let text = text.trim_start_matches('\u{feff}');
     let mut terms = vec![];
-    let mut cols: Option<(usize, usize, Option<usize>)> = None;
+    // 原文、译文、说明、上级路径、只作分组 各在第几列
+    type Cols = (usize, usize, Option<usize>, Option<usize>, Option<usize>);
+    let mut cols: Option<Cols> = None;
     let mut first = true;
     for raw in text.lines() {
         let line = raw.trim_end_matches('\r');
@@ -227,18 +422,21 @@ pub fn parse_csv(text: &str) -> Vec<Term> {
             let low: Vec<String> = row.iter().map(|c| c.trim().to_lowercase()).collect();
             if let Some(si) = low.iter().position(|c| c == "source") {
                 if let Some(ti) = low.iter().position(|c| c == "target") {
-                    cols = Some((si, ti, low.iter().position(|c| c == "note")));
+                    let col = |n: &[&str]| low.iter().position(|c| n.contains(&c.as_str()));
+                    cols = Some((si, ti, col(&["note"]), col(&["path", "parent"]), col(&["group"])));
                     continue;
                 }
             }
         }
-        let (si, ti, ni) = cols.unwrap_or((0, 1, None));
+        let (si, ti, ni, pi, gi) = cols.unwrap_or((0, 1, None, None, None));
         let get = |i: usize| row.get(i).map(|s| s.trim().to_string()).unwrap_or_default();
         let source = get(si);
         if source.is_empty() {
             continue;
         }
-        terms.push(Term { source, target: get(ti), note: ni.map(get).unwrap_or_default() });
+        let group = gi.map(get).is_some_and(|g| matches!(g.to_lowercase().as_str(), "1" | "true" | "yes" | "是"));
+        let path: Vec<String> = pi.map(get).unwrap_or_default().split('/').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect();
+        insert_at(&mut terms, &path, Term { source, target: get(ti), note: ni.map(get).unwrap_or_default(), group, ..Default::default() });
     }
     clean_terms(terms)
 }
@@ -251,13 +449,28 @@ fn csv_cell(s: &str) -> String {
     }
 }
 
-/// 导出成沉浸式翻译同样的 CSV（多一列 note，放在最后，对方会忽略）。
+/// 导出成沉浸式翻译同样的 CSV（多 note、path（上级路径）、group 三列，放在最后，对方会忽略）。上级排在下级前面。
 pub fn to_csv(terms: &[Term], lang: &str) -> String {
-    let lang = if lang == "auto" { "" } else { lang };
-    let mut out = String::from("source,target,tgt_lng,note\n");
-    for t in terms {
-        out.push_str(&format!("{},{},{},{}\n", csv_cell(&t.source), csv_cell(&t.target), csv_cell(lang), csv_cell(&t.note)));
+    fn walk(ts: &[Term], path: &mut Vec<String>, lang: &str, out: &mut String) {
+        for t in ts {
+            let g = if t.group { "1" } else { "" };
+            out.push_str(&format!(
+                "{},{},{},{},{},{}\n",
+                csv_cell(&t.source),
+                csv_cell(&t.target),
+                csv_cell(lang),
+                csv_cell(&t.note),
+                csv_cell(&path.join("/")),
+                g
+            ));
+            path.push(t.source.clone());
+            walk(&t.children, path, lang, out);
+            path.pop();
+        }
     }
+    let lang = if lang == "auto" { "" } else { lang };
+    let mut out = String::from("source,target,tgt_lng,note,path,group\n");
+    walk(terms, &mut vec![], lang, &mut out);
     out
 }
 
@@ -374,9 +587,10 @@ pub fn select_terms(glossaries: &[Glossary], url: &str, tag: &str) -> Vec<Term> 
             if !site_ok || !lang_ok(&g.lang, tag) {
                 continue;
             }
-            for t in &g.terms {
-                if seen.insert(t.source.to_lowercase()) {
-                    out.push(t.clone());
+            // 同一个原文在不同上级下可以有不同译法，所以按“路径 + 原文”去重
+            for t in flatten(&g.terms) {
+                if seen.insert(format!("{}|{}", t.context.to_lowercase(), t.source.to_lowercase())) {
+                    out.push(t);
                 }
             }
         }
@@ -427,9 +641,10 @@ pub fn prompt_block(terms: &[&Term]) -> String {
     if terms.is_empty() {
         return String::new();
     }
-    let mut s = String::from("\nGlossary — whenever these terms appear, use exactly the given rendering (match case-insensitively; inflections follow the same rendering). A term with no rendering must be left in the original language:\n");
+    let mut s = String::from("\nGlossary — whenever these terms appear, use exactly the given rendering (match case-insensitively; inflections follow the same rendering). A term with no rendering must be left in the original language. Some terms say where they belong (\"in A › B = …\", e.g. a menu path or category); when the same term is listed with different renderings, use the one whose place fits the text:\n");
     for t in terms {
-        let note = if t.note.is_empty() { String::new() } else { format!("  ({})", t.note) };
+        let extra: Vec<&str> = [t.context.as_str(), t.note.as_str()].into_iter().filter(|x| !x.is_empty()).collect();
+        let note = if extra.is_empty() { String::new() } else { format!("  ({})", extra.join("; ")) };
         if t.target.is_empty() {
             s.push_str(&format!("- {} => (keep as is){note}\n", t.source));
         } else {
@@ -457,7 +672,12 @@ pub fn parse_extracted(resp: &str) -> Vec<Term> {
     let get = |v: &Value, keys: &[&str]| keys.iter().find_map(|k| v.get(*k).and_then(Value::as_str)).unwrap_or("").trim().to_string();
     let terms = arr
         .iter()
-        .map(|v| Term { source: get(v, &["source", "term", "original"]), target: get(v, &["target", "translation"]), note: get(v, &["note", "context"]) })
+        .map(|v| Term {
+            source: get(v, &["source", "term", "original"]),
+            target: get(v, &["target", "translation"]),
+            note: get(v, &["note", "context"]),
+            ..Default::default()
+        })
         .filter(|t| t.source.chars().count() <= 60 && !t.source.is_empty() && !t.source.eq_ignore_ascii_case(&t.target))
         .collect();
     clean_terms(terms)
@@ -479,7 +699,7 @@ pub fn sample_chunks(text: &str, size: usize, parts: usize) -> Vec<String> {
 
 /// 把新提取的术语并进待确认列表：已在启用术语库里的、已存在的不重复，重复出现的计数 +1。返回新增条数。
 pub fn merge_candidates(data: &mut Data, found: Vec<Term>, site: &str, now: i64) -> usize {
-    let known: HashSet<String> = data.glossaries.iter().flat_map(|g| g.terms.iter().map(|t| t.source.to_lowercase())).collect();
+    let known: HashSet<String> = data.glossaries.iter().flat_map(|g| flatten(&g.terms).into_iter().map(|t| t.source.to_lowercase())).collect();
     let mut added = 0;
     for t in found {
         let key = t.source.to_lowercase();
@@ -587,7 +807,7 @@ pub fn file_found(store: &Store, found: Vec<Term>, site_host: &str, now: i64) ->
     store.edit(|d| {
         let target = d.sites.iter().find(|s| s.enabled && site_matches(&s.pattern, site_host)).map(|s| s.glossary.clone()).unwrap_or_default();
         let added = if let Some(g) = d.glossaries.iter_mut().find(|g| !target.is_empty() && g.id == target) {
-            let have: HashSet<String> = g.terms.iter().map(|t| t.source.to_lowercase()).collect();
+            let have: HashSet<String> = flatten(&g.terms).into_iter().map(|t| t.source.to_lowercase()).collect();
             let fresh: Vec<Term> = found.into_iter().filter(|t| !have.contains(&t.source.to_lowercase())).collect();
             let n = fresh.len();
             g.terms.extend(fresh);
@@ -610,7 +830,7 @@ mod tests {
     use super::*;
 
     fn t(s: &str, tr: &str) -> Term {
-        Term { source: s.into(), target: tr.into(), note: String::new() }
+        Term { source: s.into(), target: tr.into(), note: String::new(), ..Default::default() }
     }
 
     #[test]
@@ -619,7 +839,7 @@ mod tests {
         let terms = parse_csv(csv);
         assert_eq!(terms, vec![t("Blockchain", "区块链"), t("Hello, world", "你好，\"世界\"")]);
         let out = to_csv(&terms, "zh-CN");
-        assert!(out.starts_with("source,target,tgt_lng,note\n"));
+        assert!(out.starts_with("source,target,tgt_lng,note,path,group\n"));
         assert_eq!(parse_csv(&out), terms);
         assert!(out.contains("\"Hello, world\""));
     }
@@ -629,7 +849,7 @@ mod tests {
         assert_eq!(parse_csv("API\tAPI 接口\nbug\t缺陷\n"), vec![t("API", "API 接口"), t("bug", "缺陷")]);
         assert_eq!(parse_csv("pitch,推介\n"), vec![t("pitch", "推介")]);
         let reordered = parse_csv("note,target,source\n游戏里的,存档,save point\n");
-        assert_eq!(reordered, vec![Term { source: "save point".into(), target: "存档".into(), note: "游戏里的".into() }]);
+        assert_eq!(reordered, vec![Term { source: "save point".into(), target: "存档".into(), note: "游戏里的".into(), ..Default::default() }]);
     }
 
     #[test]
@@ -754,5 +974,123 @@ mod tests {
         assert_eq!(again.glossaries[0].name, "未命名术语库");
         assert_eq!(again.glossaries[0].terms, vec![t("A", "甲")]);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn folders_are_cleaned_renamed_and_removed_without_losing_glossaries() {
+        assert_eq!(clean_folder(" 游戏 / / 原神 /"), "游戏/原神");
+        assert_eq!(clean_folder("a\\b/c/d/e/f/g/h"), "a/b/c/d/e/f");
+        assert!(in_folder("游戏/原神", "游戏") && in_folder("游戏", "游戏") && !in_folder("游戏机", "游戏"));
+        let g = |id: &str, f: &str| Glossary { id: id.into(), folder: f.into(), ..Default::default() };
+        let mut d = Data {
+            glossaries: vec![g("a", "游戏/原神"), g("b", "游戏"), g("c", "游戏机"), g("d", "")],
+            folders: vec!["游戏/空的".into(), "工作".into()],
+            ..Default::default()
+        };
+        rename_folder(&mut d, "游戏", "娱乐/游戏");
+        let fs: Vec<_> = d.glossaries.iter().map(|x| x.folder.as_str()).collect();
+        assert_eq!(fs, ["娱乐/游戏/原神", "娱乐/游戏", "游戏机", ""], "同名前缀（游戏机）不受影响");
+        assert_eq!(d.folders, ["娱乐/游戏/空的", "工作"]);
+        remove_folder(&mut d, "娱乐/游戏");
+        let fs: Vec<_> = d.glossaries.iter().map(|x| x.folder.as_str()).collect();
+        assert_eq!(fs, ["娱乐/原神", "娱乐", "游戏机", ""], "删文件夹不删术语库，往上挪一层");
+        assert!(d.folders.contains(&"娱乐/空的".to_string()));
+    }
+
+    fn tree() -> Vec<Term> {
+        let mut file = Term::new("文件", "File");
+        file.note = "菜单名".into();
+        file.children = vec![Term::new("打开文件", "Open File"), Term::new("退出", "Exit")];
+        let mut edit = Term::new("编辑", "Edit");
+        edit.children = vec![Term::new("复制", "Copy")];
+        let mut ui = Term::new("界面", "Interface");
+        ui.note = "软件界面".into();
+        ui.children = vec![file, edit];
+        let mut chars = Term::new("角色", "");
+        chars.group = true;
+        chars.children = vec![Term::new("旅行者", "Traveler")];
+        vec![ui, chars]
+    }
+
+    #[test]
+    fn nested_terms_flatten_with_their_path_and_groups_drop_out() {
+        let flat = flatten(&tree());
+        let srcs: Vec<&str> = flat.iter().map(|t| t.source.as_str()).collect();
+        assert_eq!(srcs, ["界面", "文件", "打开文件", "退出", "编辑", "复制", "旅行者"], "只作分组的“角色”不当术语用");
+        let open = flat.iter().find(|t| t.source == "打开文件").unwrap();
+        assert_eq!(open.context, "in 界面 › 文件 = Interface › File; 软件界面; 菜单名");
+        assert_eq!(flat[0].context, "", "第一层没有路径");
+        // 分组没有译文时路径里用原文
+        assert_eq!(flat.iter().find(|t| t.source == "旅行者").unwrap().context, "in 角色 = 角色");
+        assert_eq!(count_terms(&tree()), 8);
+    }
+
+    #[test]
+    fn prompt_shows_the_path_and_machine_translation_still_reads_it() {
+        let flat = flatten(&tree());
+        let hit = relevant(&flat, &["点打开文件".to_string()], 10);
+        let block = prompt_block(&hit);
+        assert!(block.contains("- 打开文件 => Open File  (in 界面 › 文件 = Interface › File; 软件界面; 菜单名)"), "{block}");
+        assert!(block.contains("whose place fits"), "{block}");
+        let pairs = crate::mt::glossary_of(&format!("x{block}"));
+        assert!(pairs.contains(&("打开文件".to_string(), "Open File".to_string())), "{pairs:?}");
+    }
+
+    #[test]
+    fn same_source_under_different_parents_is_kept_but_siblings_merge() {
+        let mut a = Term::new("文件", "File");
+        a.children = vec![Term::new("打开", "Open")];
+        let mut b = Term::new("视图", "View");
+        b.children = vec![Term::new("打开", "Show")];
+        let dup = Term { source: "文件".into(), children: vec![Term::new("关闭", "Close")], ..Default::default() };
+        let cleaned = clean_terms(vec![a, b, dup]);
+        assert_eq!(cleaned.len(), 2, "同一层重名的合并");
+        assert_eq!(cleaned[0].children.iter().map(|t| t.source.as_str()).collect::<Vec<_>>(), ["打开", "关闭"]);
+        let g = Glossary { id: "g".into(), enabled: true, origin: "user".into(), terms: cleaned, ..Default::default() };
+        let sel = select_terms(&[g], "", "en");
+        assert_eq!(sel.iter().filter(|t| t.source == "打开").count(), 2, "不同上级下的同名术语都要");
+    }
+
+    #[test]
+    fn depth_is_capped_and_empty_rows_lift_their_children() {
+        let mut t = Term::new("L7", "");
+        for i in (1..=6).rev() {
+            t = Term { source: format!("L{i}"), children: vec![t], ..Default::default() };
+        }
+        let empty = Term { source: "  ".into(), children: vec![Term::new("孤儿", "Orphan")], ..Default::default() };
+        let c = clean_terms(vec![t, empty]);
+        let mut depth = 1;
+        let mut cur = &c[0];
+        while let Some(n) = cur.children.first() {
+            depth += 1;
+            cur = n;
+        }
+        assert_eq!(depth, MAX_DEPTH);
+        assert_eq!(count_terms(&c), 8, "第 7 层提到第 6 层，没有丢");
+        assert_eq!(c[1].source, "孤儿", "原文为空的行去掉，下级提上来");
+    }
+
+    #[test]
+    fn csv_keeps_the_hierarchy_and_old_csv_stays_flat() {
+        let out = to_csv(&tree(), "en");
+        assert!(out.contains("打开文件,Open File,en,,界面/文件,\n"), "{out}");
+        assert!(out.contains("角色,,en,,,1\n"), "{out}");
+        assert_eq!(parse_csv(&out), clean_terms(tree()));
+        // 只有 path 没有上级那一行：补一个分组
+        let t = parse_csv("source,target,path\nRedo,重做,Edit\n");
+        assert_eq!((t[0].source.as_str(), t[0].group, t[0].children[0].source.as_str()), ("Edit", true, "Redo"));
+        // 沉浸式翻译的老格式：都在第一层
+        assert_eq!(count_terms(&parse_csv("source,target,tgt_lng\nA,甲,zh\nB,乙,zh\n")), 2);
+    }
+
+    #[test]
+    fn merging_follows_the_tree() {
+        let mut have = tree();
+        let mut ui = Term::new("界面", "UI");
+        ui.children = vec![Term { source: "文件".into(), target: "File".into(), children: vec![Term::new("另存为", "Save As")], ..Default::default() }];
+        merge_terms(&mut have, vec![ui]);
+        assert_eq!(have[0].target, "UI", "同名的以新的为准");
+        let file = &have[0].children[0];
+        assert_eq!(file.children.iter().map(|t| t.source.as_str()).collect::<Vec<_>>(), ["打开文件", "退出", "另存为"]);
     }
 }

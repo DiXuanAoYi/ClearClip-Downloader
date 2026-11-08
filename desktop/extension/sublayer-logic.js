@@ -7,15 +7,18 @@
   const MODES = ['orig-top', 'trans-top', 'orig', 'trans']
   const MODE_NAMES = { 'orig-top': '双语（原文在上）', 'trans-top': '双语（译文在上）', orig: '只显示原文', trans: '只显示译文' }
 
-  const DEFAULTS = { mode: 'orig-top', size: 100, bottom: 8, delay: 0, target: '' }
+  const DEFAULTS = { mode: 'orig-top', size: 80, bottom: 10, delay: 0, target: '' }
 
   const num = (v, d) => (Number.isFinite(Number(v)) && v !== '' && v !== null ? Number(v) : d)
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
   /** 偏好整理：字号 50%–300%，离底部 0%–60%，延迟 ±60 秒。 */
   function clampPrefs(p) {
-    const r = p && typeof p === 'object' ? p : {}
+    let r = p && typeof p === 'object' ? p : {}
+    // 1.8.1 以前的默认是字号 100%、距底 8%：没改过的老设置换成新默认（改过的保留）
+    if (!r.v && Number(r.size) === 100 && Number(r.bottom) === 8) r = { ...r, size: DEFAULTS.size, bottom: DEFAULTS.bottom }
     return {
+      v: 2,
       mode: MODES.includes(r.mode) ? r.mode : DEFAULTS.mode,
       size: Math.round(clamp(num(r.size, DEFAULTS.size), 50, 300)),
       bottom: Math.round(clamp(num(r.bottom, DEFAULTS.bottom), 0, 60)),

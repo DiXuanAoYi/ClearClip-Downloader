@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::keyframes::{self, Keyframe, KeyframeMap};
+use crate::audiofx::ReverbSpec;
 use crate::track::TrackPt;
 
 pub const MAX_CLIPS: usize = 300;
@@ -190,6 +191,14 @@ pub struct Clip {
     /// 关键帧：`zoom`（0.25–4，1 = 原样）、`panX`、`panY`（-1–1，画面相对中心平移，占画面宽 / 高的比例）；时间相对片段开始（按成片时间算）。有关键帧时先做适配画面再缩放平移，缩小时四周是黑边
     pub keyframes: KeyframeMap,
     pub transition: Option<Transition>,
+    /// 套一张 `.cube` 调色（LUT 工作室做的或别处下载的）；空 = 不套
+    pub lut: String,
+    /// LUT 的强度 0–1（1 = 完全套用）
+    pub lut_mix: f64,
+    /// 混响（和工具箱“音效 / 混响”同一套参数）；没有 = 不加
+    pub reverb: Option<ReverbSpec>,
+    /// 防抖：off / light / normal / strong。有 vidstab 时导出前先分析一遍，没有时用 deshake
+    pub stabilize: String,
 }
 
 impl Default for Clip {
@@ -220,6 +229,10 @@ impl Default for Clip {
             bg: Background::default(),
             keyframes: KeyframeMap::new(),
             transition: None,
+            lut: String::new(),
+            lut_mix: 1.0,
+            reverb: None,
+            stabilize: "off".into(),
         }
     }
 }
@@ -237,6 +250,11 @@ impl Clip {
 
     pub fn needs_tone(&self) -> bool {
         tone_changed(self.brightness, self.contrast, self.saturation)
+    }
+
+    /// 要不要做防抖：只有正放、不定格的视频片段才做。
+    pub fn wants_stabilize(&self) -> bool {
+        self.kind == ClipKind::Video && self.stabilize != "off" && !self.reverse && !self.freeze
     }
 }
 
@@ -335,11 +353,25 @@ pub struct AudioTrack {
     pub looped: bool,
     /// 主轨有声音（人声）时自动把这条压低
     pub duck: bool,
+    /// 混响；没有 = 不加
+    pub reverb: Option<ReverbSpec>,
 }
 
 impl Default for AudioTrack {
     fn default() -> Self {
-        AudioTrack { id: 0, path: String::new(), start_ms: 0, in_ms: 0, out_ms: None, volume: 1.0, fade_in_ms: 0, fade_out_ms: 0, looped: false, duck: false }
+        AudioTrack {
+            id: 0,
+            path: String::new(),
+            start_ms: 0,
+            in_ms: 0,
+            out_ms: None,
+            volume: 1.0,
+            fade_in_ms: 0,
+            fade_out_ms: 0,
+            looped: false,
+            duck: false,
+            reverb: None,
+        }
     }
 }
 
@@ -591,11 +623,35 @@ pub struct OutputSpec {
     pub codec: String,
     /// mp4 / mkv
     pub format: String,
+    /// 导出什么：video 成片 / gif 动图 / audio 只导出声音（m4a）/ frame 一帧图片（png）
+    pub kind: String,
+    /// 只导出时间线上的这一段（毫秒）；`to_ms` 为 0 表示到结尾。frame 只看 `from_ms`
+    pub from_ms: u64,
+    pub to_ms: u64,
+    /// 成片声音的响度标准化目标（LUFS，如 -14 / -16 / -23）；0 = 不处理
+    pub loudness: f64,
+    /// GIF 的宽度（像素，高度按比例）和帧率
+    pub gif_width: u32,
+    pub gif_fps: u32,
 }
 
 impl Default for OutputSpec {
     fn default() -> Self {
-        OutputSpec { width: 0, height: 0, fps: 0.0, fit: "contain".into(), quality: "balanced".into(), codec: "h264".into(), format: "mp4".into() }
+        OutputSpec {
+            width: 0,
+            height: 0,
+            fps: 0.0,
+            fit: "contain".into(),
+            quality: "balanced".into(),
+            codec: "h264".into(),
+            format: "mp4".into(),
+            kind: "video".into(),
+            from_ms: 0,
+            to_ms: 0,
+            loudness: 0.0,
+            gif_width: 480,
+            gif_fps: 12,
+        }
     }
 }
 
@@ -809,6 +865,15 @@ impl Project {
                 c.denoise = "off".into();
             }
             c.noise_floor_db = c.noise_floor_db.filter(|v| v.is_finite()).map(|v| v.clamp(-80.0, -20.0));
+            c.lut = c.lut.trim().to_string();
+            c.lut_mix = clamp(c.lut_mix, 0.0, 1.0, 1.0);
+            if c.lut_mix < 0.005 {
+                c.lut.clear();
+            }
+            c.reverb = c.reverb.as_ref().map(ReverbSpec::checked);
+            if !matches!(c.stabilize.as_str(), "off" | "light" | "normal" | "strong") {
+                c.stabilize = "off".into();
+            }
             if !matches!(c.rotate, 0 | 90 | 180 | 270) {
                 c.rotate = (c.rotate % 360) / 90 * 90;
             }
@@ -915,12 +980,21 @@ impl Project {
                 }
             }
             a.volume = clamp(a.volume, 0.0, 4.0, 1.0);
+            a.reverb = a.reverb.as_ref().map(ReverbSpec::checked);
         }
         let o = &mut self.out;
         if (o.width != 0 && !(16..=7680).contains(&o.width)) || (o.height != 0 && !(16..=7680).contains(&o.height)) || (o.width == 0) != (o.height == 0) {
             return Err("输出尺寸不对：宽和高都要在 16–7680 之间（或者都留空，跟随第一个片段）。".into());
         }
         o.fps = clamp(o.fps, 0.0, 120.0, 0.0);
+        if !matches!(o.kind.as_str(), "video" | "gif" | "audio" | "frame") {
+            o.kind = "video".into();
+        }
+        o.loudness = if o.loudness.is_finite() && o.loudness != 0.0 { o.loudness.clamp(-30.0, -5.0) } else { 0.0 };
+        o.gif_width = o.gif_width.clamp(120, 1920) & !1;
+        o.gif_fps = o.gif_fps.clamp(5, 30);
+        o.from_ms = o.from_ms.min(MAX_START_MS);
+        o.to_ms = o.to_ms.min(MAX_START_MS);
         if o.fps != 0.0 && o.fps < 5.0 {
             return Err("输出帧率太低了（至少 5 帧；留空则跟随第一个片段）。".into());
         }
@@ -948,7 +1022,8 @@ impl Project {
             .map(|c| &c.path)
             .chain(self.overlays.iter().map(|o| &o.path))
             .chain(self.audio.iter().map(|a| &a.path))
-            .chain(self.texts.iter().filter_map(|t| t.font.as_ref()));
+            .chain(self.texts.iter().filter_map(|t| t.font.as_ref()))
+            .chain(self.clips.iter().map(|c| &c.lut).filter(|l| !l.is_empty()));
         for p in paths {
             if !out.contains(p) {
                 out.push(p.clone());
@@ -1285,6 +1360,33 @@ mod tests {
         p.audio = vec![AudioTrack { path: "/m/x.mp3".into(), ..Default::default() }];
         assert_eq!(p.media_paths(), vec!["/m/1.mp4", "/o/2.mp4", "/m/x.mp3"]);
     }
+    #[test]
+    fn export_kind_lut_reverb_and_stabilize_are_checked() {
+        let p: Project = serde_json::from_str(
+            r#"{"clips":[{"path":"a.mp4","outMs":2000,"lut":"  /l/x.cube ","lutMix":7,"stabilize":"wobbly","reverb":{"timeMs":999999}}],
+            "audio":[{"path":"m.mp3","reverb":{"mixDb":-99}}],
+            "out":{"kind":"nonsense","loudness":-99,"gifWidth":5,"gifFps":99}}"#,
+        )
+        .unwrap();
+        let p = p.checked().unwrap();
+        let c = &p.clips[0];
+        assert_eq!((c.lut.as_str(), c.lut_mix, c.stabilize.as_str()), ("/l/x.cube", 1.0, "off"));
+        assert_eq!(c.reverb.as_ref().unwrap().time_ms, 10_000);
+        assert_eq!(p.audio[0].reverb.as_ref().unwrap().mix_db, -40.0);
+        assert_eq!((p.out.kind.as_str(), p.out.loudness, p.out.gif_width, p.out.gif_fps), ("video", -30.0, 120, 30));
+        assert!(p.media_paths().contains(&"/l/x.cube".to_string()), "LUT 文件变了预览也要重做");
+        // 强度 0 = 不套；旧工程没有这些字段时是默认值
+        let p: Project = serde_json::from_str(r#"{"clips":[{"path":"a.mp4","outMs":2000,"lut":"/l/x.cube","lutMix":0}]}"#).unwrap();
+        let p = p.checked().unwrap();
+        assert!(p.clips[0].lut.is_empty());
+        assert_eq!((p.out.kind.as_str(), p.out.loudness, p.clips[0].stabilize.as_str()), ("video", 0.0, "off"));
+        // 倒放 / 定格的片段不做防抖
+        let mut c = Clip { stabilize: "strong".into(), out_ms: 1000, ..Default::default() };
+        assert!(c.wants_stabilize());
+        c.reverse = true;
+        assert!(!c.wants_stabilize());
+    }
+
     #[test]
     fn unknown_matte_model_falls_back_to_the_default() {
         let p: Project = serde_json::from_str(r#"{"clips":[{"path":"a.mp4","outMs":2000,"bg":{"on":true,"matte":"ai","model":"vocal_mdx"}}]}"#).unwrap();
