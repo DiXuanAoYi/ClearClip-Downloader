@@ -813,6 +813,7 @@ pub fn preview(path: &Path) -> AppResult<View> {
 
 /// 翻译一份文件，返回输出文件路径。
 /// 文字版 PDF：把译文按块写回原位置，存成新的 PDF。`trans` 和各页的块按顺序一一对应。
+#[allow(clippy::too_many_arguments)]
 async fn write_pdf_layout(
     ctx: &JobCtx,
     input: &Path,
@@ -1056,7 +1057,7 @@ async fn run_pdf_scanned(
     // 3. 写回 PDF（译文被改成空的块不写，保留原样）
     let mut plans = vec![PagePlan::default(); pages.len()];
     let mut any = 0usize;
-    let cached_view = load_cache(&cache_path(&data_dir, input, &target));
+    let cached_view = load_cache(&cache_path(&data_dir, input, target));
     for (pi, page) in scan.iter().enumerate().take(plans.len()) {
         for (k, b) in page.iter().enumerate() {
             let (Some(rect), false) = (b.rect, b.trans.trim().is_empty()) else { continue };
@@ -1270,7 +1271,18 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
                         let trans = edited.map(|v| v.trans[k].clone().unwrap_or_default()).unwrap_or_else(|| b.trans.clone());
                         let a = adj.get(&k);
                         let (rect, size) = a.map_or((rect, b.size), |a| a.apply(rect, b.size));
-                        blocks.push(LBlock { index: k, rect, size, rgb: b.rgb, bg: b.bg, remove: vec![], src: b.src.clone(), trans, skipped: false, adjusted: a.is_some() });
+                        blocks.push(LBlock {
+                            index: k,
+                            rect,
+                            size,
+                            rgb: b.rgb,
+                            bg: b.bg,
+                            remove: vec![],
+                            src: b.src.clone(),
+                            trans,
+                            skipped: false,
+                            adjusted: a.is_some(),
+                        });
                     }
                     done = true;
                 }
@@ -1548,7 +1560,9 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     {
         // 版面里手动调过的位置 / 字号跟着页走：重新翻译、继续翻译都不能丢
         let old = load_cache(&cpath);
-        let adj_of = |pn: Option<usize>, n: usize| old.as_ref().and_then(|o| o.pages.iter().find(|p| p.page == pn && p.src.len() == n)).map(|p| p.adj.clone()).unwrap_or_default();
+        let adj_of = |pn: Option<usize>, n: usize| {
+            old.as_ref().and_then(|o| o.pages.iter().find(|p| p.page == pn && p.src.len() == n)).map(|p| p.adj.clone()).unwrap_or_default()
+        };
         let mut at = 0usize;
         for (pi, n) in sizes.iter().enumerate() {
             view.pages.push(ViewPage {

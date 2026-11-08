@@ -293,7 +293,8 @@ pub(crate) async fn send(ep: &Endpoint, path: &str, content_type: &str, body: Ve
                 let text = match resp.text().await {
                     Ok(t) => t,
                     Err(e) => {
-                        last = Some(AppError::new(ErrorKind::Network, format!("读取响应失败：{e}。服务返回的内容不完整（压缩数据损坏或连接中断），已自动重试。")));
+                        last =
+                            Some(AppError::new(ErrorKind::Network, format!("读取响应失败：{e}。服务返回的内容不完整（压缩数据损坏或连接中断），已自动重试。")));
                         identity = true;
                         extra = 0;
                         continue;
