@@ -36,6 +36,17 @@ onMounted(() => {
   ro.observe(el.value)
 })
 onUnmounted(() => ro?.disconnect())
+
+/** 让第 i 行出现在可见区域里（已经看得见就不动）。 */
+function scrollToIndex(i: number) {
+  const box = el.value
+  if (!box) return
+  const top = i * row.value
+  if (top < box.scrollTop) box.scrollTop = top
+  else if (top + props.itemHeight > box.scrollTop + box.clientHeight) box.scrollTop = top + props.itemHeight - box.clientHeight
+  scrollTop.value = box.scrollTop
+}
+defineExpose({ scrollToIndex })
 </script>
 
 <template>

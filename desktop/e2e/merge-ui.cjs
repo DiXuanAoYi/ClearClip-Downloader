@@ -33,7 +33,7 @@ const INIT = `
   window.__live = [{ at: 1700000400, mode: 'standard', exe: 'game.exe', src: 'Options', text: '选项' }]
   const term = (s) => ({ source: s, target: s + '译', note: '' })
   window.__gl = { candidates: [], sites: [], folders: ['空文件夹'], glossaries: [
-    { id: 'g1', name: '原神术语', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', updated: 0, folder: '游戏/原神', terms: [term('A'), term('B'), term('C')] },
+    { id: 'g1', name: '原神术语', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', updated: 0, folder: '游戏/原神', terms: [{ ...term('A'), note: '上级说明', children: [{ ...term('A1'), children: [term('A1a')] }] }, term('B'), term('C')] },
     { id: 'g2', name: '通用', description: '', enabled: true, origin: 'user', remoteId: '', matches: [], lang: '', updated: 0, folder: '', terms: [term('X')] },
   ] }
   window.__sc = { supported: true, running: false, mode: 'standard', target: null, hidden: false, paused: false, msg: '', audio: false }
@@ -186,18 +186,89 @@ const INIT = `
     await page.locator('.item.folder', { hasText: '游戏' }).first().locator('.fold').click()
     await page.locator('.item', { hasText: '原神术语' }).getByRole('button', { name: '编辑' }).click()
     await page.waitForTimeout(300)
-    // 没有选中的行：加在最下面
-    await page.getByRole('button', { name: '添加一行' }).click()
+    // 分层术语：每一层一种底色、缩进；收起 / 展开；Tab / Shift+Tab；加同级 / 下级；移动；菜单；删除；撤回；搜索；拖动；保存成树
+    const rowsOf = () => page.locator('.tt .trow').evaluateAll((els) => els.map((e) => `${e.getAttribute('aria-level')}:${e.querySelector('input[data-col=source]').value}`))
+    const srcInput = (src) => page.locator('.tt .trow input[data-col=source]').evaluateAll((els, s) => els.findIndex((e) => e.value === s), src).then((i) => page.locator('.tt .trow input[data-col=source]').nth(i))
+    ok('术语按层显示：A › A1 › A1a，B、C 在第一层', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:C']), JSON.stringify(await rowsOf()))
+    const bgs = await page.locator('.tt .trow').evaluateAll((els) => els.slice(0, 3).map((e) => getComputedStyle(e).backgroundColor))
+    ok('每一层的底色不同（第一层最深）', new Set(bgs).size === 3, bgs.join(' '))
+    ok('工具条显示总数和层数', /共 5 条 · 3 层/.test(await page.locator('.tt .cnt').innerText()))
+    // 收起 A
+    await page.locator('.tt .trow').nth(0).locator('.caret').click()
+    await page.waitForTimeout(100)
+    ok('收起 A：只剩第一层，A 上标“2 条下级”', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '1:B', '1:C']) && /2 条下级/.test(await page.locator('.tt .trow').nth(0).innerText()), JSON.stringify(await rowsOf()))
+    await page.getByRole('button', { name: '全部展开' }).click()
+    await page.waitForTimeout(100)
+    ok('全部展开', (await rowsOf()).length === 5)
+    // 当前路径
+    await (await srcInput('A1a')).click()
+    await page.waitForTimeout(100)
+    ok('底栏显示当前这条的完整路径和译文路径', /A\s*›\s*A1\s*›\s*A1a/.test(await page.locator('.efoot .cur').innerText()) && /A译 › A1译 › A1a译/.test(await page.locator('.efoot .cur').innerText()), await page.locator('.efoot .cur').innerText())
+    // Tab：B 变成 A 的下级；Shift+Tab 回来
+    await (await srcInput('B')).click()
+    await page.keyboard.press('Tab')
+    await page.waitForTimeout(150)
+    ok('Tab：B 变成 A 的下级（排在 A 的下级最后）', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '2:B', '1:C']), JSON.stringify(await rowsOf()))
+    await page.keyboard.press('Shift+Tab')
+    await page.waitForTimeout(150)
+    ok('Shift+Tab：B 升回第一层', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:C']), JSON.stringify(await rowsOf()))
+    // Enter 加同级、打字、空行退格删掉
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(150)
+    await page.keyboard.type('D')
+    ok('Enter：在 B 后面加同级，光标在新行', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:D', '1:C']), JSON.stringify(await rowsOf()))
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(150)
+    await page.keyboard.press('Backspace')
+    await page.waitForTimeout(150)
+    ok('空行上退格：删掉这一行', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:D', '1:C']), JSON.stringify(await rowsOf()))
+    // Alt+↑ 上移
+    await (await srcInput('C')).click()
+    await page.keyboard.press('Alt+ArrowUp')
+    await page.waitForTimeout(150)
+    ok('Alt+↑：C 和 D 对调', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '1:C', '1:D']), JSON.stringify(await rowsOf()))
+    // 添加下级按钮
+    await (await srcInput('B')).click()
+    await page.getByRole('button', { name: '添加下级' }).first().click()
+    await page.waitForTimeout(150)
+    await page.keyboard.type('B1')
+    ok('添加下级：B 下面多一条 B1', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '2:B1', '1:C', '1:D']), JSON.stringify(await rowsOf()))
+    // 右键菜单 → 删除（有下级要确认）→ 只删 A → 撤回
+    await page.locator('.tt .trow').nth(0).click({ button: 'right' })
+    await page.waitForTimeout(150)
+    const items = await page.locator('.tt-menu .mi').allInnerTexts()
+    ok('右键菜单：加同级 / 下级、升降层、上下移、分组、复制路径、删除', ['添加同级', '添加下级', '升一层', '放进上一条下面', '上移', '下移', '只作分组', '复制路径', '删除'].every((w) => items.some((t) => t.startsWith(w))), items.join(' | '))
+    await page.locator('.tt-menu .mi', { hasText: '删除' }).click()
     await page.waitForTimeout(200)
-    const v1 = await page.locator('.gl-terms tbody tr').evaluateAll((trs) => trs.map((tr) => tr.querySelector('input').value))
-    ok('没选中行时，新行加在最下面', JSON.stringify(v1) === JSON.stringify(['A', 'B', 'C', '']), JSON.stringify(v1))
-    // 点第一行（A），再添加：插在 A 下面
-    await page.locator('.gl-terms tbody tr').nth(0).locator('input').first().click()
-    await page.getByRole('button', { name: '添加一行' }).click()
+    ok('删除有下级的术语先问一次', /它下面还有 2 条术语/.test(await page.locator('.el-dialog .del').innerText()))
+    await page.locator('.el-dialog .del .opt').first().click()
     await page.waitForTimeout(200)
-    const v2 = await page.locator('.gl-terms tbody tr').evaluateAll((trs) => trs.map((tr) => tr.querySelector('input').value))
-    ok('选中 A 后添加，新行插在 A 下面', JSON.stringify(v2) === JSON.stringify(['A', '', 'B', 'C', '']), JSON.stringify(v2))
-    ok('新行成了当前行，光标在里面', await page.evaluate(() => document.activeElement?.closest('tr')?.classList.contains('current-row') === true))
+    ok('只删 A：下级升一层', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A1', '2:A1a', '1:B', '2:B1', '1:C', '1:D']), JSON.stringify(await rowsOf()))
+    await page.locator('.tt .pz-link', { hasText: '撤回' }).click()
+    await page.waitForTimeout(150)
+    ok('撤回：A 回来了', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '2:B1', '1:C', '1:D']), JSON.stringify(await rowsOf()))
+    // 只作分组
+    await page.locator('.tt .trow').nth(5).click({ button: 'right' })
+    await page.locator('.tt-menu .mi', { hasText: '只作分组' }).click()
+    await page.waitForTimeout(100)
+    ok('只作分组：标上“分组”', /分组/.test(await page.locator('.tt .trow').nth(5).innerText()))
+    // 拖动：D 放进 C 下面
+    await page.locator('.tt .trow').nth(6).hover()
+    await page.locator('.tt .trow').nth(6).locator('.grip').dragTo(page.locator('.tt .trow').nth(5), { targetPosition: { x: 300, y: 19 } })
+    await page.waitForTimeout(200)
+    ok('拖动：D 放进 C 下面成为下级', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '2:B1', '1:C', '2:D']), JSON.stringify(await rowsOf()))
+    // 搜索：命中的连同上级一起显示
+    await page.locator('.tt .q input').fill('a1a')
+    await page.waitForTimeout(150)
+    ok('搜索：命中的 A1a 连同上级 A、A1 一起显示，上级变灰', JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a']) && (await page.locator('.tt .trow.dim').count()) === 2, JSON.stringify(await rowsOf()))
+    await page.locator('.tt .q input').fill('')
+    await page.waitForTimeout(100)
+    // 保存：存成树
+    await page.getByRole('button', { name: '保存' }).click()
+    await page.waitForTimeout(300)
+    const saved = await page.evaluate(() => window.__glSaved)
+    const t = saved?.terms
+    ok('保存成树：A › A1 › A1a、B › B1、C（分组）› D', t && t[0].source === 'A' && t[0].children[0].children[0].source === 'A1a' && t[1].children[0].source === 'B1' && t[2].group === true && t[2].children[0].source === 'D' && t.length === 3, JSON.stringify(t))
     await page.close()
   }
 

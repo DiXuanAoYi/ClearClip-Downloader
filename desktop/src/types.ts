@@ -608,6 +608,10 @@ export interface GlossaryTerm {
   source: string
   target: string
   note: string
+  /** 下级术语（分层，最多 6 层） */
+  children?: GlossaryTerm[]
+  /** 只作分组：不当术语用，下级照常用 */
+  group?: boolean
 }
 
 export interface Glossary {

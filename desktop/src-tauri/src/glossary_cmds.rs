@@ -164,9 +164,7 @@ pub fn glossary_import(state: St<'_>, text: String, name: String, into: String, 
     let now = crate::db::now();
     state.glossary.edit(|d| {
         if let Some(g) = d.glossaries.iter_mut().find(|g| !into.is_empty() && g.id == into) {
-            let incoming: std::collections::HashSet<String> = terms.iter().map(|t| t.source.to_lowercase()).collect();
-            g.terms.retain(|t| !incoming.contains(&t.source.to_lowercase()));
-            g.terms.extend(terms);
+            glossary::merge_terms(&mut g.terms, terms);
             g.terms = glossary::clean_terms(std::mem::take(&mut g.terms));
             g.updated = now;
             g.clone()
@@ -385,9 +383,7 @@ pub fn glossary_resolve(state: St<'_>, ids: Vec<String>, glossary_id: String, ne
                     d.glossaries.last_mut().expect("just pushed")
                 }
             };
-            let incoming: std::collections::HashSet<String> = terms.iter().map(|t| t.source.to_lowercase()).collect();
-            g.terms.retain(|t| !incoming.contains(&t.source.to_lowercase()));
-            g.terms.extend(terms.iter().cloned());
+            glossary::merge_terms(&mut g.terms, terms.clone());
             g.terms = glossary::clean_terms(std::mem::take(&mut g.terms));
             g.name = if g.name.trim().is_empty() { "智能提取".into() } else { g.name.clone() };
             g.updated = now;
