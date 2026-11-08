@@ -704,6 +704,7 @@ pub fn run() {
             ai_cmds::filetr_page_preview,
             ai_cmds::filetr_page_layout,
             ai_cmds::filetr_edit,
+            ai_cmds::filetr_block_adjust,
             ai_cmds::filetr_retranslate,
             ai_cmds::filetr_plan,
             ai_cmds::filetr_recent,

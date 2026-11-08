@@ -321,6 +321,7 @@ fn vp(page: usize, src: &[&str], trans: &[Option<&str>], done: bool) -> ViewPage
         page: Some(page),
         done,
         skip: vec![],
+        adj: Default::default(),
     }
 }
 
@@ -411,4 +412,20 @@ fn old_caches_are_marked_done_on_load_and_failed_pages_are_listed() {
     assert!(v.pages.iter().all(|p| p.done), "旧缓存每页都是译完才存的");
     assert_eq!(failed_pages_text(&v), "第 2 页 1 段");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn manual_block_adjustments_override_the_automatic_layout_and_survive_the_cache_format() {
+    let a = BlockAdj { rect: Some([10.0, 20.0, 110.0, 60.0]), size: Some(9.5) };
+    assert_eq!(a.apply((0.0, 0.0, 50.0, 50.0), 12.0), ((10.0, 20.0, 110.0, 60.0), 9.5));
+    // 只改了字号：位置沿用；字号小于 3 当作没写
+    assert_eq!(BlockAdj { rect: None, size: Some(14.0) }.apply((1.0, 2.0, 3.0, 4.0), 8.0), ((1.0, 2.0, 3.0, 4.0), 14.0));
+    assert_eq!(BlockAdj { rect: None, size: Some(1.0) }.apply((1.0, 2.0, 3.0, 4.0), 8.0).1, 8.0);
+    // 缓存里按“序号 → 调整”存，读回来一样；没有这个字段的旧缓存照常读
+    let mut p = ViewPage::default();
+    p.adj.insert(3, a);
+    let back: ViewPage = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+    assert_eq!(back.adj.get(&3), Some(&a));
+    let old: ViewPage = serde_json::from_str(r#"{"src":["x"],"trans":[null]}"#).unwrap();
+    assert!(old.adj.is_empty());
 }

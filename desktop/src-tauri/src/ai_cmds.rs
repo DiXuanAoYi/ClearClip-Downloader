@@ -310,6 +310,14 @@ pub fn filetr_edit(state: St<'_>, path: String, target: String, page: usize, ind
     crate::filetr::edit_seg(&state.data_dir, &p, target.trim(), page, index, &text)
 }
 
+/// 文件翻译：版面里手动调了一块的位置 / 字号（`rect` 为 (左, 下, 右, 上)，PDF 点；两个都不给 = 还原自动排版）。
+#[tauri::command]
+pub fn filetr_block_adjust(state: St<'_>, path: String, target: String, page: usize, index: usize, rect: Option<[f32; 4]>, size: Option<f32>) -> AppResult<()> {
+    let p = existing_file(&path)?;
+    let adj = (rect.is_some() || size.is_some()).then_some(crate::filetr::BlockAdj { rect, size });
+    crate::filetr::adjust_block(&state.data_dir, &p, target.trim(), page, index, adj)
+}
+
 /// 文件翻译：把阅读器里的一段原文重新翻一遍，返回新译文。
 #[tauri::command]
 pub async fn filetr_retranslate(state: St<'_>, path: String, target: String, page: usize, index: usize) -> AppResult<String> {

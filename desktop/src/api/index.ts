@@ -352,6 +352,7 @@ export const api = {
   filetrPageLayout: (path: string, target: string, ocr: string, page: number) => invoke<PdfLayout>('filetr_page_layout', { path, target, ocr, page }),
   filetrPagePreview: (path: string, target: string, ocr: string, page: number) => invoke<{ orig: string; trans: string; pages: number; items: number }>('filetr_page_preview', { path, target, ocr, page }),
   filetrEdit: (path: string, target: string, page: number, index: number, text: string) => invoke<void>('filetr_edit', { path, target, page, index, text }),
+  filetrBlockAdjust: (path: string, target: string, page: number, index: number, rect: number[] | null, size: number | null) => invoke<void>('filetr_block_adjust', { path, target, page, index, rect, size }),
   filetrRetranslate: (path: string, target: string, page: number, index: number) => invoke<string>('filetr_retranslate', { path, target, page, index }),
   pdfxStatus: () => invoke<PdfxStatus>('pdfx_status'),
   pdfxInstall: () => invoke<PdfxStatus>('pdfx_install'),

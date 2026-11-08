@@ -538,6 +538,26 @@ pub struct ViewPage {
     /// 按设置不翻译的片段（页眉页脚、公式代码、参考文献）：保留原文，不算失败
     #[serde(default)]
     pub skip: Vec<usize>,
+    /// 手动调过位置 / 字号的块（序号 → 调整）：版面预览和生成文件都按它来
+    #[serde(default)]
+    pub adj: std::collections::BTreeMap<usize, BlockAdj>,
+}
+
+/// 手动调整：`rect` 是 (左, 下, 右, 上)（PDF 点），`size` 是字号（点）；没写的沿用自动算出来的。
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockAdj {
+    #[serde(default)]
+    pub rect: Option<[f32; 4]>,
+    #[serde(default)]
+    pub size: Option<f32>,
+}
+
+impl BlockAdj {
+    pub fn apply(&self, rect: (f32, f32, f32, f32), size: f32) -> ((f32, f32, f32, f32), f32) {
+        let r = self.rect.map_or(rect, |r| (r[0], r[1], r[2], r[3]));
+        (r, self.size.filter(|s| *s >= 3.0).unwrap_or(size))
+    }
 }
 
 // ---------- 扫描件 / 图片：视觉模型识字 ----------
@@ -799,6 +819,7 @@ async fn write_pdf_layout(
     lib: &Path,
     pages: &[crate::pdfx::PageInfo],
     trans: &[Option<String>],
+    adj: &[Option<BlockAdj>],
     mode: crate::pdfx::Mode,
     base: &str,
 ) -> AppResult<PathBuf> {
@@ -808,7 +829,8 @@ async fn write_pdf_layout(
     for (pi, p) in pages.iter().enumerate() {
         for b in &p.blocks {
             if let Some(Some(t)) = trans.get(at) {
-                plans[pi].items.push(Item { remove: b.runs.clone(), rect: (b.l, b.b, b.r, b.t), size: b.size, rgb: b.rgb, bg: None, text: t.clone() });
+                let (rect, size) = adj.get(at).copied().flatten().map_or(((b.l, b.b, b.r, b.t), b.size), |a| a.apply((b.l, b.b, b.r, b.t), b.size));
+                plans[pi].items.push(Item { remove: b.runs.clone(), rect, size, rgb: b.rgb, bg: None, text: t.clone() });
             }
             at += 1;
         }
@@ -1009,6 +1031,7 @@ async fn run_pdf_scanned(
                         page: Some(i),
                         done: true,
                         skip: vec![],
+                        adj: Default::default(),
                     })
                     .collect(),
                 failed,
@@ -1033,10 +1056,12 @@ async fn run_pdf_scanned(
     // 3. 写回 PDF（译文被改成空的块不写，保留原样）
     let mut plans = vec![PagePlan::default(); pages.len()];
     let mut any = 0usize;
+    let cached_view = load_cache(&cache_path(&data_dir, input, &target));
     for (pi, page) in scan.iter().enumerate().take(plans.len()) {
-        for b in page {
+        for (k, b) in page.iter().enumerate() {
             let (Some(rect), false) = (b.rect, b.trans.trim().is_empty()) else { continue };
-            plans[pi].items.push(Item { remove: vec![], rect, size: b.size, rgb: b.rgb, bg: b.bg, text: b.trans.clone() });
+            let (rect, size) = cached_view.as_ref().and_then(|v| v.pages.get(pi)).and_then(|p| p.adj.get(&k)).map_or((rect, b.size), |a| a.apply(rect, b.size));
+            plans[pi].items.push(Item { remove: vec![], rect, size, rgb: b.rgb, bg: b.bg, text: b.trans.clone() });
             any += 1;
         }
     }
@@ -1099,6 +1124,8 @@ struct LBlock {
     trans: String,
     /// 按设置不翻译的块（页眉页脚、公式代码、参考文献）
     skipped: bool,
+    /// 位置 / 字号是手动调过的
+    adjusted: bool,
 }
 
 struct Collected {
@@ -1176,7 +1203,7 @@ pub(crate) fn match_cached_page(view: &mut Option<View>, pages: &[crate::pdfx::P
         None => {
             // 这一页还没轮到：先在缓存里占个位，在页面上直接改译文也能存下来
             let at = v.pages.iter().position(|p| p.page.is_some_and(|x| x > page)).unwrap_or(v.pages.len());
-            v.pages.insert(at, ViewPage { trans: vec![None; texts.len()], src: texts, page: Some(page), done: false, skip: vec![] });
+            v.pages.insert(at, ViewPage { trans: vec![None; texts.len()], src: texts, page: Some(page), done: false, skip: vec![], adj: Default::default() });
             m.view_page = at;
             m.dirty = true;
         }
@@ -1211,17 +1238,21 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
         view_page = m.view_page;
         done = m.done;
         note = m.note;
+        let adj = view.as_ref().and_then(|v| v.pages.get(view_page)).map(|p| p.adj.clone()).unwrap_or_default();
         for (k, b) in pages[page].blocks.iter().enumerate() {
+            let a = adj.get(&k);
+            let (rect, size) = a.map_or(((b.l, b.b, b.r, b.t), b.size), |a| a.apply((b.l, b.b, b.r, b.t), b.size));
             blocks.push(LBlock {
                 index: k,
-                rect: (b.l, b.b, b.r, b.t),
-                size: b.size,
+                rect,
+                size,
                 rgb: b.rgb,
                 bg: None,
                 remove: b.runs.clone(),
                 src: b.text.clone(),
                 trans: trans[k].clone().unwrap_or_default(),
                 skipped: skip.contains(&k),
+                adjusted: a.is_some(),
             });
         }
     } else {
@@ -1233,10 +1264,13 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
             Some(sc) => {
                 if let Some(list) = sc.get(page) {
                     let edited = view.as_ref().and_then(|v| v.pages.get(page)).filter(|v| v.trans.len() == list.len());
+                    let adj = view.as_ref().and_then(|v| v.pages.get(page)).map(|p| p.adj.clone()).unwrap_or_default();
                     for (k, b) in list.iter().enumerate() {
                         let Some(rect) = b.rect else { continue };
                         let trans = edited.map(|v| v.trans[k].clone().unwrap_or_default()).unwrap_or_else(|| b.trans.clone());
-                        blocks.push(LBlock { index: k, rect, size: b.size, rgb: b.rgb, bg: b.bg, remove: vec![], src: b.src.clone(), trans, skipped: false });
+                        let a = adj.get(&k);
+                        let (rect, size) = a.map_or((rect, b.size), |a| a.apply(rect, b.size));
+                        blocks.push(LBlock { index: k, rect, size, rgb: b.rgb, bg: b.bg, remove: vec![], src: b.src.clone(), trans, skipped: false, adjusted: a.is_some() });
                     }
                     done = true;
                 }
@@ -1267,6 +1301,8 @@ pub struct LayoutBlock {
     pub trans: String,
     /// 按设置不翻译（页眉页脚、公式代码、参考文献）：保留原文，不算“未译”
     pub skipped: bool,
+    /// 位置 / 字号是手动调过的
+    pub adjusted: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1314,6 +1350,7 @@ pub async fn page_layout(st: &crate::AppState, input: &Path, target: &str, ocr: 
             src: b.src,
             trans: b.trans,
             skipped: b.skipped,
+            adjusted: b.adjusted,
         })
         .collect();
     Ok(PageLayout { pages, view_page, w: size.0, h: size.1, image, blocks, done, note })
@@ -1367,6 +1404,28 @@ pub fn edit_seg(data_dir: &Path, input: &Path, target: &str, page: usize, index:
     }
     *slot = if t.is_empty() { None } else { Some(t.to_string()) };
     v.failed = v.pages.iter().map(|p| p.trans.iter().filter(|t| t.is_none()).count()).sum();
+    save_cache(&cp, &v);
+    Ok(())
+}
+
+/// 版面里手动调了一块的位置 / 字号：写回缓存（`adj` 为 None = 还原成自动排版）。
+pub fn adjust_block(data_dir: &Path, input: &Path, target: &str, page: usize, index: usize, adj: Option<BlockAdj>) -> AppResult<()> {
+    let cp = cache_path(data_dir, input, target);
+    let mut v = load_cache(&cp).ok_or_else(|| AppError::not_found("这个文件还没有译文，先翻译。"))?;
+    let p = v.pages.get_mut(page).ok_or_else(|| AppError::not_found("找不到这一页。"))?;
+    if let Some(a) = adj {
+        if let Some(r) = a.rect {
+            if !r.iter().all(|x| x.is_finite()) || r[2] - r[0] < 4.0 || r[3] - r[1] < 4.0 {
+                return Err(AppError::invalid("这个框太小或位置不对。"));
+            }
+        }
+        if a.size.is_some_and(|s| !s.is_finite() || !(3.0..=200.0).contains(&s)) {
+            return Err(AppError::invalid("字号要在 3 到 200 之间。"));
+        }
+        p.adj.insert(index, a);
+    } else {
+        p.adj.remove(&index);
+    }
     save_cache(&cp, &v);
     Ok(())
 }
@@ -1487,6 +1546,9 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
         total_pages: layout_pages.as_ref().map_or(sizes.len(), |p| p.len()),
     };
     {
+        // 版面里手动调过的位置 / 字号跟着页走：重新翻译、继续翻译都不能丢
+        let old = load_cache(&cpath);
+        let adj_of = |pn: Option<usize>, n: usize| old.as_ref().and_then(|o| o.pages.iter().find(|p| p.page == pn && p.src.len() == n)).map(|p| p.adj.clone()).unwrap_or_default();
         let mut at = 0usize;
         for (pi, n) in sizes.iter().enumerate() {
             view.pages.push(ViewPage {
@@ -1495,6 +1557,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
                 page: page_no[pi],
                 done: false,
                 skip: (at..at + n).filter(|i| skip.contains(i)).map(|i| i - at).collect(),
+                adj: adj_of(page_no[pi], *n),
             });
             at += n;
         }
@@ -1553,7 +1616,8 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
 
     // 3. 写回
     let out = if let (Some(pages), Some(lib)) = (&layout_pages, &layout_lib) {
-        write_pdf_layout(ctx, input, lib, pages, &t.texts, crate::pdfx::Mode::parse(&opts.pdf_mode), &base).await?
+        let adj: Vec<Option<BlockAdj>> = view.pages.iter().flat_map(|p| (0..p.src.len()).map(|k| p.adj.get(&k).copied())).collect();
+        write_pdf_layout(ctx, input, lib, pages, &t.texts, &adj, crate::pdfx::Mode::parse(&opts.pdf_mode), &base).await?
     } else if kind == Kind::Sub {
         let d = if opts.bilingual { Display::OrigTop } else { Display::Trans };
         let out = ai::out_beside(input, &base, tag, "srt");

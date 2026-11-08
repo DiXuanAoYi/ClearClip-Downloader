@@ -271,18 +271,34 @@ pub(crate) fn api_error(status: u16, body: &str) -> AppError {
 pub(crate) async fn send(ep: &Endpoint, path: &str, content_type: &str, body: Vec<u8>, timeout: Duration) -> AppResult<String> {
     let url = format!("{}{path}", ep.base);
     let mut last: Option<AppError> = None;
-    for attempt in 0..ep.attempts.max(1) {
+    // 读响应体失败（“error decoding response body”：压缩流损坏、连接中途断开）多给一次机会，并改成不压缩再试
+    let mut identity = false;
+    let mut extra = 1;
+    let mut attempt = 0;
+    while attempt < ep.attempts.max(1) + (1 - extra) {
         if attempt > 0 {
-            tokio::time::sleep(Duration::from_millis(ep.retry_ms * (1 << (attempt - 1)))).await;
+            tokio::time::sleep(Duration::from_millis(ep.retry_ms * (1 << (attempt - 1).min(6)))).await;
         }
+        attempt += 1;
         let mut req = ep.client.post(&url).header("Content-Type", content_type).timeout(timeout).body(body.clone());
+        if identity {
+            req = req.header("Accept-Encoding", "identity");
+        }
         if let Some(k) = &ep.key {
             req = req.header("Authorization", format!("Bearer {k}"));
         }
         match req.send().await {
             Ok(resp) => {
                 let status = resp.status().as_u16();
-                let text = resp.text().await.map_err(|e| AppError::new(ErrorKind::Network, format!("读取响应失败：{e}")))?;
+                let text = match resp.text().await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        last = Some(AppError::new(ErrorKind::Network, format!("读取响应失败：{e}。服务返回的内容不完整（压缩数据损坏或连接中断），已自动重试。")));
+                        identity = true;
+                        extra = 0;
+                        continue;
+                    }
+                };
                 if (200..300).contains(&status) {
                     return Ok(text);
                 }

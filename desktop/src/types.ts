@@ -2441,7 +2441,7 @@ export interface PdfLayout {
   w: number
   h: number
   image: string
-  blocks: { index: number; rect: [number, number, number, number]; size: number; rgb: [number, number, number]; bg: [number, number, number]; src: string; trans: string; skipped: boolean }[]
+  blocks: { index: number; rect: [number, number, number, number]; size: number; rgb: [number, number, number]; bg: [number, number, number]; src: string; trans: string; skipped: boolean; adjusted: boolean }[]
   /** 这一页处理过了（译完或失败） */
   done: boolean
   /** 要告诉用户的情况（没译、重新匹配过、扫描页没识字…），没有就是空 */
