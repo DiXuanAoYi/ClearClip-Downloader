@@ -10,6 +10,8 @@ const props = defineProps<{
   /** 当前裁剪（null 表示下载完整视频） */
   clip: Clip | null
   split: boolean
+  /** 能直接只下载这一段（YouTube 等走 yt-dlp 的）；否则先下完整视频，下完在后台剪 */
+  direct?: boolean
 }>()
 const emit = defineEmits<{
   'update:clip': [clip: Clip | null]
@@ -94,6 +96,11 @@ const bars = computed(() => {
   return props.chapters.map((c, i) => ({ c, i, grow: Math.max(0.5, ((c.endMs - c.startMs) / all) * 100) }))
 })
 
+/** 这一段怎么下 */
+const how = computed(() =>
+  props.direct ? '直接只下载这一段，不用下载完整视频。' : '这个网站不能只下载一段：会先下载完整视频，下完自动在后台剪出这一段。',
+)
+
 const summary = computed(() => {
   if (!props.clip) return ''
   const end = props.clip.endMs ?? total.value
@@ -141,6 +148,7 @@ const summary = computed(() => {
     </div>
 
     <small v-if="open && (error || summary)" :class="error ? 'err' : 'pz-note'">{{ error || summary }}</small>
+    <small v-if="open && clip && !error" class="pz-note how" :class="{ direct }">{{ how }}</small>
     <small v-if="mode === 'range' && !precise && !error" class="pz-note">默认不重新编码，速度快，开头会落在前一个关键帧上，可能比设置的时间早几秒。</small>
     <el-checkbox v-if="chapters.length" :model-value="split" @update:model-value="(v: unknown) => emit('update:split', !!v)">同时把每个章节另存为单独的文件</el-checkbox>
   </div>

@@ -568,6 +568,21 @@ pub fn parse_progress(line: &str) -> Option<Progress> {
 
 /// 用 yt-dlp 下载单个格式到 `out`（yt-dlp 自己负责 .part 续传）。暂停或取消时结束进程。
 #[allow(clippy::too_many_arguments)]
+/// 只下载一段时交给 yt-dlp 的参数：`--download-sections *开始-结束`（秒，结束为空 = inf）；
+/// 精确剪切时加 `--force-keyframes-at-cuts`（在切点重新编码，起点精确到帧），
+/// 否则和本地裁剪一样给起点留一点容差，免得退到再前一个关键帧。
+pub fn section_args(clip: &crate::model::Clip) -> Vec<String> {
+    let start = if clip.precise { clip.start_ms } else { clip.start_ms + crate::postprocess::COPY_SEEK_SLACK_MS };
+    let secs = |ms: u64| format!("{:.3}", ms as f64 / 1000.0);
+    let end = clip.end_ms.map_or_else(|| "inf".to_string(), secs);
+    let mut a = vec!["--download-sections".to_string(), format!("*{}-{end}", secs(start))];
+    if clip.precise {
+        a.push("--force-keyframes-at-cuts".into());
+    }
+    a
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn download(
     ctx: &Ctx<'_>,
     page_url: &str,
@@ -576,6 +591,7 @@ pub async fn download(
     out: &Path,
     ctrl: &mut tokio::sync::watch::Receiver<u8>,
     rate_limit_kbps: u64,
+    section: Option<&crate::model::Clip>,
     mut on_progress: impl FnMut(Progress),
 ) -> Result<u64, crate::engine::DlError> {
     use crate::engine::{wait_ctrl, DlError};
@@ -590,6 +606,9 @@ pub async fn download(
         .arg("--no-download-archive");
     if rate_limit_kbps > 0 {
         cmd.args(["--limit-rate", &format!("{rate_limit_kbps}K")]);
+    }
+    if let Some(c) = section {
+        cmd.args(section_args(c));
     }
     cmd.arg("--").arg(page_url).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| DlError::Other(format!("无法运行 yt-dlp：{e}")))?;
@@ -1217,5 +1236,20 @@ mod throttle_tests {
         let msg = rate_limited_error(Some(Duration::from_secs(61))).to_string();
         assert!(msg.contains("2 分钟") && msg.contains("429") && msg.contains("音频转写"), "{msg}");
         assert!(rate_limited_error(None).to_string().contains("几分钟"));
+    }
+}
+
+#[cfg(test)]
+mod section_tests {
+    use super::*;
+    use crate::model::Clip;
+
+    #[test]
+    fn only_the_chosen_part_is_requested() {
+        let c = Clip { start_ms: 83_500, end_ms: Some(125_000), precise: false };
+        // 不重新编码：起点留 40 毫秒容差，免得退到再前一个关键帧
+        assert_eq!(section_args(&c), vec!["--download-sections", "*83.540-125.000"]);
+        let c = Clip { start_ms: 83_500, end_ms: None, precise: true };
+        assert_eq!(section_args(&c), vec!["--download-sections", "*83.500-inf", "--force-keyframes-at-cuts"]);
     }
 }

@@ -125,6 +125,20 @@ impl JobSpec {
 #[serde(rename_all = "camelCase", default)]
 pub struct JobMeta {
     pub inputs: Vec<ResumeMeta>,
+    /// yt-dlp 只下载一段没成功、改成了下载完整视频：下完要在本地剪（重启后也要记得）
+    pub section_fallback: bool,
+}
+
+/// 只下载一段时能不能直接让 yt-dlp 只取这一段：要剪的是视频 / 音频，且除字幕外的输入都走 yt-dlp。
+/// 能就返回这一段；不能（或之前已经退回整段下载）返回 None，下载完在本地剪。
+pub fn section_plan(spec: &JobSpec, meta: &JobMeta) -> Option<Clip> {
+    let c = spec.post.clip.clone()?;
+    let media = spec.inputs.iter().filter(|a| a.kind != AssetKind::Subtitle).collect::<Vec<_>>();
+    let ok = !meta.section_fallback
+        && matches!(spec.primary().kind, AssetKind::Video | AssetKind::Audio)
+        && !media.is_empty()
+        && media.iter().all(|a| a.protocol == Protocol::Ytdlp);
+    ok.then_some(c)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -308,7 +322,7 @@ fn parse_meta(json: &str) -> JobMeta {
     serde_json::from_str::<JobMeta>(json)
         .ok()
         .filter(|m| !m.inputs.is_empty())
-        .or_else(|| serde_json::from_str::<ResumeMeta>(json).ok().map(|m| JobMeta { inputs: vec![m] }))
+        .or_else(|| serde_json::from_str::<ResumeMeta>(json).ok().map(|m| JobMeta { inputs: vec![m], ..Default::default() }))
         .unwrap_or_default()
 }
 
@@ -585,7 +599,7 @@ pub fn enqueue_ext(app: &AppHandle, media: MediaInfo, asset_ids: &[String], post
             let (ctrl, _) = watch::channel(CTRL_RUN);
             let snap = snapshot_for(id, &media, &spec, &path_str, TaskStatus::Queued, now);
             result.tasks.push(snap.clone());
-            let meta = JobMeta { inputs: vec![ResumeMeta::default(); spec.inputs.len()] };
+            let meta = JobMeta { inputs: vec![ResumeMeta::default(); spec.inputs.len()], ..Default::default() };
             list.push(Entry {
                 snap,
                 spec,
@@ -813,6 +827,12 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
 
     let mut outcome: Result<u64, DlError> = Ok(0);
     let mut fmp4 = false;
+    // YouTube 等走 yt-dlp 的：直接只下载所选的那一段；别的下载完整视频后在本地剪
+    let mut section = section_plan(&spec, &meta);
+    if let Some(c) = &section {
+        let (a, b) = (fmt_clock(c.start_ms), c.end_ms.map_or_else(|| "结尾".to_string(), fmt_clock));
+        task_log(&st, id, format!("只下载 {a} – {b} 这一段（yt-dlp 直接取这一段，不下载完整视频）"));
+    }
     for i in 0..count {
         // 已完成的输入（合并前中断）直接跳过
         if let Some(t) = meta.inputs[i].total {
@@ -822,7 +842,8 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
         }
         set_step(&st, id, "download");
         let done_before: u64 = (0..i).map(|k| meta.inputs[k].total.unwrap_or_else(|| file_len(&parts[k]))).sum();
-        outcome = download_input(&app, &st, &settings, id, &media, &mut spec, i, &parts[i], &mut meta, &mut rx, &opts, done_before, &mut fmp4).await;
+        outcome =
+            download_input(&app, &st, &settings, id, &media, &mut spec, i, &parts[i], &mut meta, &mut rx, &opts, done_before, &mut fmp4, &mut section).await;
         if outcome.is_err() {
             break;
         }
@@ -914,8 +935,8 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
             };
         }
     }
-    // 裁剪所选时间段
-    if outcome.is_ok() && matches!(spec.primary().kind, AssetKind::Video | AssetKind::Audio) {
+    // 裁剪所选时间段（yt-dlp 已经只下载了这一段的不用再剪）
+    if outcome.is_ok() && section.is_none() && matches!(spec.primary().kind, AssetKind::Video | AssetKind::Audio) {
         if let Some(c) = spec.post.clip.clone() {
             match postprocess::find_ffmpeg(&st) {
                 None => outcome = Err(DlError::Other(postprocess::ffmpeg_missing().message)),
@@ -1014,7 +1035,7 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
                     let n = spec.inputs.len();
                     let st2 = st.clone();
                     with_entry(&st, id, |e| {
-                        e.meta = JobMeta { inputs: vec![ResumeMeta::default(); n] };
+                        e.meta = JobMeta { inputs: vec![ResumeMeta::default(); n], ..Default::default() };
                         e.snap.received = 0;
                         e.snap.total = None;
                         persist(&st2, e);
@@ -1048,7 +1069,7 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
                     let n = spec.inputs.len();
                     let st2 = st.clone();
                     with_entry(&st, id, |e| {
-                        e.meta = JobMeta { inputs: vec![ResumeMeta::default(); n] };
+                        e.meta = JobMeta { inputs: vec![ResumeMeta::default(); n], ..Default::default() };
                         e.snap.received = 0;
                         e.snap.total = None;
                         persist(&st2, e);
@@ -1178,6 +1199,7 @@ async fn download_input(
     opts: &HttpOptions,
     done_before: u64,
     fmp4: &mut bool,
+    section: &mut Option<Clip>,
 ) -> Result<u64, DlError> {
     let mut re_resolved = false;
     let mut net_attempts = 0u32;
@@ -1296,18 +1318,34 @@ async fn download_input(
                     let format_id = asset.format_id.clone().unwrap_or_else(|| "best".into());
                     let page = if media.source_url.is_empty() { asset.url.clone() } else { media.source_url.clone() };
                     let remaining = spec.batch.as_ref().map_or(0, |b| st.downloads.batch_unfinished(&b.id));
-                    providers::ytdlp::download(
-                        &ctx,
-                        &page,
-                        &format_id,
-                        &asset.ext,
-                        part,
-                        rx,
-                        st.batches.task_limit(spec.batch.as_ref(), settings, st.net.effective_limit(settings.speed_limit_kbps), remaining),
-                        |p| reporter.update(p.downloaded, p.total, p.speed, None),
-                    )
-                    .await
-                    .inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
+                    let limit = st.batches.task_limit(spec.batch.as_ref(), settings, st.net.effective_limit(settings.speed_limit_kbps), remaining);
+                    if section.is_some() {
+                        set_note(app, id, Some("只下载所选的这一段…"));
+                    }
+                    let mut r = providers::ytdlp::download(&ctx, &page, &format_id, &asset.ext, part, rx, limit, section.as_ref(), |p| {
+                        reporter.update(p.downloaded, p.total, p.speed, None)
+                    })
+                    .await;
+                    // 有的服务器不支持按位置读取：yt-dlp 照样“成功”，但得到的文件放不了。检查一下，放不了当作失败
+                    if let (Ok(_), Some(_), Some(ff)) = (&r, section.as_ref(), postprocess::find_ffmpeg(st)) {
+                        let p = postprocess::probe(&ff, part).await;
+                        if !p.readable() {
+                            r = Err(DlError::Other(p.error.unwrap_or_else(|| "得到的片段不能播放".into())));
+                        }
+                    }
+                    // 这个网站 / 格式不能只取一段：改成下载完整视频，下完在本地剪出这一段
+                    if let (Err(DlError::Other(e)), Some(_)) = (&r, section.as_ref()) {
+                        task_log(st, id, format!("yt-dlp 没能只下载这一段（{e}），改为下载完整视频后在本地剪出这一段"));
+                        set_note(app, id, Some("这个视频不能只下载一段，改为下载完整视频，下完自动剪出这一段…"));
+                        *section = None;
+                        meta.section_fallback = true;
+                        remove_part(part);
+                        r = providers::ytdlp::download(&ctx, &page, &format_id, &asset.ext, part, rx, limit, None, |p| {
+                            reporter.update(p.downloaded, p.total, p.speed, None)
+                        })
+                        .await;
+                    }
+                    r.inspect(|size| meta.inputs[i] = ResumeMeta { total: Some(*size), ..Default::default() })
                 }
             }
         };
@@ -1472,6 +1510,19 @@ fn suffixed(p: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// 毫秒 → `m:ss` / `h:mm:ss`（任务日志用）
+fn fmt_clock(ms: u64) -> String {
+    let t = ms / 1000;
+    let (h, m, sec) = (t / 3600, t / 60 % 60, t % 60);
+    let frac = ms % 1000;
+    let sec = if frac == 0 { format!("{sec:02}") } else { format!("{sec:02}.{}", frac / 100) };
+    if h > 0 {
+        format!("{h}:{m:02}:{sec}")
+    } else {
+        format!("{m}:{sec}")
+    }
+}
+
 /// yt-dlp 下载时可能留下的临时文件（输出名为“临时文件名.扩展名”，下载中再加 .part / .ytdl）。
 fn ytdlp_leftovers(p: &Path) -> Vec<PathBuf> {
     ["mp4", "m4a", "webm", "mkv", "mp3", "flv", "ts", "mov", "opus", "ogg", "flac", "aac"]
@@ -1607,7 +1658,7 @@ fn finish(app: &AppHandle, st: &AppState, id: i64, outcome: Result<u64, DlError>
                     for p in &leftovers {
                         remove_part(p);
                     }
-                    e.meta = JobMeta { inputs: vec![ResumeMeta::default(); e.spec.inputs.len()] };
+                    e.meta = JobMeta { inputs: vec![ResumeMeta::default(); e.spec.inputs.len()], ..Default::default() };
                 }
             }
             Err(err) => {
@@ -1918,7 +1969,7 @@ pub fn cancel(app: &AppHandle, id: i64) {
                 for p in all_parts(&settings, e) {
                     remove_part(&p);
                 }
-                e.meta = JobMeta { inputs: vec![ResumeMeta::default(); e.spec.inputs.len()] };
+                e.meta = JobMeta { inputs: vec![ResumeMeta::default(); e.spec.inputs.len()], ..Default::default() };
             }
             persist(&st, e);
         }
@@ -2233,6 +2284,35 @@ mod tests {
         assert_eq!(post_for(&post, &sub, &keep).sub_to.as_deref(), Some("srt"));
         assert_eq!(post_for(&post, &asset_of(AssetKind::Image, "jpg"), &s), PostOptions::default());
         assert_eq!(post_for(&post, &asset_of(AssetKind::Cover, "jpg"), &s), PostOptions::default());
+    }
+
+    #[test]
+    fn youtube_like_sources_download_only_the_chosen_part() {
+        let yt = |kind| Asset { protocol: Protocol::Ytdlp, ..asset_of(kind, "mp4") };
+        let clip = Clip { start_ms: 10_000, end_ms: Some(20_000), precise: false };
+        let mut spec = JobSpec {
+            inputs: vec![yt(AssetKind::Video), yt(AssetKind::Subtitle)],
+            post: PostOptions::default(),
+            priority: 0,
+            start_at: None,
+            origin: None,
+            sub_item: None,
+            tried: vec![],
+            batch: None,
+        };
+        let meta = JobMeta::default();
+        assert_eq!(section_plan(&spec, &meta), None, "没选一段：整段下载");
+        spec.post.clip = Some(clip.clone());
+        assert_eq!(section_plan(&spec, &meta), Some(clip.clone()), "走 yt-dlp 的直接只下这一段");
+        // 之前已经退回整段下载（比如重启后继续）：照旧下载完在本地剪
+        assert_eq!(section_plan(&spec, &JobMeta { section_fallback: true, ..Default::default() }), None);
+        // 有不走 yt-dlp 的音视频输入：下载完在本地剪
+        spec.inputs.push(asset_of(AssetKind::Audio, "m4a"));
+        assert_eq!(section_plan(&spec, &meta), None);
+        // 下载的是图片之类：不剪
+        spec.inputs = vec![yt(AssetKind::Image)];
+        assert_eq!(section_plan(&spec, &meta), None);
+        assert_eq!((fmt_clock(83_500), fmt_clock(3_725_000), fmt_clock(0)), ("1:23.5".to_string(), "1:02:05".to_string(), "0:00".to_string()));
     }
 
     #[test]

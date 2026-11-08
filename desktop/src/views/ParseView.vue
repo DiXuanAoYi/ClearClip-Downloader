@@ -72,6 +72,11 @@ const subtitleAssets = computed(() => result.value?.assets.filter((a) => a.kind 
 const extras = computed(() => result.value?.assets.filter((a) => a.kind !== 'image' && a.kind !== 'video' && a.kind !== 'subtitle') ?? [])
 const videoSelected = computed(() => videoFormats.value.some((v) => selected.value.has(v.id)))
 const canClip = computed(() => !!result.value && !isPlaylist.value && (result.value.kind === 'video' || result.value.kind === 'audio') && !audioOnly.value)
+/** 只下载一段时能不能直接只取这一段：选中的音视频都走 yt-dlp（YouTube 等）；不能就下完整视频后在后台剪 */
+const clipDirect = computed(() => {
+  const av = (result.value?.assets ?? []).filter((a) => selected.value.has(a.id) && (a.kind === 'video' || a.kind === 'audio'))
+  return av.length > 0 && av.every((a) => a.protocol === 'ytdlp')
+})
 /** 预览用的资源：优先用户选中的清晰度。FTP / SFTP / ed2k / BT 要连上对方才有数据，其余（含 m3u8、yt-dlp 的流）都能预览。 */
 const previewable = (a: Asset) => (a.kind === 'video' || a.kind === 'audio') && !['ftp', 'sftp', 'ed2k', 'bt'].includes(a.protocol)
 const previewAsset = computed(() => {
@@ -796,7 +801,7 @@ function recentKind(r: HistoryItem) {
               <span class="pz-st">范围</span>
               <span v-if="result.durationMs" class="pz-sa"><span class="mono pz-note">全长 {{ formatDuration(result.durationMs) }}</span></span>
             </div>
-            <ClipPicker v-if="canClip" v-model:clip="clip" v-model:split="splitOn" :duration-ms="result.durationMs" :chapters="result.chapters ?? []" />
+            <ClipPicker v-if="canClip" v-model:clip="clip" v-model:split="splitOn" :duration-ms="result.durationMs" :chapters="result.chapters ?? []" :direct="clipDirect" />
             <p v-else class="pz-note">只要音频时下载完整的声音。</p>
           </div>
 
