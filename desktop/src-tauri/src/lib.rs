@@ -868,6 +868,7 @@ pub fn run() {
             writeassist::write_undo,
             writeassist::write_pin,
             writeassist::write_prefs,
+            writeassist::write_relation,
             writeassist::write_open_settings,
             writeassist::write_pause,
             commands::open_login,

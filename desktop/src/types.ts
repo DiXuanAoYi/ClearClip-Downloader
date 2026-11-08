@@ -1094,6 +1094,8 @@ export interface WritingSettings {
   win: number[]
   lastAction: string
   extras: string[]
+  /** 帮我回记住的“对方是谁”：程序|称呼 → superior / colleague / … */
+  relations?: Record<string, string>
 }
 
 /** 快捷键取到的内容 */

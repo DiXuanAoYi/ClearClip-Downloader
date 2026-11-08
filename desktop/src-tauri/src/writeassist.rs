@@ -13,9 +13,9 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 pub const LABEL: &str = "write";
-/// 窗口比卡片大一圈透明边距（放阴影和缩放把手），卡片本身约 440×560
+/// 窗口比卡片大一圈透明边距（放阴影和缩放把手），卡片本身约 440×740（帮我回的选项多，内容区还能滚动）
 const W: f64 = 464.0;
-const H: f64 = 584.0;
+const H: f64 = 764.0;
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -376,6 +376,22 @@ pub fn write_prefs(state: tauri::State<'_, Arc<AppState>>, last_action: String, 
         c.last_action = last_action;
         c.extras = extras;
         c.auto_close = auto_close;
+    })
+}
+
+/// 帮我回：记住这个程序 / 这个人是“上级、同事……”，下次自动选上。`relation` 为空时忘掉。
+#[tauri::command]
+pub fn write_relation(state: tauri::State<'_, Arc<AppState>>, key: String, relation: String) -> Result<(), String> {
+    let key: String = key.trim().chars().take(80).collect();
+    if key.is_empty() {
+        return Ok(());
+    }
+    save_prefs(&state, |c| {
+        if relation.is_empty() {
+            c.relations.remove(&key);
+        } else {
+            c.relations.insert(key, relation);
+        }
     })
 }
 

@@ -486,6 +486,8 @@ export const api = {
   writeUndo: () => invoke<boolean>('write_undo'),
   writePin: (on: boolean) => invoke<void>('write_pin', { on }),
   writePrefs: (lastAction: string, extras: string[], autoClose: boolean) => invoke<void>('write_prefs', { lastAction, extras, autoClose }),
+  /** 帮我回：记住这个程序 / 这个人是谁（relation 为空时忘掉） */
+  writeRelation: (key: string, relation: string) => invoke<void>('write_relation', { key, relation }),
   writeOpenSettings: () => invoke<void>('write_open_settings'),
   writeBadgeClick: () => invoke<void>('write_badge_click'),
   writeClose: () => invoke<void>('write_close'),
