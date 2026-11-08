@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const VSUM = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js']
+const VSUM = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum.js']
 const SUB = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js']
 const SEL = ['content/ui.js', 'selbar-logic.js', 'content/wordcard.js', 'content/selbar.js']
 let pass = 0
@@ -256,6 +256,31 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     return card ? { out: c.textContent, btns: [...card.querySelectorAll('.bar button')].map((b) => b.textContent) } : null
   })
   ok('划词“翻译”打开网页翻译的卡片', trCard && /^译:resilient/.test(trCard.out) && ['翻译窗', '存为笔记'].every((x) => trCard.btns.includes(x)), JSON.stringify(trCard))
+
+  // 8. 划词高亮：深色网页上的白字，高亮后字变成黑色（高亮底色都是浅色）
+  await page.evaluate(() => {
+    for (const r of window.__roots || []) r.querySelector('.card')?.remove()
+    const p = document.createElement('p')
+    p.id = 'dark'
+    p.style.cssText = 'background:#111;color:#fff'
+    p.textContent = 'White words on a dark page should stay readable.'
+    document.body.append(p)
+    const tn = p.firstChild
+    const rng = document.createRange()
+    rng.setStart(tn, 0)
+    rng.setEnd(tn, 11)
+    getSelection().removeAllRanges()
+    getSelection().addRange(rng)
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 100, clientY: 420 }))
+  })
+  await page.waitForFunction(() => (window.__roots || []).some((r) => r.querySelector('.bar .sw')), null, { timeout: 4000 }).catch(() => {})
+  await page.evaluate(() => window.__roots.map((r) => r.querySelector('.bar .sw')).find(Boolean)?.click())
+  await page.waitForFunction(() => document.querySelector('#dark span[data-cc-hl]'), null, { timeout: 4000 }).catch(() => {})
+  const hlc = await page.evaluate(() => {
+    const sp = document.querySelector('#dark span[data-cc-hl]')
+    return sp ? { text: sp.textContent, color: getComputedStyle(sp).color, bg: getComputedStyle(sp).backgroundColor } : null
+  })
+  ok('高亮后的字是黑色（深色网页的白字也看得清）', hlc?.text === 'White words' && hlc.color === 'rgb(17, 17, 17)' && hlc.bg !== 'rgba(0, 0, 0, 0)', JSON.stringify(hlc))
 
   ok('没有页面错误', !errors.length, errors.join(' | '))
   await browser.close()

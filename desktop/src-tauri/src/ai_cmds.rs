@@ -222,7 +222,56 @@ pub fn filetr_start(app: AppHandle, path: String, opts: crate::filetr::Opts) -> 
     // 记下源文件和选项：文件翻译页切走再回来，靠它认出“这个任务是哪个文件、是不是只预览”
     let meta =
         media_tools::JobMeta { kind: Some("filetr"), input: Some(p.to_string_lossy().into_owned()), params: serde_json::to_value(&opts).unwrap_or_default() };
-    Ok(media_tools::spawn_job_meta(&app, title_of(&p), "文件翻译", meta, move |ctx| async move { crate::filetr::run(&ctx, &p, opts).await }))
+    let title = title_of(&p);
+    Ok(media_tools::spawn_job_meta(&app, title.clone(), "文件翻译", meta, move |ctx| async move {
+        use crate::filetr_ext as ext;
+        // 记一条任务记录：任务列表只在内存里，重启后靠它认出“这个文件翻译到哪儿了”，还能继续
+        let st = ctx.st.clone();
+        let target = if opts.target.trim().is_empty() { st.settings().ai.target_lang.clone() } else { opts.target.trim().to_string() };
+        let path_s = p.to_string_lossy().into_owned();
+        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+        ext::recent_put(&st.data_dir, ext::Recent { path: path_s.clone(), title, target: target.clone(), opts: opts.clone(), at, ..Default::default() });
+        let r = crate::filetr::run(&ctx, &p, opts.clone()).await;
+        match &r {
+            Ok(out) => ext::recent_finish(&st.data_dir, &path_s, &target, "ok", (!opts.preview).then(|| out.to_string_lossy().into_owned()), ""),
+            Err(_) if ctx.canceled() => ext::recent_finish(&st.data_dir, &path_s, &target, "cancel", None, ""),
+            Err(e) => ext::recent_finish(&st.data_dir, &path_s, &target, "err", None, &e.message),
+        }
+        r
+    }))
+}
+
+/// 文件翻译：开始前的估算（几页、几段、多少字、缓存里已有多少、预计请求数），按页范围和“不翻译”的设置算。
+#[tauri::command]
+pub async fn filetr_plan(state: St<'_>, path: String, opts: crate::filetr::Opts) -> AppResult<crate::filetr_ext::PlanInfo> {
+    let p = existing_file(&path)?;
+    crate::filetr_ext::plan(&state, &p, &opts).await
+}
+
+/// 文件翻译：任务记录（重启后还在）。
+#[tauri::command]
+pub fn filetr_recent(state: St<'_>) -> Vec<crate::filetr_ext::RecentView> {
+    crate::filetr_ext::recent_list(&state.data_dir)
+}
+
+/// 文件翻译：去掉一条任务记录（译文缓存不动，再拖入同一个文件会接着用）。
+#[tauri::command]
+pub fn filetr_recent_remove(state: St<'_>, path: String, target: String) {
+    crate::filetr_ext::recent_remove(&state.data_dir, &path, &target);
+}
+
+/// 文件翻译：把已有的译文存成文件。`kind`：txt 译文 / md 双语 Markdown / srt 双语字幕 / srt-trans 仅译文字幕。
+#[tauri::command]
+pub fn filetr_export(state: St<'_>, path: String, target: String, kind: String, dest: String) -> AppResult<()> {
+    let p = existing_file(&path)?;
+    let text = crate::filetr_ext::export_text(&state.data_dir, &p, target.trim(), &kind)?;
+    std::fs::write(&dest, text).map_err(|e| AppError::invalid(format!("没法保存到这个位置：{e}")))
+}
+
+/// 文件翻译：删掉这份文件的译文缓存（含阅读器里改过的译文），返回删了几个文件。
+#[tauri::command]
+pub fn filetr_cache_delete(state: St<'_>, path: String, target: String) -> usize {
+    crate::filetr_ext::delete_cache(&state.data_dir, Path::new(&path), target.trim())
 }
 
 /// 文件翻译：不翻译，只把文件切成页，给阅读器先看原文。

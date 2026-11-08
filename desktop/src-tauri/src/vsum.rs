@@ -182,7 +182,7 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
         Err(_) if req.kind == "lookup" => return Ok(Prep::Done(crate::vocab::offline_lookup(req.text.trim()))),
         Err(e) => return Err(e),
     };
-    if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
+    if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style" | "replyread") {
         ep = crate::writing::route(ep, &req.write.route)?;
     }
     if matches!(req.kind.as_str(), "write" | "stats") {
@@ -715,9 +715,10 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 26] = [
+    const KINDS: [&str; 27] = [
         "answer",
         "write",
+        "replyread",
         "style",
         "grammar",
         "stats",
@@ -768,7 +769,7 @@ pub fn check(req: &Req) -> AppResult<()> {
     if req.system.chars().count() > MAX_SYSTEM {
         return Err(AppError::invalid("自定义提示词太长（上限 2 万字）。"));
     }
-    if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style") {
+    if matches!(req.kind.as_str(), "write" | "grammar" | "stats" | "style" | "replyread") {
         crate::writing::check_opts(&req.kind, &req.text, &req.write)?;
     }
     if req.kind == "lookup" && (req.text.trim().is_empty() || req.text.chars().count() > 80) {
@@ -1614,6 +1615,59 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             let text = chat(ep, model, &pick_system(req, rewrite_system(lang, &req.format)), req.text.trim()).await?;
             progress(1, 1)?;
             Ok(json!({"text": text.trim()}))
+        }
+        "replyread" => {
+            progress(0, 1)?;
+            let r = crate::writing::parse_reply_read(
+                &chat(ep, model, &crate::writing::reply_read_system(), &crate::writing::user_message(&req.write, &req.text)).await?,
+            );
+            progress(1, 1)?;
+            Ok(json!(r))
+        }
+        "write" if req.write.action == "reply" => {
+            // 帮我回：每版一个说法（稳妥 / 热情 / 简短），同时发出去；写作窗要三版，扩展按自己的“几个候选”
+            let sources = crate::writing::reply_sources(&req.write, &req.text);
+            let user = crate::writing::user_message(&req.write, &req.text);
+            let n = req.write.candidates.clamp(1, 3) as usize;
+            progress(0, 1)?;
+            let jobs = crate::writing::ANGLES[..n].iter().map(|(angle, _)| {
+                let mut o = req.write.clone();
+                o.reply.angle = angle.to_string();
+                let system = crate::writing::system_prompt(&o);
+                let user = user.clone();
+                async move { chat(ep, model, &system, &user).await }
+            });
+            let got = futures_util::future::join_all(jobs).await;
+            let mut cands: Vec<Value> = Vec::new();
+            let mut seen: Vec<String> = Vec::new();
+            let mut last_err = None;
+            for ((_, label), r) in crate::writing::ANGLES[..n].iter().zip(got) {
+                match r.map(|t| crate::writing::clean_output(&t)) {
+                    Ok(t) if !t.is_empty() && !seen.contains(&t) => {
+                        let label = if n > 1 { *label } else { "" };
+                        cands.push(json!({"text": t, "label": label, "guard": crate::writing::guard_reply(&sources, &t)}));
+                        seen.push(t);
+                    }
+                    Ok(_) => {}
+                    Err(e) => last_err = Some(e),
+                }
+            }
+            progress(1, 1)?;
+            if cands.is_empty() {
+                return Err(last_err.unwrap_or_else(model_err));
+            }
+            Ok(json!({"candidates": cands}))
+        }
+        "write" if req.write.action == "tweak" => {
+            progress(0, 1)?;
+            let o = &req.write;
+            let t = crate::writing::clean_output(&chat(ep, model, &crate::writing::system_prompt(o), &crate::writing::user_message(o, &req.text)).await?);
+            progress(1, 1)?;
+            if t.is_empty() {
+                return Err(model_err());
+            }
+            let guard = crate::writing::guard_reply(&crate::writing::reply_sources(o, &req.text), &t);
+            Ok(json!({"candidates": [{"text": t, "guard": guard}]}))
         }
         "write" => {
             let o = &req.write;

@@ -1,33 +1,64 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
 import { useAppStore } from '../stores/app'
-import type { AiExpert, FileTransView, JobSnap, OcrStatus, PdfxStatus } from '../types'
+import type { AiExpert, FileTransView, FtOpts, FtRecent, JobSnap, OcrStatus, PdfxStatus } from '../types'
 import { registerDrop } from '../utils/dropHub'
 import { TARGET_LANGS } from '../utils/langs'
-import PdfCanvas from '../components/PdfCanvas.vue'
+import FtReader from '../components/filetrans/FtReader.vue'
+import FtTasks from '../components/filetrans/FtTasks.vue'
+import FtStartDialog from '../components/filetrans/FtStartDialog.vue'
+import { baseName, countView, etaSeconds, etaText, filterTasks, mergeTasks, taskKey, type Task, type TaskFilter } from '../utils/ft'
 
-/** 文件翻译：拖入文件 → 一页一页翻 → 左原文右译文对照阅读 → 导出。设计图 ④。 */
+/** 文件翻译：拖入文件 →（开始前确认）→ 一页一页翻 → 左原文右译文 / 版面阅读 → 导出。任务能停、能续、重启后还在。 */
 const app = useAppStore()
 const EXTS = ['png', 'jpg', 'jpeg', 'webp', 'pdf', 'epub', 'txt', 'md', 'markdown', 'srt', 'vtt', 'ass', 'ssa', 'docx']
 const FORMATS = ['PDF', 'EPUB', 'DOCX', 'TXT', 'MD', 'SRT / ASS', '图片']
+const LS = 'cc-ft-opts'
 
 const jobs = ref<JobSnap[]>([])
-// 任务编号 → 源文件路径：从任务快照里来（后端记了输入），页面切走再回来也认得出
-const files = computed<Record<number, string>>(() => Object.fromEntries(jobs.value.filter((j) => j.kind === 'filetr' && j.input).map((j) => [j.id, j.input as string])))
-const cur = ref<string>('') // 当前查看的源文件路径
+const recents = ref<FtRecent[]>([])
+const cur = ref('') // 当前查看的源文件
 const view = ref<FileTransView | null>(null)
-const page = ref(0)
-const show = ref<'src' | 'both' | 'trans' | 'layout'>('both')
-const target = ref(app.settings?.ai.targetLang || '简体中文')
-const bilingual = ref(true)
-// PDF：译文写回原处 / 原页与译文页交替 / 只输出 TXT
-const pdfMode = ref<'inplace' | 'interleave' | 'txt'>('inplace')
-// 图片和扫描版 PDF 的识字方式：视觉模型 / 本机增强识字（PaddleOCR，开源）/ 在线识字接口
-const ocrEngine = ref<'vision' | 'enhanced' | 'system' | 'api'>('vision')
+const filter = ref<TaskFilter>('all')
+const over = ref(false)
+const experts = ref<AiExpert[]>([])
+const advanced = ref(false)
+const confirmStart = ref(true)
+
+// 设置：常用的放前面，高级收起来；记在本机
+const o = ref<FtOpts>({ bilingual: true, target: app.settings?.ai.targetLang || '简体中文', pdfMode: 'inplace', ocr: 'vision', preview: true, pages: '', skipHeaders: true, skipCode: true, skipRefs: false })
+function restoreOpts() {
+  try {
+    const s = localStorage.getItem(LS)
+    if (s) Object.assign(o.value, JSON.parse(s), { pages: '' })
+    confirmStart.value = localStorage.getItem('cc-ft-confirm') !== '0'
+  } catch {
+    /* 读不到就用默认 */
+  }
+}
+watch(
+  o,
+  (v) => {
+    try {
+      localStorage.setItem(LS, JSON.stringify({ ...v, pages: '' }))
+    } catch {
+      /* 记不住也不影响 */
+    }
+  },
+  { deep: true },
+)
+watch(confirmStart, (v) => {
+  try {
+    localStorage.setItem('cc-ft-confirm', v ? '1' : '0')
+  } catch {
+    /* 记不住也不影响 */
+  }
+})
+
 const ocrSt = ref<OcrStatus | null>(null)
 const ocrBusy = ref(false)
 async function ocrRefresh() {
@@ -47,10 +78,6 @@ async function ocrInstall() {
 const API_NAMES: Record<string, string> = { ocrspace: 'OCR.space', baidu: '百度高精度', google: 'Google Cloud Vision' }
 const apiProvider = computed(() => API_NAMES[app.settings?.live.ocrApi.provider ?? ''] ?? '')
 const apiReady = computed(() => !!app.settings?.live.ocrApi.key)
-// 先预览再生成：翻译完先在右边检查、改译文，满意后再生成文件
-const previewFirst = ref(true)
-// 任务编号 → 这个任务只翻译、没有生成文件（同样来自任务快照的参数）
-const previews = computed<Record<number, boolean>>(() => Object.fromEntries(jobs.value.filter((j) => j.kind === 'filetr').map((j) => [j.id, !!j.params?.preview])))
 const pdfx = ref<PdfxStatus | null>(null)
 const pdfxBusy = ref('')
 async function pdfxRefresh() {
@@ -67,61 +94,6 @@ async function pdfxDo(what: 'install' | 'font' | 'remove') {
     pdfxBusy.value = ''
   }
 }
-// 别的页面（媒体库里字幕的“翻译字幕”、工具箱）交过来的文件
-async function takeRequest() {
-  const paths = app.filetrRequest
-  if (!paths?.length) return
-  app.filetrRequest = null
-  await addFiles(paths)
-}
-watch(() => app.filetrRequest, () => void takeRequest())
-onMounted(() => {
-  void takeRequest()
-  void pdfxRefresh()
-  void ocrRefresh()
-  try {
-    previewFirst.value = localStorage.getItem('cc-ft-preview') !== '0'
-    const e = localStorage.getItem('cc-ft-ocr')
-    if (e === 'enhanced' || e === 'system' || e === 'api' || e === 'vision') ocrEngine.value = e
-  } catch {
-    /* 读不到就用默认 */
-  }
-})
-watch(previewFirst, (v) => {
-  try {
-    localStorage.setItem('cc-ft-preview', v ? '1' : '0')
-  } catch {
-    /* 记不住也不影响 */
-  }
-})
-watch(ocrEngine, (v) => {
-  try {
-    localStorage.setItem('cc-ft-ocr', v)
-  } catch {
-    /* 记不住也不影响 */
-  }
-})
-const experts = ref<AiExpert[]>([])
-const over = ref(false)
-let offs: UnlistenFn[] = []
-let release: (() => void) | null = null
-
-const mine = computed(() => jobs.value.filter((j) => j.kind === 'filetr').sort((a, b) => b.id - a.id))
-const curJob = computed(() => mine.value.find((j) => files.value[j.id] === cur.value))
-const pages = computed(() => view.value?.pages ?? [])
-// 版面画布：PDF 才有，译文放回原来的位置，可切换原文 / 译文 / 对比 / 导出效果、缩放平移、直接改译文
-const isPdf = computed(() => /\.pdf$/i.test(cur.value))
-function onCanvasEdited(viewPage: number, index: number, text: string | null) {
-  const p = view.value?.pages[viewPage]
-  if (p && index < p.trans.length) p.trans[index] = text
-}
-const pg = computed(() => pages.value[page.value])
-const doneSegs = computed(() => pages.value.reduce((n, p) => n + p.trans.filter(Boolean).length, 0))
-const totalSegs = computed(() => pages.value.reduce((n, p) => n + p.src.length, 0))
-const donePages = computed(() => pages.value.filter((p) => p.trans.length && p.trans.every(Boolean)).length)
-const failedSegs = computed(() => totalSegs.value - doneSegs.value)
-const hasTrans = computed(() => doneSegs.value > 0)
-const baseName = (p: string) => p.split(/[\\/]/).pop() || p
 const expertId = computed({
   get: () => (app.settings?.ai.expertAuto ? '__auto' : app.settings?.ai.expert || ''),
   set: (v: string) => {
@@ -134,29 +106,72 @@ const glossaryOn = computed({
   set: (v: boolean) => app.settings && void app.patch({ ai: { ...app.settings.ai, glossaryOn: v } }),
 })
 
+// ---------- 任务 ----------
+const counts = computed(() => (cur.value ? countView(view.value) : null))
+const tasks = computed<Task[]>(() => mergeTasks(jobs.value, recents.value, o.value.target, cur.value && counts.value ? { key: taskKey(cur.value, o.value.target), counts: counts.value } : null))
+const curTask = computed(() => tasks.value.find((t) => t.path === cur.value && t.target === o.value.target) ?? tasks.value.find((t) => t.path === cur.value) ?? null)
+
+// 剩余时间：记下每个任务进度开始动的时刻
+const marks = new Map<string, { t: number; p: number }>()
+const eta = ref<Record<string, string>>({})
+function updateEta() {
+  const next: Record<string, string> = {}
+  for (const t of tasks.value) {
+    if (t.state !== 'running') {
+      marks.delete(t.key)
+      continue
+    }
+    const m = marks.get(t.key)
+    if (!m) marks.set(t.key, { t: Date.now(), p: t.percent })
+    else next[t.key] = etaText(etaSeconds(m.t, m.p, Date.now(), t.percent))
+  }
+  eta.value = next
+}
+
+async function refreshRecents() {
+  recents.value = await api.filetrRecent().catch(() => recents.value)
+}
+async function refreshJobs() {
+  jobs.value = await api.mediaJobs().catch(() => jobs.value)
+}
+async function loadView() {
+  if (!cur.value) return
+  try {
+    const v = await api.filetrView(cur.value, o.value.target)
+    view.value = v ?? (await api.filetrPreview(cur.value))
+  } catch (e) {
+    view.value = null
+    ElMessage.error(errorText(e))
+  }
+}
+
+let offs: UnlistenFn[] = []
+let release: (() => void) | null = null
 onMounted(async () => {
-  jobs.value = await api.mediaJobs().catch(() => [])
-  // 从别的页面切回来：接着看最近一个文件翻译任务
-  const last = mine.value.find((j) => j.input)
-  if (!cur.value && last?.input) {
-    cur.value = last.input
+  restoreOpts()
+  void pdfxRefresh()
+  void ocrRefresh()
+  void takeRequest()
+  await Promise.all([refreshJobs(), refreshRecents()])
+  const last = tasks.value[0]
+  if (!cur.value && last) {
+    cur.value = last.path
     void loadView()
   }
   experts.value = (await api.expertsState().catch(() => null))?.experts ?? []
   offs = [
     await events.onMediaJobs((l) => {
-      const before = curJob.value?.status
+      const before = new Map(jobs.value.map((j) => [j.id, j.status]))
       jobs.value = l
-      // 当前文件译完 / 译了一页，刷新阅读器
-      if (curJob.value && (curJob.value.status !== before || curJob.value.status === 'running')) void loadView()
+      updateEta()
+      const mine = l.find((j) => j.kind === 'filetr' && j.input === cur.value)
+      const ended = l.some((j) => j.kind === 'filetr' && before.get(j.id) !== j.status && j.status !== 'running' && j.status !== 'queued')
+      if (ended) void refreshRecents()
+      if (mine && (mine.status === 'running' || before.get(mine.id) !== mine.status)) void loadView()
     }),
   ]
   release = registerDrop({
-    accepts: (x, y) => {
-      void x
-      void y
-      return true
-    },
+    accepts: () => true,
     over: () => (over.value = true),
     leave: () => (over.value = false),
     drop: (paths) => {
@@ -169,138 +184,171 @@ onBeforeUnmount(() => {
   offs.forEach((f) => f())
   release?.()
 })
-watch(page, () => {
-  const el = document.querySelector('.ft .pg')
-  if (el) el.scrollTop = 0
-})
-watch(target, () => void loadView())
-
-async function loadView() {
-  if (!cur.value) return
-  try {
-    const v = await api.filetrView(cur.value, target.value)
-    const nv = v ?? (await api.filetrPreview(cur.value))
-    view.value = nv
-    if (page.value >= nv.pages.length) page.value = 0
-  } catch (e) {
-    view.value = null
-    ElMessage.error(errorText(e))
-  }
+watch(() => o.value.target, () => void loadView())
+async function takeRequest() {
+  const paths = app.filetrRequest
+  if (!paths?.length) return
+  app.filetrRequest = null
+  await addFiles(paths)
 }
+watch(() => app.filetrRequest, () => void takeRequest())
+
+// ---------- 开始 ----------
+const dlg = ref<{ paths: string[]; opts: FtOpts; title: string; ok: string } | null>(null)
+const dlgOpen = computed({ get: () => !!dlg.value, set: (v: boolean) => !v && (dlg.value = null) })
 
 async function choose() {
   const f = await open({ multiple: true, title: '选择要翻译的文件', filters: [{ name: '文档、电子书、字幕', extensions: EXTS }] })
   if (Array.isArray(f)) await addFiles(f)
   else if (typeof f === 'string') await addFiles([f])
 }
-
 async function addFiles(paths: string[]) {
   const ok = paths.filter((p) => EXTS.includes((p.split('.').pop() || '').toLowerCase()))
   if (!ok.length) return ElMessage.warning('支持 PDF、EPUB、DOCX、TXT、Markdown、SRT / VTT / ASS 字幕，以及 PNG / JPG / WebP 图片。')
-  for (const p of ok) await start(p)
+  if (confirmStart.value) dlg.value = { paths: ok, opts: { ...o.value, pages: '' }, title: '开始前确认', ok: '开始翻译' }
+  else for (const p of ok) await start(p, { ...o.value, pages: '' })
 }
-
-async function start(path: string, preview = previewFirst.value) {
+async function onConfirm(opts: FtOpts, remember: boolean) {
+  const d = dlg.value
+  dlg.value = null
+  if (!d) return
+  confirmStart.value = remember
+  o.value = { ...o.value, ...opts, pages: '' }
+  for (const p of d.paths) await start(p, opts)
+}
+async function start(path: string, opts: Partial<FtOpts>) {
   try {
-    await api.filetrStart(path, { bilingual: bilingual.value, target: target.value, pdfMode: pdfMode.value, ocr: ocrEngine.value, preview })
+    await api.filetrStart(path, opts)
     cur.value = path
-    page.value = 0
-    jobs.value = await api.mediaJobs().catch(() => jobs.value)
+    if (opts.target && opts.target !== o.value.target) o.value.target = opts.target
+    await refreshJobs()
+    await refreshRecents()
+    updateEta()
     await loadView()
   } catch (e) {
     ElMessage.error(errorText(e))
   }
 }
 
-async function pick(j: JobSnap) {
-  const p = files.value[j.id]
-  if (!p) return ElMessage.info('这个任务是上次打开程序时开始的，源文件位置没有保留。重新拖入文件即可继续（已译的段落有缓存）。')
-  cur.value = p
-  page.value = 0
-  await loadView()
+// ---------- 任务上的操作 ----------
+async function pick(t: Task) {
+  cur.value = t.path
+  if (t.target !== o.value.target) o.value.target = t.target
+  else await loadView()
 }
-
-async function retry() {
-  if (cur.value) await start(cur.value) // 已译好的段落走缓存，只重翻失败的
-}
-/** 按阅读器里现在的译文（含你改过的）生成文件：已译的段落走缓存，很快。 */
-async function generate() {
-  if (cur.value) await start(cur.value, false)
-}
-const isPreviewJob = computed(() => !!curJob.value && !!previews.value[curJob.value.id])
-
-// ---------- 在阅读器里改译文 ----------
-const editing = ref<{ page: number; i: number } | null>(null)
-const draft = ref('')
-const busySeg = ref('')
-function beginEdit(i: number) {
-  if (!pg.value || curJob.value?.status === 'running') return
-  editing.value = { page: page.value, i }
-  draft.value = pg.value.trans[i] ?? ''
-}
-async function saveEdit() {
-  const e = editing.value
-  if (!e || !cur.value) return
-  editing.value = null
-  const p = pages.value[e.page]
-  if (!p || (p.trans[e.i] ?? '') === draft.value.trim()) return
+const taskOpts = (t: Task, patch: Partial<FtOpts> = {}): Partial<FtOpts> => ({ ...o.value, ...t.opts, target: t.target, ...patch })
+async function ask(msg: string, ok: string): Promise<boolean> {
   try {
-    await api.filetrEdit(cur.value, target.value, e.page, e.i, draft.value)
-    p.trans[e.i] = draft.value.trim() || null
-  } catch (err) {
-    ElMessage.error(errorText(err))
+    await ElMessageBox.confirm(msg, '请确认', { confirmButtonText: ok, cancelButtonText: '取消', type: 'warning' })
+    return true
+  } catch {
+    return false
   }
 }
-function cancelEdit() {
-  editing.value = null
+async function removeTask(t: Task) {
+  if (t.jobId != null) await api.mediaJobRemove(t.jobId).catch(() => {})
+  await api.filetrRecentRemove(t.path, t.target).catch(() => {})
 }
-async function clearSeg(i: number) {
-  if (!cur.value) return
+async function act(what: string, t: Task) {
   try {
-    await api.filetrEdit(cur.value, target.value, page.value, i, '')
-    if (pg.value) pg.value.trans[i] = null
-  } catch (err) {
-    ElMessage.error(errorText(err))
-  }
-}
-async function retranslateSeg(i: number) {
-  if (!cur.value || !pg.value) return
-  busySeg.value = `${page.value}:${i}`
-  try {
-    pg.value.trans[i] = await api.filetrRetranslate(cur.value, target.value, page.value, i)
-  } catch (err) {
-    ElMessage.error(errorText(err))
-  } finally {
-    busySeg.value = ''
-  }
-}
-async function cancel(j: JobSnap) {
-  await api.mediaJobCancel(j.id).catch(() => {})
-}
-async function openOut() {
-  if (isPreviewJob.value) return
-  const o = curJob.value?.output
-  if (o) await api.revealFile(o).catch((e) => ElMessage.error(errorText(e)))
-}
-
-function exportText(): string {
-  return pages.value
-    .map((p) => p.src.map((s, i) => (bilingual.value ? `${s}\n${p.trans[i] ?? ''}` : (p.trans[i] ?? s))).join('\n\n'))
-    .join('\n\n')
-}
-async function exportAs(kind: 'file' | 'txt' | 'md') {
-  if (kind === 'file') return openOut()
-  const text = kind === 'md' ? exportText().replace(/\n\n/g, '\n\n') : exportText()
-  try {
-    await api.copyText(text)
-    ElMessage.success('已复制全文，粘贴到任意编辑器保存即可')
+    switch (what) {
+      case 'cancel':
+      case 'stop':
+        if (t.jobId != null) await api.mediaJobCancel(t.jobId)
+        break
+      case 'resume':
+      case 'retry':
+        await start(t.path, taskOpts(t))
+        break
+      case 'generate':
+        await start(t.path, taskOpts(t, { preview: false }))
+        break
+      case 'open':
+        if (t.output) await api.openFile(t.output)
+        break
+      case 'reveal':
+        if (t.output) await api.revealFile(t.output)
+        break
+      case 'source':
+        await api.revealFile(t.path)
+        break
+      case 'read':
+        await pick(t)
+        break
+      case 'repick':
+        await choose()
+        break
+      case 'regen':
+        dlg.value = { paths: [t.path], opts: { ...(taskOpts(t, { preview: false }) as FtOpts), pages: '' }, title: '换设置重新生成', ok: '重新生成' }
+        break
+      case 'retranslate':
+        if (await ask('会清掉这份文件已有的译文缓存（包括你改过的译文），再从头翻译。继续吗？', '清掉并重翻')) {
+          await api.filetrCacheDelete(t.path, t.target)
+          await start(t.path, taskOpts(t))
+        }
+        break
+      case 'copyerr':
+        await api.copyText(t.error)
+        ElMessage.success('已复制出错信息')
+        break
+      case 'remove':
+        await removeTask(t)
+        await Promise.all([refreshJobs(), refreshRecents()])
+        break
+      case 'delcache':
+        if (await ask('会删掉这份文件的译文缓存，包括你改过的译文，不能恢复。原文件不受影响。继续吗？', '删除')) {
+          await api.filetrCacheDelete(t.path, t.target)
+          await removeTask(t)
+          await Promise.all([refreshJobs(), refreshRecents()])
+          if (t.path === cur.value) await loadView()
+        }
+        break
+    }
   } catch (e) {
     ElMessage.error(errorText(e))
   }
 }
+async function bulk(what: 'clear' | 'stopAll' | 'resumeAll') {
+  if (what === 'clear') {
+    for (const t of tasks.value) if (t.state !== 'running' && t.state !== 'queued') await removeTask(t)
+    await Promise.all([refreshJobs(), refreshRecents()])
+    ElMessage.success('已清除已结束的任务（译文缓存还在）')
+  } else if (what === 'stopAll') {
+    for (const t of tasks.value) if ((t.state === 'running' || t.state === 'queued') && t.jobId != null) await api.mediaJobCancel(t.jobId).catch(() => {})
+  } else {
+    for (const t of filterTasks(tasks.value, 'all').filter((x) => x.state === 'stopped' && !x.missing)) await start(t.path, taskOpts(t))
+  }
+}
 
-function status(j: JobSnap): string {
-  return j.status === 'done' ? '已完成' : j.status === 'failed' ? '失败' : j.status === 'canceled' ? '已取消' : j.status === 'queued' ? '排队中' : `${Math.round(j.percent)}%`
+// 阅读器里的操作
+async function onReaderAct(what: 'resume' | 'retry' | 'generate' | 'open' | 'stop') {
+  const t = curTask.value
+  if (t) return act(what, t)
+  if (cur.value) await start(cur.value, { ...o.value, pages: '' })
+}
+async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-trans' | 'copy') {
+  if (!cur.value) return
+  const t = curTask.value
+  try {
+    if (kind === 'file') {
+      if (t?.state === 'generated') return act('open', t)
+      return start(cur.value, t ? taskOpts(t, { preview: false }) : { ...o.value, preview: false, pages: '' })
+    }
+    if (kind === 'reveal') return t && act('reveal', t)
+    if (kind === 'copy') {
+      const text = (view.value?.pages ?? []).map((p) => p.src.map((s, i) => (o.value.bilingual ? `${s}\n${p.trans[i] ?? ''}` : (p.trans[i] ?? s))).join('\n\n')).join('\n\n')
+      await api.copyText(text)
+      return ElMessage.success('已复制全文')
+    }
+    const ext = kind === 'txt' ? 'txt' : kind === 'md' ? 'md' : 'srt'
+    const stem = baseName(cur.value).replace(/\.[^.]+$/, '')
+    const dest = await save({ defaultPath: `${stem}.${kind === 'srt-trans' ? 'translated.' : ''}${ext}`, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] })
+    if (!dest) return
+    await api.filetrExport(cur.value, o.value.target, kind, dest)
+    ElMessage.success('已保存')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
 }
 </script>
 
@@ -318,55 +366,61 @@ function status(j: JobSnap): string {
           <small class="mute">图片里的文字请用“截图翻译”（Ctrl+Alt+T）</small>
         </div>
 
-        <div class="card">
-          <h3>任务</h3>
-          <div v-if="!mine.length" class="mute">还没有任务。拖入文件就会开始翻译，原文件不会被修改。</div>
-          <div v-for="j in mine" :key="j.id" class="job" :class="{ cur: files[j.id] === cur }" @click="pick(j)">
-            <div class="n">
-              <b :title="j.title">{{ j.title }}</b>
-              <span class="s" :class="{ ok: j.status === 'done', bad: j.status === 'failed' }">{{ status(j) }}</span>
-              <el-button v-if="j.status === 'running' || j.status === 'queued'" size="small" type="danger" plain class="cancel" @click.stop="cancel(j)">取消</el-button>
-            </div>
-            <div class="bar" :class="{ ok: j.status === 'done' }"><i :style="{ width: (j.status === 'done' ? 100 : j.percent) + '%' }" /></div>
-            <div v-if="j.note || j.error" class="s">{{ j.error || j.note }}</div>
-          </div>
-        </div>
+        <FtTasks v-model:filter="filter" :tasks="tasks" :cur="cur" :eta="eta" @pick="pick" @act="act" @bulk="bulk" />
 
         <div class="card">
           <h3>翻译设置</h3>
           <div class="fld">
             <span>语言</span>
-            <el-select v-model="target" size="small" filterable allow-create default-first-option class="grow">
+            <el-select v-model="o.target" size="small" filterable allow-create default-first-option class="grow">
               <el-option v-for="l in TARGET_LANGS" :key="l" :value="l" :label="`自动检测 → ${l}`" />
             </el-select>
           </div>
-          <div class="fld"><span>翻译服务</span><div class="sel">AI 模型池 · 在“设置 → AI”里换</div></div>
           <div class="fld">
-            <span>专家</span>
-            <el-select v-model="expertId" size="small" class="grow" placeholder="不使用">
-              <el-option value="" label="不使用" />
-              <el-option value="__auto" label="自动选择" />
-              <el-option v-for="e in experts" :key="e.id" :value="e.id" :label="e.name" />
-            </el-select>
+            <span>输出</span>
+            <div class="seg">
+              <span :class="{ on: o.bilingual }" @click="o.bilingual = true">双语对照</span>
+              <span :class="{ on: !o.bilingual }" @click="o.bilingual = false">仅译文</span>
+            </div>
           </div>
-          <div class="fld"><span>术语库</span><el-switch v-model="glossaryOn" size="small" /><small class="mute">按内容自动带入相关术语</small></div>
-          <div class="fld"><span>预览</span><el-switch v-model="previewFirst" size="small" /><small class="mute">先译完在右边检查、改译文，再点“生成文件”</small></div>
           <div class="fld">
+            <span>PDF</span>
+            <div class="seg">
+              <span :class="{ on: o.pdfMode === 'inplace' }" title="译文写回原来的位置，版面、图片、页码不动" @click="o.pdfMode = 'inplace'">原处替换</span>
+              <span :class="{ on: o.pdfMode === 'interleave' }" title="每页原文后面跟一页译文" @click="o.pdfMode = 'interleave'">原页+译文页</span>
+              <span :class="{ on: o.pdfMode === 'txt' }" title="只取出文字，输出 TXT" @click="o.pdfMode = 'txt'">只要文字</span>
+            </div>
+          </div>
+          <div class="fld"><span>开始前</span><el-switch v-model="confirmStart" size="small" /><small class="mute">先确认页范围、跳过哪些内容和请求数</small></div>
+          <div class="adv" role="button" tabindex="0" @click="advanced = !advanced" @keydown.enter="advanced = !advanced">{{ advanced ? '▾' : '▸' }} 高级：专家、术语库、先预览、识字</div>
+          <template v-if="advanced">
+            <div class="fld">
+              <span>专家</span>
+              <el-select v-model="expertId" size="small" class="grow" placeholder="不使用">
+                <el-option value="" label="不使用" />
+                <el-option value="__auto" label="自动选择" />
+                <el-option v-for="e in experts" :key="e.id" :value="e.id" :label="e.name" />
+              </el-select>
+            </div>
+            <div class="fld"><span>术语库</span><el-switch v-model="glossaryOn" size="small" /><small class="mute">按内容自动带入相关术语</small></div>
+            <div class="fld"><span>预览</span><el-switch v-model="o.preview" size="small" /><small class="mute">先译完在右边检查、改译文，再点“生成文件”</small></div>
+            <div class="fld"><span>排除</span><div class="chk"><el-checkbox v-model="o.skipHeaders" size="small">页眉页脚页码</el-checkbox><el-checkbox v-model="o.skipCode" size="small">公式代码网址</el-checkbox><el-checkbox v-model="o.skipRefs" size="small">参考文献</el-checkbox></div></div>
+<div class="fld">
             <span>识字</span>
-            <el-select v-model="ocrEngine" size="small" class="grow">
+            <el-select v-model="o.ocr" size="small" class="grow">
               <el-option value="vision" label="视觉模型（默认）" />
               <el-option value="enhanced" label="本机增强识字（开源 PaddleOCR）" />
               <el-option value="system" label="Windows 自带识字（不用下载，只在 Windows 上可用）" />
               <el-option value="api" label="在线识字接口（高精度）" />
             </el-select>
           </div>
-          <div v-if="ocrEngine !== 'vision'" class="pdfx">
-            <template v-if="ocrEngine === 'enhanced'">
+          <div v-if="o.ocr !== 'vision'" class="pdfx">
+            <template v-if="o.ocr === 'enhanced'">
               <div class="row1"><b>增强识字</b><span :class="ocrSt?.installed ? 'okc' : 'mute'">{{ ocrSt?.installed ? '已安装' : ocrSt?.supported === false ? '这台电脑暂不支持' : '还没安装' }}</span></div>
               <div class="row2"><el-button v-if="ocrSt?.supported !== false && !ocrSt?.installed" size="small" type="primary" :loading="ocrBusy" @click="ocrInstall">下载并安装（约 15 MB）</el-button></div>
               <small class="mute">PaddleOCR 开源模型，中英日韩等常见语言，全程在本机运行，不上传页面。比视觉模型更稳、更便宜，位置也更准；手写、艺术字、特别复杂的版面仍可能出错。</small>
             </template>
-            <template v-else-if="ocrEngine === 'system'">
+            <template v-else-if="o.ocr === 'system'">
               <div class="row1"><b>Windows 自带识字</b></div>
               <small class="mute">用 Windows 10/11 自带的识字，不用下载、不上传页面；识别的语言取决于系统里装了哪些语言包（“屏幕翻译 → 识字”里可以选）。小字会先放大再识别。</small>
             </template>
@@ -376,22 +430,8 @@ function status(j: JobSnap): string {
               <div class="row2"><el-button v-if="!apiReady" size="small" @click="app.view = 'screen'">去填密钥</el-button></div>
             </template>
           </div>
-          <div class="fld">
-            <span>输出</span>
-            <div class="seg">
-              <span :class="{ on: bilingual }" @click="bilingual = true">双语对照</span>
-              <span :class="{ on: !bilingual }" @click="bilingual = false">仅译文</span>
-            </div>
-          </div>
-          <div class="fld">
-            <span>PDF</span>
-            <div class="seg">
-              <span :class="{ on: pdfMode === 'inplace' }" title="译文写回原来的位置，版面、图片、页码不动" @click="pdfMode = 'inplace'">原处替换</span>
-              <span :class="{ on: pdfMode === 'interleave' }" title="每页原文后面跟一页译文" @click="pdfMode = 'interleave'">原页+译文页</span>
-              <span :class="{ on: pdfMode === 'txt' }" title="只取出文字，输出 TXT" @click="pdfMode = 'txt'">只要文字</span>
-            </div>
-          </div>
-          <div v-if="pdfMode !== 'txt'" class="pdfx">
+
+          <div v-if="o.pdfMode !== 'txt'" class="pdfx">
             <div class="row1"><b>PDF 排版组件</b><span :class="pdfx?.installed ? 'okc' : 'mute'">{{ pdfx?.note ?? '…' }}</span></div>
             <div class="row2">
               <el-button v-if="pdfx?.supported && !pdfx.installed" size="small" type="primary" :loading="pdfxBusy === 'install'" @click="pdfxDo('install')">安装 PDF 排版组件</el-button>
@@ -401,82 +441,14 @@ function status(j: JobSnap): string {
             <small class="mute">没装组件时 PDF 只输出 TXT。文字版 PDF 把译文放回原来的位置（放不下会缩小字号，最小 6 磅）；扫描版和图片先交给视觉模型识字并给出位置（需要支持看图的模型，一次最多 60 页）。公式、竖排、重叠的文字可能错位，输出后请抽查。</small>
           </div>
           <small v-else class="mute">只取出 PDF 里的文字，输出 TXT。</small>
+
+          </template>
         </div>
       </aside>
 
-      <section class="rd">
-        <div class="tb">
-          <span class="t">{{ cur ? baseName(cur) : '阅读' }}</span>
-          <template v-if="pages.length && show !== 'layout'">
-            <span class="mute">第 {{ page + 1 }} / {{ pages.length }} 页</span>
-            <el-button size="small" :disabled="page <= 0" @click="page--">上一页</el-button>
-            <el-button size="small" :disabled="page >= pages.length - 1" @click="page++">下一页</el-button>
-          </template>
-          <span class="sp" />
-          <div class="seg" :class="isPdf ? 'w260' : 'w210'">
-            <span :class="{ on: show === 'src' }" @click="show = 'src'">原文</span>
-            <span :class="{ on: show === 'both' }" @click="show = 'both'">对照</span>
-            <span :class="{ on: show === 'trans' }" @click="show = 'trans'">译文</span>
-            <span v-if="isPdf" :class="{ on: show === 'layout' }" title="把译文画到原来的页面上看位置" @click="show = 'layout'">版面</span>
-          </div>
-          <el-dropdown trigger="click" @command="exportAs">
-            <el-button size="small">导出 ▾</el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="file" :disabled="curJob?.status !== 'done' || isPreviewJob">在文件夹里显示译好的文件</el-dropdown-item>
-                <el-dropdown-item command="txt" :disabled="!hasTrans">复制全文（纯文本）</el-dropdown-item>
-                <el-dropdown-item command="md" :disabled="!hasTrans">复制全文（Markdown）</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-
-        <div v-if="!cur" class="empty">
-          <b>还没有打开文件</b>
-          <span class="mute">拖入文件后，这里左边是原文、右边是译文，翻译的同时就能边译边看。</span>
-        </div>
-        <PdfCanvas v-else-if="show === 'layout' && isPdf" :path="cur" :target="target" :ocr="ocrEngine" :job-status="curJob?.status" @edited="onCanvasEdited" />
-        <div v-else class="pg" :class="show">
-          <div v-if="pg && show !== 'trans'" class="pane">
-            <div class="lab">原文</div>
-            <p v-for="(s, i) in pg.src" :key="i" :class="{ hl: !pg.trans[i] }">{{ s }}</p>
-          </div>
-          <div v-if="pg && show !== 'src'" class="pane">
-            <div class="lab">译文</div>
-            <div v-for="(_s, i) in pg.src" :key="i" class="seg1">
-              <el-input
-                v-if="editing && editing.page === page && editing.i === i"
-                v-model="draft"
-                type="textarea"
-                :autosize="{ minRows: 2, maxRows: 14 }"
-                autofocus
-                @blur="saveEdit"
-                @keydown.esc.prevent="cancelEdit"
-                @keydown.ctrl.enter.prevent="saveEdit"
-              />
-              <template v-else>
-                <p :class="{ miss: !pg.trans[i], ed: curJob?.status !== 'running' }" :title="curJob?.status === 'running' ? '' : '点一下可以直接改'" @click="beginEdit(i)">{{ pg.trans[i] || (curJob && curJob.status !== 'done' && curJob.status !== 'failed' ? '翻译中…' : '（没有译文，已保留原文；点一下可以自己写）') }}</p>
-                <span v-if="curJob?.status !== 'running'" class="acts">
-                  <el-button size="small" text :loading="busySeg === `${page}:${i}`" @click.stop="retranslateSeg(i)">重译</el-button>
-                  <el-button v-if="pg.trans[i]" size="small" text @click.stop="clearSeg(i)">去掉</el-button>
-                </span>
-              </template>
-            </div>
-          </div>
-          <div v-if="!pg" class="empty"><span class="mute">读取中…</span></div>
-        </div>
-
-        <div class="st">
-          <span><b>已译 {{ donePages }} / {{ pages.length }} 页</b></span>
-          <span>{{ doneSegs }} / {{ totalSegs }} 段</span>
-          <span v-if="curJob?.note" class="mute">{{ curJob.note }}</span>
-          <span class="sp" />
-          <el-button size="small" :disabled="!cur || !failedSegs || curJob?.status === 'running'" @click="retry">重试失败段落{{ failedSegs && curJob?.status !== 'running' ? `（${failedSegs}）` : '' }}</el-button>
-          <el-button v-if="isPreviewJob" size="small" type="primary" :disabled="curJob?.status !== 'done'" @click="generate">生成文件</el-button>
-          <el-button v-else size="small" type="primary" :disabled="curJob?.status !== 'done'" @click="openOut">导出双语文件</el-button>
-        </div>
-      </section>
+      <FtReader :path="cur" :target="o.target" :view="view" :task="curTask" :opts="o" @act="onReaderAct" @export="onExport" />
     </div>
+    <FtStartDialog v-model="dlgOpen" :paths="dlg?.paths ?? []" :opts="dlg?.opts ?? o" :title="dlg?.title" :confirm-text="dlg?.ok" @confirm="onConfirm" />
   </div>
 </template>
 
@@ -545,4 +517,6 @@ function status(j: JobSnap): string {
 .pdfx .row1 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline }
 .pdfx .row2 { display: flex; gap: 6px; flex-wrap: wrap }
 .pdfx .okc { color: var(--el-color-success); font-size: 12.5px }
+.adv { font-size: 12.5px; color: var(--el-color-primary); cursor: pointer; user-select: none }
+.chk { display: flex; flex-direction: column }
 </style>

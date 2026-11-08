@@ -38,7 +38,41 @@ pub struct Opts {
     pub facts: Vec<Fact>,
     /// 输入框所在页面的网址 / 标题，帮助判断场景
     pub page: String,
+    /// 帮我回（action = reply）和微调（action = tweak）的选项
+    pub reply: Reply,
 }
+
+/// “帮我回”：对方是谁 × 我的意思 × 怎么说（语气走 `Opts.tone`）。
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct Reply {
+    /// superior / colleague / client / friend / family / stranger；空 = 让模型自己判断
+    pub relation: String,
+    /// agree / conditional / later / ask / decline；空 = 写一个得体的回复
+    pub intent: String,
+    /// conditional：条件；later：什么时候答复；decline：理由（可空）
+    pub detail: String,
+    /// decline 时给的替代：another_time / someone_else；空 = 不给
+    pub alt: String,
+    /// ask：要问对方的问题
+    pub questions: Vec<String>,
+    /// 前面的聊天，只用来理解，不回复它们
+    pub context: String,
+    /// 这一版的说法：steady / warm / brief（后端按版本填，界面不用传）
+    pub angle: String,
+    /// 来源是邮件程序：写成带称呼和落款的邮件
+    pub email: bool,
+    /// tweak：softer / firmer / shorter / plain / emoji
+    pub tweak: String,
+    /// tweak：当初收到的消息（帮助保持意思）
+    pub received: String,
+}
+
+pub const RELATIONS: [&str; 6] = ["superior", "colleague", "client", "friend", "family", "stranger"];
+pub const INTENTS: [&str; 5] = ["agree", "conditional", "later", "ask", "decline"];
+pub const TWEAKS: [&str; 5] = ["softer", "firmer", "shorter", "plain", "emoji"];
+/// 帮我回一次给三版，各有一个说法
+pub const ANGLES: [(&str, &str); 3] = [("steady", "稳妥"), ("warm", "热情"), ("brief", "简短")];
 
 /// 一条来自开放数据库的数据。
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -54,8 +88,9 @@ pub struct Fact {
     pub url: String,
 }
 
-pub const ACTIONS: [&str; 19] = [
+pub const ACTIONS: [&str; 20] = [
     "reply",
+    "tweak",
     "rewrite",
     "translate",
     "summarize",
@@ -91,7 +126,31 @@ pub fn check_opts(kind: &str, text: &str, o: &Opts) -> AppResult<()> {
             return Err(AppError::invalid("请先检索并勾选要加入的数据。"));
         }
     }
-    for (s, max) in [(&o.custom_format, 200), (&o.custom_tone, 200), (&o.extra, 900)] {
+    if kind == "write" && o.action == "reply" {
+        let r = &o.reply;
+        if !r.relation.is_empty() && !RELATIONS.contains(&r.relation.as_str()) {
+            return Err(AppError::invalid("不支持的对方身份"));
+        }
+        if !r.intent.is_empty() && !INTENTS.contains(&r.intent.as_str()) {
+            return Err(AppError::invalid("不支持的回复意思"));
+        }
+        if r.intent == "conditional" && r.detail.trim().is_empty() {
+            return Err(AppError::invalid("请先写上条件（比如“下周一调休一天”）。"));
+        }
+        if r.intent == "ask" && r.questions.iter().all(|q| q.trim().is_empty()) {
+            return Err(AppError::invalid("请至少勾选或写上一个要问的问题。"));
+        }
+        if r.questions.len() > 8 || r.questions.iter().any(|q| q.chars().count() > 100) {
+            return Err(AppError::invalid("要问的问题太多或太长（最多 8 个，每个 100 字）。"));
+        }
+        if r.context.chars().count() > 6000 {
+            return Err(AppError::invalid("前面的聊天太长（最多 6000 字），只贴最近几条就够了。"));
+        }
+    }
+    if kind == "write" && o.action == "tweak" && !TWEAKS.contains(&o.reply.tweak.as_str()) {
+        return Err(AppError::invalid("不支持的微调方式"));
+    }
+    for (s, max) in [(&o.custom_format, 200), (&o.custom_tone, 200), (&o.extra, 900), (&o.reply.detail, 200), (&o.reply.received, 4000)] {
         if s.chars().count() > max {
             return Err(AppError::invalid(format!("自定义要求太长（上限 {max} 字）。")));
         }
@@ -124,8 +183,147 @@ fn action_line(o: &Opts) -> String {
         "apologetic" => "Make the text sincerely apologetic and take responsibility without excess.".into(),
         "sincere" => "Make the text more sincere and genuine.".into(),
         "concise" => "Make the text concise: cut filler and repetition, keep every important point.".into(),
-        "reply" => "The text is a message the user RECEIVED. Write the user's reply to it, following the user's intent given in the extra request (if none is given, write a sensible, polite reply). Reply in the same language as the received message unless asked otherwise. Output ONLY the reply, without quoting the received message.".into(),
+        "reply" => reply_lines(&o.reply),
+        "tweak" => format!(
+            "The text is a reply the user is about to send. Adjust it: {}. Keep its meaning, its answer (yes / no / not yet / questions), every time, number, name and condition. Output ONLY the adjusted reply.",
+            tweak_line(&o.reply.tweak)
+        ),
         _ => "Rewrite the text so it reads better while keeping the meaning.".into(),
+    }
+}
+
+fn relation_line(v: &str) -> Option<&'static str> {
+    match v {
+        "superior" => Some("The other person is the user's boss or superior."),
+        "colleague" => Some("The other person is the user's colleague."),
+        "client" => Some("The other person is the user's client or customer."),
+        "friend" => Some("The other person is the user's friend."),
+        "family" => Some("The other person is a family member of the user."),
+        "stranger" => Some("The user does not know the other person well."),
+        _ => None,
+    }
+}
+
+fn tweak_line(v: &str) -> &'static str {
+    match v {
+        "softer" => "make it softer and gentler",
+        "firmer" => "make it firmer and more direct, still polite",
+        "shorter" => "make it clearly shorter",
+        "plain" => "remove pleasantries and filler, get straight to the point",
+        "emoji" => "add one or two fitting emoji, nothing else changes",
+        _ => "make it read better",
+    }
+}
+
+/// 帮我回的提示词：收到的消息 + 我的意思 + 对方是谁 + 这一版的说法。
+fn reply_lines(r: &Reply) -> String {
+    let mut l = vec!["The text is a message the user RECEIVED. Write the user's reply to it. Reply in the same language as the received message. Output ONLY the reply, without quoting the received message.".to_string()];
+    let detail = r.detail.trim();
+    match r.intent.as_str() {
+        "agree" => l.push("The user's answer: YES, they agree / accept.".into()),
+        "conditional" => {
+            l.push(format!("The user's answer: YES, but on this condition: {detail}. Agree clearly, then raise the condition politely as a request the other person can accept."))
+        }
+        "later" => {
+            let when = if detail.is_empty() { "soon".to_string() } else { detail.to_string() };
+            l.push(format!("The user's answer: NOT DECIDED YET. Neither agree nor refuse; say they need a little time and will answer {when}."))
+        }
+        "ask" => {
+            let qs: Vec<String> = r.questions.iter().map(|q| q.trim()).filter(|q| !q.is_empty()).map(|q| format!("- {q}")).collect();
+            l.push(format!(
+                "The user's answer: they need to CLARIFY before answering. Ask exactly these points, nothing more, and do not agree or refuse yet:\n{}",
+                qs.join("\n")
+            ))
+        }
+        "decline" => {
+            l.push("The user's answer: NO, they decline.".into());
+            if detail.is_empty() {
+                l.push("No reason was given: do NOT invent one — just say it does not work this time.".into());
+            } else {
+                l.push(format!("The reason to give (use only this): {detail}."));
+            }
+            match r.alt.as_str() {
+                "another_time" => l.push("Offer to do it another time.".into()),
+                "someone_else" => l.push("Suggest that someone else could help (no names unless the user gave one).".into()),
+                _ => {}
+            }
+        }
+        _ => l.push("The user's intent may be given in the extra request; if not, write a sensible, polite reply.".into()),
+    }
+    l.extend(relation_line(&r.relation).map(str::to_string));
+    match r.angle.as_str() {
+        "steady" => l.push("This version: steady and safe — the most appropriate wording.".into()),
+        "warm" => l.push("This version: warmer and more enthusiastic.".into()),
+        "brief" => l.push("This version: as short as possible while complete.".into()),
+        _ => {}
+    }
+    if r.email {
+        l.push("Format: an email reply with a suitable greeting and sign-off; if a name is unknown, use a neutral greeting instead of a placeholder.".into());
+    }
+    l.push("Use only the reasons, times, conditions and promises the user gave. Never invent excuses, facts, names, numbers or commitments.".into());
+    l.join("\n")
+}
+
+/// 帮我回 / 微调的用户消息：前面的聊天（只用来理解）+ 要回的消息。
+fn reply_message(o: &Opts, text: &str) -> String {
+    let r = &o.reply;
+    if o.action == "tweak" {
+        let rec = r.received.trim();
+        return if rec.is_empty() { text.trim().to_string() } else { format!("RECEIVED MESSAGE (for context):\n{rec}\n\nREPLY TO ADJUST:\n{}", text.trim()) };
+    }
+    let ctx = r.context.trim();
+    if ctx.is_empty() {
+        text.trim().to_string()
+    } else {
+        format!("EARLIER CONVERSATION (for understanding only, do not reply to it):\n{ctx}\n\nMESSAGE TO REPLY TO:\n{}", text.trim())
+    }
+}
+
+/// 帮我回的结果里可以出现的东西：收到的消息、前面的聊天和用户自己写的。
+pub fn reply_sources(o: &Opts, text: &str) -> String {
+    let r = &o.reply;
+    [text, &r.context, &r.detail, &r.received, &o.extra, &r.questions.join("\n")].join("\n")
+}
+
+// ---------- 帮我回：先看懂 ----------
+
+pub fn reply_read_system() -> String {
+    "You help the user understand a message they RECEIVED before replying. Reply with ONLY a JSON object:\n\
+{\"ask\":\"what the other person wants from the user, at most 12 Chinese characters, e.g. 请你周六加班\",\
+\"facts\":\"one short Chinese clause on the details given and the tone, e.g. 时间已给出（9:00–15:00），语气客气、有点急\",\
+\"unclear\":[\"up to 4 points the user would need to ask about before answering, in Chinese, short, most important first; empty if everything is clear\"],\
+\"relation\":\"superior|colleague|client|friend|family|stranger|\",\
+\"who\":\"how the user should address the other person if it is clear from the conversation (e.g. 王经理), else empty\"}\n\
+Base everything only on the text; do not guess facts that are not there."
+        .into()
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Default)]
+pub struct ReplyRead {
+    pub ask: String,
+    pub facts: String,
+    pub unclear: Vec<String>,
+    pub relation: String,
+    pub who: String,
+}
+
+pub fn parse_reply_read(resp: &str) -> ReplyRead {
+    let raw = crate::ai::strip_fences(resp);
+    let start = raw.find('{').unwrap_or(0);
+    let end = raw.rfind('}').map(|i| i + 1).unwrap_or(raw.len());
+    let v: Value = serde_json::from_str(raw.get(start..end).unwrap_or("")).unwrap_or(Value::Null);
+    let g = |k: &str, n: usize| v.get(k).and_then(Value::as_str).unwrap_or("").trim().trim_end_matches(['。', '.']).chars().take(n).collect::<String>();
+    let relation = g("relation", 20);
+    ReplyRead {
+        ask: g("ask", 30),
+        facts: g("facts", 80),
+        unclear: v
+            .get("unclear")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Value::as_str).map(|q| q.trim().chars().take(60).collect::<String>()).filter(|q| !q.is_empty()).take(4).collect())
+            .unwrap_or_default(),
+        relation: if RELATIONS.contains(&relation.as_str()) { relation } else { String::new() },
+        who: g("who", 20),
     }
 }
 
@@ -177,6 +375,12 @@ fn tone_line(o: &Opts) -> Option<String> {
         "empathetic" => "Tone: empathetic.",
         "frank" => "Tone: frank and direct.",
         "sincere" => "Tone: sincere.",
+        // 写作窗“怎么说”这一排（帮我回和改写润色共用）
+        "proper" => "Tone: formal and proper — respectful, well-mannered, clear.",
+        "eq" => "Tone: emotionally intelligent — acknowledge the other person's needs and feelings, keep the relationship good, tactful and considerate, never servile.",
+        "banter" => "Tone: playful banter — pick up on what they said with light, friendly humor, while the actual answer stays clear.",
+        "brief" => "Tone: brief and decisive — no pleasantries beyond the minimum.",
+        "heartfelt" => "Tone: warm and sincere, like a real person who cares.",
         "custom" if !o.custom_tone.trim().is_empty() => return Some(format!("Tone: {}.", o.custom_tone.trim())),
         _ => return None,
     };
@@ -199,7 +403,9 @@ pub fn system_prompt(o: &Opts) -> String {
     if !o.extra.trim().is_empty() {
         lines.push(format!("Extra request from the user: {}", o.extra.trim()));
     }
-    lines.push("Keep unchanged: numbers, dates, URLs, @mentions, #hashtags, email addresses, code and inline code, product and person names. Never invent facts, quotes or statistics. Keep line breaks where the input has them unless the format needs a new structure.".into());
+    if !matches!(o.action.as_str(), "reply" | "tweak") {
+        lines.push("Keep unchanged: numbers, dates, URLs, @mentions, #hashtags, email addresses, code and inline code, product and person names. Never invent facts, quotes or statistics. Keep line breaks where the input has them unless the format needs a new structure.".into());
+    }
     let auto_all = [&o.length, &o.formality, &o.format, &o.tone].iter().all(|v| v.is_empty() || v.as_str() == "auto");
     if auto_all {
         lines.push("Where length, formality, format or tone are not specified, infer them from the text and where it is being written.".into());
@@ -216,6 +422,9 @@ pub fn system_prompt(o: &Opts) -> String {
 
 /// 用户消息：原文，stats 动作时先放数据。
 pub fn user_message(o: &Opts, text: &str) -> String {
+    if matches!(o.action.as_str(), "reply" | "tweak") {
+        return reply_message(o, text);
+    }
     if o.action == "stats" {
         let facts: Vec<String> =
             o.facts.iter().map(|f| format!("- {} (value={}, year={}, place={}, source={})", f.text, f.value, f.year, f.country, f.source)).collect();
@@ -249,13 +458,15 @@ pub struct Guard {
     pub missing: Vec<String>,
     /// 结果长度 / 原文长度
     pub ratio: f64,
+    /// 结果里有、原文和用户给的内容里都没有的数字 / 时间 / 网址（帮我回用：可能是模型编的）
+    pub added: Vec<String>,
     /// 需要提醒用户：缺东西，或长度差得离谱
     pub warn: bool,
 }
 
 /// 动作本来就会删减内容时，“缺东西”不算问题。
 fn may_drop(action: &str) -> bool {
-    matches!(action, "summarize" | "shorten" | "concise" | "continue" | "translate" | "reply")
+    matches!(action, "summarize" | "shorten" | "concise" | "continue" | "translate" | "reply" | "tweak")
 }
 
 pub fn guard(action: &str, src: &str, out: &str) -> Guard {
@@ -265,10 +476,17 @@ pub fn guard(action: &str, src: &str, out: &str) -> Guard {
     let off = match action {
         "summarize" | "shorten" | "concise" | "continue" | "translate" => ratio > 4.0,
         // 回复的长短和收到的消息没有关系
-        "reply" => false,
+        "reply" | "tweak" => false,
         _ => !(0.25..=4.0).contains(&ratio),
     };
-    Guard { warn: !missing.is_empty() || off, missing, ratio }
+    Guard { warn: !missing.is_empty() || off, missing, ratio, added: vec![] }
+}
+
+/// 帮我回 / 微调：不看长短、不要求带回原文，只查有没有凭空多出来的数字、时间、网址。
+pub fn guard_reply(sources: &str, out: &str) -> Guard {
+    let added: Vec<String> = protected_tokens(out).into_iter().filter(|t| !sources.contains(t.as_str())).collect();
+    let ratio = ((out.trim().chars().count() as f64 / sources.trim().chars().count().max(1) as f64) * 100.0).round() / 100.0;
+    Guard { warn: !added.is_empty(), missing: vec![], ratio, added }
 }
 
 /// 去掉模型爱加的包装：代码围栏、开头的“改写后：”、整段外层引号。
@@ -832,6 +1050,83 @@ mod tests {
         let g = guard("reply", "会议 3 号楼 502 室，见 https://a.b/c", "好的，我准时到。");
         assert!(g.missing.is_empty() && !g.warn);
         assert!(!guard("reply", "好", &"字".repeat(20)).warn);
+    }
+
+    #[test]
+    fn help_me_reply_builds_intent_relation_and_tone() {
+        let mut o = opts("reply");
+        o.tone = "eq".into();
+        o.reply =
+            Reply {
+                relation: "superior".into(), intent: "conditional".into(), detail: "下周一调休一天".into(), angle: "warm".into(), ..Default::default()
+            };
+        let p = system_prompt(&o);
+        assert!(p.contains("on this condition: 下周一调休一天"), "条件要进提示词：{p}");
+        assert!(p.contains("boss") && p.contains("emotionally intelligent") && p.contains("warmer"));
+        assert!(p.contains("Never invent excuses"), "不替用户编理由");
+        assert!(!p.contains("Keep line breaks"), "改写用的“原样保留”规则不放进回复");
+        assert!(check_opts("write", "周六能来加班吗", &o).is_ok());
+        // 有条件但没写条件、问清楚但没有问题：先拦下
+        o.reply.detail.clear();
+        assert!(check_opts("write", "周六能来加班吗", &o).is_err());
+        o.reply = Reply { intent: "ask".into(), ..Default::default() };
+        assert!(check_opts("write", "方案明天给我", &o).is_err());
+        o.reply.questions = vec!["指哪一份方案".into(), " ".into()];
+        assert!(check_opts("write", "方案明天给我", &o).is_ok());
+        assert!(system_prompt(&o).contains("- 指哪一份方案"));
+        o.reply.relation = "boss".into();
+        assert!(check_opts("write", "方案明天给我", &o).is_err(), "不认识的身份");
+    }
+
+    #[test]
+    fn declining_without_a_reason_does_not_invent_one() {
+        let mut o = opts("reply");
+        o.reply = Reply { intent: "decline".into(), alt: "another_time".into(), ..Default::default() };
+        let p = system_prompt(&o);
+        assert!(p.contains("NO, they decline") && p.contains("do NOT invent one") && p.contains("another time"));
+        o.reply.detail = "那天要回老家".into();
+        assert!(system_prompt(&o).contains("use only this): 那天要回老家"));
+        o.reply = Reply { intent: "later".into(), detail: "明天".into(), email: true, ..Default::default() };
+        let p = system_prompt(&o);
+        assert!(p.contains("NOT DECIDED YET") && p.contains("answer 明天") && p.contains("email reply"));
+    }
+
+    #[test]
+    fn earlier_chat_is_context_only() {
+        let mut o = opts("reply");
+        o.reply.context = "王经理：上周辛苦了".into();
+        let u = user_message(&o, "周六能来吗？");
+        assert!(u.starts_with("EARLIER CONVERSATION") && u.ends_with("MESSAGE TO REPLY TO:\n周六能来吗？"));
+        let mut t = opts("tweak");
+        t.reply = Reply { tweak: "softer".into(), received: "周六能来吗？".into(), ..Default::default() };
+        assert!(system_prompt(&t).contains("softer and gentler"));
+        assert!(user_message(&t, "可以。").contains("REPLY TO ADJUST:\n可以。"));
+        assert!(check_opts("write", "可以。", &t).is_ok());
+        t.reply.tweak = "louder".into();
+        assert!(check_opts("write", "可以。", &t).is_err());
+    }
+
+    #[test]
+    fn reply_guard_flags_numbers_nobody_gave() {
+        let mut o = opts("reply");
+        o.extra = "9 点准时到".into();
+        o.reply.detail = "下周一调休".into();
+        let src = reply_sources(&o, "周六 9 点到下午 3 点，方便加班吗？");
+        let ok = guard_reply(&src, "王经理好，周六我 9 点到，下周一想调休一天。");
+        assert!(!ok.warn && ok.added.is_empty());
+        let bad = guard_reply(&src, "好的，周六 8 点到，加班费 200 元。");
+        assert_eq!(bad.added, vec!["8".to_string(), "200".to_string()]);
+        assert!(bad.warn);
+    }
+
+    #[test]
+    fn reply_read_is_parsed_leniently() {
+        let r = parse_reply_read("好的：\n```json\n{\"ask\":\"请你周六加班。\",\"facts\":\"时间已给出（9:00–15:00），语气客气\",\"unclear\":[\"几点结束\",\" \"],\"relation\":\"superior\",\"who\":\"王经理\"}\n```");
+        assert_eq!(r.ask, "请你周六加班");
+        assert_eq!(r.unclear, vec!["几点结束".to_string()]);
+        assert_eq!((r.relation.as_str(), r.who.as_str()), ("superior", "王经理"));
+        assert_eq!(parse_reply_read("{\"relation\":\"boss\"}").relation, "", "不认识的身份丢掉");
+        assert_eq!(parse_reply_read("看不懂"), ReplyRead::default());
     }
 
     #[test]

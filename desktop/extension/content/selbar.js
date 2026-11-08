@@ -80,7 +80,8 @@
     return [pos(range.startContainer, range.startOffset), pos(range.endContainer, range.endOffset)]
   }
 
-  const HL_STYLE = (bg) => `background:${bg};color:inherit;border-radius:2px;cursor:pointer;`
+  // 高亮底色都是浅色：字一律用黑色，深色网页上的白字放在浅底上也看得清（!important 防网页样式盖掉）
+  const HL_STYLE = (bg) => `background:${bg} !important;color:#111 !important;-webkit-text-fill-color:#111 !important;border-radius:2px;cursor:pointer;`
   /** 把整页文字里 [s,e) 这段用带颜色的 span 包起来（跨多个文字节点时逐段包）。 */
   function paint(idx, s, e, hl) {
     const bg = SEL.colorOf(hl.color).bg
@@ -109,7 +110,7 @@
     }
   }
   const recolor = (id, color) => {
-    for (const sp of document.querySelectorAll(`span[data-cc-hl="${id}"]`)) sp.style.background = SEL.colorOf(color).bg
+    for (const sp of document.querySelectorAll(`span[data-cc-hl="${id}"]`)) sp.style.setProperty('background', SEL.colorOf(color).bg, 'important')
   }
 
   const hlStore = {

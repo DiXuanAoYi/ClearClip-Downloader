@@ -559,6 +559,8 @@ pub struct WritingSettings {
     pub last_action: String,
     /// 最近用过的“额外要求”
     pub extras: Vec<String>,
+    /// 帮我回记住的“对方是谁”：键是“程序|对方称呼”（不知道称呼时只有程序），值是 superior / colleague / …
+    pub relations: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for WritingSettings {
@@ -576,6 +578,7 @@ impl Default for WritingSettings {
             win: [0; 4],
             last_action: String::new(),
             extras: vec![],
+            relations: Default::default(),
         }
     }
 }
@@ -596,6 +599,11 @@ impl WritingSettings {
             self.extras.iter().map(|e| e.trim().chars().take(200).collect::<String>()).filter(|e| !e.is_empty() && seen.insert(e.clone())).take(8).collect();
         if self.win[2] < 300 || self.win[3] < 300 {
             self.win = [0; 4];
+        }
+        self.relations.retain(|k, v| !k.trim().is_empty() && k.chars().count() <= 80 && crate::writing::RELATIONS.contains(&v.as_str()));
+        while self.relations.len() > 300 {
+            let first = self.relations.keys().next().cloned().unwrap_or_default();
+            self.relations.remove(&first);
         }
     }
     /// 现在是否被暂停。

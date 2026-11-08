@@ -27,6 +27,7 @@ pub mod excerpts;
 pub mod experts;
 pub mod experts_cmds;
 pub mod filetr;
+pub mod filetr_ext;
 pub mod glossary;
 pub mod glossary_cmds;
 pub mod grab;
@@ -704,6 +705,11 @@ pub fn run() {
             ai_cmds::filetr_page_layout,
             ai_cmds::filetr_edit,
             ai_cmds::filetr_retranslate,
+            ai_cmds::filetr_plan,
+            ai_cmds::filetr_recent,
+            ai_cmds::filetr_recent_remove,
+            ai_cmds::filetr_cache_delete,
+            ai_cmds::filetr_export,
             subedit::subtitle_tracks,
             subedit::subedit_load,
             subedit::subedit_validate,
@@ -715,6 +721,7 @@ pub fn run() {
             media_cmds::media_job_start,
             media_cmds::media_jobs,
             media_cmds::media_job_cancel,
+            media_cmds::media_job_remove,
             media_cmds::media_jobs_clear,
             media_cmds::media_info,
             media_cmds::video_caps,
@@ -868,6 +875,7 @@ pub fn run() {
             writeassist::write_undo,
             writeassist::write_pin,
             writeassist::write_prefs,
+            writeassist::write_relation,
             writeassist::write_open_settings,
             writeassist::write_pause,
             commands::open_login,

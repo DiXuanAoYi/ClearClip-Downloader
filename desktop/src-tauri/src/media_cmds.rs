@@ -31,6 +31,13 @@ pub fn media_job_cancel(app: AppHandle, state: St<'_>, id: u64) {
 }
 
 #[tauri::command]
+pub fn media_job_remove(app: AppHandle, state: St<'_>, id: u64) {
+    use tauri::Emitter;
+    state.media_jobs.remove(id);
+    let _ = app.emit(media_tools::EVT_JOBS, state.media_jobs.snapshot());
+}
+
+#[tauri::command]
 pub fn media_jobs_clear(app: AppHandle, state: St<'_>) {
     use tauri::Emitter;
     state.media_jobs.clear_finished();

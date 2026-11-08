@@ -450,7 +450,7 @@ fn write_zip(src: &Path, dst: &Path, replaced: &std::collections::HashMap<String
     Ok(())
 }
 
-#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Opts {
     /// true：原文 + 译文对照；false：只留译文
@@ -463,11 +463,29 @@ pub struct Opts {
     pub ocr: String,
     /// 只翻译，不生成文件：先在阅读器里检查、改译文，再点“生成文件”（那一次直接用缓存里改好的译文）
     pub preview: bool,
+    /// 只翻译这些页，如 `3-12, 15`、`5-`（从 1 起，留空 = 全部）；没选的页保留原文
+    pub pages: String,
+    /// 不翻译每页重复出现的页眉、页脚和页码（只对 PDF 版面翻译有效）
+    pub skip_headers: bool,
+    /// 不翻译公式、代码、网址这类没法翻译的片段
+    pub skip_code: bool,
+    /// 不翻译参考文献（从“References / 参考文献”那一段起）
+    pub skip_refs: bool,
 }
 
 impl Default for Opts {
     fn default() -> Self {
-        Opts { bilingual: true, target: String::new(), pdf_mode: "inplace".into(), ocr: "vision".into(), preview: false }
+        Opts {
+            bilingual: true,
+            target: String::new(),
+            pdf_mode: "inplace".into(),
+            ocr: "vision".into(),
+            preview: false,
+            pages: String::new(),
+            skip_headers: true,
+            skip_code: true,
+            skip_refs: false,
+        }
     }
 }
 
@@ -493,13 +511,33 @@ pub struct View {
     /// 每一页（EPUB 的一章、PDF 的一页、字幕按 40 条分页）的片段
     pub pages: Vec<ViewPage>,
     pub failed: usize,
+    /// 缓存格式：2 起每页记了页号和处理状态（旧缓存读进来时按“都译完了”处理）
+    #[serde(default)]
+    pub v: u32,
+    /// 片段是按 PDF 版面的块切的（装了排版组件）；否则是按段落切的
+    #[serde(default)]
+    pub layout: bool,
+    /// 文件一共几页（PDF 的页数；其他格式等于 `pages.len()`）
+    #[serde(default)]
+    pub total_pages: usize,
 }
+
+pub(crate) const VIEW_V: u32 = 2;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewPage {
     pub src: Vec<String>,
     pub trans: Vec<Option<String>>,
+    /// 对应 PDF 的第几页（从 0 起）；文字版 PDF 里没有文字的页不占位，所以不一定等于序号
+    #[serde(default)]
+    pub page: Option<usize>,
+    /// 这一页处理过了（译完或失败）；还没轮到的页是 false
+    #[serde(default)]
+    pub done: bool,
+    /// 按设置不翻译的片段（页眉页脚、公式代码、参考文献）：保留原文，不算失败
+    #[serde(default)]
+    pub skip: Vec<usize>,
 }
 
 // ---------- 扫描件 / 图片：视觉模型识字 ----------
@@ -510,7 +548,7 @@ const OCR_MAX_PAGES: usize = 60;
 const OCR_MAX_BYTES: usize = 6 * 1024 * 1024;
 
 /// 识过的文字按识字方式分开存：换了更准的引擎要重新识，不能还用上次的结果。
-fn ocr_path(data_dir: &Path, input: &Path, engine: &str) -> PathBuf {
+pub(crate) fn ocr_path(data_dir: &Path, input: &Path, engine: &str) -> PathBuf {
     cache_path(data_dir, input, &format!("ocr-{engine}")).with_extension("ocr.txt")
 }
 
@@ -663,7 +701,7 @@ async fn ocr_text(ctx: &JobCtx, ep: &ai::Endpoint, model: &str, input: &Path, ki
     Ok(text)
 }
 
-fn cache_path(data_dir: &Path, input: &Path, target: &str) -> PathBuf {
+pub(crate) fn cache_path(data_dir: &Path, input: &Path, target: &str) -> PathBuf {
     use sha2::{Digest, Sha256};
     let len = std::fs::metadata(input).map(|m| m.len()).unwrap_or(0);
     let mut h = Sha256::new();
@@ -674,11 +712,35 @@ fn cache_path(data_dir: &Path, input: &Path, target: &str) -> PathBuf {
     data_dir.join("filetr").join(format!("{hex}.json"))
 }
 
-fn load_cache(path: &Path) -> Option<View> {
-    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+pub(crate) fn load_cache(path: &Path) -> Option<View> {
+    let mut v: View = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    // 旧缓存（没有页状态）：当时每页都是译完才存的，都算处理过了
+    if v.v < VIEW_V {
+        for p in &mut v.pages {
+            p.done = true;
+        }
+    }
+    Some(v)
 }
 
-fn save_cache(path: &Path, v: &View) {
+/// 用旧缓存里的译文填新的片段列表：顺序和原文都一样就一一对应（含你改过的译文）；
+/// 对不上（换了排版方式、文件内容变了）就按原文一句句找，找到的照用。
+pub(crate) fn fill_from_cache(old: &View, texts: &[String]) -> Vec<Option<String>> {
+    let flat: Vec<(&String, &Option<String>)> = old.pages.iter().flat_map(|p| p.src.iter().zip(p.trans.iter())).collect();
+    let keep = |t: &Option<String>| t.clone().filter(|x| !x.trim().is_empty());
+    if flat.len() == texts.len() && flat.iter().zip(texts).all(|((s, _), t)| *s == t) {
+        return flat.iter().map(|(_, t)| keep(t)).collect();
+    }
+    let mut by_src: std::collections::HashMap<&str, Option<String>> = std::collections::HashMap::new();
+    for (s, t) in &flat {
+        if let Some(t) = keep(t) {
+            by_src.entry(s.as_str()).or_insert(Some(t));
+        }
+    }
+    texts.iter().map(|t| by_src.get(t.as_str()).cloned().flatten()).collect()
+}
+
+pub(crate) fn save_cache(path: &Path, v: &View) {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -704,13 +766,13 @@ pub fn view_for(data_dir: &Path, input: &Path, target: &str) -> Option<View> {
 /// 不翻译，只把文件切成页，给阅读器看原文。
 pub fn preview(path: &Path) -> AppResult<View> {
     let kind = kind_of(path).ok_or_else(|| AppError::invalid("支持 TXT、Markdown、PDF、SRT/VTT/ASS 字幕、Word(docx)、EPUB，以及图片（PNG / JPG / WebP）。"))?;
-    let mut v = View { input: path.to_string_lossy().into_owned(), ..Default::default() };
+    let mut v = View { input: path.to_string_lossy().into_owned(), v: VIEW_V, ..Default::default() };
     if kind == Kind::Sub {
         let cues = crate::subtitle_tools::read(path)?;
         let texts: Vec<String> = cues.iter().map(|c| c.lines.join(" ")).collect();
         let mut at = 0;
         for n in page_sizes(&[], texts.len(), true) {
-            v.pages.push(ViewPage { src: texts[at..at + n].to_vec(), trans: vec![None; n] });
+            v.pages.push(ViewPage { src: texts[at..at + n].to_vec(), trans: vec![None; n], ..Default::default() });
             at += n;
         }
     } else {
@@ -722,7 +784,7 @@ pub fn preview(path: &Path) -> AppResult<View> {
         };
         for p in loaded {
             let src: Vec<String> = p.slots.iter().map(|s| s.text.clone()).collect();
-            v.pages.push(ViewPage { trans: vec![None; src.len()], src });
+            v.pages.push(ViewPage { trans: vec![None; src.len()], src, ..Default::default() });
         }
     }
     v.pages.retain(|p| !p.src.is_empty());
@@ -796,7 +858,7 @@ struct ScanBlock {
     bg: Option<[u8; 3]>,
 }
 
-fn scan_path(data_dir: &Path, input: &Path, target: &str, engine: &str) -> PathBuf {
+pub(crate) fn scan_path(data_dir: &Path, input: &Path, target: &str, engine: &str) -> PathBuf {
     cache_path(data_dir, input, &format!("scan-{target}-{engine}")).with_extension("scan.json")
 }
 
@@ -940,9 +1002,19 @@ async fn run_pdf_scanned(
                 bilingual: false,
                 pages: out
                     .iter()
-                    .map(|p| ViewPage { src: p.iter().map(|b| b.src.clone()).collect(), trans: p.iter().map(|b| Some(b.trans.clone())).collect() })
+                    .enumerate()
+                    .map(|(i, p)| ViewPage {
+                        src: p.iter().map(|b| b.src.clone()).collect(),
+                        trans: p.iter().map(|b| Some(b.trans.clone())).collect(),
+                        page: Some(i),
+                        done: true,
+                        skip: vec![],
+                    })
                     .collect(),
                 failed,
+                v: VIEW_V,
+                layout: false,
+                total_pages: pages.len(),
             };
             save_cache(&vp, &view);
             if let Ok(b) = serde_json::to_vec(&out) {
@@ -1025,6 +1097,8 @@ struct LBlock {
     remove: Vec<usize>,
     src: String,
     trans: String,
+    /// 按设置不翻译的块（页眉页脚、公式代码、参考文献）
+    skipped: bool,
 }
 
 struct Collected {
@@ -1034,9 +1108,84 @@ struct Collected {
     view_page: usize,
     size: (f32, f32),
     blocks: Vec<LBlock>,
+    /// 这一页处理过了（译完或失败）；还没轮到时是 false
+    done: bool,
+    /// 要告诉用户的情况（没译、重新匹配过、扫描页没识字……）；没有就是空
+    note: String,
+}
+
+/// 版面里一页的块和缓存里的译文对上之后的结果。
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct PageMatch {
+    pub trans: Vec<Option<String>>,
+    pub skip: Vec<usize>,
+    /// 这一页在缓存（阅读器）里的序号
+    pub view_page: usize,
+    pub done: bool,
+    pub note: String,
+    /// 缓存被改动了（重新匹配过、给还没轮到的页占了位），要存回去
+    pub dirty: bool,
+}
+
+/// 把 PDF 某一页（有文字块的）和缓存里的译文对上。只看这一页：别的页没译完、失败、取消都不影响；
+/// 这一页的缓存和当前的块对不上时，按原文一句句找，找到的照用，把缓存改成当前的块，没找到的当“未译”。
+pub(crate) fn match_cached_page(view: &mut Option<View>, pages: &[crate::pdfx::PageInfo], page: usize) -> PageMatch {
+    let texts: Vec<String> = pages[page].blocks.iter().map(|b| b.text.clone()).collect();
+    let mut m = PageMatch { trans: vec![None; texts.len()], view_page: pages[..page].iter().filter(|p| !p.blocks.is_empty()).count(), ..Default::default() };
+    let Some(v) = view.as_mut() else {
+        m.note = "这份文件还没有译文：先点“翻译”（或任务里的“继续”）。".into();
+        return m;
+    };
+    if !v.layout && v.pages.iter().all(|p| p.page.is_none()) {
+        // 旧缓存（没记页号）：只有总数对得上才能用；对不上说明当时是按段落切的
+        let flat: Vec<&Option<String>> = v.pages.iter().flat_map(|p| p.trans.iter()).collect();
+        let total: usize = pages.iter().map(|p| p.blocks.len()).sum();
+        if flat.len() == total {
+            let before: usize = pages[..page].iter().map(|p| p.blocks.len()).sum();
+            for (k, t) in m.trans.iter_mut().enumerate() {
+                *t = flat.get(before + k).and_then(|x| x.as_deref()).map(str::to_string);
+            }
+            m.done = true;
+        } else {
+            m.note = "这份译文是按段落切的（装 PDF 排版组件之前译的），对不上页面上的块。点任务里的“重新翻译”，按版面重译一次。".into();
+        }
+        return m;
+    }
+    match v.pages.iter().position(|p| p.page == Some(page)) {
+        Some(i) => {
+            let vp = &mut v.pages[i];
+            m.view_page = i;
+            m.done = vp.done;
+            if vp.src == texts {
+                m.trans = vp.trans.clone();
+                m.skip = vp.skip.clone();
+            } else {
+                let skipped_src: std::collections::HashSet<&str> = vp.skip.iter().filter_map(|k| vp.src.get(*k)).map(String::as_str).collect();
+                let by_src: std::collections::HashMap<&str, String> =
+                    vp.src.iter().zip(&vp.trans).filter_map(|(s, t)| t.clone().filter(|x| !x.trim().is_empty()).map(|t| (s.as_str(), t))).collect();
+                m.trans = texts.iter().map(|t| by_src.get(t.as_str()).cloned()).collect();
+                m.skip = texts.iter().enumerate().filter(|(_, t)| skipped_src.contains(t.as_str())).map(|(k, _)| k).collect();
+                let missing = (0..texts.len()).filter(|k| m.trans[*k].is_none() && !m.skip.contains(k)).count();
+                vp.src = texts;
+                vp.trans = m.trans.clone();
+                vp.skip = m.skip.clone();
+                m.note = format!("这一页的文字和译文缓存对不上（可能换了文件或排版方式），已按原文重新匹配，{missing} 段没有匹配上，显示为“未译”。");
+                m.dirty = true;
+            }
+        }
+        None => {
+            // 这一页还没轮到：先在缓存里占个位，在页面上直接改译文也能存下来
+            let at = v.pages.iter().position(|p| p.page.is_some_and(|x| x > page)).unwrap_or(v.pages.len());
+            v.pages.insert(at, ViewPage { trans: vec![None; texts.len()], src: texts, page: Some(page), done: false, skip: vec![] });
+            m.view_page = at;
+            m.dirty = true;
+        }
+    }
+    m
 }
 
 /// 取出 PDF 某一页的版面块和缓存里的译文（含阅读器里改过的、扫描页的位置）。`page` 从 0 起。
+/// 只看这一页：别的页没译完、失败、取消都不影响；这一页的缓存和当前 PDF 对不上时按原文重新匹配，匹配不上的当“未译”。
 async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &str, page: usize) -> AppResult<Collected> {
     let lib = crate::pdfx::find_lib(&st.data_dir).ok_or_else(|| AppError::invalid("版面预览需要 PDF 排版组件：在“文件翻译”页点“安装 PDF 排版组件”。"))?;
     let (l2, in2) = (lib.clone(), input.to_path_buf());
@@ -1044,21 +1193,25 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
     if page >= pages.len() {
         return Err(AppError::invalid("没有这一页。"));
     }
-    let view = load_cache(&cache_path(&st.data_dir, input, target)).ok_or_else(|| AppError::invalid("这份文件还没有译文，先点“翻译”。"))?;
+    let cp = cache_path(&st.data_dir, input, target);
+    let mut view = load_cache(&cp);
     let size = (pages[page].w, pages[page].h);
     let mut blocks = vec![];
     let mut view_page = page;
+    let mut done = false;
+    let mut note = String::new();
     if !pages[page].blocks.is_empty() {
-        // 文字版：缓存里的译文按“有文字的页、页内的块”顺序排成一长串
-        let flat: Vec<&Option<String>> = view.pages.iter().flat_map(|p| p.trans.iter()).collect();
-        let total: usize = pages.iter().map(|p| p.blocks.len()).sum();
-        if flat.len() != total {
-            return Err(AppError::invalid("译文和当前 PDF 对不上（可能换了文件或排版方式），重新翻译一次。"));
+        let m = match_cached_page(&mut view, &pages, page);
+        if m.dirty {
+            if let Some(v) = &view {
+                save_cache(&cp, v);
+            }
         }
-        let before: usize = pages[..page].iter().map(|p| p.blocks.len()).sum();
-        view_page = pages[..page].iter().filter(|p| !p.blocks.is_empty()).count();
+        let (trans, skip) = (m.trans, m.skip);
+        view_page = m.view_page;
+        done = m.done;
+        note = m.note;
         for (k, b) in pages[page].blocks.iter().enumerate() {
-            let trans = flat.get(before + k).and_then(|t| t.as_deref()).unwrap_or("").to_string();
             blocks.push(LBlock {
                 index: k,
                 rect: (b.l, b.b, b.r, b.t),
@@ -1067,26 +1220,30 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
                 bg: None,
                 remove: b.runs.clone(),
                 src: b.text.clone(),
-                trans,
+                trans: trans[k].clone().unwrap_or_default(),
+                skipped: skip.contains(&k),
             });
         }
     } else {
         // 扫描页：旁路文件里有位置，阅读器里改过的译文优先
         let engine = Opts { ocr: ocr.to_string(), ..Opts::default() }.engine();
-        let sc: Vec<Vec<ScanBlock>> = std::fs::read(scan_path(&st.data_dir, input, target, engine))
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .ok_or_else(|| AppError::invalid("这一页还没有识字、翻译结果，先点“翻译”。"))?;
-        if let Some(list) = sc.get(page) {
-            let edited = view.pages.get(page).filter(|v| v.trans.len() == list.len());
-            for (k, b) in list.iter().enumerate() {
-                let Some(rect) = b.rect else { continue };
-                let trans = edited.map(|v| v.trans[k].clone().unwrap_or_default()).unwrap_or_else(|| b.trans.clone());
-                blocks.push(LBlock { index: k, rect, size: b.size, rgb: b.rgb, bg: b.bg, remove: vec![], src: b.src.clone(), trans });
+        let sc: Option<Vec<Vec<ScanBlock>>> = std::fs::read(scan_path(&st.data_dir, input, target, engine)).ok().and_then(|b| serde_json::from_slice(&b).ok());
+        match sc {
+            None => note = "这一页是扫描页（没有文字层），还没有识字、翻译结果。".into(),
+            Some(sc) => {
+                if let Some(list) = sc.get(page) {
+                    let edited = view.as_ref().and_then(|v| v.pages.get(page)).filter(|v| v.trans.len() == list.len());
+                    for (k, b) in list.iter().enumerate() {
+                        let Some(rect) = b.rect else { continue };
+                        let trans = edited.map(|v| v.trans[k].clone().unwrap_or_default()).unwrap_or_else(|| b.trans.clone());
+                        blocks.push(LBlock { index: k, rect, size: b.size, rgb: b.rgb, bg: b.bg, remove: vec![], src: b.src.clone(), trans, skipped: false });
+                    }
+                    done = true;
+                }
             }
         }
     }
-    Ok(Collected { lib, pages: pages.len(), view_page, size, blocks })
+    Ok(Collected { lib, pages: pages.len(), view_page, size, blocks, done, note })
 }
 
 /// 在渲染好的整页图上取一块文字的背景色（PDF 点 → 像素；PDF 的 y 轴朝上）。
@@ -1108,6 +1265,8 @@ pub struct LayoutBlock {
     pub bg: [u8; 3],
     pub src: String,
     pub trans: String,
+    /// 按设置不翻译（页眉页脚、公式代码、参考文献）：保留原文，不算“未译”
+    pub skipped: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1122,13 +1281,17 @@ pub struct PageLayout {
     /// 原页图（data URL）
     pub image: String,
     pub blocks: Vec<LayoutBlock>,
+    /// 这一页处理过了（译完或失败）；还没轮到的页是 false
+    pub done: bool,
+    /// 要告诉用户的情况：没译、重新匹配过、扫描页没识字……（没有就是空）
+    pub note: String,
 }
 
 /// 画布：把某一页渲染成图，连同每一块的位置、背景色和译文一起交给界面，界面里可以切换原文 / 译文、缩放平移、直接改译文。
 pub async fn page_layout(st: &crate::AppState, input: &Path, target: &str, ocr: &str, page: usize) -> AppResult<PageLayout> {
     use base64::Engine;
     let c = collect_page(st, input, target, ocr, page).await?;
-    let (pages, view_page, size) = (c.pages, c.view_page, c.size);
+    let (pages, view_page, size, done, note) = (c.pages, c.view_page, c.size, c.done, c.note);
     let (lib, inp, mut blocks) = (c.lib, input.to_path_buf(), c.blocks);
     let (img, blocks) = tokio::task::spawn_blocking(move || -> AppResult<(Vec<u8>, Vec<LBlock>)> {
         let (w, h, rgba) = crate::pdfx::render_page(&lib, &inp, page, 1400)?;
@@ -1150,9 +1313,10 @@ pub async fn page_layout(st: &crate::AppState, input: &Path, target: &str, ocr: 
             bg: b.bg.unwrap_or([255, 255, 255]),
             src: b.src,
             trans: b.trans,
+            skipped: b.skipped,
         })
         .collect();
-    Ok(PageLayout { pages, view_page, w: size.0, h: size.1, image, blocks })
+    Ok(PageLayout { pages, view_page, w: size.0, h: size.1, image, blocks, done, note })
 }
 
 /// “导出效果”：把译文真的写到原页上（和生成的文件一样的做法：删旧文字、盖背景色、写译文）再渲染，不生成文件。
@@ -1237,6 +1401,8 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     // 1. 切片段
     let mut cues: Vec<Cue> = vec![];
     let mut parts: Vec<Part> = vec![];
+    // 版面翻译时：每个 part 对应 PDF 的第几页（没有文字的页不占位）
+    let mut part_pdf: Vec<usize> = vec![];
     if kind == Kind::Sub {
         cues = crate::subtitle_tools::read(input)?;
     } else {
@@ -1255,6 +1421,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
                         slots: p.blocks.iter().map(|b| Slot { start: 0, end: 0, text: b.text.clone(), prefix: String::new() }).collect(),
                     })
                     .collect();
+                part_pdf = pages.iter().enumerate().filter(|(_, p)| !p.blocks.is_empty()).map(|(i, _)| i).collect();
                 layout_pages = Some(pages);
             } else if pages.iter().all(|p| !p.has_text) {
                 ctx.note("这份 PDF 是扫描版（没有文字层），改用视觉模型识字并按位置翻译");
@@ -1288,31 +1455,61 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     let slot_counts: Vec<usize> = parts.iter().map(|p| p.slots.len()).collect();
     let sizes = page_sizes(&slot_counts, texts.len(), kind == Kind::Sub);
     let sizes: Vec<usize> = sizes.into_iter().filter(|n| *n > 0).collect();
-
-    // 缓存：同一个文件、同一目标语言，已经译好的片段不再重翻（也就是“重试失败段落”）
-    let cpath = cache_path(&ctx.st.data_dir, input, &target);
-    let mut trans: Vec<Option<String>> = vec![None; texts.len()];
-    if let Some(old) = load_cache(&cpath) {
-        let flat: Vec<(&String, &Option<String>)> = old.pages.iter().flat_map(|p| p.src.iter().zip(p.trans.iter())).collect();
-        if flat.len() == texts.len() && flat.iter().zip(&texts).all(|((s, _), t)| *s == t) {
-            for (i, (_, t)) in flat.iter().enumerate() {
-                trans[i] = (*t).clone().filter(|x| !x.trim().is_empty());
-            }
-        }
+    // 每一页对应 PDF 的第几页，每个片段在第几页
+    let page_no: Vec<Option<usize>> = (0..sizes.len()).map(|pi| if layout_pages.is_some() { part_pdf.get(pi).copied() } else { None }).collect();
+    let seg_page: Vec<usize> = sizes.iter().enumerate().flat_map(|(pi, n)| std::iter::repeat(pi).take(*n)).collect();
+    // 页范围、不翻译的内容（页眉页脚 / 公式代码 / 参考文献）
+    let (selected, skip) = crate::filetr_ext::select_and_skip(&texts, &seg_page, &page_no, &opts, layout_pages.is_some(), kind == Kind::Sub);
+    if !selected.iter().any(|s| *s) {
+        return Err(AppError::invalid("页范围里没有可以翻译的页。写法如 3-12, 15。"));
     }
+
+    // 缓存：同一个文件、同一目标语言，已经译好的片段不再重翻（也就是“重试失败段落”和“继续”）
+    let cpath = cache_path(&ctx.st.data_dir, input, &target);
+    let trans_cached = load_cache(&cpath).map(|old| fill_from_cache(&old, &texts)).unwrap_or_else(|| vec![None; texts.len()]);
+    let mut trans: Vec<Option<String>> = trans_cached;
     let cached = trans.iter().filter(|t| t.is_some()).count();
     ctx.note(format!("共 {} 段、{} 页，译成{}；已有 {} 段译文可直接用", texts.len(), sizes.len(), target, cached));
 
-    // 2. 翻译（术语库 + AI 专家 + 网页翻译同款提示词），一页一页地译，每页译完就存缓存
+    // 2. 翻译（术语库 + AI 专家 + 网页翻译同款提示词），一页一页地译，每页译完就存缓存。
+    // 缓存一开始就写好所有页（没轮到的页 done = false）：中途停止、失败、版面预览都能按页对上。
     let profile = profile_of(kind);
     let (system, terms) = trans_setup(&ctx.st, &settings, &target, profile);
     let tv = crate::tm::terms_version(&ctx.st);
-    let mut view = View { input: input.to_string_lossy().into_owned(), target: target.clone(), bilingual: opts.bilingual, pages: vec![], failed: 0 };
+    let mut view = View {
+        input: input.to_string_lossy().into_owned(),
+        target: target.clone(),
+        bilingual: opts.bilingual,
+        pages: vec![],
+        failed: 0,
+        v: VIEW_V,
+        layout: layout_pages.is_some(),
+        total_pages: layout_pages.as_ref().map_or(sizes.len(), |p| p.len()),
+    };
+    {
+        let mut at = 0usize;
+        for (pi, n) in sizes.iter().enumerate() {
+            view.pages.push(ViewPage {
+                src: texts[at..at + n].to_vec(),
+                trans: trans[at..at + n].to_vec(),
+                page: page_no[pi],
+                done: false,
+                skip: (at..at + n).filter(|i| skip.contains(i)).map(|i| i - at).collect(),
+            });
+            at += n;
+        }
+        save_cache(&cpath, &view);
+    }
+    let work_total: usize = sizes.iter().enumerate().filter(|(pi, _)| selected[*pi]).map(|(_, n)| *n).sum();
+    let mut work_done = 0usize;
     let mut at = 0usize;
-    let mut failed = 0usize;
     for (pi, n) in sizes.iter().enumerate() {
+        if !selected[pi] {
+            at += n;
+            continue;
+        }
         ctx.check()?;
-        let mut todo: Vec<usize> = (at..at + n).filter(|i| trans[*i].is_none()).collect();
+        let mut todo: Vec<usize> = (at..at + n).filter(|i| trans[*i].is_none() && !skip.contains(i)).collect();
         // 翻译记忆：别处（网页、字幕、别的文件）译过的句子、人工改过的译文直接用
         if !todo.is_empty() {
             let src: Vec<String> = todo.iter().map(|i| texts[*i].clone()).collect();
@@ -1335,13 +1532,16 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
             let pairs: Vec<(String, String)> = todo.iter().filter_map(|i| trans[*i].clone().map(|t| (texts[*i].clone(), t))).collect();
             crate::tm::store(&ctx.st.data_dir, profile, &target, &tv, "pool", &pairs);
         }
-        failed += (at..at + n).filter(|i| trans[*i].is_none()).count();
-        view.pages.push(ViewPage { src: texts[at..at + n].to_vec(), trans: trans[at..at + n].to_vec() });
-        view.failed = failed;
+        view.pages[pi].trans = trans[at..at + n].to_vec();
+        view.pages[pi].done = true;
+        view.failed =
+            view.pages.iter().filter(|p| p.done).map(|p| p.trans.iter().enumerate().filter(|(k, t)| t.is_none() && !p.skip.contains(k)).count()).sum();
         save_cache(&cpath, &view);
         at += n;
-        ctx.percent(95.0 * at as f64 / texts.len().max(1) as f64);
+        work_done += n;
+        ctx.percent(95.0 * work_done as f64 / work_total.max(1) as f64);
     }
+    let failed = view.failed;
     if opts.preview {
         ctx.percent(100.0);
         ctx.note("已译好。在右边检查、直接改译文，满意后点“生成文件”。");
@@ -1381,9 +1581,29 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     };
     ctx.percent(100.0);
     if t.failed > 0 {
-        ctx.note(format!("有 {} 段没有译文（模型没返回），已保留原文。", t.failed));
+        ctx.note(format!("有 {} 段没有译文（模型没返回），已保留原文：{}。", t.failed, failed_pages_text(&view)));
     }
     Ok(out)
+}
+
+/// “第 9 页 2 段、第 12 页 1 段”：哪几页有没译出来的段（最多列 6 页）。
+pub(crate) fn failed_pages_text(v: &View) -> String {
+    let list: Vec<String> = v
+        .pages
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.done)
+        .filter_map(|(i, p)| {
+            let n = p.trans.iter().enumerate().filter(|(k, t)| t.is_none() && !p.skip.contains(k)).count();
+            (n > 0).then(|| format!("第 {} 页 {n} 段", p.page.unwrap_or(i) + 1))
+        })
+        .collect();
+    let more = list.len().saturating_sub(6);
+    let mut text = list.into_iter().take(6).collect::<Vec<_>>().join("、");
+    if more > 0 {
+        text.push_str(&format!(" 等 {} 页", more + 6));
+    }
+    text
 }
 
 #[cfg(test)]

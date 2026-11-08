@@ -4,7 +4,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
+const FILES = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -101,6 +101,167 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     }, [label, sel])
   const settle = (page, ms = 1200) => page.waitForTimeout(ms)
 
+
+  // ---- 收到右边：收起成小标签、点开、停在上面预览、拖动换位置、状态提示
+  {
+    const st = (page) =>
+      page.evaluate(() => {
+        const r = window.__roots.find((x) => x.querySelector('.panel'))
+        const panel = r.querySelector('.panel')
+        const tab = r.querySelector('.dtab')
+        const bar = r.querySelector('.peekbar')
+        const tr = tab.getBoundingClientRect()
+        return {
+          hide: panel.classList.contains('hide'),
+          peek: panel.classList.contains('peek'),
+          inert: panel.inert,
+          tabOn: tab.classList.contains('on'),
+          tabCls: tab.className,
+          barOn: bar.classList.contains('on'),
+          tab: { left: Math.round(tr.left), right: Math.round(tr.right), top: Math.round(tr.top), w: Math.round(tr.width), h: Math.round(tr.height) },
+          toast: r.querySelector('.dtoast.on')?.textContent || '',
+        }
+      })
+    const tabCenter = async (page) => {
+      const t = (await st(page)).tab
+      return { x: (t.left + t.right) / 2, y: t.top + t.h / 2 }
+    }
+    const { page, errors } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    let s = await st(page)
+    ok('收起：展开时面板可见，没有小标签', !s.hide && !s.tabOn && !s.inert)
+    ok('收起：标题栏有“收起到右边”按钮', await page.evaluate(() => !!window.__roots.map((r) => r.querySelector('.hd .dockbtn[aria-label="收起到右边"]')).find(Boolean)))
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
+    await page.waitForTimeout(300)
+    s = await st(page)
+    ok('收起：面板滑走，只剩右边缘一个小标签', s.hide && s.inert && s.tabOn && s.tab.right === 1280 && s.tab.w === 30 && s.tab.h === 84, JSON.stringify(s))
+    ok('收起：小标签默认在窗口高度 38% 附近', Math.abs(s.tab.top + 42 - 0.38 * 800) <= 2, String(s.tab.top))
+    ok('收起：文稿还在（没有重新读取）', await page.evaluate(() => /段/.test(window.__roots.map((r) => r.querySelector('.meta')).find(Boolean)?.textContent || '')))
+    // 点标签展开
+    let c = await tabCenter(page)
+    await page.mouse.click(c.x, c.y)
+    await page.waitForTimeout(250)
+    s = await st(page)
+    ok('点小标签：展开（固定），标签消失', !s.hide && !s.peek && !s.tabOn && !s.inert, JSON.stringify(s))
+    // 快捷键 = 再次注入 vsum.js：展开 ↔ 收起；不会关掉面板
+    await page.addScriptTag({ path: FILES[FILES.length - 1] })
+    await page.waitForTimeout(250)
+    ok('快捷键：展开时按一下 → 收起', (await st(page)).hide)
+    await page.addScriptTag({ path: FILES[FILES.length - 1] })
+    await page.waitForTimeout(250)
+    ok('快捷键：收起时按一下 → 展开', !(await st(page)).hide && (await page.evaluate(() => !!window.__ccVsum)))
+    // 预览：停 0.35 秒弹出来，移开 0.8 秒收回去（先把鼠标挪开：它还停在刚才标签的位置，标签再出现会算“停在上面”）
+    await page.mouse.move(600, 300)
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
+    await page.waitForTimeout(300)
+    c = await tabCenter(page)
+    await page.mouse.move(c.x, c.y)
+    await page.waitForTimeout(150)
+    ok('预览：只路过 150 毫秒不弹', (await st(page)).hide)
+    await page.mouse.move(600, 300)
+    await page.waitForTimeout(100)
+    c = await tabCenter(page)
+    await page.mouse.move(c.x, c.y)
+    await page.waitForTimeout(600)
+    s = await st(page)
+    ok('预览：停够 0.35 秒弹出来，带预览条，标签粘在面板左边', s.peek && !s.hide && s.barOn && s.tab.right === 880 && /peek/.test(s.tabCls), JSON.stringify(s))
+    await page.mouse.move(300, 300)
+    await page.waitForTimeout(400)
+    ok('预览：鼠标刚移开 0.4 秒还在', (await st(page)).peek)
+    await page.waitForTimeout(700)
+    ok('预览：移开超过 0.8 秒收回去', (await st(page)).hide)
+    // 预览中点“固定”
+    c = await tabCenter(page)
+    await page.mouse.move(c.x, c.y)
+    await page.waitForTimeout(600)
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('.peekbar button')).find(Boolean).click())
+    await page.waitForTimeout(250)
+    s = await st(page)
+    ok('预览：点“固定”→ 展开，不再自动收回', !s.hide && !s.peek && !s.barOn, JSON.stringify(s))
+    await page.mouse.move(300, 300)
+    await page.waitForTimeout(1200)
+    ok('固定后鼠标移开也不收', !(await st(page)).hide)
+    // 预览中点面板里的任何地方 = 固定
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
+    await page.waitForTimeout(300)
+    c = await tabCenter(page)
+    await page.mouse.move(c.x, c.y)
+    await page.waitForTimeout(600)
+    await page.mouse.click(1000, 400)
+    await page.waitForTimeout(250)
+    s = await st(page)
+    ok('预览：在面板里点一下也算固定', !s.hide && !s.peek, JSON.stringify(s))
+    // 拖动换位置：记住，点击不触发展开
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
+    await page.waitForTimeout(300)
+    const before = (await st(page)).tab.top
+    c = await tabCenter(page)
+    await page.mouse.move(c.x, c.y)
+    await page.mouse.down()
+    await page.mouse.move(c.x, c.y + 60, { steps: 4 })
+    await page.mouse.move(c.x, c.y + 120, { steps: 4 })
+    await page.mouse.up()
+    await page.waitForTimeout(250)
+    s = await st(page)
+    ok('拖动：标签上下移动了约 120 像素', Math.abs(s.tab.top - before - 120) <= 3, `${before} → ${s.tab.top}`)
+    ok('拖动：松手不会当作点击（还是收起）', s.hide && !s.peek, JSON.stringify(s))
+    const frac = await page.evaluate(() => window.__store.vsumTabFrac)
+    ok('拖动：位置存进了存储', typeof frac === 'number' && Math.abs(frac - (s.tab.top + 42) / 800) < 0.01, String(frac))
+    await page.close()
+
+    // 位置记住：新页面按存起来的比例放
+    {
+      const p2 = await open(YT, { local: { vsumTabFrac: 0.7 } })
+      await p2.page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+      await p2.page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
+      await p2.page.waitForTimeout(300)
+      ok('位置记住：新页面标签在 70% 高度', Math.abs((await st(p2.page)).tab.top + 42 - 0.7 * 800) <= 2)
+      await p2.page.close()
+    }
+    // 设置：预览关掉 / 打开时默认收起
+    {
+      const p3 = await open(YT, { local: { vsumPrefs: { peek: false, collapseOnOpen: true } } })
+      await p3.page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+      let t = await st(p3.page)
+      ok('设置“打开时默认收起”：一打开就是小标签', t.hide && t.tabOn, JSON.stringify(t))
+      const cc = await tabCenter(p3.page)
+      await p3.page.mouse.move(cc.x, cc.y)
+      await p3.page.waitForTimeout(700)
+      ok('设置“鼠标停在标签上预览”关掉后不弹', (await st(p3.page)).hide)
+      await p3.page.mouse.click(cc.x, cc.y)
+      await p3.page.waitForTimeout(250)
+      ok('关了预览，点一下照样展开', !(await st(p3.page)).hide)
+      await p3.page.close()
+    }
+    // 状态：没设置大模型 → 琥珀点 + 一句原因
+    {
+      const p4 = await open(YT, { ready: false })
+      await p4.page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+      await p4.page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
+      await p4.page.waitForTimeout(900)
+      const t = await st(p4.page)
+      ok('没设置大模型：收起后标签有琥珀点，弹一句原因', /warn/.test(t.tabCls) && /还没设置大模型/.test(t.toast), JSON.stringify(t))
+      await p4.page.close()
+    }
+    // 状态：收起时生成好了 → 绿点 + 提示，展开后消失
+    {
+      const p5 = await open(YT)
+      await p5.page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+      await clickText(p5.page, '生成摘要')
+      await p5.page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
+      await p5.page.waitForFunction(() => window.__roots.some((r) => r.querySelector('.dtab.busy')), null, { timeout: 3000 }).catch(() => {})
+      ok('收起时正在生成：标签上图标转圈', await p5.page.evaluate(() => window.__roots.some((r) => r.querySelector('.dtab.busy') || r.querySelector('.dtab.fresh'))))
+      await p5.page.waitForFunction(() => window.__roots.some((r) => r.querySelector('.dtab.fresh')), null, { timeout: 6000 }).catch(() => {})
+      const t = await st(p5.page)
+      ok('生成好了：绿点 + “摘要生成好了 · 点开看”', /fresh/.test(t.tabCls) && /摘要生成好了/.test(t.toast), JSON.stringify(t))
+      const cc = await tabCenter(p5.page)
+      await p5.page.mouse.click(cc.x, cc.y)
+      await p5.page.waitForTimeout(250)
+      ok('展开后绿点和提示都去掉', (await st(p5.page)).toast === '' && !(await st(p5.page)).tabOn)
+      ok('收起相关操作没有页面报错', p5.errors.length === 0 && errors.length === 0, p5.errors.concat(errors).join('|'))
+      await p5.page.close()
+    }
+  }
 
   // ---- 笔记 / 划词解释 / 顺句
   {
