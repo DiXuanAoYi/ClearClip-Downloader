@@ -37,6 +37,12 @@ const ok = (name, cond, extra = '') => {
   await page.keyboard.press('Control+z')
   await page.waitForFunction(() => document.querySelectorAll('.blk.txt').length === 0, null, { timeout: 5000 }).catch(() => {})
   ok('撤回一次全部去掉', (await texts()) === 0, String(await texts()))
+  // 导入很快时，菜单还没收起、焦点还在菜单项上就按了撤回（CI 上出现过）：也要生效
+  await page.keyboard.press('Control+Shift+z')
+  await page.waitForFunction(() => document.querySelectorAll('.blk.txt').length === 2, null, { timeout: 5000 }).catch(() => {})
+  await page.evaluate(() => document.querySelector('.el-dropdown-menu__item')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })))
+  await page.waitForFunction(() => document.querySelectorAll('.blk.txt').length === 0, null, { timeout: 5000 }).catch(() => {})
+  ok('焦点还在菜单项上时按撤回也生效', (await texts()) === 0, String(await texts()))
 
   const bad = errors.filter((e) => !/favicon|net::ERR|Failed to load resource/.test(e))
   ok('没有控制台错误', bad.length === 0, bad.slice(0, 3).join(' | '))

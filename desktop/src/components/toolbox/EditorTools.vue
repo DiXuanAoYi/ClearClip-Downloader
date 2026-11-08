@@ -437,7 +437,9 @@ function visible(): boolean {
 function onKey(e: KeyboardEvent) {
   if (!visible()) return
   const t = e.target as HTMLElement | null
-  if (t?.closest('textarea, select, [contenteditable="true"], .el-overlay, .el-popper')) return
+  // 刚点过的下拉菜单（“添加素材”等）收起时焦点会在菜单项上停一下：Ctrl 组合键（撤回等）照常生效，方向键、回车留给菜单
+  const menuMod = !!t?.closest('.el-dropdown-menu') && (e.ctrlKey || e.metaKey)
+  if (!menuMod && t?.closest('textarea, select, [contenteditable="true"], .el-overlay, .el-popper')) return
   const input = t?.closest('input') as HTMLInputElement | null
   if (input) {
     // 点过单选 / 复选按钮（比如检查器的标签页）后焦点会留在上面：快捷键照常生效，空格、方向键和回车留给它们自己用
