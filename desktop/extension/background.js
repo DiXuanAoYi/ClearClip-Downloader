@@ -161,15 +161,42 @@ async function settledItem(item) {
   return cur
 }
 
+/** 刚交还给浏览器、或刚处理过的地址：一段时间内不再接管，免得来回折腾 */
+const HANDLED_MS = 10 * 60 * 1000
+async function wasHandled(url) {
+  const { handledDl = {} } = await sessionStore.get('handledDl')
+  const t = handledDl[url]
+  return !!t && Date.now() - t < HANDLED_MS
+}
+async function markHandled(url) {
+  const { handledDl = {} } = await sessionStore.get('handledDl')
+  const now = Date.now()
+  for (const k of Object.keys(handledDl)) if (now - handledDl[k] > HANDLED_MS) delete handledDl[k]
+  handledDl[url] = now
+  await sessionStore.set({ handledDl })
+}
+
 async function takeOver(item) {
   const cfg = await getTakeover()
   if (!cfg.enabled || (await takeoverBypassed())) return
   // 扩展发起的下载（包括我们自己交还给浏览器的）不接管
   if (item.byExtensionId) return
+  // 只处理刚开始的新下载：浏览器启动时重新报出来的历史下载（已完成 / 做了一半的）不能碰
+  if (!isFreshDownload(item, Date.now())) return
   const cur = await settledItem(item)
   if (!cur || cur.byExtensionId) return
+  if (!isFreshDownload(cur, Date.now())) return
   const info = { ...cur, fileSize: cur.totalBytes > 0 ? cur.totalBytes : cur.fileSize, byExtension: !!cur.byExtensionId }
   if (!shouldTake(cfg, info).take) return
+  const url = info.finalUrl || info.url
+  if (await wasHandled(url)) return
+
+  // 清影没开 / 没配对：别取消浏览器的下载，让它照常下，也不提示“已交还”
+  try {
+    await call('/api/ping')
+  } catch {
+    return
+  }
 
   // 先停掉浏览器自己的下载，再交给清影；清影没接住就交还给浏览器
   try {
@@ -177,19 +204,23 @@ async function takeOver(item) {
   } catch {
     return // 已经完成或无法取消：留给浏览器
   }
+  // 确认真的是被我们取消的（而不是已经下完）再清理；下完了的文件绝不删
+  const [after] = await api.downloads.search({ id: item.id }).catch(() => [])
+  if (!after || after.state === 'complete') return
   try {
     await api.downloads.erase({ id: item.id })
-    await api.downloads.removeFile?.(item.id)
+    if (after.state !== 'complete') await api.downloads.removeFile?.(item.id)
   } catch {
     // 部分浏览器取消后没有文件可删
   }
+  await markHandled(url)
   const name = String(cur.filename || '').split(/[\\/]/).pop()
   try {
     const r = await grabUrl(info)
-    await rememberGrab({ url: info.finalUrl || info.url, name, ok: true })
+    await rememberGrab({ url, name, ok: true })
     if (cfg.notify) notify('已交给清影下载', r.fileNames?.[0] || name || shortUrl(info.url))
   } catch (e) {
-    await rememberGrab({ url: info.finalUrl || info.url, name, ok: false })
+    await rememberGrab({ url, name, ok: false })
     notify('清影没有接住这个下载，已交还给浏览器', e.message)
     await giveBack(info.url, name)
   }

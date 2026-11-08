@@ -141,3 +141,16 @@ function linkAction(url) {
   if (!ext || MEDIA_EXTS.includes(ext)) return 'send'
   return TAKEOVER_TYPES.includes(ext) || DOC_EXTS.includes(ext) ? 'grab' : 'send'
 }
+
+/**
+ * 这条下载是不是“刚刚开始、还在下载”的新下载。浏览器重启后会把历史里没做完的、已完成的下载重新报一遍
+ * （startTime 是很久以前），这种一律不碰：否则会把已经下好的文件取消、删掉、再下一遍。
+ * item：downloads.DownloadItem；now：当前毫秒时间。
+ */
+function isFreshDownload(item, now) {
+  if (!item || (item.state && item.state !== 'in_progress')) return false
+  if (item.endTime) return false
+  const t = Date.parse(item.startTime || '')
+  if (!Number.isFinite(t)) return false
+  return now - t <= 30000 && t - now <= 60000
+}

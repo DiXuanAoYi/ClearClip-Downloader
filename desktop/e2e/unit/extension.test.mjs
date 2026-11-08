@@ -226,3 +226,17 @@ low/index.m3u8
 }
 
 console.log('extension ok')
+
+// ---- 接管：只处理刚开始的新下载（浏览器重启后重新报出的历史下载不能碰，否则会把已下好的文件删掉再下一遍）
+{
+  const now = Date.parse('2026-11-08T08:00:00Z')
+  const fresh = (o = {}) => X('isFreshDownload')({ state: 'in_progress', startTime: '2026-11-08T07:59:55Z', ...o }, now)
+  assert.equal(fresh(), true)
+  assert.equal(fresh({ state: 'complete' }), false) // 已下完
+  assert.equal(fresh({ state: 'interrupted' }), false) // 中断的（重启后恢复出来的）
+  assert.equal(fresh({ endTime: '2026-11-08T07:59:58Z' }), false)
+  assert.equal(fresh({ startTime: '2026-11-07T10:00:00Z' }), false) // 昨天的
+  assert.equal(fresh({ startTime: 'bad' }), false)
+  assert.equal(fresh({ startTime: undefined }), false)
+  assert.equal(X('isFreshDownload')(null, now), false)
+}
