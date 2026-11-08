@@ -91,8 +91,38 @@ async function probeMedia(url, referrer = '') {
   return out
 }
 
+/**
+ * 选集：打开这一集的页面（后台标签页、静音），等它播放起来、扩展嗅探到视频流后取下流地址并关掉标签页。
+ * 最多等 25 秒；没识别到返回 null。
+ */
+async function streamOfPage(url, timeoutMs = 25000) {
+  const tab = await api.tabs.create({ url, active: false })
+  try {
+    const t0 = Date.now()
+    while (Date.now() - t0 < timeoutMs) {
+      await sleep(1000)
+      try {
+        // 后台标签页不一定自动播放：静音后主动播一下（静音的播放浏览器一般允许）
+        await api.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          func: () => document.querySelectorAll('video').forEach((v) => ((v.muted = true), v.play?.().catch(() => {}))),
+        })
+      } catch {
+        // 页面还没加载好 / 不允许注入：下一轮再试
+      }
+      const item = pickStream(await getSniffed(tab.id))
+      if (item) return { item, title: (await api.tabs.get(tab.id).catch(() => tab))?.title || '' }
+    }
+    return null
+  } finally {
+    api.tabs.remove(tab.id).catch(() => {})
+  }
+}
+
 async function sendBatch(items, tab) {
   const page = tab?.url || ''
+  const { streamSites } = await api.storage.local.get('streamSites')
+  const sites = streamFirstSites(streamSites)
   let sent = 0
   let failed = 0
   let pairing = false
@@ -104,6 +134,11 @@ async function sendBatch(items, tab) {
         const real = it.ext || (await probeMedia(it.url, page)).ext
         const r = await grabUrl({ url: it.url, referrer: page, mime: it.mime || (real && ccSniff.MIME[real]) || '', filename: real ? ccSniff.fileNameFor(it.url, real) : '' })
         p = r.state === 'pending_pair'
+      } else if (it.kind !== 'video' && isStreamFirst(it.url, sites)) {
+        // 选集：这一集的页面里没有视频地址，开页面取到真实的视频流再发
+        const r = await streamOfPage(it.url)
+        if (!r) throw new Error('没有识别到这一集的视频流（页面没有播放起来）：' + shortUrl(it.url))
+        p = await sendText(sniffedPayload(r.item, it.url, r.title || tab?.title))
       } else if (it.kind === 'video' && /^https?:/i.test(it.url) && it.url !== page) {
         p = await sendText(sniffedPayload({ url: it.url }, page, tab?.title))
       } else {
@@ -151,6 +186,8 @@ function pageVideoLinks() {
 /** 本页所有视频链接：收集后交给清影，在电脑上打开批量添加面板。 */
 async function sendPageVideoLinks(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用这个功能')
+  const { streamSites } = await api.storage.local.get('streamSites')
+  if (isStreamFirst(tab.url, streamFirstSites(streamSites))) throw new Error('这个网站要一集一集取视频流：请用“批量选取”点选要下载的集数。')
   const [res] = await api.scripting.executeScript({ target: { tabId: tab.id }, func: pageVideoLinks })
   const urls = (res && res.result) || []
   if (!urls.length) throw new Error('这个页面上没有找到视频链接')

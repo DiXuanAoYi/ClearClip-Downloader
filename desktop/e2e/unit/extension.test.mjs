@@ -240,3 +240,23 @@ console.log('extension ok')
   assert.equal(fresh({ startTime: undefined }), false)
   assert.equal(X('isFreshDownload')(null, now), false)
 }
+
+// ---- 发送页面时改发视频流（页面里没有视频地址、播放时才取到流的网站；多集的要逐集取）
+{
+  assert.deepEqual(plain(X('streamFirstSites')(undefined)), ['huangguoai.com']) // 没存过：默认名单
+  assert.deepEqual(plain(X('streamFirstSites')([])), []) // 存成空 = 一个都不用
+  assert.deepEqual(plain(X('streamFirstSites')(['https://WWW.A.com/x', 'a.com', 'b.org', 'not a host'])), ['www.a.com', 'a.com', 'b.org'])
+  const sites = ['huangguoai.com']
+  assert.equal(X('isStreamFirst')('https://huangguoai.com/video/11923/', sites), true)
+  assert.equal(X('isStreamFirst')('https://m.huangguoai.com/video/1/', sites), true) // 子域名
+  assert.equal(X('isStreamFirst')('https://example.com/huangguoai.com', sites), false)
+  const pick = (items) => plain(X('pickStream')(items))
+  assert.equal(pick([]), null)
+  assert.equal(pick([{ kind: 'image', url: 'https://a/x.jpg' }, { kind: 'audio', url: 'https://a/x.mp3' }]), null) // 图片、音频不算
+  assert.equal(pick([{ kind: 'hls', url: 'https://a/1.m3u8', at: 1 }, { kind: 'hls', url: 'https://a/2.m3u8', at: 5 }]).url, 'https://a/2.m3u8') // 最新的
+  assert.equal(
+    pick([{ kind: 'hls', url: 'https://a/master.m3u8', at: 1, detail: { variants: [{ bandwidth: 1 }] } }, { kind: 'hls', url: 'https://a/seg.m3u8', at: 9 }]).url,
+    'https://a/master.m3u8',
+  ) // 有主清单优先
+  assert.equal(pick([{ kind: 'video', url: 'blob:https://a/1' }]), null) // blob 地址发了也没用
+}

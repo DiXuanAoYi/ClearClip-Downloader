@@ -97,7 +97,10 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
     } else if (info.menuItemId === 'cc-page') {
       shown = page
       await firstTimeSync(page)
-      r = await send(await tidyUrl(page))
+      const st = await streamForPage(tab)
+      if (st && !st.item) throw new Error('这个网站要先在页面里把视频播放起来，扩展才能识别到视频流；播放后再发送。')
+      if (st) shown = st.item.url
+      r = st ? await send(sniffedPayload(st.item, page, tab?.title)) : await send(await tidyUrl(page))
     }
     if (!shown) return
     const pairing = r.state === 'pending_pair'
