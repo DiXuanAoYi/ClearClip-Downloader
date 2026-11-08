@@ -137,7 +137,10 @@ fn cache_roundtrip_and_key_depends_on_target() {
     std::fs::write(&f, "hello").unwrap();
     let a = cache_path(&dir, &f, "简体中文");
     assert_ne!(a, cache_path(&dir, &f, "English"));
-    let v = View { input: "x".into(), pages: vec![ViewPage { src: vec!["a".into()], trans: vec![Some("甲".into())] }], ..Default::default() };
+    let v =
+        View {
+            input: "x".into(), pages: vec![ViewPage { src: vec!["a".into()], trans: vec![Some("甲".into())], ..Default::default() }], ..Default::default()
+        };
     save_cache(&a, &v);
     let back = load_cache(&a).unwrap();
     assert_eq!(back.pages[0].trans[0].as_deref(), Some("甲"));
@@ -243,8 +246,13 @@ fn edits_in_the_reader_reach_the_cache() {
         input: input.to_string_lossy().into_owned(),
         target: "简体中文".into(),
         bilingual: true,
-        pages: vec![ViewPage { src: vec!["Hello world.".into(), "Second paragraph.".into()], trans: vec![Some("你好，世界。".into()), None] }],
+        pages: vec![ViewPage {
+            src: vec!["Hello world.".into(), "Second paragraph.".into()],
+            trans: vec![Some("你好，世界。".into()), None],
+            ..Default::default()
+        }],
         failed: 1,
+        ..Default::default()
     };
     save_cache(&cp, &v);
     // 改第二段：failed 跟着变
@@ -296,4 +304,111 @@ fn background_is_sampled_around_the_block_with_the_pdf_y_axis_flipped() {
     assert_eq!(sample_rect_bg(&rgba, w, h, (100.0, 200.0), top_block), [255, 255, 255]);
     // 框超出页面也不会越界
     assert_eq!(sample_rect_bg(&rgba, w, h, (100.0, 200.0), (-5.0, -5.0, 500.0, 500.0)).len(), 3);
+}
+
+// ---------- 版面：按页对上缓存（译到一半 / 停止 / 失败 / 换了文件 / 旧缓存都不能整页报错） ----------
+
+fn block(text: &str) -> crate::pdfx::Block {
+    crate::pdfx::Block { runs: vec![0], l: 0.0, b: 0.0, r: 10.0, t: 10.0, size: 10.0, rgb: [0, 0, 0], text: text.into(), lines: 1 }
+}
+fn pdf_page(texts: &[&str]) -> crate::pdfx::PageInfo {
+    crate::pdfx::PageInfo { w: 100.0, h: 100.0, blocks: texts.iter().map(|t| block(t)).collect(), has_text: !texts.is_empty() }
+}
+fn vp(page: usize, src: &[&str], trans: &[Option<&str>], done: bool) -> ViewPage {
+    ViewPage {
+        src: src.iter().map(|s| s.to_string()).collect(),
+        trans: trans.iter().map(|t| t.map(str::to_string)).collect(),
+        page: Some(page),
+        done,
+        skip: vec![],
+    }
+}
+
+#[test]
+fn layout_page_matches_even_when_other_pages_are_not_translated_yet() {
+    // 3 页，只译了第 0 页（译到一半停止 / 正在翻译）：第 0 页有译文，第 2 页没有，都不报错
+    let pages = vec![pdf_page(&["Hello", "World"]), pdf_page(&[]), pdf_page(&["Third page text"])];
+    let mut view = Some(View {
+        v: VIEW_V,
+        layout: true,
+        pages: vec![vp(0, &["Hello", "World"], &[Some("你好"), Some("世界")], true), vp(2, &["Third page text"], &[None], false)],
+        ..Default::default()
+    });
+    let m = match_cached_page(&mut view, &pages, 0);
+    assert_eq!((m.trans, m.done, m.view_page, m.dirty), (vec![Some("你好".to_string()), Some("世界".to_string())], true, 0, false));
+    let m = match_cached_page(&mut view, &pages, 2);
+    assert_eq!((m.trans, m.done, m.view_page, m.dirty), (vec![None], false, 1, false), "还没译的页：未译，页没处理完");
+}
+
+#[test]
+fn layout_page_without_an_entry_gets_a_slot_in_page_order() {
+    let pages = vec![pdf_page(&["a"]), pdf_page(&["b"]), pdf_page(&["c"])];
+    let mut view =
+        Some(View { v: VIEW_V, layout: true, pages: vec![vp(0, &["a"], &[Some("甲")], true), vp(2, &["c"], &[None], false)], ..Default::default() });
+    let m = match_cached_page(&mut view, &pages, 1);
+    assert!(m.dirty && m.view_page == 1 && m.trans == vec![None::<String>]);
+    let v = view.unwrap();
+    assert_eq!(v.pages.iter().map(|p| p.page).collect::<Vec<_>>(), vec![Some(0), Some(1), Some(2)], "按页号排好，后面生成文件时的顺序才对");
+}
+
+#[test]
+fn layout_page_is_rematched_by_text_when_the_blocks_changed() {
+    // 换了排版方式：这一页现在是 3 块（原来 2 块），“Hello”还在：照用，新的两块是未译；缓存改成当前的块
+    let pages = vec![pdf_page(&["Hello", "Brand new", "World!"])];
+    let mut view =
+        Some(View { v: VIEW_V, layout: true, pages: vec![vp(0, &["Hello", "World"], &[Some("你好"), Some("世界")], true)], ..Default::default() });
+    let m = match_cached_page(&mut view, &pages, 0);
+    assert_eq!(m.trans, vec![Some("你好".to_string()), None, None]);
+    assert!(m.dirty && m.note.contains("重新匹配") && m.note.contains("2 段"), "{}", m.note);
+    let v = view.unwrap();
+    assert_eq!(v.pages[0].src, vec!["Hello", "Brand new", "World!"], "缓存改成了当前的块：之后在页面上改译文，序号对得上");
+    // 再取一次：直接对上，不再提示
+    let mut view = Some(v);
+    let m = match_cached_page(&mut view, &pages, 0);
+    assert!(!m.dirty && m.note.is_empty());
+}
+
+#[test]
+fn skipped_blocks_are_not_reported_as_untranslated() {
+    let pages = vec![pdf_page(&["Header", "Body"])];
+    let mut p = vp(0, &["Header", "Body"], &[None, Some("正文")], true);
+    p.skip = vec![0];
+    let mut view = Some(View { v: VIEW_V, layout: true, pages: vec![p], ..Default::default() });
+    let m = match_cached_page(&mut view, &pages, 0);
+    assert_eq!(m.skip, vec![0]);
+}
+
+#[test]
+fn legacy_caches_still_work_when_the_totals_match_and_say_why_when_not() {
+    let pages = vec![pdf_page(&["a", "b"]), pdf_page(&["c"])];
+    // 旧缓存：没有页号，按“所有页的所有译文排成一串”
+    let legacy =
+        |n: usize| View { pages: vec![ViewPage { src: vec!["x".into(); n], trans: vec![Some("译".into()); n], ..Default::default() }], ..Default::default() };
+    let mut view = Some(legacy(3));
+    let m = match_cached_page(&mut view, &pages, 1);
+    assert_eq!((m.trans, m.done, m.view_page), (vec![Some("译".to_string())], true, 1));
+    let mut view = Some(legacy(5)); // 当时是按段落切的
+    let m = match_cached_page(&mut view, &pages, 1);
+    assert!(m.note.contains("按段落切") && m.trans == vec![None::<String>] && !m.dirty);
+    // 完全没有缓存
+    let mut none: Option<View> = None;
+    let m = match_cached_page(&mut none, &pages, 0);
+    assert!(m.note.contains("还没有译文") && m.trans.len() == 2);
+}
+
+#[test]
+fn old_caches_are_marked_done_on_load_and_failed_pages_are_listed() {
+    let dir = std::env::temp_dir().join(format!("cc-filetr-legacy-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let cp = dir.join("old.json");
+    // 没有 v / layout / page / done 字段的旧缓存
+    std::fs::write(
+        &cp,
+        r#"{"input":"a.txt","target":"简体中文","bilingual":true,"pages":[{"src":["a"],"trans":["甲"]},{"src":["b","c"],"trans":[null,"丙"]}],"failed":1}"#,
+    )
+    .unwrap();
+    let v = load_cache(&cp).unwrap();
+    assert!(v.pages.iter().all(|p| p.done), "旧缓存每页都是译完才存的");
+    assert_eq!(failed_pages_text(&v), "第 2 页 1 段");
+    let _ = std::fs::remove_dir_all(&dir);
 }

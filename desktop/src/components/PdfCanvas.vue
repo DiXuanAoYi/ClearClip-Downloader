@@ -9,12 +9,16 @@ import type { PdfLayout } from '../types'
  * 可以切换看原文 / 译文 / 左右对比 / 导出效果（真的写进 PDF 再渲染），滚轮缩放（Ctrl/⌘+滚轮 = 以鼠标为中心缩放，
  * 普通滚轮 = 上下平移）、拖动平移，点一块译文直接改。
  */
-const props = defineProps<{ path: string; target: string; ocr: string; jobStatus?: string }>()
-const emit = defineEmits<{ (e: 'edited', viewPage: number, index: number, text: string | null): void }>()
+const props = defineProps<{ path: string; target: string; ocr: string; jobStatus?: string; running?: boolean; page: number }>()
+const emit = defineEmits<{
+  (e: 'edited', viewPage: number, index: number, text: string | null): void
+  (e: 'update:page', page: number): void
+  (e: 'continue'): void
+}>()
 
 type Mode = 'orig' | 'trans' | 'both' | 'export'
 const mode = ref<Mode>('trans')
-const page = ref(0)
+const page = computed({ get: () => props.page, set: (v: number) => emit('update:page', v) })
 const lay = ref<PdfLayout | null>(null)
 const exp = ref<{ orig: string; trans: string; items: number } | null>(null)
 const busy = ref(false)
@@ -38,6 +42,23 @@ const stageStyle = computed(() => ({
 }))
 
 const rgb = (c: number[]) => `rgb(${c[0]},${c[1]},${c[2]})`
+/** 这一页还没译的块（不含按设置不翻译的） */
+const todoCount = computed(() => (lay.value?.blocks ?? []).filter((b) => !b.skipped && !b.trans.trim()).length)
+const shown = computed(() => (lay.value?.blocks ?? []).filter((b) => !b.skipped))
+const banner = computed(() => {
+  const l = lay.value
+  if (!l || mode.value === 'export') return ''
+  if (l.note) return l.note
+  if (!todoCount.value) return ''
+  const done = shown.value.length - todoCount.value
+  if (!l.done && !done) return props.running ? '这一页还没译到，译到后会自动出现。' : '这一页还没有译文。'
+  return `这一页译好了 ${done} 段，还有 ${todoCount.value} 段没译（虚线框）。没译的先显示原文，不会整页空白；点虚线框可以自己写译文。`
+})
+function focusBlock(i: number) {
+  const el = document.querySelector<HTMLElement>(`.pdfcv .blk[data-idx="${i}"]`)
+  el?.focus()
+  el?.scrollIntoView({ block: 'center', inline: 'center' })
+}
 function blkStyle(b: PdfLayout['blocks'][number]) {
   const l = lay.value!
   const [bl, bb, br, bt] = b.rect
@@ -46,7 +67,7 @@ function blkStyle(b: PdfLayout['blocks'][number]) {
     top: `${((l.h - bt) / l.h) * 100}%`,
     width: `${((br - bl) / l.w) * 100}%`,
     height: `${((bt - bb) / l.h) * 100}%`,
-    background: rgb(b.bg),
+    background: b.trans.trim() ? rgb(b.bg) : 'rgba(251, 234, 219, 0.5)',
     color: rgb(b.rgb),
     fontSize: `${Math.max(3, b.size * k.value)}px`,
   }
@@ -62,7 +83,7 @@ async function load() {
       const r = await api.filetrPagePreview(props.path, props.target, props.ocr, page.value)
       if (tok !== token) return
       exp.value = r
-      if (!lay.value) lay.value = { pages: r.pages, viewPage: 0, w: 1, h: 1, image: '', blocks: [] }
+      if (!lay.value) lay.value = { pages: r.pages, viewPage: 0, w: 1, h: 1, image: '', blocks: [], done: true, note: '' }
       else lay.value.pages = r.pages
     } else {
       const r = await api.filetrPageLayout(props.path, props.target, props.ocr, page.value)
@@ -214,6 +235,11 @@ onBeforeUnmount(() => ro?.disconnect())
       <el-button size="small" :loading="busy" @click="load">刷新</el-button>
     </div>
 
+    <div v-if="banner" class="banner">
+      <span>{{ banner }}</span>
+      <el-button v-if="todoCount && !running" size="small" type="primary" @click="emit('continue')">继续翻译</el-button>
+    </div>
+    <div class="vrow">
     <div ref="vp" class="vp">
       <div v-if="err" class="empty"><span class="mute">{{ err }}</span></div>
       <div v-else-if="!lay || (mode !== 'export' && !lay.image)" class="empty"><span class="mute">正在渲染页面…</span></div>
@@ -247,12 +273,14 @@ onBeforeUnmount(() => ro?.disconnect())
             <img :src="lay.image" draggable="false" alt="" />
             <template v-if="p === 'trans'">
               <div
-                v-for="b in lay.blocks.filter((x) => x.trans.trim())"
+                v-for="b in shown"
                 :key="b.index"
                 class="blk"
+                :class="{ todo: !b.trans.trim() }"
+                :data-idx="b.index"
                 :data-fs="Math.max(3, b.size * k)"
                 :style="blkStyle(b)"
-                :title="'点一下直接改；' + (b.src.length > 60 ? b.src.slice(0, 60) + '…' : b.src)"
+                :title="(b.trans.trim() ? '点一下直接改；' : '未译 · 点一下可以自己写；') + (b.src.length > 60 ? b.src.slice(0, 60) + '…' : b.src)"
                 contenteditable="plaintext-only"
                 spellcheck="false"
                 @blur="save(b, $event)"
@@ -263,6 +291,16 @@ onBeforeUnmount(() => ro?.disconnect())
           </div>
         </div>
       </template>
+    </div>
+    <aside v-if="lay && lay.blocks.length && mode !== 'export'" class="side" aria-label="这一页的段落">
+      <b>这一页的段落</b>
+      <button v-for="b in lay.blocks" :key="b.index" class="row" :title="b.src" @click="focusBlock(b.index)">
+        <i :class="b.skipped ? 'sk' : b.trans.trim() ? 'ok' : 'td'" />
+        <span class="tx">{{ b.src.length > 34 ? b.src.slice(0, 34) + '…' : b.src }}</span>
+        <em v-if="b.skipped">不译</em>
+        <em v-else-if="!b.trans.trim()" class="td">未译</em>
+      </button>
+    </aside>
     </div>
     <div class="tip">
       Ctrl（⌘）+ 滚轮以鼠标为中心缩放，滚轮上下平移，按住拖动平移；点一块译文直接改（改完点别处保存），双击这一块可以重译。
@@ -280,6 +318,19 @@ onBeforeUnmount(() => ro?.disconnect())
 .seg3 { display: flex; background: var(--el-fill-color-blank); border: 1px solid var(--el-border-color); border-radius: 8px; padding: 2px; gap: 2px }
 .seg3 span { padding: 3px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--el-text-color-secondary); white-space: nowrap }
 .seg3 .on { background: var(--el-color-primary); color: #fff; font-weight: 700 }
+.vrow { flex: 1; min-height: 0; display: flex }
+.banner { display: flex; align-items: center; gap: 10px; padding: 7px 14px; background: var(--el-color-warning-light-9); border-bottom: 1px solid var(--el-color-warning-light-7); color: var(--el-color-warning-dark-2); font-size: 12.5px }
+.banner span { flex: 1 }
+.side { width: 220px; flex: none; border-left: 1px solid var(--el-border-color-lighter); padding: 10px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; font-size: 12px; background: var(--el-fill-color-lighter) }
+.side .row { display: flex; gap: 6px; align-items: center; border: 0; background: none; text-align: left; padding: 3px 4px; border-radius: 6px; cursor: pointer; color: inherit; font: inherit }
+.side .row:hover { background: var(--el-fill-color) }
+.side i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #b7beb9 }
+.side i.ok { background: #2f8a57 }
+.side i.td { background: #d9762b }
+.side .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.side em { font-style: normal; color: var(--el-text-color-secondary) }
+.side em.td { color: #b4561a; font-weight: 700 }
+.blk.todo { border: 1.5px dashed #d9762b; min-height: 6px }
 .vp { flex: 1; min-height: 0; display: flex; gap: 10px; overflow: hidden; background: var(--el-fill-color-light); padding: 4px; position: relative }
 .vp > figure { flex: 1; margin: 0; display: flex; flex-direction: column; gap: 6px; overflow: auto; min-width: 0 }
 .vp figcaption { font-size: 12.5px; font-weight: 700; color: var(--el-text-color-secondary) }

@@ -2320,6 +2320,12 @@ export interface OcrStatus {
 export interface FileTransPage {
   src: string[]
   trans: (string | null)[]
+  /** 对应 PDF 的第几页（从 0 起）；文字版 PDF 里没有文字的页不占位 */
+  page?: number | null
+  /** 这一页处理过了（译完或失败）；还没轮到的页是 false */
+  done?: boolean
+  /** 按设置不翻译的片段序号（页眉页脚、公式代码、参考文献） */
+  skip?: number[]
 }
 
 export interface FileTransView {
@@ -2328,6 +2334,55 @@ export interface FileTransView {
   bilingual: boolean
   pages: FileTransPage[]
   failed: number
+  v?: number
+  /** 片段是按 PDF 版面的块切的 */
+  layout?: boolean
+  totalPages?: number
+}
+
+/** 文件翻译的选项（和后端 filetr::Opts 一一对应） */
+export interface FtOpts {
+  bilingual: boolean
+  target: string
+  pdfMode: 'inplace' | 'interleave' | 'txt'
+  ocr: string
+  preview: boolean
+  /** 只翻译这些页，如 `3-12, 15`；留空 = 全部 */
+  pages: string
+  skipHeaders: boolean
+  skipCode: boolean
+  skipRefs: boolean
+}
+
+/** 开始前的估算 */
+export interface FtPlan {
+  pages: number
+  selectedPages: number
+  segments: number
+  chars: number
+  cached: number
+  skipped: number
+  requests: number
+  scanned: boolean
+  layout: boolean
+  donePages: number
+}
+
+/** 任务记录（重启后还在） */
+export interface FtRecent {
+  path: string
+  title: string
+  target: string
+  opts: FtOpts
+  at: number
+  output: string | null
+  last: string
+  error: string
+  state: 'stopped' | 'failed' | 'ready' | 'generated'
+  pagesTotal: number
+  pagesDone: number
+  failed: number
+  missing: boolean
 }
 
 export interface PdfxStatus {
@@ -2386,5 +2441,9 @@ export interface PdfLayout {
   w: number
   h: number
   image: string
-  blocks: { index: number; rect: [number, number, number, number]; size: number; rgb: [number, number, number]; bg: [number, number, number]; src: string; trans: string }[]
+  blocks: { index: number; rect: [number, number, number, number]; size: number; rgb: [number, number, number]; bg: [number, number, number]; src: string; trans: string; skipped: boolean }[]
+  /** 这一页处理过了（译完或失败） */
+  done: boolean
+  /** 要告诉用户的情况（没译、重新匹配过、扫描页没识字…），没有就是空 */
+  note: string
 }

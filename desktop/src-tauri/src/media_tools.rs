@@ -1041,6 +1041,11 @@ impl MediaJobs {
         }
     }
 
+    /// 去掉一条已经结束的任务（还在排队 / 运行的不动）。
+    pub fn remove(&self, id: u64) {
+        self.lock().retain(|e| e.snap.id != id || matches!(e.snap.status.as_str(), "queued" | "running"));
+    }
+
     pub fn clear_finished(&self) {
         self.lock().retain(|e| matches!(e.snap.status.as_str(), "queued" | "running"));
     }
