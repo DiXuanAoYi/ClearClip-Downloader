@@ -945,7 +945,45 @@
     return L.join('\n')
   }
 
+  // ---------- 面板收到右边：小标签的位置、三种状态的切换 ----------
+
+  const DOCK_TAB_H = 84
+  const DOCK_TAB_W = 30
+  /** 小标签离窗口顶部多少像素：frac 是中心在窗口高度的几分之几；贴着上下边留 8 像素。 */
+  function dockTabTop(frac, vh) {
+    const f = Number.isFinite(frac) ? Math.min(1, Math.max(0, frac)) : 0.38
+    const max = Math.max(8, vh - DOCK_TAB_H - 8)
+    return Math.round(Math.min(max, Math.max(8, f * vh - DOCK_TAB_H / 2)))
+  }
+  /** 拖到 y（鼠标在窗口里的纵坐标）后记下的 frac。 */
+  function dockFrac(y, vh) {
+    return vh > 0 ? Math.round(Math.min(0.95, Math.max(0.05, y / vh)) * 1000) / 1000 : 0.38
+  }
+  /**
+   * 面板的状态：open 展开 / hidden 收起 / peek 预览。
+   * 动作：toggle（快捷键）、collapse（⇥）、click（点小标签）、hover（在标签上停够了）、leave（移开够久了）、pin（固定 / 在面板里点了）。
+   */
+  function dockNext(state, action) {
+    switch (action) {
+      case 'toggle':
+        return state === 'open' ? 'hidden' : 'open'
+      case 'collapse':
+        return 'hidden'
+      case 'click':
+        return state === 'hidden' ? 'open' : 'hidden'
+      case 'hover':
+        return state === 'hidden' ? 'peek' : state
+      case 'leave':
+        return state === 'peek' ? 'hidden' : state
+      case 'pin':
+        return 'open'
+      default:
+        return state
+    }
+  }
+
   globalThis.ccVsum = {
+    dockTabTop, dockFrac, dockNext,
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
     parseCount, commentTime, findComment, commentLink, cmKey, parseYtComments, parseBiliComments, cleanComments, commentsToMarkdown,
     videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, scriptOf, splitLong, resegmentLines, outlineToTree, wrapText, layoutMindmap, mindmapSvg,

@@ -42,6 +42,8 @@
         h('div', { class: 'tools' },
           sel([['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']], S.prefs.theme, (v) => ((S.prefs.theme = v), savePrefs(), applyAppearance(), render()), '主题'),
           sel([[12, '小'], [13, '标准'], [15, '大'], [17, '特大']], String(S.prefs.fs), (v) => ((S.prefs.fs = Number(v)), savePrefs(), applyAppearance()), '字号')),
+        h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: !!S.prefs.collapseOnOpen, onchange: (e) => ((S.prefs.collapseOnOpen = e.target.checked), savePrefs()) }), ' 打开时默认收起到右边（只留一个小标签）'),
+        h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.peek !== false, onchange: (e) => ((S.prefs.peek = e.target.checked), savePrefs()) }), ' 鼠标停在小标签上时预览'),
         h('label', { class: 'mute' }, '记笔记时往前提 ', h('input', { type: 'number', min: 0, max: 15, value: S.prefs.lead, style: 'width:56px', onchange: (e) => ((S.prefs.lead = Math.min(15, Math.max(0, Number(e.target.value) || 0))), savePrefs()) }), ' 秒'),
         ),
         grp('提示词',

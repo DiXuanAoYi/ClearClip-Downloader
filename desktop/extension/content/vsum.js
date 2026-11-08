@@ -1,14 +1,17 @@
-// 视频摘要面板：按需注入的侧栏。再次注入 = 关闭。
+// 视频摘要面板：按需注入的侧栏。再次注入（快捷键 Alt+Shift+S）= 展开 / 收起到右边；要关掉点 ✕。
 // 字幕在页面里读取，交给本机的清影，由清影调用“设置 → AI”里的大模型；密钥不会进到扩展或网页里。
 ;(() => {
-  if (globalThis.__ccVsum) return globalThis.__ccVsum.stop()
+  if (globalThis.__ccVsum) return globalThis.__ccVsum.toggle()
   const { mount, h, send, toast, api } = globalThis.ccUI
   const V = globalThis.ccVsum
   const Src = globalThis.ccVsumSource
   const VS = globalThis.ccVSession
 
-  const { CSS, DARK } = globalThis.ccVsumStyle
-  const ui = mount(CSS)
+  const { CSS, DARK: DARK0 } = globalThis.ccVsumStyle
+  const Dk = globalThis.ccVsumDock
+  const DARK = DARK0 + Dk.DARK
+  const ui = mount(CSS + Dk.CSS)
+  let dock = null // 收到右边（vsum-dock.js）：面板准备好后创建
   // 外观：主题（跟随系统 / 浅色 / 深色）和字号，改了马上生效
   const theme = document.createElement('style')
   const fontStyle = document.createElement('style')
@@ -805,6 +808,7 @@
   const TABS = [['summary', '摘要'], ['chapters', '章节'], ['transcript', '文稿'], ['mindmap', '导图'], ['ask', '问答'], ['notes', '笔记'], ['vocab', '生词'], ['comments', '评论'], ['more', '更多']]
 
   function renderProgress() {
+    dock?.update()
     const el = ui.root.getElementById('prog')
     if (!el) return
     el.replaceChildren()
@@ -823,6 +827,7 @@
       h('div', { class: 'hd' },
         h('span', { class: 't', title: d?.title || '', text: d ? d.title : '视频摘要' }),
         h('button', { class: 'sec', text: '重新读取', title: '重新读取当前页面的字幕（切换视频后用）', onclick: () => start() }),
+        dock?.collapseButton(),
         h('button', { class: 'sec', text: '✕', title: '关闭', 'aria-label': '关闭', onclick: stop }),
       ),
     ]
@@ -859,6 +864,7 @@
     }
     panel.replaceChildren(...children)
     renderProgress()
+    dock?.update()
     ui.root.querySelector('.body').scrollTop = keepScroll
     if (S.jumpHit) {
       S.jumpHit = false
@@ -891,6 +897,7 @@
 
   function tick(force) {
     watchNav()
+    dock?.update()
     const v = video()
     if (!v || !S.data || !isVideo()) return
     const ms = v.currentTime * 1000
@@ -924,7 +931,8 @@
       const cnt = S.notes.filter((n) => n.key === localKey()).length
       return [
         { label: `记下当前这句（已有 ${cnt} 条）`, hint: 'n', onclick: () => quickNote() || toast(ui, '页面上没有找到视频', true) },
-        { label: '关闭视频摘要', hint: 'Alt+Shift+S', onclick: () => stop() },
+        { label: dock?.state === 'open' ? '收起到右边' : '展开摘要面板', hint: 'Alt+Shift+S', onclick: () => dock?.toggle() },
+        { label: '关闭视频摘要', onclick: () => stop() },
       ]
     },
   })
@@ -1045,6 +1053,7 @@
     document.removeEventListener('keydown', onKey, true)
     // 正在生成的任务不取消：清影继续跑，重新打开后自动接上（要取消请点进度条上的“取消”）
     S.closed = true
+    dock?.destroy()
     unsubSession()
     Dock.unregister('vsum')
     saveSession().catch(() => {})
@@ -1088,8 +1097,9 @@
     }, { passive: true })
   }
 
+  dock = Dk.create({ ui, h, panel, V, store, S, render })
   applyAppearance()
-  globalThis.__ccVsum = { stop }
+  globalThis.__ccVsum = { stop, toggle: () => dock.toggle() }
   S.timer = setInterval(tick, 500)
   document.addEventListener('keydown', onKey, true)
   store.get('vsumNotes', []).then((n) => (S.notes = Array.isArray(n) ? n : []))
@@ -1104,6 +1114,8 @@
       applyAppearance()
       S.tab = TABS.some(([id]) => id === p.tab) ? p.tab : 'summary'
     }
+    // 设置了“打开时默认收起到右边”：直接是小标签
+    if (S.prefs.collapseOnOpen) dock.set('collapse')
     return start()
   })
 })()

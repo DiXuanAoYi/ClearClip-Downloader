@@ -393,3 +393,33 @@ assert.equal(V.commentTime('比例是 3:2 不是时间'), -1)
   assert.equal(V.commentLink('https://www.bilibili.com/video/BV1xx411c7mD', bili.items[0]), '')
 }
 
+
+// ---- 面板收到右边：小标签的位置、三种状态的切换
+{
+  // 默认在窗口高度 38% 处；贴着上下边留 8 像素
+  assert.equal(V.dockTabTop(0.38, 800), 262)
+  assert.equal(V.dockTabTop(0, 800), 8)
+  assert.equal(V.dockTabTop(1, 800), 708)
+  assert.equal(V.dockTabTop(Number.NaN, 800), 262, '存的值坏了：用默认')
+  assert.equal(V.dockTabTop(0.5, 100), 8, '窗口很矮也不会跑出去')
+  // 拖到哪里记哪里，但不贴死边缘
+  assert.equal(V.dockFrac(400, 800), 0.5)
+  assert.equal(V.dockFrac(-50, 800), 0.05)
+  assert.equal(V.dockFrac(5000, 800), 0.95)
+  assert.equal(V.dockFrac(10, 0), 0.38)
+  // 状态：快捷键、⇥、点标签、停在标签上、移开、固定
+  const next = (s, ...acts) => acts.reduce((x, a) => V.dockNext(x, a), s)
+  assert.equal(next('open', 'toggle'), 'hidden')
+  assert.equal(next('hidden', 'toggle'), 'open')
+  assert.equal(next('peek', 'toggle'), 'open', '预览时按快捷键 = 展开')
+  assert.equal(next('open', 'collapse'), 'hidden')
+  assert.equal(next('hidden', 'click'), 'open')
+  assert.equal(next('peek', 'click'), 'hidden', '预览时标签是“收回去”')
+  assert.equal(next('hidden', 'hover'), 'peek')
+  assert.equal(next('open', 'hover'), 'open', '展开时不会被预览改回去')
+  assert.equal(next('peek', 'leave'), 'hidden')
+  assert.equal(next('open', 'leave'), 'open', '固定后鼠标移开不收')
+  assert.equal(next('hidden', 'leave'), 'hidden')
+  assert.equal(next('peek', 'pin'), 'open')
+  assert.equal(next('hidden', 'whatever'), 'hidden')
+}
