@@ -369,7 +369,7 @@ pub fn export_text(data_dir: &Path, input: &Path, target: &str, kind: &str) -> A
             let mut out = String::new();
             for (pi, p) in v.pages.iter().enumerate() {
                 if kind == "md" && v.pages.len() > 1 {
-                    out.push_str(&format!("## 第 {} 页\n\n", p.page.map_or(pi, |x| x) + 1));
+                    out.push_str(&format!("## 第 {} 页\n\n", p.page.unwrap_or(pi) + 1));
                 }
                 for (i, src) in p.src.iter().enumerate() {
                     let t = p.trans.get(i).and_then(|t| t.as_deref()).filter(|t| !t.trim().is_empty());

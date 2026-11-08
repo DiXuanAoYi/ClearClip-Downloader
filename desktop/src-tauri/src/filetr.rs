@@ -1595,7 +1595,7 @@ pub(crate) fn failed_pages_text(v: &View) -> String {
         .filter(|(_, p)| p.done)
         .filter_map(|(i, p)| {
             let n = p.trans.iter().enumerate().filter(|(k, t)| t.is_none() && !p.skip.contains(k)).count();
-            (n > 0).then(|| format!("第 {} 页 {n} 段", p.page.map_or(i, |x| x) + 1))
+            (n > 0).then(|| format!("第 {} 页 {n} 段", p.page.unwrap_or(i) + 1))
         })
         .collect();
     let more = list.len().saturating_sub(6);
