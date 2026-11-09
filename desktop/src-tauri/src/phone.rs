@@ -721,6 +721,26 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             )
             .await;
         }
+        // 图片缩略图：?key=（电脑发给手机的项目）或 ?id=（这台手机上传的文件），带令牌和设备编号
+        ("GET", "/api/thumb") => {
+            let device = clean_device(req.query.get("device").map(String::as_str).unwrap_or(""));
+            if !state.settings().phone.devices.iter().any(|d| d.id == device) {
+                json(sock, "403 Forbidden", serde_json::json!({"error": "这台设备还没有配对"})).await;
+                return;
+            }
+            let key = req.query.get("key").cloned();
+            let id = req.query.get("id").and_then(|v| v.parse::<i64>().ok());
+            let app2 = app.clone();
+            let bytes = tokio::task::spawn_blocking(move || transfer::thumb_for(&app2, &device, key.as_deref(), id)).await.ok().flatten();
+            match bytes {
+                Some(b) => {
+                    let head = format!("HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: private, max-age=3600\r\nX-Content-Type-Options: nosniff\r\n\r\n", b.len());
+                    let _ = sock.write_all(head.as_bytes()).await;
+                    let _ = sock.write_all(&b).await;
+                }
+                None => json(sock, "404 Not Found", serde_json::json!({"error": "没有缩略图"})).await,
+            }
+        }
         // 电脑发给手机的项目、这台手机最近上传的文件和发送的链接状态
         ("GET", "/api/box") => {
             let device = clean_device(req.query.get("device").map(String::as_str).unwrap_or(""));
@@ -806,7 +826,7 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                 text: String,
             }
             let text = serde_json::from_slice::<ToPhone>(&req.body).map(|b| b.text).unwrap_or_default();
-            match transfer::send_text(&app, &text) {
+            match transfer::send_text(&app, &text, None) {
                 Ok(id) => json(sock, "200 OK", serde_json::json!({"id": id})).await,
                 Err(e) => json(sock, "400 Bad Request", serde_json::json!({"error": e.message})).await,
             }

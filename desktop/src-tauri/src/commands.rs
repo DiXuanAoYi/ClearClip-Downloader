@@ -367,14 +367,23 @@ pub struct SendResult {
 
 /// 把电脑上的文件发给手机（只是加入“电脑发来的”列表，手机点开才会传输）。
 #[tauri::command]
-pub fn transfer_send_files(app: AppHandle, paths: Vec<String>) -> AppResult<SendResult> {
-    let (added, skipped) = crate::transfer::send_files(&app, &paths)?;
+pub fn transfer_send_files(app: AppHandle, paths: Vec<String>, targets: Option<Vec<String>>) -> AppResult<SendResult> {
+    let (added, skipped) = crate::transfer::send_files(&app, &paths, targets.as_deref())?;
     Ok(SendResult { added, skipped })
 }
 
 #[tauri::command]
-pub fn transfer_send_text(app: AppHandle, text: String) -> AppResult<i64> {
-    crate::transfer::send_text(&app, &text)
+pub fn transfer_send_text(app: AppHandle, text: String, targets: Option<Vec<String>>) -> AppResult<i64> {
+    crate::transfer::send_text(&app, &text, targets.as_deref())
+}
+
+/// 电脑端互传页里图片的缩略图（data URL）；不是能解码的图片返回空。
+#[tauri::command]
+pub async fn transfer_thumb(app: AppHandle, path: String) -> Option<String> {
+    use base64::Engine;
+    let dir = app.state::<std::sync::Arc<crate::AppState>>().data_dir.clone();
+    let bytes = tauri::async_runtime::spawn_blocking(move || crate::transfer::thumb_jpeg(&dir, std::path::Path::new(&path))).await.ok().flatten()?;
+    Some(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 
 #[tauri::command]

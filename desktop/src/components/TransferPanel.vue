@@ -15,6 +15,45 @@ const info = ref<PhoneInfo | null>(null)
 const text = ref('')
 const over = ref(false)
 const sending = ref(false)
+/** 发送对象：勾选的设备编号。默认所有手机 / 平板，不含浏览器扩展（编号 ext- 开头：它收到的内容会再交回主程序，造成来回传） */
+const targets = ref<Set<string>>(new Set())
+const isExt = (id: string) => id.startsWith('ext-')
+const seen = new Set<string>()
+watch(
+  () => info.value?.devices.map((d) => d.id).join(','),
+  () => {
+    const ids = info.value?.devices.map((d) => d.id) ?? []
+    const keep = new Set([...targets.value].filter((id) => ids.includes(id)))
+    for (const id of ids) if (!isExt(id) && !seen.has(id)) keep.add(id)
+    ids.forEach((id) => seen.add(id))
+    targets.value = keep
+  },
+  { immediate: true },
+)
+function toggleTarget(id: string) {
+  const s = new Set(targets.value)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
+  targets.value = s
+}
+const targetText = computed(() => {
+  const names = (info.value?.devices ?? []).filter((d) => targets.value.has(d.id)).map((d) => d.name)
+  return names.length ? `发给 ${names.join('、')}` : '没有选发送对象'
+})
+const targetList = () => [...targets.value]
+/** 图片缩略图：向后端要（JPEG / PNG / WebP 才有；HEIC 等显示文件图标），按路径缓存 */
+const thumbs = ref<Record<string, string>>({})
+const THUMB_EXT = /\.(jpe?g|png|webp)$/i
+async function loadThumbs() {
+  for (const it of [...list.value.incoming, ...list.value.outgoing]) {
+    if (it.kind !== 'image' || !it.path || it.missing || it.status === 'receiving' || !THUMB_EXT.test(it.name) || it.path in thumbs.value) continue
+    thumbs.value[it.path] = ''
+    api
+      .transferThumb(it.path)
+      .then((u) => u && (thumbs.value[it.path] = u))
+      .catch(() => {})
+  }
+}
 let unlisten: UnlistenFn[] = []
 let unregister: (() => void) | undefined
 let reloadTimer: number | undefined
@@ -85,6 +124,7 @@ async function pickRecvDir() {
 async function load() {
   try {
     list.value = await api.transferList()
+    loadThumbs()
   } catch (e) {
     ElMessage.error(errorText(e))
   }
@@ -129,7 +169,7 @@ async function sendPaths(paths: string[]) {
   if (!paths.length) return
   sending.value = true
   try {
-    const r = await api.transferSendFiles(paths)
+    const r = await api.transferSendFiles(paths, targetList())
     if (r.added) ElMessage.success(`已加入 ${r.added} 个文件，在手机网页的“电脑发来的”里下载`)
     for (const s of r.skipped.slice(0, 3)) ElMessage.warning(s)
     await load()
@@ -150,7 +190,7 @@ async function sendText() {
   const t = text.value.trim()
   if (!t) return
   try {
-    await api.transferSendText(t)
+    await api.transferSendText(t, targetList())
     text.value = ''
     ElMessage.success('已加入，手机网页里可以一键复制')
     await load()
@@ -274,16 +314,21 @@ onUnmounted(() => {
         </div>
 
         <div class="devs">
-          <div class="dhead"><b>已配对的设备</b><span class="mute small">{{ info?.devices.length ?? 0 }} 台</span></div>
-          <div v-if="!info?.devices.length" class="mute small">还没有配对的设备。</div>
-          <div v-for="d in info?.devices" :key="d.id" class="dev">
-            <span class="avatar"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2.5" /><path d="M11 18h2" /></svg></span>
+          <div class="dhead"><b>发送对象</b><span class="mute small">已选 {{ targets.size }} / {{ info?.devices.length ?? 0 }}</span></div>
+          <div v-if="!info?.devices.length" class="mute small">还没有配对的设备，手机扫码后会出现在这里。</div>
+          <div v-for="d in info?.devices" :key="d.id" class="dev" :class="{ ext: isExt(d.id) }">
+            <el-checkbox :model-value="targets.has(d.id)" :aria-label="`发给${d.name}`" @change="toggleTarget(d.id)" />
+            <span class="avatar" :class="{ ext: isExt(d.id) }">
+              <svg v-if="!isExt(d.id)" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2.5" /><path d="M11 18h2" /></svg>
+              <svg v-else viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
+            </span>
             <span class="dinfo">
               <b class="ellipsis">{{ d.name }}</b>
-              <small class="mute"><span v-if="online(d.lastSeen)" class="on">● 在线</span><template v-else>最近 {{ formatDateTime(d.lastSeen) }}</template></small>
+              <small class="mute"><span v-if="online(d.lastSeen)" class="on">● 在线</span><template v-else>最近 {{ formatDateTime(d.lastSeen) }}</template><template v-if="isExt(d.id)"> · 浏览器扩展</template></small>
             </span>
-            <a class="link" @click="revoke(d.id, d.name)">撤销</a>
+            <a class="link mutelink" @click="revoke(d.id, d.name)">撤销</a>
           </div>
+          <small v-if="info?.devices.length" class="mute hint2">勾选的设备才会收到你发出的文件和文字。浏览器扩展默认不勾：它收到的内容会再交回主程序，造成来回传。</small>
         </div>
 
         <div class="box dirbox">
@@ -305,15 +350,16 @@ onUnmounted(() => {
           <template v-for="r in rows" :key="r.it.id">
             <div v-if="r.day" class="day">{{ r.day }}</div>
             <div class="msg" :class="r.it.direction">
-              <div class="who">{{ r.it.direction === 'in' ? r.it.deviceName || '手机' : `发给${info?.devices[0]?.name ?? '手机'}` }}</div>
+              <div class="who">{{ r.it.direction === 'in' ? r.it.deviceName || '手机' : `发给 ${r.it.deviceName || '所有设备'}` }}</div>
               <div class="bub">
                 <div v-if="r.it.kind === 'text'" class="txt selectable">{{ r.it.text }}</div>
-                <div class="line">
-                  <span class="thumb" :style="{ background: colorOf(r.it.kind) }"><svg viewBox="0 0 24 24" v-html="iconOf(r.it.kind)" /></span>
+                <img v-if="thumbs[r.it.path]" class="pic" :src="thumbs[r.it.path]" alt="" @click="openIt(r.it.path)" />
+                <div v-if="r.it.kind !== 'text'" class="line">
+                  <span v-if="!thumbs[r.it.path]" class="thumb" :style="{ background: colorOf(r.it.kind) }"><svg viewBox="0 0 24 24" v-html="iconOf(r.it.kind)" /></span>
                   <span class="meta">
-                    <b class="ellipsis" :title="r.it.kind === 'text' ? r.it.text : r.it.path">{{ r.it.kind === 'text' ? '文字' : r.it.name }}</b>
+                    <b class="ellipsis" :title="r.it.path">{{ r.it.name }}</b>
                     <small class="mute">
-                      <template v-if="r.it.kind !== 'text'">{{ formatBytes(r.it.size) }} · </template>
+                      {{ formatBytes(r.it.size) }} · 
                       <template v-if="r.it.direction === 'in'">
                         <span v-if="r.it.status === 'receiving'">接收中 {{ pct(r.it) }}%</span>
                         <span v-else-if="r.it.status === 'failed'" class="bad">失败：{{ r.it.message }}</span>
@@ -330,6 +376,7 @@ onUnmounted(() => {
                   </span>
                 </div>
                 <el-progress v-if="r.it.status === 'receiving' || (r.it.direction === 'out' && r.it.active)" :percentage="pct(r.it)" :stroke-width="5" :show-text="false" />
+                <small v-if="r.it.kind === 'text'" class="mute">文字{{ r.it.direction === 'out' ? ' · 手机上可一键复制' : '' }}</small>
                 <small v-if="r.it.extra" class="mute">解压到 <a class="link" @click="reveal(r.it.extra!)">{{ r.it.extra }}</a></small>
                 <div class="acts">
                   <template v-if="r.it.direction === 'in' && r.it.status === 'done' && r.it.kind === 'text'">
@@ -347,15 +394,15 @@ onUnmounted(() => {
           </template>
         </div>
 
+        <div v-if="over" class="dropmask"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>松开鼠标，发送给 {{ targetText.replace('发给 ', '') }}</div>
         <div class="composer">
-          <div class="drop" :class="{ on: over }">
-            <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>
-            把文件拖到这里，发送到手机（可多个；文件夹请先压缩）
-          </div>
-          <div class="send-row">
-            <el-input v-model="text" class="grow" size="large" placeholder="输入一段文字，手机网页里一键复制…" maxlength="20000" @keydown.enter.exact.prevent="sendText" />
-            <el-button size="large" :loading="sending" @click="pick">选择文件</el-button>
-            <el-button size="large" type="primary" :disabled="!text.trim()" @click="sendText">发送</el-button>
+          <div class="cbar">
+            <span class="tchip" :class="{ none: !targets.size }" :title="'在左侧“发送对象”里勾选'">{{ targetText }}</span>
+            <el-button class="clip" text :loading="sending" aria-label="选择文件" title="选择文件…" @click="pick">
+              <svg viewBox="0 0 24 24"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.4-2.4L15 8.6" /></svg>
+            </el-button>
+            <input v-model="text" class="tin" type="text" maxlength="20000" placeholder="输入文字，或把文件拖进窗口…" @keydown.enter.exact.prevent="sendText" />
+            <el-button type="primary" class="sendb" :disabled="!text.trim() || !targets.size" @click="sendText">发送</el-button>
           </div>
           <div class="tail">
             <small class="mute">收到的文件不会被自动运行，打开前请确认来源可信。</small>
@@ -369,8 +416,27 @@ onUnmounted(() => {
 
 <style scoped>
 .xfer {
-  --acc: #d9772f;
-  display: flex;
+  --x-acc: #d9772f;
+  --x-acfg: #fff;
+  --x-ob: #fbe9d9;
+  --x-obl: #f1d0b2;
+  --x-obfg: #3a2a1c;
+  --x-obmt: #85684c;
+  --x-ok: #23703f;
+  --x-chip: #efe9e0;
+}
+:global(html.dark) .xfer {
+  --x-acc: #f08c3e;
+  --x-acfg: #1b1207;
+  --x-ob: #4a2f1b;
+  --x-obl: #6a4426;
+  --x-obfg: #fdf0e3;
+  --x-obmt: #d7b793;
+  --x-ok: #6fd49a;
+  --x-chip: #2e2a26;
+}
+.xfer {
+    display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
@@ -407,7 +473,7 @@ onUnmounted(() => {
 }
 .pill.ok {
   background: color-mix(in srgb, #2f9d5b 14%, transparent);
-  color: #2f9d5b;
+  color: var(--x-ok);
 }
 .pill.off {
   background: color-mix(in srgb, var(--cc-mute) 16%, transparent);
@@ -503,6 +569,19 @@ onUnmounted(() => {
   border-radius: 14px;
   padding: 9px 12px;
 }
+.avatar.ext {
+  background: #3f6fa8;
+}
+.dev.ext {
+  border-style: dashed;
+}
+.hint2 {
+  line-height: 1.5;
+  font-size: 11.5px;
+}
+.mutelink {
+  color: var(--cc-mute);
+}
 .avatar {
   width: 34px;
   height: 34px;
@@ -531,7 +610,7 @@ onUnmounted(() => {
   flex-direction: column;
 }
 .on {
-  color: #2f9d5b;
+  color: var(--x-ok);
 }
 .dirbox {
   margin-top: auto;
@@ -548,7 +627,7 @@ onUnmounted(() => {
 }
 .link {
   cursor: pointer;
-  color: var(--acc);
+  color: var(--x-acc);
   font-size: 12px;
   font-weight: 600;
   word-break: break-all;
@@ -582,7 +661,7 @@ onUnmounted(() => {
   align-self: center;
   font-size: 11.5px;
   color: var(--cc-mute);
-  background: color-mix(in srgb, var(--cc-mute) 16%, transparent);
+  background: var(--x-chip);
   border-radius: 999px;
   padding: 3px 12px;
 }
@@ -614,14 +693,18 @@ onUnmounted(() => {
   border-top-left-radius: 4px;
 }
 .msg.out .bub {
-  background: #fbe9d9;
-  border-color: #f3d3b6;
+  background: var(--x-ob);
+  border-color: var(--x-obl);
   border-top-left-radius: 16px;
   border-top-right-radius: 4px;
-  color: #2a2622;
+  color: var(--x-obfg);
 }
-.msg.out .mute {
-  color: #8a8279;
+.msg.out .mute,
+.msg.out .who {
+  color: var(--x-obmt);
+}
+.msg.out .who {
+  color: var(--cc-mute);
 }
 .line {
   display: flex;
@@ -664,7 +747,7 @@ onUnmounted(() => {
   gap: 16px;
 }
 .ok {
-  color: #2f9d5b;
+  color: var(--x-ok);
 }
 .bad {
   color: var(--el-color-danger);
@@ -673,54 +756,6 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.composer {
-  padding: 12px 28px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.drop {
-  border: 2px dashed #dcc9b4;
-  background: color-mix(in srgb, var(--acc) 6%, transparent);
-  border-radius: 16px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: #a0662f;
-  font-size: 13px;
-  font-weight: 600;
-}
-.drop svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.drop.on,
-.over .drop {
-  border-color: var(--acc);
-  background: color-mix(in srgb, var(--acc) 14%, transparent);
-}
-.send-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-.send-row .grow {
-  flex: 1;
-}
-.send-row :deep(.el-input__wrapper) {
-  border-radius: 14px;
-}
-.send-row :deep(.el-button) {
-  border-radius: 14px;
-  margin-left: 0;
 }
 .tail {
   display: flex;
@@ -740,5 +775,106 @@ onUnmounted(() => {
   .hide-sm {
     display: none;
   }
+}
+.pic {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 11px;
+  cursor: pointer;
+  background: var(--x-chip);
+}
+.composer {
+  padding: 8px 28px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--cc-line);
+  border-radius: 14px;
+  background: var(--el-bg-color);
+}
+.tchip {
+  flex: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  height: 28px;
+  line-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--x-chip);
+  font-size: 12px;
+  font-weight: 600;
+}
+.tchip.none {
+  color: var(--el-color-danger);
+}
+.clip {
+  flex: none;
+  padding: 0 8px;
+}
+.clip svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tin {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--el-text-color-primary);
+  font-size: 13.5px;
+}
+.tin::placeholder {
+  color: var(--cc-mute);
+}
+.sendb {
+  flex: none;
+  border-radius: 9px;
+  margin-left: 0;
+}
+.main {
+  position: relative;
+}
+.dropmask {
+  position: absolute;
+  inset: 8px;
+  z-index: 5;
+  border: 2px dashed var(--x-acc);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--x-acc) 12%, var(--el-bg-color));
+  color: var(--x-acc);
+  font-weight: 700;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.dropmask svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 </style>

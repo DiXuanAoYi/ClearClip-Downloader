@@ -176,7 +176,7 @@ impl Db {
     pub fn transfer_for_device(&self, direction: &str, device: &str, limit: usize) -> AppResult<Vec<TransferItem>> {
         let conn = self.conn();
         let mut st = conn.prepare(&format!(
-            "SELECT {COLS} FROM transfers WHERE direction = ?1 AND (device = ?2 OR ?1 = 'out') ORDER BY created_at DESC, id DESC LIMIT ?3"
+            "SELECT {COLS} FROM transfers WHERE direction = ?1 AND (device = ?2 OR (?1 = 'out' AND (device = '' OR (',' || device || ',') LIKE '%,' || ?2 || ',%'))) ORDER BY created_at DESC, id DESC LIMIT ?3"
         ))?;
         let rows = st.query_map(params![direction, device, limit as i64], row)?.collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
@@ -842,8 +842,35 @@ pub fn receive_note(app: &AppHandle, device: &str, device_name: &str, text: &str
 // ---------- 电脑 → 手机 ----------
 
 /// 电脑上添加要发给手机的文件。返回 (成功数, 被跳过的原因)。
-pub fn send_files(app: &AppHandle, paths: &[String]) -> AppResult<(usize, Vec<String>)> {
+/// 发给谁：`targets` 是勾选的设备编号；没勾选（None）时默认发给所有手机 / 平板，不发给浏览器扩展（编号以 `ext-` 开头——
+/// 它收到的内容会再被它当成链接交回主程序，造成来回传）。返回 (设备编号逗号串, 设备名顿号串)；空串 = 所有设备（没有配对任何设备时）。
+pub fn resolve_targets(app: &AppHandle, targets: Option<&[String]>) -> AppResult<(String, String)> {
+    let devices = st(app).settings().phone.devices.clone();
+    pick_targets(&devices.iter().map(|d| (d.id.clone(), d.name.clone())).collect::<Vec<_>>(), targets)
+}
+
+/// `resolve_targets` 的纯函数部分：devices 是 (编号, 名字)。
+pub fn pick_targets(devices: &[(String, String)], targets: Option<&[String]>) -> AppResult<(String, String)> {
+    let chosen: Vec<&(String, String)> = match targets {
+        Some(t) => devices.iter().filter(|d| t.contains(&d.0)).collect(),
+        None => {
+            let phones: Vec<_> = devices.iter().filter(|d| !d.0.starts_with("ext-")).collect();
+            if phones.is_empty() {
+                devices.iter().collect()
+            } else {
+                phones
+            }
+        }
+    };
+    if targets.is_some() && chosen.is_empty() {
+        return Err(AppError::invalid("请至少勾选一个发送对象。"));
+    }
+    Ok((chosen.iter().map(|d| d.0.as_str()).collect::<Vec<_>>().join(","), chosen.iter().map(|d| d.1.as_str()).collect::<Vec<_>>().join("、")))
+}
+
+pub fn send_files(app: &AppHandle, paths: &[String], targets: Option<&[String]>) -> AppResult<(usize, Vec<String>)> {
     let state = st(app);
+    let (dev, dev_name) = resolve_targets(app, targets)?;
     let hours = state.settings().phone.outbox_hours;
     let expires = if hours == 0 { 0 } else { now() + hours as i64 * 3600 };
     let mut added = 0;
@@ -876,8 +903,8 @@ pub fn send_files(app: &AppHandle, paths: &[String]) -> AppResult<(usize, Vec<St
             size: meta.len() as i64,
             status: "ready",
             key: &random_key(),
-            device: "",
-            device_name: "",
+            device: &dev,
+            device_name: &dev_name,
             expires_at: expires,
         })?;
         added += 1;
@@ -887,7 +914,8 @@ pub fn send_files(app: &AppHandle, paths: &[String]) -> AppResult<(usize, Vec<St
 }
 
 /// 电脑上输入一段文字发给手机（手机网页里可以一键复制）。
-pub fn send_text(app: &AppHandle, text: &str) -> AppResult<i64> {
+pub fn send_text(app: &AppHandle, text: &str, targets: Option<&[String]>) -> AppResult<i64> {
+    let (dev, dev_name) = resolve_targets(app, targets)?;
     let text: String = text.trim().chars().take(MAX_NOTE).collect();
     if text.is_empty() {
         return Err(AppError::invalid("请先输入要发送的文字。"));
@@ -905,8 +933,8 @@ pub fn send_text(app: &AppHandle, text: &str) -> AppResult<i64> {
         size: text.len() as i64,
         status: "ready",
         key: &random_key(),
-        device: "",
-        device_name: "",
+        device: &dev,
+        device_name: &dev_name,
         expires_at: expires,
     })?;
     let _ = app.emit(EVT_CHANGED, ());
@@ -992,6 +1020,7 @@ fn out_json(app: &AppHandle, it: &TransferItem) -> serde_json::Value {
         "sent": live.map(|l| l.0).unwrap_or(0),
         "active": live.is_some_and(|l| l.2 > 0),
         "downloads": it.downloads,
+        "thumb": it.kind == "image" && thumb_ok(&it.name),
         "missing": !it.path.is_empty() && !Path::new(&it.path).is_file(),
         "at": it.created_at,
     })
@@ -1011,10 +1040,56 @@ pub fn box_json(app: &AppHandle, device: &str) -> serde_json::Value {
         .map(|i| {
             serde_json::json!({
                 "id": i.id, "name": i.name, "kind": i.kind, "size": i.size, "state": i.status, "message": i.message, "at": i.created_at,
+                "thumb": i.kind == "image" && i.status == "done" && thumb_ok(&i.name),
             })
         })
         .collect();
     serde_json::json!({"out": out, "in": inc, "maxMb": state.settings().phone.max_upload_mb})
+}
+
+// ---------- 缩略图 ----------
+
+const THUMB_MAX: u32 = 360;
+
+/// 能生成缩略图的格式（Rust 端只会解 JPEG / PNG / WebP；HEIC 之类显示文件图标）。
+pub fn thumb_ok(name: &str) -> bool {
+    matches!(name.rsplit('.').next().map(str::to_ascii_lowercase).as_deref(), Some("jpg" | "jpeg" | "png" | "webp"))
+}
+
+/// 图片 → 最长边 360 像素的 JPEG 缩略图（结果缓存在数据目录的 thumbs 文件夹里，原图改了就重做）。
+pub fn thumb_jpeg(data_dir: &Path, path: &Path) -> Option<Vec<u8>> {
+    use sha2::{Digest, Sha256};
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > 80 * 1024 * 1024 || !thumb_ok(&path.to_string_lossy()) {
+        return None;
+    }
+    let stamp = meta.modified().ok().and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
+    let key = hex::encode(&Sha256::digest(format!("{}|{}|{stamp}|{THUMB_MAX}", path.to_string_lossy(), meta.len()).as_bytes())[..10]);
+    let cache = data_dir.join("thumbs").join(format!("{key}.jpg"));
+    if let Ok(b) = std::fs::read(&cache) {
+        return Some(b);
+    }
+    let img = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?;
+    let small = image::DynamicImage::ImageRgb8(img.thumbnail(THUMB_MAX, THUMB_MAX).to_rgb8());
+    let mut out = vec![];
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 78).encode_image(&small).ok()?;
+    let _ = std::fs::create_dir_all(data_dir.join("thumbs"));
+    let _ = std::fs::write(&cache, &out);
+    Some(out)
+}
+
+/// 手机请求缩略图：`key` 是电脑发给手机的项目，`id` 是这台手机自己上传的文件；都要核对是这台设备的。
+pub fn thumb_for(app: &AppHandle, device: &str, key: Option<&str>, id: Option<i64>) -> Option<Vec<u8>> {
+    let state = st(app);
+    let item = match (key, id) {
+        (Some(k), _) if !k.is_empty() => state.db.transfer_by_key(k).ok().flatten().filter(|i| i.direction == "out"),
+        (_, Some(id)) => state.db.transfer_get(id).ok().flatten().filter(|i| i.direction == "in" && i.device == device && i.status == "done"),
+        _ => None,
+    }?;
+    if item.kind != "image" || item.path.is_empty() {
+        return None;
+    }
+    thumb_jpeg(&state.data_dir, Path::new(&item.path))
 }
 
 /// `GET /dl/<密钥>?t=令牌&d=设备`：把电脑发给手机的文件发出去。
@@ -1106,6 +1181,46 @@ pub async fn handle_download(app: &AppHandle, sock: &mut TcpStream, req: &Reques
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn targets_default_to_phones_and_never_the_browser_extension() {
+        let devs =
+            vec![("web-a".to_string(), "iPhone".to_string()), ("ext-b".to_string(), "Edge 浏览器扩展".to_string()), ("web-c".to_string(), "iPad".to_string())];
+        // 没勾选：所有手机 / 平板，不含扩展
+        assert_eq!(pick_targets(&devs, None).unwrap(), ("web-a,web-c".into(), "iPhone、iPad".into()));
+        // 勾选了的就是勾选的（用户明确选了扩展也行）
+        let sel = vec!["web-c".to_string(), "ext-b".to_string()];
+        assert_eq!(pick_targets(&devs, Some(&sel)).unwrap(), ("ext-b,web-c".into(), "Edge 浏览器扩展、iPad".into()));
+        // 一个都没勾：报错
+        assert!(pick_targets(&devs, Some(&[])).is_err());
+        assert!(pick_targets(&devs, Some(&["nope".to_string()])).is_err());
+        // 只配对了扩展：默认发给它（总得有人收）；一个设备都没有：空 = 所有设备
+        assert_eq!(pick_targets(&devs[1..2], None).unwrap().0, "ext-b");
+        assert_eq!(pick_targets(&[], None).unwrap(), (String::new(), String::new()));
+    }
+
+    #[test]
+    fn thumbnails_are_small_jpegs_and_cached() {
+        let dir = std::env::temp_dir().join(format!("cc-thumb-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("big.png");
+        image::RgbImage::from_pixel(1200, 800, image::Rgb([200, 80, 40])).save(&png).unwrap();
+        let t = thumb_jpeg(&dir, &png).unwrap();
+        let img = image::load_from_memory(&t).unwrap();
+        assert!(img.width() <= THUMB_MAX && img.height() <= THUMB_MAX && img.width() > img.height(), "最长边不超过 360，保持比例");
+        assert!(t.len() < 20_000);
+        assert!(std::fs::read_dir(dir.join("thumbs")).unwrap().count() == 1, "缓存了一份");
+        assert_eq!(thumb_jpeg(&dir, &png).unwrap(), t);
+        // 不是图片 / 不认识的格式：没有缩略图
+        let txt = dir.join("a.txt");
+        std::fs::write(&txt, "hi").unwrap();
+        assert!(thumb_jpeg(&dir, &txt).is_none());
+        let fake = dir.join("fake.jpg");
+        std::fs::write(&fake, "not an image").unwrap();
+        assert!(thumb_jpeg(&dir, &fake).is_none());
+        assert!(thumb_ok("A.JPG") && thumb_ok("x.webp") && !thumb_ok("x.heic") && !thumb_ok("x"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn names_are_made_safe() {
@@ -1320,10 +1435,17 @@ mod tests {
         assert_eq!(db.transfer_get(out_new).unwrap().unwrap().downloads, 1);
         assert_eq!(db.transfer_list("out", 10).unwrap().len(), 2);
         assert!(db.transfer_get(out_forever).unwrap().is_some());
-        // 同一台手机只看到自己上传的，但能看到电脑发出的全部
+        // 同一台手机只看到自己上传的；电脑发出的只有发给它的（device 里列了它，或者空 = 所有设备）才看得到
         assert_eq!(db.transfer_for_device("in", "d1", 10).unwrap().len(), 1);
         assert_eq!(db.transfer_for_device("in", "other", 10).unwrap().len(), 0);
-        assert_eq!(db.transfer_for_device("out", "other", 10).unwrap().len(), 2);
+        assert_eq!(db.transfer_for_device("out", "d1", 10).unwrap().len(), 2);
+        assert_eq!(db.transfer_for_device("out", "other", 10).unwrap().len(), 0, "发给 d1 的，别的设备看不到");
+        let multi = NewTransfer { device: "d2,d3", ..mk("out", "k4", 0) };
+        db.transfer_add(&multi).unwrap();
+        let all = NewTransfer { device: "", ..mk("out", "k5", 0) };
+        db.transfer_add(&all).unwrap();
+        assert_eq!(db.transfer_for_device("out", "d3", 10).unwrap().len(), 2, "多个对象里有它 + 发给所有设备的");
+        assert_eq!(db.transfer_for_device("out", "d", 10).unwrap().len(), 1, "只匹配完整编号，d 不是 d2 / d3");
         // 上次中断留下的“接收中”变成失败
         let parts = db.transfer_fail_stale().unwrap();
         assert_eq!(parts, vec!["/tmp/a.bin".to_string()]);
