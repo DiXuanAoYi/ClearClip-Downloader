@@ -388,7 +388,14 @@ pub fn anki_cards(words: &[Word]) -> Vec<(String, String)> {
         .iter()
         .map(|w| {
             let front = if w.sentence.is_empty() { w.word.clone() } else { w.sentence.replace(&w.word, &format!("<b>{}</b>", w.word)) };
-            let back = format!("<b>{}</b> {} {}<br>{}{}", w.word, w.phonetic, w.pos, meaning_of(w), if w.source_title.is_empty() { String::new() } else { format!("<br><small>{}</small>", w.source_title) });
+            let back = format!(
+                "<b>{}</b> {} {}<br>{}{}",
+                w.word,
+                w.phonetic,
+                w.pos,
+                meaning_of(w),
+                if w.source_title.is_empty() { String::new() } else { format!("<br><small>{}</small>", w.source_title) }
+            );
             (front, back)
         })
         .collect()
@@ -426,13 +433,10 @@ pub async fn vocab_anki_push(state: St<'_>, deck: String, url: Option<String>) -
     let call = |body: Value| {
         let (client, url) = (client.clone(), url.clone());
         async move {
-            let r = client
-                .post(&url)
-                .timeout(std::time::Duration::from_secs(30))
-                .json(&body)
-                .send()
-                .await
-                .map_err(|_| AppError::new(crate::error::ErrorKind::Network, "连不上 Anki：请先打开 Anki，并安装 AnkiConnect 插件（插件代码 2055492159）。"))?;
+            let r =
+                client.post(&url).timeout(std::time::Duration::from_secs(30)).json(&body).send().await.map_err(|_| {
+                    AppError::new(crate::error::ErrorKind::Network, "连不上 Anki：请先打开 Anki，并安装 AnkiConnect 插件（插件代码 2055492159）。")
+                })?;
             r.json::<Value>().await.map_err(|_| AppError::parser("Anki 返回的不是有效的 JSON。"))
         }
     };
@@ -598,7 +602,15 @@ mod tests {
 
     #[test]
     fn anki_connect_payload_and_result() {
-        let w = Word { word: "serendipity".into(), phonetic: "/ˌserənˈdɪpəti/".into(), pos: "n.".into(), meaning: "意外发现".into(), sentence: "It was pure serendipity.".into(), source_title: "Demo".into(), ..Default::default() };
+        let w = Word {
+            word: "serendipity".into(),
+            phonetic: "/ˌserənˈdɪpəti/".into(),
+            pos: "n.".into(),
+            meaning: "意外发现".into(),
+            sentence: "It was pure serendipity.".into(),
+            source_title: "Demo".into(),
+            ..Default::default()
+        };
         let cards = anki_cards(&[w.clone(), Word { word: "x".into(), meaning: "叉".into(), ..Default::default() }]);
         assert_eq!(cards[0].0, "It was pure <b>serendipity</b>.");
         assert!(cards[0].1.starts_with("<b>serendipity</b> /ˌserənˈdɪpəti/ n.<br>意外发现") && cards[0].1.contains("<small>Demo</small>"));

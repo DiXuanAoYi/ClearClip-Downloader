@@ -20,7 +20,7 @@ const ytHtml = (withTracks, emptyTt = false) => `<!doctype html><title>Demo vide
 const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welcome to the demo.' }] }, { tStartMs: 41000, dDurationMs: 4000, segs: [{ utf8: 'Rust is fast and safe.' }] }, { tStartMs: 95000, dDurationMs: 3000, segs: [{ utf8: 'Thanks for watching.' }] }] }
 
 ;(async () => {
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   const calls = []
   await ctx.route('https://www.youtube.com/**', (route) => {

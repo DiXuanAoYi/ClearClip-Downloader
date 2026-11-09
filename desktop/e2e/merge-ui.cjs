@@ -86,7 +86,7 @@ const INIT = `
 `
 
 ;(async () => {
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })
   const errors = []
   const open = async (hash, viewport = { width: 1200, height: 900 }) => {
     const page = await browser.newPage({ viewport })

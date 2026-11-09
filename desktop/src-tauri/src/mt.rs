@@ -343,11 +343,27 @@ pub async fn translate(
                 let q = batch.iter().map(|i| texts[*i].as_str()).collect::<Vec<_>>().join("\n");
                 let salt = salt();
                 let sign = md5_hex(&format!("{appid}{q}{salt}{secret}"));
-                let v = send_json(client, kind, client.post(&url).form(&[("q", q.as_str()), ("from", "auto"), ("to", to), ("appid", appid), ("salt", salt.as_str()), ("sign", sign.as_str())])).await?;
+                let v = send_json(
+                    client,
+                    kind,
+                    client.post(&url).form(&[
+                        ("q", q.as_str()),
+                        ("from", "auto"),
+                        ("to", to),
+                        ("appid", appid),
+                        ("salt", salt.as_str()),
+                        ("sign", sign.as_str()),
+                    ]),
+                )
+                .await?;
                 if let Some(code) = v.get("error_code").and_then(Value::as_str) {
                     return Err(baidu_error(code, v.get("error_msg").and_then(Value::as_str).unwrap_or("")));
                 }
-                let got: Vec<String> = v.get("trans_result").and_then(Value::as_array).map(|a| a.iter().map(|t| t.get("dst").and_then(Value::as_str).unwrap_or("").to_string()).collect()).unwrap_or_default();
+                let got: Vec<String> = v
+                    .get("trans_result")
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().map(|t| t.get("dst").and_then(Value::as_str).unwrap_or("").to_string()).collect())
+                    .unwrap_or_default();
                 if got.len() != batch.len() {
                     return Err(AppError::parser("百度翻译返回的条数不对。"));
                 }
@@ -366,7 +382,16 @@ pub async fn translate(
                 let v = send_json(
                     client,
                     kind,
-                    client.post(&url).form(&[("q", t.as_str()), ("from", "auto"), ("to", to), ("appKey", appid), ("salt", salt.as_str()), ("sign", sign.as_str()), ("signType", "v3"), ("curtime", curtime.as_str())]),
+                    client.post(&url).form(&[
+                        ("q", t.as_str()),
+                        ("from", "auto"),
+                        ("to", to),
+                        ("appKey", appid),
+                        ("salt", salt.as_str()),
+                        ("sign", sign.as_str()),
+                        ("signType", "v3"),
+                        ("curtime", curtime.as_str()),
+                    ]),
                 )
                 .await?;
                 let code = v.get("errorCode").and_then(Value::as_str).unwrap_or("");
@@ -384,7 +409,10 @@ pub async fn translate(
             let v = send_json(
                 client,
                 kind,
-                client.post(url).header("X-Authorization", format!("token {token}")).json(&json!({"source": texts, "trans_type": to, "request_id": "clearclip", "detect": true})),
+                client
+                    .post(url)
+                    .header("X-Authorization", format!("token {token}"))
+                    .json(&json!({"source": texts, "trans_type": to, "request_id": "clearclip", "detect": true})),
             )
             .await?;
             v.get("target")
@@ -416,9 +444,10 @@ pub async fn translate(
 
 /// “应用ID:密钥”拆成两段（百度、有道）。
 fn need_pair(key: Option<&str>, kind: Kind) -> AppResult<(&str, &str)> {
-    key.and_then(|k| k.split_once(':')).map(|(a, b)| (a.trim(), b.trim())).filter(|(a, b)| !a.is_empty() && !b.is_empty()).ok_or_else(|| {
-        AppError::invalid(format!("{} 的密钥栏要填“应用ID:密钥”（用英文冒号连起来）。", kind.label()))
-    })
+    key.and_then(|k| k.split_once(':'))
+        .map(|(a, b)| (a.trim(), b.trim()))
+        .filter(|(a, b)| !a.is_empty() && !b.is_empty())
+        .ok_or_else(|| AppError::invalid(format!("{} 的密钥栏要填“应用ID:密钥”（用英文冒号连起来）。", kind.label())))
 }
 
 fn salt() -> String {
@@ -434,7 +463,11 @@ fn md5_hex(s: &str) -> String {
 pub fn youdao_sign(appid: &str, q: &str, salt: &str, curtime: &str, secret: &str) -> String {
     use sha2::{Digest, Sha256};
     let chars: Vec<char> = q.chars().collect();
-    let input: String = if chars.len() <= 20 { q.to_string() } else { format!("{}{}{}", chars[..10].iter().collect::<String>(), chars.len(), chars[chars.len() - 10..].iter().collect::<String>()) };
+    let input: String = if chars.len() <= 20 {
+        q.to_string()
+    } else {
+        format!("{}{}{}", chars[..10].iter().collect::<String>(), chars.len(), chars[chars.len() - 10..].iter().collect::<String>())
+    };
     hex::encode(Sha256::digest(format!("{appid}{input}{salt}{curtime}{secret}").as_bytes()))
 }
 
