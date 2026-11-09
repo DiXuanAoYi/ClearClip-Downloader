@@ -12,7 +12,7 @@ let nameMode = 'orig'
 let tplText = '{序号}-{标题}'
 const manual = new Map() // 地址 → 手动改的名字
 const aiNames = new Map() // 地址 → AI 起的名字
-const TPL_CHIPS = ['序号', '标题', '原名', '站点', '日期', '类型']
+const TPL_CHIPS = ['序号', '标题', '说明', '原名', '站点', '日期', '类型']
 
 /** 所选项在当前方式下的名字（和 chosen() 同序）；空串表示不改名。手动改的优先。 */
 function namesFor(list) {
@@ -45,6 +45,7 @@ function paintNameBar() {
   $('nameMode').value = nameMode
   $('tplBox').classList.toggle('hidden', nameMode !== 'tpl')
   $('aiName').classList.toggle('hidden', nameMode !== 'ai')
+  $('ocrBox').classList.toggle('hidden', nameMode !== 'ai')
   $('tpl').value = tplText
   refreshNames()
 }
@@ -389,7 +390,7 @@ $('aiName').onclick = async () => {
   const list = chosen()
   if (!list.length) return
   $('aiName').disabled = true
-  msg('AI 正在起名…')
+  msg($('ocrOn').checked && list.some((x) => x.kind === 'image') ? 'AI 正在读图并起名…（读图文字最多取前 12 张）' : 'AI 正在起名…')
   const origOf = (u) => {
     try {
       return decodeURIComponent(new URL(u).pathname.split('/').filter(Boolean).pop() || '')
@@ -400,13 +401,17 @@ $('aiName').onclick = async () => {
   const r = await chrome_send({
     type: 'cc-ai-name',
     title: data.title,
-    items: list.map((x) => ({ kind: x.kind, alt: x.alt && !['背景图', '页面声明', '视频封面'].includes(x.alt) ? x.alt : '', text: x.alt || '', orig: origOf(x.url) })),
+    page: data.page,
+    excerpt: data.excerpt || '',
+    ocr: $('ocrOn').checked,
+    items: list.map((x) => ({ kind: x.kind, url: x.url, alt: x.alt && !['背景图', '页面声明', '视频封面'].includes(x.alt) ? x.alt : '', cap: x.cap || '', near: x.near || '', orig: origOf(x.url) })),
   })
   $('aiName').disabled = false
   if (!r.ok) return msg(r.error || 'AI 命名失败', 'err')
   const names = ccNaming.uniqueNames((r.names || []).map((n) => ccNaming.cleanName(n, 60)))
   names.forEach((n, i) => n && aiNames.set(list[i].url, n))
-  msg(`已给 ${names.filter(Boolean).length} 项起好名字，可以在每一项下面直接改`, 'ok')
+  const read = (r.ocr || []).filter(Boolean).length
+  msg(`已给 ${names.filter(Boolean).length} 项起好名字${read ? `（读出了 ${read} 张图里的文字）` : ''}，可以在每一项下面直接改`, 'ok')
   refreshNames()
 }
 $('copyUrls').onclick = async () => {

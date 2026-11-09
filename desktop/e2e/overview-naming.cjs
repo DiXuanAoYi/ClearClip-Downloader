@@ -12,11 +12,11 @@ const ok = (c, m) => (c ? (pass++, console.log('  ok  ' + m)) : (fail++, console
   page.on('pageerror', (e) => errors.push(e.message))
   await page.addInitScript(() => {
     const items = [
-      { kind: 'image', url: 'https://x.com/a/one.jpg', w: 800, h: 600, alt: '海边日落' },
+      { kind: 'image', url: 'https://x.com/a/one.jpg', w: 800, h: 600, alt: '海边日落', cap: '摄于三亚', near: '三亚旅行攻略' },
       { kind: 'image', url: 'https://x.com/a/two.jpg', w: 800, h: 600, alt: '' },
       { kind: 'video', url: 'https://x.com/v/clip.mp4', alt: '' },
     ]
-    const store = { k1: { page: 'https://www.x.com/p', title: '旅行', tabId: 1, items, sniffed: [] } }
+    const store = { k1: { page: 'https://www.x.com/p', title: '旅行', tabId: 1, items, sniffed: [], excerpt: '三亚三日游：海边日落、礁石和夜市' } }
     const local = {}
     window.__sent = []
     const get = (src) => async (k) => (typeof k === 'string' ? (k in src ? { [k]: src[k] } : {}) : {})
@@ -69,6 +69,8 @@ const ok = (c, m) => (c ? (pass++, console.log('  ok  ' + m)) : (fail++, console
   await page.waitForFunction(() => window.__sent.some((m) => m.type === 'cc-ai-name'))
   const req = await page.evaluate(() => window.__sent.find((m) => m.type === 'cc-ai-name'))
   ok(req.items.length === 3 && req.items[0].alt === '海边日落' && req.items[0].orig === 'one.jpg' && req.title === '旅行', 'AI 请求带上说明、原名和网页标题')
+  ok(req.items[0].cap === '摄于三亚' && req.items[0].near === '三亚旅行攻略' && req.items[0].url === 'https://x.com/a/one.jpg', 'AI 请求带上图片说明、周围文字和地址')
+  ok(req.excerpt.includes('三亚三日游') && req.ocr === true, 'AI 请求带上页面正文摘录，并默认读图里的文字')
   await page.waitForFunction(() => document.querySelectorAll('.cell .nm.ai').length > 0)
   const a = await page.locator('.cell .nm').evaluateAll((els) => els.map((e) => e.value))
   ok(a[0] === '日落海面' && a[1] === '我的封面' && a[2] === '片头动画', '用 AI 的名字，手改的优先：' + a.join('|'))

@@ -339,6 +339,9 @@ pub fn start(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
     if req.kind == "imgtrans" && crate::imagetext::is_local(req.ocr.trim()) {
         return start_image_local(app, req);
     }
+    if req.kind == "ocrtext" {
+        return start_ocr_text(app, req);
+    }
     let prep = prepare(app, req)?;
     let (id, cancel) = new_job();
     match prep {
@@ -393,6 +396,39 @@ fn start_image_local(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
         });
     });
     Ok(id)
+}
+
+/// 只识字不翻译：把图片里的文字读出来（给“按图片文字起名”用）。用本机识字（设置里选的那种，默认增强识字），不调用大模型。
+fn start_ocr_text(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
+    use tauri::Manager;
+    let st = app.state::<Arc<crate::AppState>>().inner().clone();
+    let (id, _cancel) = new_job();
+    tauri::async_runtime::spawn(async move {
+        let out = async {
+            let engine = crate::imagetext::resolve("local", &st.settings().live.ocr);
+            let (bgra, w, h) = crate::imagetext::decode_data_url(&req.image)?;
+            let lines = crate::imagetext::recognize(&st, engine, bgra, w, h).await?;
+            let groups = crate::livecore::group_lines(&lines);
+            Ok::<_, AppError>(json!({"text": ocr_text_of(&groups.iter().map(|g| g.text.as_str()).collect::<Vec<_>>()), "engine": engine}))
+        }
+        .await;
+        with_job(id, |j| match out {
+            Ok(v) => {
+                j.done = 1;
+                j.total = 1;
+                j.result = Some(v);
+            }
+            Err(e) => j.error = Some(e.message),
+        });
+    });
+    Ok(id)
+}
+
+/// 识出的文字段落 → 一小段摘要文字：去掉太短的碎片（多半是图标误识），合并空白，最多 300 个字符。
+pub fn ocr_text_of(paras: &[&str]) -> String {
+    let joined: Vec<String> =
+        paras.iter().map(|p| p.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|p| p.chars().filter(|c| c.is_alphanumeric()).count() >= 2).collect();
+    joined.join(" / ").chars().take(300).collect()
 }
 
 // ---------- 没有字幕时：取音频 → 转写 ----------
@@ -719,7 +755,7 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 29] = [
+    const KINDS: [&str; 30] = [
         "answer",
         "write",
         "replyread",
@@ -749,6 +785,7 @@ pub fn check(req: &Req) -> AppResult<()> {
         "lookup",
         "imgtrans",
         "namer",
+        "ocrtext",
     ];
     if !KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::invalid("不支持的类型"));
@@ -763,7 +800,7 @@ pub fn check(req: &Req) -> AppResult<()> {
     if needs_lines && req.lines.iter().all(|l| l.text.trim().is_empty()) {
         return Err(AppError::invalid("没有可处理的字幕。"));
     }
-    if req.kind == "imgtrans" {
+    if matches!(req.kind.as_str(), "imgtrans" | "ocrtext") {
         crate::imgtrans::check_image(&req.image)?;
     }
     if matches!(req.kind.as_str(), "article" | "rewrite") && req.text.trim().is_empty() {
@@ -1016,8 +1053,9 @@ pub fn webtrans_system(lang: &str) -> String {
 /// 给一批图片 / 视频起文件名的提示词。
 pub fn namer_system(lang: &str) -> String {
     format!(
-        "You name downloaded files. For each numbered item (kind, alt text, link text, original file name, nearby text), write ONE short, descriptive file name in {lang}: \
-         what the item actually shows or is about, 4-30 characters, no file extension, no quotes, none of the characters \\ / : * ? \" < > |, no numbering prefix, \
+        "You name downloaded files. For each numbered item (kind, alt text, caption, link text, original file name, nearby text, and OCR = text read from inside the image) write ONE short, descriptive file name in {lang}. \
+         Work out what the item actually shows or is about from, in order of reliability: the OCR text and caption, the alt/link text, the nearby text, and finally the page title and page text (use the page only to understand the topic, never copy a whole title for every item). \
+         Name it by its content: 4-30 characters, no file extension, no quotes, none of the characters \\ / : * ? \" < > |, no numbering prefix, \
          and different from every other name in the list. If an item has no usable information, reuse its original file name without the extension. \
          Reply with ONE JSON array of exactly N strings in the same order as the items, no code fences."
     )
@@ -1639,7 +1677,8 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             progress(0, 1)?;
             let n = req.lines.len();
             let list: Vec<String> = req.lines.iter().map(|l| format!("{}. {}", l.t + 1, l.text.trim())).collect();
-            let user = format!("PAGE TITLE: {}\nITEMS:\n{}", req.title.trim(), list.join("\n"));
+            let page_text: String = req.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(1200).collect();
+            let user = format!("PAGE TITLE: {}\nPAGE TEXT (excerpt): {}\nITEMS:\n{}", req.title.trim(), page_text, list.join("\n"));
             let resp = chat(ep, model, &namer_system(if req.lang.trim().is_empty() { default_lang } else { req.lang.trim() }), &user).await?;
             progress(1, 1)?;
             let names = parse_names(&resp, n).ok_or_else(|| AppError::parser("模型没有按要求返回名字，请重试。"))?;

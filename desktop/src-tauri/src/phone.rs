@@ -74,7 +74,12 @@ pub fn pair_code() -> String {
 
 /// 这台电脑的名字（手机网页上显示“已连接 · xxx”）；取不到就用“电脑”。
 pub fn pc_name() -> String {
-    ["COMPUTERNAME", "HOSTNAME", "HOST"].iter().filter_map(|k| std::env::var(k).ok()).map(|s| s.trim().chars().take(30).collect::<String>()).find(|s| !s.is_empty()).unwrap_or_else(|| "电脑".into())
+    ["COMPUTERNAME", "HOSTNAME", "HOST"]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok())
+        .map(|s| s.trim().chars().take(30).collect::<String>())
+        .find(|s| !s.is_empty())
+        .unwrap_or_else(|| "电脑".into())
 }
 
 /// 手机网页显示的一条发送记录。

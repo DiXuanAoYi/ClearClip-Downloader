@@ -33,6 +33,7 @@
       站点: cleanName(String(ctx.host || '').replace(/^www\./, ''), 30),
       日期: `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`,
       类型: KIND_ZH[ctx.kind] || '',
+      说明: cleanName(ctx.alt, 40),
     }
     const out = String(tpl || '').replace(/\{([^{}]+)\}/g, (m, k) => (k in map ? map[k] : m))
     return cleanName(out) || cleanName(stripExt(ctx.orig)) || ''
@@ -67,7 +68,7 @@
     }
     const date = page.date instanceof Date ? page.date : new Date()
     return uniqueNames(
-      items.map((it, index) => applyTemplate(tpl, { index, total: items.length, title: page.title, orig: origOf(it.url), host, kind: it.kind, date })),
+      items.map((it, index) => applyTemplate(tpl, { index, total: items.length, title: page.title, orig: origOf(it.url), host, kind: it.kind, date, alt: it.cap || it.alt || '' })),
     )
   }
 

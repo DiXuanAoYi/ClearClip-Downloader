@@ -545,3 +545,11 @@ fn namer_results_are_cleaned_into_file_names() {
     let sys = namer_system("简体中文");
     assert!(sys.contains("简体中文") && sys.contains("JSON array"));
 }
+
+#[test]
+fn ocr_text_drops_fragments_and_is_capped() {
+    assert_eq!(ocr_text_of(&["春季  新品", "·", "A", "SALE 50% OFF"]), "春季 新品 / SALE 50% OFF");
+    assert_eq!(ocr_text_of(&[]), "");
+    let long = "字".repeat(500);
+    assert_eq!(ocr_text_of(&[long.as_str()]).chars().count(), 300);
+}

@@ -25,6 +25,7 @@ const one = (tpl, o = {}) => N.applyTemplate(tpl, { index: 2, total: 12, title: 
 assert.equal(one('{序号}-{标题}'), '03-东京 夜景')
 assert.equal(one('{站点}_{日期}_{原名}'), 'example.com_20261109_IMG_01')
 assert.equal(one('{类型}{序号}'), '图片03')
+assert.equal(one('{说明}-{序号}', { alt: '海边/日落' }), '海边 日落-03')
 assert.equal(one('{未知}-{序号}'), '{未知}-03', '不认识的占位符原样保留')
 assert.equal(one('{标题}', { title: '' }), 'IMG_01', '结果为空时退回原名')
 assert.equal(N.applyTemplate('{序号}', { index: 0, total: 1234, orig: 'a.png' }), '0001', '序号位数跟总数')
