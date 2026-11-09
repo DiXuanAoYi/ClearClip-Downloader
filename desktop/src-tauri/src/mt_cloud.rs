@@ -58,6 +58,7 @@ pub fn pct(s: &str) -> String {
 
 /// 腾讯云 API 3.0（TC3-HMAC-SHA256）。返回要加的请求头（不含 Content-Type 以外的固定头由调用方设置）。
 /// 签名的头：content-type、host、x-tc-action。
+#[allow(clippy::too_many_arguments)]
 pub fn tencent_headers(
     secret_id: &str,
     secret_key: &str,

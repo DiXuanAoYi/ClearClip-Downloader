@@ -501,3 +501,21 @@ fn manual_block_adjustments_override_the_automatic_layout_and_survive_the_cache_
     let old: ViewPage = serde_json::from_str(r#"{"src":["x"],"trans":[null]}"#).unwrap();
     assert!(old.adj.is_empty());
 }
+
+#[test]
+fn mixed_pdf_scan_pages_are_the_ones_without_any_text() {
+    use crate::pdfx::{Block, PageInfo};
+    let blk = Block { runs: vec![0], l: 0.0, b: 0.0, r: 10.0, t: 10.0, size: 10.0, rgb: [0, 0, 0], text: "x".into(), lines: 1 };
+    let pages = vec![
+        PageInfo { w: 100.0, h: 100.0, blocks: vec![blk.clone()], has_text: true },
+        PageInfo { w: 100.0, h: 100.0, blocks: vec![], has_text: false },
+        // 有文字对象但没读出块（比如全是页眉被过滤）：不当扫描页
+        PageInfo { w: 100.0, h: 100.0, blocks: vec![], has_text: true },
+        PageInfo { w: 100.0, h: 100.0, blocks: vec![], has_text: false },
+    ];
+    assert_eq!(mixed_scan_pages(&pages), vec![1, 3]);
+    assert!(mixed_scan_pages(&pages[..1]).is_empty());
+    assert!(Opts::default().scan_auto, "默认自动识别");
+    let o: Opts = serde_json::from_str(r#"{"scanAuto":false}"#).unwrap();
+    assert!(!o.scan_auto && o.bilingual, "旧请求没有这个字段也能读");
+}

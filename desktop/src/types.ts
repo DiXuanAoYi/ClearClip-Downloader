@@ -2398,6 +2398,8 @@ export interface FtOpts {
   skipHeaders: boolean
   skipCode: boolean
   skipRefs: boolean
+  /** 有文字层的 PDF 里夹着扫描页时自动识字并一起翻译 */
+  scanAuto: boolean
 }
 
 /** 开始前的估算 */

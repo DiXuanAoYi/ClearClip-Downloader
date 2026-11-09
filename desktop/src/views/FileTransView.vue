@@ -30,7 +30,7 @@ const advanced = ref(false)
 const confirmStart = ref(true)
 
 // 设置：常用的放前面，高级收起来；记在本机
-const o = ref<FtOpts>({ bilingual: true, target: app.settings?.ai.targetLang || '简体中文', pdfMode: 'inplace', ocr: 'vision', preview: true, pages: '', skipHeaders: true, skipCode: true, skipRefs: false })
+const o = ref<FtOpts>({ bilingual: true, target: app.settings?.ai.targetLang || '简体中文', pdfMode: 'inplace', ocr: 'vision', preview: true, pages: '', skipHeaders: true, skipCode: true, skipRefs: false, scanAuto: true })
 function restoreOpts() {
   try {
     const s = localStorage.getItem(LS)
@@ -405,6 +405,7 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
             <div class="fld"><span>术语库</span><el-switch v-model="glossaryOn" size="small" /><small class="mute">按内容自动带入相关术语</small></div>
             <div class="fld"><span>预览</span><el-switch v-model="o.preview" size="small" /><small class="mute">先译完在右边检查、改译文，再点“生成文件”</small></div>
             <div class="fld"><span>排除</span><div class="chk"><el-checkbox v-model="o.skipHeaders" size="small">页眉页脚页码</el-checkbox><el-checkbox v-model="o.skipCode" size="small">公式代码网址</el-checkbox><el-checkbox v-model="o.skipRefs" size="small">参考文献</el-checkbox></div></div>
+            <div class="fld"><span>扫描页</span><div class="chk"><el-checkbox v-model="o.scanAuto" size="small" title="有文字层的 PDF 里夹着扫描页时，自动识字并一起翻译">自动识别扫描页</el-checkbox></div></div>
 <div class="fld">
             <span>识字</span>
             <el-select v-model="o.ocr" size="small" class="grow">
