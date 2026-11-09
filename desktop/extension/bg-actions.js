@@ -132,15 +132,15 @@ async function sendBatch(items, tab) {
       let p = false
       if (it.kind === 'image') {
         const real = it.ext || (await probeMedia(it.url, page)).ext
-        const r = await grabUrl({ url: it.url, referrer: page, mime: it.mime || (real && ccSniff.MIME[real]) || '', filename: real ? ccSniff.fileNameFor(it.url, real) : '' })
+        const r = await grabUrl({ url: it.url, referrer: page, mime: it.mime || (real && ccSniff.MIME[real]) || '', filename: it.name ? ccNaming.withExt(ccNaming.cleanName(it.name), real) : real ? ccSniff.fileNameFor(it.url, real) : '' })
         p = r.state === 'pending_pair'
       } else if (it.kind !== 'video' && isStreamFirst(it.url, sites)) {
         // 选集：这一集的页面里没有视频地址，开页面取到真实的视频流再发
         const r = await streamOfPage(it.url)
         if (!r) throw new Error('没有识别到这一集的视频流（页面没有播放起来）：' + shortUrl(it.url))
-        p = await sendText(sniffedPayload(r.item, it.url, r.title || tab?.title))
+        p = await sendText(sniffedPayload(r.item, it.url, it.name || r.title || tab?.title))
       } else if (it.kind === 'video' && /^https?:/i.test(it.url) && it.url !== page) {
-        p = await sendText(sniffedPayload({ url: it.url }, page, tab?.title))
+        p = await sendText(sniffedPayload({ url: it.url }, page, it.name || tab?.title))
       } else {
         p = await sendText(await tidyUrl(it.url || page))
       }
@@ -368,6 +368,25 @@ const HANDLERS = {
         return { ...(await call('/api/v1/vocab/clips')) }
       default:
         throw new Error('不支持的操作')
+    }
+  },
+  // 总览：让清影里的大模型根据图片说明、链接文字、周围文字给每一项起名字（一批一次，返回同样数量的名字）
+  'cc-ai-name': async (m) => {
+    const items = (Array.isArray(m.items) ? m.items : []).slice(0, 60)
+    if (!items.length) return { names: [] }
+    const lines = items.map((x, t) => ({
+      t,
+      text: [x.kind, x.alt && `alt: ${x.alt}`, x.text && `text: ${x.text}`, x.orig && `file: ${x.orig}`, x.near && `near: ${x.near}`].filter(Boolean).join(' | ').slice(0, 300),
+    }))
+    const sub = await call('/api/v1/ai/run', { kind: 'namer', title: String(m.title || '').slice(0, 200), lang: String(m.lang || ''), lines })
+    const deadline = Date.now() + 2 * 60_000
+    for (;;) {
+      await sleep(450)
+      const j = await call(`/api/v1/ai/job?id=${encodeURIComponent(String(sub.id))}`)
+      if (j.state === 'done') return { names: j.result?.names || [] }
+      if (j.state === 'error') throw new Error(j.error || 'AI 命名失败了')
+      if (j.state === 'cancelled') throw new Error('已取消')
+      if (Date.now() > deadline) throw new Error('AI 命名超时')
     }
   },
   'cc-ai-run': async (m) => ({ ...(await call('/api/v1/ai/run', m.req && typeof m.req === 'object' ? m.req : {})) }),

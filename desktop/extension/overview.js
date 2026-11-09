@@ -7,6 +7,48 @@ let data = { page: '', title: '', items: [], sniffed: [] }
 let kind = 'all'
 const picked = new Set()
 
+// ---------- 命名：保持原名 / 自定义模板 / AI 总结命名；单项可手动改 ----------
+let nameMode = 'orig'
+let tplText = '{序号}-{标题}'
+const manual = new Map() // 地址 → 手动改的名字
+const aiNames = new Map() // 地址 → AI 起的名字
+const TPL_CHIPS = ['序号', '标题', '原名', '站点', '日期', '类型']
+
+/** 所选项在当前方式下的名字（和 chosen() 同序）；空串表示不改名。手动改的优先。 */
+function namesFor(list) {
+  let base = list.map(() => '')
+  if (nameMode === 'tpl') base = ccNaming.planNames(tplText, list, { url: data.page, title: data.title })
+  else if (nameMode === 'ai') base = list.map((x) => aiNames.get(x.url) || '')
+  return list.map((x, i) => ccNaming.cleanName(manual.get(x.url)) || base[i])
+}
+function refreshNames() {
+  const list = chosen()
+  const names = namesFor(list)
+  for (const [i, it] of list.entries()) {
+    if (it._nmEl && document.activeElement !== it._nmEl) it._nmEl.value = names[i]
+    if (it._nmEl) it._nmEl.classList.toggle('ai', nameMode === 'ai' && aiNames.has(it.url) && !manual.has(it.url))
+  }
+  $('nameHint').textContent = !list.length
+    ? ''
+    : nameMode === 'orig' && !manual.size
+      ? '发送时保持原来的文件名'
+      : `例：${names.find(Boolean) || '（尚无名字）'}${list.length > 1 ? ` 等 ${list.length} 项` : ''}`
+}
+function saveNaming() {
+  try {
+    api.storage.local.set({ ovNaming: { mode: nameMode, tpl: tplText } })
+  } catch {
+    /* 存不了就下次再选 */
+  }
+}
+function paintNameBar() {
+  $('nameMode').value = nameMode
+  $('tplBox').classList.toggle('hidden', nameMode !== 'tpl')
+  $('aiName').classList.toggle('hidden', nameMode !== 'ai')
+  $('tpl').value = tplText
+  refreshNames()
+}
+
 const sizeOf = (it) => Math.max(it.w || 0, it.h || 0)
 
 function visible() {
@@ -75,7 +117,21 @@ function render() {
     open.onclick = (e) => e.stopPropagation()
     meta.append(dim, open)
     cell.title = it.url
-    cell.append(pic, tick, fmt, meta)
+    const nm = document.createElement('input')
+    nm.className = 'nm'
+    nm.type = 'text'
+    nm.maxLength = 120
+    nm.placeholder = '发送时的名字（留空保持原名）'
+    nm.value = manual.get(it.url) || ''
+    nm.onclick = (e) => e.stopPropagation()
+    nm.ondblclick = (e) => e.stopPropagation()
+    nm.oninput = () => {
+      if (nm.value.trim()) manual.set(it.url, nm.value)
+      else manual.delete(it.url)
+      refreshNames()
+    }
+    it._nmEl = nm
+    cell.append(pic, tick, fmt, meta, nm)
     cell.ondblclick = (e) => (e.preventDefault(), openViewer(it))
     cell.onclick = () => {
       picked.has(it.url) ? picked.delete(it.url) : picked.add(it.url)
@@ -98,6 +154,8 @@ function updateBar() {
   $('sendSel').disabled = !n
   $('copyUrls').disabled = !n
   $('searchOne').disabled = !(n === 1 && chosen()[0]?.kind === 'image')
+  $('aiName').disabled = !n
+  refreshNames()
 }
 
 /** 检测到的视频流（和弹窗里以前那份列表同样的排序和名字：清晰度高的在前）。 */
@@ -298,7 +356,59 @@ $('selNone').onclick = () => {
   picked.clear()
   render()
 }
-$('sendSel').onclick = () => sendItems(chosen().map((x) => ({ kind: x.kind, url: x.url })))
+$('sendSel').onclick = () => {
+  const list = chosen()
+  const names = namesFor(list)
+  sendItems(list.map((x, i) => ({ kind: x.kind, url: x.url, ...(names[i] ? { name: names[i] } : {}) })))
+}
+$('nameMode').onchange = () => {
+  nameMode = $('nameMode').value
+  saveNaming()
+  paintNameBar()
+}
+$('tpl').oninput = () => {
+  tplText = $('tpl').value
+  saveNaming()
+  refreshNames()
+}
+for (const k of TPL_CHIPS) {
+  const b = document.createElement('button')
+  b.type = 'button'
+  b.className = 'sec'
+  b.textContent = `{${k}}`
+  b.onclick = () => {
+    const el = $('tpl')
+    const s = el.selectionStart ?? el.value.length
+    el.value = el.value.slice(0, s) + `{${k}}` + el.value.slice(el.selectionEnd ?? s)
+    el.focus()
+    el.oninput()
+  }
+  $('tplChips').append(b)
+}
+$('aiName').onclick = async () => {
+  const list = chosen()
+  if (!list.length) return
+  $('aiName').disabled = true
+  msg('AI 正在起名…')
+  const origOf = (u) => {
+    try {
+      return decodeURIComponent(new URL(u).pathname.split('/').filter(Boolean).pop() || '')
+    } catch {
+      return ''
+    }
+  }
+  const r = await chrome_send({
+    type: 'cc-ai-name',
+    title: data.title,
+    items: list.map((x) => ({ kind: x.kind, alt: x.alt && !['背景图', '页面声明', '视频封面'].includes(x.alt) ? x.alt : '', text: x.alt || '', orig: origOf(x.url) })),
+  })
+  $('aiName').disabled = false
+  if (!r.ok) return msg(r.error || 'AI 命名失败', 'err')
+  const names = ccNaming.uniqueNames((r.names || []).map((n) => ccNaming.cleanName(n, 60)))
+  names.forEach((n, i) => n && aiNames.set(list[i].url, n))
+  msg(`已给 ${names.filter(Boolean).length} 项起好名字，可以在每一项下面直接改`, 'ok')
+  refreshNames()
+}
 $('copyUrls').onclick = async () => {
   try {
     await navigator.clipboard.writeText(chosen().map((x) => x.url).join('\n'))
@@ -349,6 +459,16 @@ $('pageLinks').onclick = async () => {
   if (r) msg(`已把 ${r.count} 条链接发到清影，请在电脑上选择要下载的`, 'ok')
 }
 
+;(async () => {
+  try {
+    const { ovNaming } = await api.storage.local.get('ovNaming')
+    if (ovNaming && ['orig', 'tpl', 'ai'].includes(ovNaming.mode)) nameMode = ovNaming.mode
+    if (ovNaming && typeof ovNaming.tpl === 'string' && ovNaming.tpl.trim()) tplText = ovNaming.tpl
+  } catch {
+    /* 没存过 */
+  }
+  paintNameBar()
+})()
 load()
 
 $('vClose').onclick = closeViewer

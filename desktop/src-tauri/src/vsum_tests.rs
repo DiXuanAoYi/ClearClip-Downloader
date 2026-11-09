@@ -529,3 +529,19 @@ fn flowgraph_is_validated_and_chunks_are_chained() {
     assert!(j["edges"].as_array().unwrap().iter().any(|e| e["from"] == "p0_d" && e["to"] == "p1_a" && e["label"] == "接着"));
     assert!(j["nodes"].as_array().unwrap().iter().all(|n| n["id"].as_str().unwrap().starts_with('p')));
 }
+
+#[test]
+fn namer_results_are_cleaned_into_file_names() {
+    let r = "```json\n[\"海边日落: 橙色的天空\", \"  a/b\\\\c?d  \", \"...\", \"x\"]\n```";
+    let v = parse_names(r, 4).unwrap();
+    assert_eq!(v[0], "海边日落 橙色的天空");
+    assert_eq!(v[1], "a b c d");
+    assert_eq!(v[2], "", "只有点号的名字留空，交给调用方退回原名");
+    assert_eq!(v[3], "x");
+    assert!(parse_names(r, 3).is_none(), "数量对不上就当失败");
+    assert!(parse_names("没有数组", 1).is_none());
+    let long = format!("[\"{}\"]", "字".repeat(100));
+    assert_eq!(parse_names(&long, 1).unwrap()[0].chars().count(), 60);
+    let sys = namer_system("简体中文");
+    assert!(sys.contains("简体中文") && sys.contains("JSON array"));
+}

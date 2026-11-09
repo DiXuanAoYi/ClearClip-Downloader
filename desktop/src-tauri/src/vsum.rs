@@ -719,7 +719,7 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 28] = [
+    const KINDS: [&str; 29] = [
         "answer",
         "write",
         "replyread",
@@ -748,6 +748,7 @@ pub fn check(req: &Req) -> AppResult<()> {
         "askcomments",
         "lookup",
         "imgtrans",
+        "namer",
     ];
     if !KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::invalid("不支持的类型"));
@@ -1012,6 +1013,29 @@ pub fn webtrans_system(lang: &str) -> String {
 }
 
 /// 网页翻译前先看一眼页面，判断它属于什么领域，给翻译一份“术语怎么选”的说明。
+/// 给一批图片 / 视频起文件名的提示词。
+pub fn namer_system(lang: &str) -> String {
+    format!(
+        "You name downloaded files. For each numbered item (kind, alt text, link text, original file name, nearby text), write ONE short, descriptive file name in {lang}: \
+         what the item actually shows or is about, 4-30 characters, no file extension, no quotes, none of the characters \\ / : * ? \" < > |, no numbering prefix, \
+         and different from every other name in the list. If an item has no usable information, reuse its original file name without the extension. \
+         Reply with ONE JSON array of exactly N strings in the same order as the items, no code fences."
+    )
+}
+
+/// 解析起名结果：数量必须对得上；每个名字清理成可做文件名的一段（最多 60 个字符），空的留空串。
+pub fn parse_names(resp: &str, n: usize) -> Option<Vec<String>> {
+    let arr = ai::parse_array(resp, n)?;
+    Some(
+        arr.into_iter()
+            .map(|s| {
+                let c = crate::naming::sanitize(s.trim()).replace('_', " ");
+                c.split_whitespace().collect::<Vec<_>>().join(" ").trim_matches(|ch| ch == '.' || ch == ' ').chars().take(60).collect()
+            })
+            .collect(),
+    )
+}
+
 pub fn domain_system() -> String {
     "You analyse a web page so that a translator can choose the right terminology. From the page title, address and text sample, decide the page's subject domain \
      (for example: software development, medicine, finance, law, gaming, cooking, academic paper, e-commerce, news). \
@@ -1610,6 +1634,16 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             let out: Vec<Value> =
                 cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
             Ok(json!({"lines": out, "failed": t.failed}))
+        }
+        "namer" => {
+            progress(0, 1)?;
+            let n = req.lines.len();
+            let list: Vec<String> = req.lines.iter().map(|l| format!("{}. {}", l.t + 1, l.text.trim())).collect();
+            let user = format!("PAGE TITLE: {}\nITEMS:\n{}", req.title.trim(), list.join("\n"));
+            let resp = chat(ep, model, &namer_system(if req.lang.trim().is_empty() { default_lang } else { req.lang.trim() }), &user).await?;
+            progress(1, 1)?;
+            let names = parse_names(&resp, n).ok_or_else(|| AppError::parser("模型没有按要求返回名字，请重试。"))?;
+            Ok(json!({"names": names}))
         }
         "domain" => {
             progress(0, 1)?;
