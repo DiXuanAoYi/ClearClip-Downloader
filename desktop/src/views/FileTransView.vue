@@ -15,8 +15,8 @@ import { baseName, countView, etaSeconds, etaText, filterTasks, mergeTasks, task
 
 /** 文件翻译：拖入文件 →（开始前确认）→ 一页一页翻 → 左原文右译文 / 版面阅读 → 导出。任务能停、能续、重启后还在。 */
 const app = useAppStore()
-const EXTS = ['png', 'jpg', 'jpeg', 'webp', 'pdf', 'epub', 'txt', 'md', 'markdown', 'srt', 'vtt', 'ass', 'ssa', 'docx']
-const FORMATS = ['PDF', 'EPUB', 'DOCX', 'TXT', 'MD', 'SRT / ASS', '图片']
+const EXTS = ['png', 'jpg', 'jpeg', 'webp', 'pdf', 'epub', 'txt', 'md', 'markdown', 'srt', 'vtt', 'ass', 'ssa', 'docx', 'pptx', 'xlsx']
+const FORMATS = ['PDF', 'Word', 'PPT', 'Excel', 'EPUB', 'TXT', 'MD', 'SRT / ASS', '图片']
 const LS = 'cc-ft-opts'
 
 const jobs = ref<JobSnap[]>([])
@@ -204,7 +204,7 @@ async function choose() {
 }
 async function addFiles(paths: string[]) {
   const ok = paths.filter((p) => EXTS.includes((p.split('.').pop() || '').toLowerCase()))
-  if (!ok.length) return ElMessage.warning('支持 PDF、EPUB、DOCX、TXT、Markdown、SRT / VTT / ASS 字幕，以及 PNG / JPG / WebP 图片。')
+  if (!ok.length) return ElMessage.warning('支持 PDF、Word、PPT、Excel、EPUB、TXT、Markdown、SRT / VTT / ASS 字幕，以及 PNG / JPG / WebP 图片。')
   if (confirmStart.value) dlg.value = { paths: ok, opts: { ...o.value, pages: '' }, title: '开始前确认', ok: '开始翻译' }
   else for (const p of ok) await start(p, { ...o.value, pages: '' })
 }
@@ -356,7 +356,7 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
   <div class="ft">
     <header class="h1">
       <h1>文件翻译</h1>
-      <p>PDF（含扫描版）、EPUB、DOCX、TXT、Markdown、字幕、图片，译成双语对照，术语和专家沿用你的设置</p>
+      <p>PDF（含扫描版）、Word、PPT、Excel、EPUB、TXT、Markdown、字幕、图片，译完版面和格式不变，可双语对照，术语和专家沿用你的设置</p>
     </header>
     <div class="cols">
       <aside class="lc">

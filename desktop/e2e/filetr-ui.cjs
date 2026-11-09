@@ -30,7 +30,7 @@ const INIT = `
   window.__jobs = [{ id: 7, kind: 'filetr', title: 'Attention.pdf', input: '/d/Attention.pdf', status: 'running', percent: 38, note: '已缓存 112 段', params: O, error: null, output: null }]
   window.__view = { v: 2, layout: false, totalPages: 4, pages: [
     { src: ['Intro A', 'Intro B'], trans: ['引言甲', '引言乙'], page: 0, done: true, skip: [] },
-    { src: ['Body A', 'Body B'], trans: ['正文甲', null], page: 1, done: true, skip: [] },
+    { src: ['<r1>Body </r1><r2>A</r2>', 'Body B'], trans: ['<r1>正文</r1><r2>甲</r2>', null], page: 1, done: true, skip: [], qa: { 0: ['数字可能不一致：原文有 322，译文里没找到'] } },
     { src: ['Later A'], trans: [null], page: 2, done: false, skip: [] },
     { src: ['Later B'], trans: [null], page: 3, done: false, skip: [] },
   ] }
@@ -126,6 +126,11 @@ const INIT = `
   await page.waitForTimeout(150)
   ok('“只看未译”只列有没译的页（第 2~4 页）', (await page.locator('.rail .thumb').count()) === 3)
   await page.locator('.rail .only span', { hasText: '全部' }).click()
+  await page.locator('.rail .thumb').nth(1).click()
+  await page.waitForTimeout(200)
+  const body = await page.locator('.ftr .body').innerText()
+  ok('格式标记不显示在阅读器里', body.includes('Body A') && body.includes('正文甲') && !/<\/?r\d/.test(body), body)
+  ok('译后检查的提示显示在那一段下面和底栏', body.includes('数字可能不一致') && (await page.locator('.st .qa').innerText()).includes('1 段需要检查'))
   await page.getByPlaceholder('搜索原文 / 译文').fill('Later')
   await page.waitForTimeout(150)
   ok('搜索：命中的页在页栏标出来', (await page.locator('.rail .thumb.hit').count()) === 2)

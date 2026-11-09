@@ -88,6 +88,17 @@ export function railPages(v: FileTransView | null, only: 'all' | 'todo' | 'fail'
   return pages.map((_, i) => i).filter((i) => only === 'all' || segIndexes(pages[i], only).length > 0)
 }
 
+// ---------- 格式标记 / 译后检查 ----------
+
+/** Word / PPT / Excel / EPUB 里一段有几种格式时，文字里带 `<r1>…</r1>` 标记：显示、搜索时去掉。 */
+export const stripMarks = (s: string | null | undefined): string => (s ?? '').replace(/<\/?r\d{1,3}>/g, '')
+
+/** 一页里有译后检查提示的片段数。 */
+export const qaOfPage = (p: FileTransPage): number => Object.keys(p.qa ?? {}).filter((k) => !(p.skip ?? []).includes(Number(k))).length
+
+/** 整份文件里有提示的片段数。 */
+export const qaTotal = (v: FileTransView | null): number => (v?.pages ?? []).reduce((n, p) => n + qaOfPage(p), 0)
+
 // ---------- 搜索 ----------
 
 /** 有搜索词的页序号（原文或译文里有）。 */

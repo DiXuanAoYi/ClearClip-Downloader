@@ -75,3 +75,13 @@ assert.equal(F.sizeText(18, 340, 31000), '18 页 · 约 340 段 · 约 3.1 万�
 assert.equal(F.baseName('C:\\a\\b.pdf'), 'b.pdf')
 
 console.log('ft: ok')
+
+// ---- 格式标记和译后检查提示
+{
+  assert.equal(F.stripMarks('<r1>点击</r1><r2>这里</r2>'), '点击这里')
+  assert.equal(F.stripMarks(null), '')
+  const p = { src: ['a', 'b', 'c'], trans: ['甲', '乙', '丙'], skip: [2], qa: { 1: ['数字可能不一致'], 2: ['x'] } }
+  assert.equal(F.qaOfPage(p), 1) // 不翻译的片段不算
+  assert.equal(F.qaTotal({ pages: [p, { src: [], trans: [] }] }), 1)
+  assert.equal(F.qaTotal(null), 0)
+}

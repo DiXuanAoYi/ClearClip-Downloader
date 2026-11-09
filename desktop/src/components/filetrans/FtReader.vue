@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { api, errorText } from '../../api'
 import type { FileTransView, FtOpts } from '../../types'
 import PdfCanvas from '../PdfCanvas.vue'
-import { baseName, countView, hitPages, pageState, pageStates, primaryAction, railPages, segIndexes, splitHits, type PageState, type Task } from '../../utils/ft'
+import { baseName, countView, hitPages, pageState, pageStates, primaryAction, qaTotal, railPages, segIndexes, splitHits, stripMarks, type PageState, type Task } from '../../utils/ft'
 
 /** 文件翻译的阅读器：左边页栏（状态点）、原文 / 对照 / 译文 / 版面、搜索、只看未译 / 失败、直接改译文、底栏的主操作。 */
 const props = defineProps<{ path: string; target: string; view: FileTransView | null; task: Task | null; opts: Partial<FtOpts> }>()
@@ -27,6 +27,7 @@ const pg = computed(() => pages.value[page.value])
 const counts = computed(() => countView(props.view))
 const states = computed(() => pageStates(props.view, running.value))
 const hits = computed(() => new Set(hitPages(props.view, q.value)))
+const qaCount = computed(() => qaTotal(props.view))
 const primary = computed(() => (props.task ? primaryAction(props.task) : 'none'))
 
 // 页栏：版面里按 PDF 页（含没有文字的页），其他按阅读器里的页
@@ -107,17 +108,18 @@ const canEdit = computed(() => !running.value && !!pg.value)
 function beginEdit(i: number) {
   if (!canEdit.value || !pg.value) return
   editing.value = { page: page.value, i }
-  draft.value = pg.value.trans[i] ?? ''
+  draft.value = stripMarks(pg.value.trans[i])
 }
 async function saveEdit() {
   const e = editing.value
   if (!e) return
   editing.value = null
   const p = pages.value[e.page]
-  if (!p || (p.trans[e.i] ?? '') === draft.value.trim()) return
+  if (!p || stripMarks(p.trans[e.i]) === draft.value.trim()) return
   try {
     await api.filetrEdit(props.path, props.target, e.page, e.i, draft.value)
     p.trans[e.i] = draft.value.trim() || null
+    if (p.qa) delete p.qa[String(e.i)]
   } catch (err) {
     ElMessage.error(errorText(err))
   }
@@ -239,7 +241,7 @@ const retryText = computed(() => `重试失败（${counts.value.failedSegs}）`)
         <div v-if="pg && show !== 'trans'" class="pane">
           <div class="lab">原文</div>
           <p v-for="i in segs" :key="i" :class="{ hl: !pg.trans[i] && !skipSet.has(i) }">
-            <template v-for="(s, k) in splitHits(pg.src[i], q)" :key="k"><mark v-if="s.m">{{ s.t }}</mark><template v-else>{{ s.t }}</template></template>
+            <template v-for="(s, k) in splitHits(stripMarks(pg.src[i]), q)" :key="k"><mark v-if="s.m">{{ s.t }}</mark><template v-else>{{ s.t }}</template></template>
           </p>
         </div>
         <div v-if="pg && show !== 'src'" class="pane">
@@ -258,10 +260,11 @@ const retryText = computed(() => `重试失败（${counts.value.failedSegs}）`)
             <template v-else>
               <p :class="{ miss: !pg.trans[i], ed: canEdit }" :title="canEdit ? '点一下可以直接改' : ''" @click="beginEdit(i)">
                 <template v-if="pg.trans[i]">
-                  <template v-for="(s, k) in splitHits(pg.trans[i] as string, q)" :key="k"><mark v-if="s.m">{{ s.t }}</mark><template v-else>{{ s.t }}</template></template>
+                  <template v-for="(s, k) in splitHits(stripMarks(pg.trans[i]), q)" :key="k"><mark v-if="s.m">{{ s.t }}</mark><template v-else>{{ s.t }}</template></template>
                 </template>
                 <template v-else>{{ missText(i) }}</template>
               </p>
+              <span v-if="pg.qa?.[String(i)]" class="qa" :title="pg.qa[String(i)].join('\n')">⚠ {{ pg.qa[String(i)][0] }}<template v-if="pg.qa[String(i)].length > 1">（等 {{ pg.qa[String(i)].length }} 项）</template></span>
               <span v-if="canEdit && !skipSet.has(i)" class="acts">
                 <el-button size="small" text :loading="busySeg === `${page}:${i}`" @click.stop="retranslateSeg(i)">重译</el-button>
                 <el-button v-if="pg.trans[i]" size="small" text @click.stop="clearSeg(i)">去掉</el-button>
@@ -278,6 +281,7 @@ const retryText = computed(() => `重试失败（${counts.value.failedSegs}）`)
     <div class="st">
       <span><b>已译 {{ counts.donePages + counts.failPages }} / {{ counts.pages }} 页</b></span>
       <span>{{ counts.doneSegs }} / {{ counts.segs }} 段</span>
+      <span v-if="qaCount" class="qa" title="译后检查：数字、术语、格式标记、漏译等，只提示，不影响生成">⚠ {{ qaCount }} 段需要检查</span>
       <span v-if="task?.note && running" class="mute">{{ task.note }}</span>
       <span class="sp" />
       <el-button v-if="counts.failedSegs && !running" size="small" @click="emit('act', 'retry')">{{ retryText }}</el-button>
@@ -320,6 +324,8 @@ const retryText = computed(() => `重试失败（${counts.value.failedSegs}）`)
 .pane p.ed { cursor: text }
 .pane p.ed:hover { background: var(--el-fill-color-light); border-radius: 6px }
 .seg1 { position: relative }
+.qa { display: block; font-size: 12px; color: var(--el-color-warning-dark-2); margin: -4px 0 8px }
+.st .qa { display: inline; margin: 0 }
 .seg1 .acts { display: none; position: absolute; right: 0; top: -2px }
 .seg1:hover .acts { display: block }
 mark { background: #ffe58a; color: inherit; border-radius: 2px }

@@ -2326,6 +2326,8 @@ export interface FileTransPage {
   done?: boolean
   /** 按设置不翻译的片段序号（页眉页脚、公式代码、参考文献） */
   skip?: number[]
+  /** 译后检查发现的问题：片段序号 → 提示（只提示，不阻断） */
+  qa?: Record<string, string[]>
 }
 
 export interface FileTransView {

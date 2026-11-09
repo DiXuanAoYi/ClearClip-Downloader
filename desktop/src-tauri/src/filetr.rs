@@ -24,6 +24,10 @@ pub enum Kind {
     Md,
     Sub,
     Docx,
+    /// PowerPoint：每张幻灯片、备注里的文字
+    Pptx,
+    /// Excel：单元格里的文字（共享字符串）、绘图里的文本框
+    Xlsx,
     Epub,
     /// 只能抽出文字，输出为 TXT；扫描版（只有图片）会先用视觉模型识字
     Pdf,
@@ -37,6 +41,8 @@ pub fn kind_of(p: &Path) -> Option<Kind> {
         "md" | "markdown" => Some(Kind::Md),
         "srt" | "vtt" | "ass" | "ssa" => Some(Kind::Sub),
         "docx" => Some(Kind::Docx),
+        "pptx" => Some(Kind::Pptx),
+        "xlsx" => Some(Kind::Xlsx),
         "epub" => Some(Kind::Epub),
         "pdf" => Some(Kind::Pdf),
         "png" | "jpg" | "jpeg" | "jfif" | "webp" => Some(Kind::Img),
@@ -234,32 +240,14 @@ pub fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-static W_PARA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>").unwrap());
-static W_T: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<w:t(?:\s[^>]*)?>(.*?)</w:t>").unwrap());
-
 pub fn extract_docx(xml: &str) -> Vec<Slot> {
-    W_PARA
-        .find_iter(xml)
-        .filter_map(|m| {
-            let text: String = W_T.captures_iter(m.as_str()).map(|c| xml_unescape(&c[1])).collect();
-            let text = text.trim().to_string();
-            worth(&text).then(|| Slot { start: m.start(), end: m.end(), text, prefix: String::new() })
-        })
-        .collect()
+    crate::fmtmark::docx_slots(xml)
 }
 
-/// 把 Word 段落的文字换成译文：第一个文字块放译文，其余清空（段落格式、编号、对齐都保留）。
+/// 把 Word 段落的文字换成译文：一段里有几种格式时按标记放回各自的格式；否则第一个文字块放译文，其余清空
+/// （段落格式、编号、对齐都保留）。
 fn docx_replace(para: &str, trans: &str) -> String {
-    let mut first = true;
-    W_T.replace_all(para, |_: &regex::Captures| {
-        if first {
-            first = false;
-            format!("<w:t xml:space=\"preserve\">{}</w:t>", xml_escape(trans))
-        } else {
-            "<w:t></w:t>".to_string()
-        }
-    })
-    .into_owned()
+    crate::fmtmark::docx_replace(para, trans)
 }
 
 static HTML_OPEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<(p|h[1-6]|li|dt|dd|figcaption|caption|th|td)(?:\s[^>]*)?>").unwrap());
@@ -311,9 +299,12 @@ fn scan_html(raw: &str, lower: &str, lo: usize, hi: usize, out: &mut Vec<Slot>) 
             // 外层只是容器（li 里套 p、blockquote 里套 p）：翻译里面那一层
             scan_html(raw, lower, m.end(), close, out);
         } else {
-            let text = xml_unescape(HTML_TAG.replace_all(&HTML_BR.replace_all(inner, " "), "").trim());
-            let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-            if worth(&text) {
+            let text = crate::fmtmark::html_text(inner).unwrap_or_else(|| {
+                let t = xml_unescape(HTML_TAG.replace_all(&HTML_BR.replace_all(inner, " "), "").trim());
+                t.split_whitespace().collect::<Vec<_>>().join(" ")
+            });
+            let plain = crate::fmtmark::strip(&text);
+            if worth(&plain) {
                 out.push(Slot { start: m.start(), end, text, prefix: String::new() });
             }
         }
@@ -328,10 +319,7 @@ pub fn extract_html(raw: &str) -> Vec<Slot> {
 }
 
 fn html_replace(block: &str, trans: &str) -> String {
-    match (block.find('>'), block.rfind("</")) {
-        (Some(a), Some(b)) if a < b => format!("{}{}{}", &block[..=a], xml_escape(trans), &block[b..]),
-        _ => block.to_string(),
-    }
+    crate::fmtmark::html_replace(block, trans)
 }
 
 // ---------- 按片段位置写回 ----------
@@ -350,6 +338,8 @@ pub fn render_part(kind: Kind, part: &Part, trans: &[Option<String>], offset: us
                 let t = t.trim();
                 let line = match kind {
                     Kind::Docx => docx_replace(orig, t),
+                    Kind::Pptx => crate::fmtmark::pptx_replace(orig, t),
+                    Kind::Xlsx => crate::fmtmark::xlsx_replace(orig, t),
                     Kind::Epub => html_replace(orig, t),
                     _ => format!("{}{}", s.prefix, t),
                 };
@@ -390,9 +380,40 @@ pub fn load(path: &Path, kind: Kind) -> AppResult<Vec<Part>> {
         }
         Kind::Docx => {
             let mut z = zip::ZipArchive::new(std::fs::File::open(path)?).map_err(|_| AppError::invalid("这不是有效的 docx 文件。"))?;
-            let raw = read_zip_entry(&mut z, "word/document.xml")?;
-            let slots = extract_docx(&raw);
-            Ok(vec![Part { name: "word/document.xml".into(), raw, slots }])
+            let _ = read_zip_entry(&mut z, "word/document.xml")?;
+            // 正文 + 页眉页脚、脚注尾注、批注
+            let names = zip_names(&mut z, |n| {
+                n == "word/document.xml"
+                    || n == "word/footnotes.xml"
+                    || n == "word/endnotes.xml"
+                    || n == "word/comments.xml"
+                    || (n.starts_with("word/header") || n.starts_with("word/footer")) && n.ends_with(".xml")
+            });
+            xml_parts(&mut z, names, extract_docx)
+        }
+        Kind::Pptx => {
+            let mut z = zip::ZipArchive::new(std::fs::File::open(path)?).map_err(|_| AppError::invalid("这不是有效的 pptx 文件。"))?;
+            let names = zip_names(&mut z, |n| (n.starts_with("ppt/slides/slide") || n.starts_with("ppt/notesSlides/notesSlide")) && n.ends_with(".xml"));
+            if names.is_empty() {
+                return Err(AppError::invalid("这不是有效的 pptx 文件。"));
+            }
+            xml_parts(&mut z, names, crate::fmtmark::pptx_slots)
+        }
+        Kind::Xlsx => {
+            let mut z = zip::ZipArchive::new(std::fs::File::open(path)?).map_err(|_| AppError::invalid("这不是有效的 xlsx 文件。"))?;
+            let names = zip_names(&mut z, |n| n == "xl/sharedStrings.xml" || (n.starts_with("xl/drawings/drawing") && n.ends_with(".xml")));
+            if names.is_empty() {
+                return Err(AppError::invalid("这个表格里没有可翻译的文字。"));
+            }
+            let mut parts = vec![];
+            for name in names {
+                let raw = read_zip_entry(&mut z, &name)?;
+                let slots = if name.ends_with("sharedStrings.xml") { crate::fmtmark::xlsx_slots(&raw) } else { crate::fmtmark::pptx_slots(&raw) };
+                if !slots.is_empty() {
+                    parts.push(Part { name, raw, slots });
+                }
+            }
+            Ok(parts)
         }
         Kind::Epub => {
             let mut z = zip::ZipArchive::new(std::fs::File::open(path)?).map_err(|_| AppError::invalid("这不是有效的 epub 文件。"))?;
@@ -421,6 +442,31 @@ pub fn load(path: &Path, kind: Kind) -> AppResult<Vec<Part>> {
         Kind::Img => Err(AppError::invalid("图片需要先识字：开始翻译时会用视觉模型识别。")),
         Kind::Sub => Err(AppError::invalid("字幕文件走字幕通道。")),
     }
+}
+
+/// 压缩包里满足条件的条目名（按名字里的数字自然排序：slide2 在 slide10 前面）。
+fn zip_names(z: &mut zip::ZipArchive<std::fs::File>, keep: impl Fn(&str) -> bool) -> Vec<String> {
+    let mut names: Vec<String> = (0..z.len()).filter_map(|i| z.by_index(i).ok().map(|f| f.name().to_string())).filter(|n| keep(n)).collect();
+    let num = |s: &str| -> (String, u64) {
+        let digits: String = s.chars().filter(|c| c.is_ascii_digit()).collect();
+        (s.trim_end_matches(".xml").trim_end_matches(|c: char| c.is_ascii_digit()).to_string(), digits.parse().unwrap_or(0))
+    };
+    names.sort_by_key(|n| num(n));
+    // 正文排在页眉页脚之前
+    names.sort_by_key(|n| !(n == "word/document.xml" || n.starts_with("ppt/slides/") || n == "xl/sharedStrings.xml"));
+    names
+}
+
+fn xml_parts(z: &mut zip::ZipArchive<std::fs::File>, names: Vec<String>, slots_of: fn(&str) -> Vec<Slot>) -> AppResult<Vec<Part>> {
+    let mut parts = vec![];
+    for name in names {
+        let raw = read_zip_entry(z, &name)?;
+        let slots = slots_of(&raw);
+        if !slots.is_empty() {
+            parts.push(Part { name, raw, slots });
+        }
+    }
+    Ok(parts)
 }
 
 /// 把改过的几个条目写回压缩包，其余条目原样复制（EPUB 的 mimetype 必须第一个且不压缩）。
@@ -541,6 +587,9 @@ pub struct ViewPage {
     /// 手动调过位置 / 字号的块（序号 → 调整）：版面预览和生成文件都按它来
     #[serde(default)]
     pub adj: std::collections::BTreeMap<usize, BlockAdj>,
+    /// 译后检查发现的问题（片段序号 → 提示）：只提示，不阻断
+    #[serde(default)]
+    pub qa: std::collections::BTreeMap<usize, Vec<String>>,
 }
 
 /// 手动调整：`rect` 是 (左, 下, 右, 上)（PDF 点），`size` 是字号（点）；没写的沿用自动算出来的。
@@ -1033,6 +1082,7 @@ async fn run_pdf_scanned(
                         done: true,
                         skip: vec![],
                         adj: Default::default(),
+                        qa: Default::default(),
                     })
                     .collect(),
                 failed,
@@ -1087,7 +1137,9 @@ fn trans_setup(st: &crate::AppState, settings: &crate::settings::Settings, targe
     let terms = if settings.ai.glossary_on { st.glossary.terms_for("", ai::lang_tag(target)) } else { vec![] };
     let guide = st.experts.resolve(&settings.ai.expert, settings.ai.expert_auto, "").map(|e| crate::experts::guide_block(&e)).unwrap_or_default();
     let base = if profile == crate::tm::Profile::Subtitle { ai::translate_system(target) } else { crate::vsum::webtrans_system(target) };
-    (format!("{base}{guide}"), terms)
+    // 文档里一段有几种格式（粗体、斜体、链接）时，文字里带 <r1>…</r1> 这样的格式标记：要原样保留
+    let marks = if profile == crate::tm::Profile::Subtitle { "" } else { FORMAT_MARKS_HINT };
+    (format!("{base}{guide}{marks}"), terms)
 }
 
 fn profile_of(kind: Kind) -> crate::tm::Profile {
@@ -1097,6 +1149,8 @@ fn profile_of(kind: Kind) -> crate::tm::Profile {
         crate::tm::Profile::Document
     }
 }
+
+const FORMAT_MARKS_HINT: &str = "\n\nSome lines contain format tags such as <r1>…</r1><r2>…</r2> that mark differently formatted parts of the same paragraph. Translate the text inside each tag and KEEP every tag exactly once, in pairs, with the same numbers; do not add, remove, merge or renumber tags. You may reorder the tagged parts when the target language needs a different word order. Lines without tags stay plain text.";
 
 /// 翻译一批文字；返回和输入等长，失败的那条是 None。
 async fn translate_texts(
@@ -1204,7 +1258,18 @@ pub(crate) fn match_cached_page(view: &mut Option<View>, pages: &[crate::pdfx::P
         None => {
             // 这一页还没轮到：先在缓存里占个位，在页面上直接改译文也能存下来
             let at = v.pages.iter().position(|p| p.page.is_some_and(|x| x > page)).unwrap_or(v.pages.len());
-            v.pages.insert(at, ViewPage { trans: vec![None; texts.len()], src: texts, page: Some(page), done: false, skip: vec![], adj: Default::default() });
+            v.pages.insert(
+                at,
+                ViewPage {
+                    trans: vec![None; texts.len()],
+                    src: texts,
+                    page: Some(page),
+                    done: false,
+                    skip: vec![],
+                    adj: Default::default(),
+                    qa: Default::default(),
+                },
+            );
             m.view_page = at;
             m.dirty = true;
         }
@@ -1415,6 +1480,10 @@ pub fn edit_seg(data_dir: &Path, input: &Path, target: &str, page: usize, index:
         crate::tm::store_edited(data_dir, profile_of(kind), target, &src, t);
     }
     *slot = if t.is_empty() { None } else { Some(t.to_string()) };
+    // 人改过的译文不再提示
+    if let Some(p) = v.pages.get_mut(page) {
+        p.qa.remove(&index);
+    }
     v.failed = v.pages.iter().map(|p| p.trans.iter().filter(|t| t.is_none()).count()).sum();
     save_cache(&cp, &v);
     Ok(())
@@ -1440,6 +1509,20 @@ pub fn adjust_block(data_dir: &Path, input: &Path, target: &str, page: usize, in
     }
     save_cache(&cp, &v);
     Ok(())
+}
+
+/// 一页的译后检查：片段序号 → 问题。不翻译的片段和没有译文的不查。
+pub(crate) fn qa_of(src: &[String], trans: &[Option<String>], terms: &[(String, String)], skip: &[usize]) -> std::collections::BTreeMap<usize, Vec<String>> {
+    src.iter()
+        .zip(trans)
+        .enumerate()
+        .filter(|(i, _)| !skip.contains(i))
+        .filter_map(|(i, (s, t))| {
+            let t = t.as_deref()?;
+            let m = crate::transqa::check(s, t, terms);
+            (!m.is_empty()).then_some((i, m))
+        })
+        .collect()
 }
 
 /// 阅读器里点“重译”：把这一段原文重新翻一遍，结果写进缓存并返回。
@@ -1546,6 +1629,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     // 缓存一开始就写好所有页（没轮到的页 done = false）：中途停止、失败、版面预览都能按页对上。
     let profile = profile_of(kind);
     let (system, terms) = trans_setup(&ctx.st, &settings, &target, profile);
+    let term_pairs: Vec<(String, String)> = terms.iter().map(|t| (t.source.clone(), t.target.clone())).collect();
     let tv = crate::tm::terms_version(&ctx.st);
     let mut view = View {
         input: input.to_string_lossy().into_owned(),
@@ -1563,6 +1647,9 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
         let adj_of = |pn: Option<usize>, n: usize| {
             old.as_ref().and_then(|o| o.pages.iter().find(|p| p.page == pn && p.src.len() == n)).map(|p| p.adj.clone()).unwrap_or_default()
         };
+        let qa_old = |pn: Option<usize>, n: usize| {
+            old.as_ref().and_then(|o| o.pages.iter().find(|p| p.page == pn && p.src.len() == n)).map(|p| p.qa.clone()).unwrap_or_default()
+        };
         let mut at = 0usize;
         for (pi, n) in sizes.iter().enumerate() {
             view.pages.push(ViewPage {
@@ -1572,6 +1659,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
                 done: false,
                 skip: (at..at + n).filter(|i| skip.contains(i)).map(|i| i - at).collect(),
                 adj: adj_of(page_no[pi], *n),
+                qa: qa_old(page_no[pi], *n),
             });
             at += n;
         }
@@ -1611,6 +1699,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
         }
         view.pages[pi].trans = trans[at..at + n].to_vec();
         view.pages[pi].done = true;
+        view.pages[pi].qa = qa_of(&texts[at..at + n], &trans[at..at + n], &term_pairs, &view.pages[pi].skip);
         view.failed =
             view.pages.iter().filter(|p| p.done).map(|p| p.trans.iter().enumerate().filter(|(k, t)| t.is_none() && !p.skip.contains(k)).count()).sum();
         save_cache(&cpath, &view);

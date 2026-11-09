@@ -42,7 +42,7 @@ fn docx_paragraph_text_is_replaced_in_place() {
     let out = render_part(Kind::Docx, &p, &tr(&["你好 & 再见"]), 0, false);
     assert!(out.contains(r#"<w:jc w:val="center"/>"#));
     assert!(out.contains(r#"<w:t xml:space="preserve">你好 &amp; 再见</w:t>"#));
-    assert!(out.contains("<w:t></w:t>"));
+    assert!(!out.contains("goodbye")); // 同一种格式的相邻文字块合成一个，不再留空壳
     assert!(out.contains("<w:t>42</w:t>"));
     let bi = render_part(Kind::Docx, &p, &tr(&["你好"]), 0, true);
     assert_eq!(bi.matches("<w:p>").count(), 3);
@@ -72,6 +72,8 @@ fn missing_translation_keeps_original() {
 #[test]
 fn kinds() {
     assert_eq!(kind_of(Path::new("a.EPUB")), Some(Kind::Epub));
+    assert_eq!(kind_of(Path::new("a.PPTX")), Some(Kind::Pptx));
+    assert_eq!(kind_of(Path::new("a.xlsx")), Some(Kind::Xlsx));
     assert_eq!(kind_of(Path::new("a.srt")), Some(Kind::Sub));
     assert_eq!(kind_of(Path::new("a.exe")), None);
 }
@@ -108,6 +110,75 @@ fn epub_zip_roundtrip_keeps_other_entries() {
     let mut jpg = vec![];
     z.by_name("OEBPS/cover.jpg").unwrap().read_to_end(&mut jpg).unwrap();
     assert_eq!(jpg, [0xff, 0xd8, 0x00, 0x01]);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 造一个 zip：条目名 → 内容。
+fn make_zip(path: &Path, entries: &[(&str, &str)]) {
+    use std::io::Write;
+    let mut w = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    for (n, c) in entries {
+        w.start_file(*n, zip::write::SimpleFileOptions::default()).unwrap();
+        w.write_all(c.as_bytes()).unwrap();
+    }
+    w.finish().unwrap();
+}
+
+#[test]
+fn office_files_load_every_text_part_and_write_back_keeping_formats() {
+    let dir = std::env::temp_dir().join(format!("cc-filetr-office-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // Word：正文、页眉、脚注都要翻译；正文里一段有粗体
+    let docx = dir.join("a.docx");
+    make_zip(
+        &docx,
+        &[
+            ("word/document.xml", r#"<w:body><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Warning: </w:t></w:r><w:r><w:t>hot surface</w:t></w:r></w:p></w:body>"#),
+            ("word/header1.xml", r#"<w:hdr><w:p><w:r><w:t>Company manual</w:t></w:r></w:p></w:hdr>"#),
+            ("word/footnotes.xml", r#"<w:footnotes><w:footnote><w:p><w:r><w:t>See appendix</w:t></w:r></w:p></w:footnote></w:footnotes>"#),
+            ("word/media/image1.png", "PNG"),
+        ],
+    );
+    let parts = load(&docx, Kind::Docx).unwrap();
+    assert_eq!(parts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["word/document.xml", "word/footnotes.xml", "word/header1.xml"]);
+    assert_eq!(parts[0].slots[0].text, "<r1>Warning: </r1><r2>hot surface</r2>");
+    let out = render_part(Kind::Docx, &parts[0], &tr(&["<r1>警告：</r1><r2>表面很烫</r2>"]), 0, false);
+    assert!(out.contains("<w:rPr><w:b/></w:rPr><w:t xml:space=\"preserve\">警告：</w:t>") && out.contains("表面很烫"), "{out}");
+    // PowerPoint：幻灯片按数字顺序、备注也翻译
+    let pptx = dir.join("a.pptx");
+    make_zip(
+        &pptx,
+        &[
+            ("ppt/slides/slide10.xml", r#"<p:sld><a:p><a:r><a:rPr/><a:t>Tenth slide</a:t></a:r></a:p></p:sld>"#),
+            ("ppt/slides/slide2.xml", r#"<p:sld><a:p><a:r><a:rPr/><a:t>Second slide</a:t></a:r></a:p></p:sld>"#),
+            ("ppt/notesSlides/notesSlide2.xml", r#"<p:notes><a:p><a:r><a:rPr/><a:t>Speaker notes here</a:t></a:r></a:p></p:notes>"#),
+        ],
+    );
+    let parts = load(&pptx, Kind::Pptx).unwrap();
+    assert_eq!(
+        parts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        ["ppt/slides/slide2.xml", "ppt/slides/slide10.xml", "ppt/notesSlides/notesSlide2.xml"]
+    );
+    // Excel：共享字符串里的文字、网址不翻
+    let xlsx = dir.join("a.xlsx");
+    make_zip(
+        &xlsx,
+        &[
+            ("xl/sharedStrings.xml", r#"<sst><si><t>Total revenue</t></si><si><t>https://example.com</t></si></sst>"#),
+            ("xl/worksheets/sheet1.xml", "<worksheet/>"),
+        ],
+    );
+    let parts = load(&xlsx, Kind::Xlsx).unwrap();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].slots.len(), 1);
+    let mut rendered = std::collections::HashMap::new();
+    rendered.insert(parts[0].name.clone(), render_part(Kind::Xlsx, &parts[0], &tr(&["总收入"]), 0, false));
+    let dst = dir.join("b.xlsx");
+    write_zip(&xlsx, &dst, &rendered).unwrap();
+    let mut z = zip::ZipArchive::new(std::fs::File::open(&dst).unwrap()).unwrap();
+    let ss = read_zip_entry(&mut z, "xl/sharedStrings.xml").unwrap();
+    assert!(ss.contains("总收入") && ss.contains("https://example.com"));
+    assert_eq!(read_zip_entry(&mut z, "xl/worksheets/sheet1.xml").unwrap(), "<worksheet/>");
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -322,6 +393,7 @@ fn vp(page: usize, src: &[&str], trans: &[Option<&str>], done: bool) -> ViewPage
         done,
         skip: vec![],
         adj: Default::default(),
+        qa: Default::default(),
     }
 }
 
