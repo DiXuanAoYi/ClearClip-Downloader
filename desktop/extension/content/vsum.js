@@ -80,7 +80,7 @@
 
   function seek(ms) {
     const v = video()
-    if (v && isVideo()) {
+    if (v && (isVideo() || (S.data?.site === 'manual' && ms > 0))) {
       v.currentTime = ms / 1000
       v.play?.().catch(() => {})
     } else if (/^https?:/.test(S.data?.url || '') && S.data?.site !== 'article') window.open(V.timeLink(S.data.url, ms), '_blank', 'noopener')

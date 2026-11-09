@@ -661,6 +661,14 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await settle(page, 300)
     const saved = await page.evaluate(() => window.__store.vsumLocal && Object.values(window.__store.vsumLocal)[0]?.data?.lines?.length)
     ok('粘贴的文字按视频记住', saved >= 1, String(saved))
+    // 导入 / 粘贴的文稿：带时间的显示时间戳；没有时间戳的行文字要占满整行（以前被挤进 48px 的时间列，一个单词一行）
+    await clickText(page, '文稿')
+    await settle(page, 200)
+    const w = await page.evaluate(() => {
+      const ln = window.__roots.map((r) => r.querySelector('#lines .ln')).find(Boolean)
+      return ln ? { cls: ln.className, text: (ln.querySelector('.one, .mn')?.parentElement || ln).getBoundingClientRect().width, row: ln.getBoundingClientRect().width } : null
+    })
+    ok('导入的文稿每行文字占满整行（不是 48px 窄列）', w && w.text > w.row * 0.6, JSON.stringify(w))
     await page.close()
   }
 

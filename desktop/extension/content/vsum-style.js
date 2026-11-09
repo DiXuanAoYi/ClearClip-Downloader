@@ -23,6 +23,7 @@
     .chips { display: flex; gap: 5px; flex-wrap: wrap; margin: 6px 0; }
     .chip { background: #d9762b1f; color: #8a3f0c; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
     .ln { position: relative; display: grid; grid-template-columns: 48px 1fr; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; }
+    .ln.nt { grid-template-columns: 1fr; }
     .ln:hover { background: #d9762b14; }
     .ln.cur { background: #d9762b1f; }
     .ln.cur .tm { background: #b4561a; color: #fff; border-radius: 6px; padding: 0 6px; }
