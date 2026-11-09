@@ -332,6 +332,16 @@ onUnmounted(() => unlistenBatch?.())
 
 /** 声音：视频（含声音）/ 只要音频。只要音频时优先换成单独的音频轨（下载小），没有时下载视频后提取声音。 */
 const audioTrack = computed(() => (result.value ? bestAudio(result.value) : undefined))
+/** 单独的音频轨（按音质从高到低）。选“只要音频”时，清晰度那一块换成它们 */
+const audioTracks = computed(() => (result.value?.assets.filter((a) => a.kind === 'audio') ?? []).sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0)))
+const showAudioList = computed(() => audioOnly.value && result.value?.kind === 'video' && audioTracks.value.length > 0)
+/** 音频轨只能选一个（点已选中的不取消，只要音频总得有一条） */
+function pickAudio(id: string) {
+  const next = new Set(selected.value)
+  for (const a of audioTracks.value) next.delete(a.id)
+  next.add(id)
+  selected.value = next
+}
 const usingAudioTrack = computed(() => audioOnly.value && !!audioTrack.value && selected.value.has(audioTrack.value.id) && !videoSelected.value)
 function setSound(mode: 'video' | 'audio') {
   const r = result.value
@@ -349,8 +359,8 @@ function setSound(mode: 'video' | 'audio') {
   } else {
     if (!audioOnly.value) return
     audioOnly.value = false
-    if (track && next.has(track.id) && !videoFormats.value.some((v) => next.has(v.id))) {
-      next.delete(track.id)
+    if (audioTracks.value.some((a) => next.has(a.id)) && !videoFormats.value.some((v) => next.has(v.id))) {
+      for (const a of audioTracks.value) next.delete(a.id)
       const back = prevVideo ?? videoFormats.value[0]?.id
       if (back) next.add(back)
     }
@@ -408,7 +418,9 @@ const extractorText = computed(() => {
   return ''
 })
 /** 附带下载：图集里的背景音乐单独一块，只要音频时用到的音频轨不重复列出 */
-const extrasShown = computed(() => extras.value.filter((a) => !(result.value?.kind === 'images' && a.id === musicAsset.value?.id)))
+const extrasShown = computed(() =>
+  extras.value.filter((a) => !(result.value?.kind === 'images' && a.id === musicAsset.value?.id) && !(result.value?.kind !== 'audio' && a.kind === 'audio')),
+)
 
 const SUBMODE_TEXT: Record<SubMode, string> = { file: '单独文件', soft: '内嵌到视频', burn: '烧录进画面' }
 const pickedSubs = computed(() => (audioOnly.value ? [] : subtitleAssets.value.filter((a) => selected.value.has(a.id))))
@@ -743,36 +755,59 @@ function recentKind(r: HistoryItem) {
         </template>
 
         <template v-else>
-          <!-- 清晰度：单选列表 -->
-          <div v-if="videoFormats.length" class="sec" :class="{ off: usingAudioTrack }">
+          <!-- 清晰度 / 音频：单选列表。选“只要音频”时同一块换成音频轨 -->
+          <div v-if="videoFormats.length || showAudioList" class="sec">
             <div class="pz-sh">
-              <span class="pz-st">清晰度<small>{{ videoFormats.length }} 种</small></span>
-              <span v-if="videoFormats.length > 6" class="pz-sa"><button type="button" class="pz-link" @click="showAllFormats = !showAllFormats">{{ showAllFormats ? '收起' : `显示全部 ${videoFormats.length} 种` }}</button></span>
+              <span class="pz-st">{{ showAudioList ? '音频' : '清晰度' }}<small>{{ showAudioList ? audioTracks.length : videoFormats.length }} 种</small></span>
+              <span v-if="!showAudioList && videoFormats.length > 6" class="pz-sa"><button type="button" class="pz-link" @click="showAllFormats = !showAllFormats">{{ showAllFormats ? '收起' : `显示全部 ${videoFormats.length} 种` }}</button></span>
             </div>
-            <p v-if="usingAudioTrack" class="pz-note">只要音频：下载单独的音频轨（{{ audioTrack?.label }}），不需要选清晰度。</p>
-            <p v-else-if="audioOnly" class="pz-note">这个视频没有单独的音频轨：会先下载所选清晰度再提取声音，选低一点的更快。</p>
-            <div class="rows" role="radiogroup" aria-label="清晰度">
-              <button
-                v-for="v in shownFormats"
-                :key="v.id"
-                type="button"
-                role="radio"
-                class="frow"
-                :class="{ on: selected.has(v.id) }"
-                :aria-checked="selected.has(v.id)"
-                :disabled="usingAudioTrack"
-                @click="pickVideo(v.id)"
-              >
-                <span class="dot" />
-                <span class="fname">
-                  <span class="ellipsis">{{ v.label }}</span>
-                  <span v-if="v.id === defaultVideoId" class="pz-tag" :class="{ acc: selected.has(v.id) }">默认</span>
-                  <span v-else-if="v.id === topVideoId" class="pz-tag">最高</span>
-                </span>
-                <span class="mono spec ellipsis">{{ formatSpec(v) }}</span>
-                <span class="mono size">{{ sizeOf(v) }}</span>
-              </button>
-            </div>
+            <template v-if="showAudioList">
+              <p class="pz-note">只要音频：下载单独的音频轨，完成后转成 {{ audioFmt }}，不需要选清晰度。</p>
+              <div class="rows" role="radiogroup" aria-label="音频">
+                <button
+                  v-for="(a, i) in audioTracks"
+                  :key="a.id"
+                  type="button"
+                  role="radio"
+                  class="frow"
+                  :class="{ on: selected.has(a.id) }"
+                  :aria-checked="selected.has(a.id)"
+                  @click="pickAudio(a.id)"
+                >
+                  <span class="dot" />
+                  <span class="fname">
+                    <span class="ellipsis">{{ a.label }}</span>
+                    <span v-if="i === 0" class="pz-tag" :class="{ acc: selected.has(a.id) }">音质最高</span>
+                  </span>
+                  <span class="mono spec ellipsis">{{ a.ext.toUpperCase() }}{{ a.bitrate ? ` · ${a.bitrate} kbps` : '' }} → {{ audioFmt }}</span>
+                  <span class="mono size">{{ sizeOf(a) }}</span>
+                </button>
+              </div>
+            </template>
+            <template v-else>
+              <p v-if="audioOnly" class="pz-note">这个视频没有单独的音频轨：会先下载所选清晰度再提取声音，选低一点的更快。</p>
+              <div class="rows" role="radiogroup" aria-label="清晰度">
+                <button
+                  v-for="v in shownFormats"
+                  :key="v.id"
+                  type="button"
+                  role="radio"
+                  class="frow"
+                  :class="{ on: selected.has(v.id) }"
+                  :aria-checked="selected.has(v.id)"
+                  @click="pickVideo(v.id)"
+                >
+                  <span class="dot" />
+                  <span class="fname">
+                    <span class="ellipsis">{{ v.label }}</span>
+                    <span v-if="v.id === defaultVideoId" class="pz-tag" :class="{ acc: selected.has(v.id) }">默认</span>
+                    <span v-else-if="v.id === topVideoId" class="pz-tag">最高</span>
+                  </span>
+                  <span class="mono spec ellipsis">{{ formatSpec(v) }}</span>
+                  <span class="mono size">{{ sizeOf(v) }}</span>
+                </button>
+              </div>
+            </template>
           </div>
 
           <!-- 声音 -->

@@ -87,6 +87,9 @@ pub fn preferred_subtitles(info: &MediaInfo, settings: &Settings) -> Vec<String>
             }
         }
     }
+    // 视频原语言的自动字幕（YouTube 的 xx-orig）排最前：偏好是“zh, en”时，英文视频先给英文原文，而不是它的中文自动翻译
+    // （只在原语言本来就在偏好里时才会出现在 out 里，不会多下载偏好之外的语言）
+    out.sort_by_key(|id| !id.ends_with("-orig"));
     out
 }
 
@@ -130,6 +133,24 @@ fn base_selection(info: &MediaInfo, settings: &Settings) -> (Vec<String>, PostOp
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preferred_subtitles_put_the_original_language_first() {
+        let sub = |id: &str, q: &str| {
+            let mut a = Asset::base(id, AssetKind::Subtitle, String::new(), id, "vtt");
+            a.format_id = Some(id.trim_start_matches("auto-").trim_start_matches("sub-").to_string());
+            a.quality = Some(q.to_string());
+            a
+        };
+        let mut info = info();
+        // 英文视频：自动生成的英文原文 + 偏好语言里的中文自动翻译
+        info.assets = vec![sub("auto-zh-Hans", "zh-Hans.auto"), sub("auto-en-orig", "en.auto")];
+        let s = Settings { subtitle_langs: vec!["zh".into(), "en".into()], ..Settings::default() };
+        assert_eq!(preferred_subtitles(&info, &s), vec!["auto-en-orig", "auto-zh-Hans"], "原语言在前，中文翻译也还在");
+        // 原语言不在偏好里：不额外选
+        let s2 = Settings { subtitle_langs: vec!["zh".into()], ..Settings::default() };
+        assert_eq!(preferred_subtitles(&info, &s2), vec!["auto-zh-Hans"]);
+    }
 
     fn v(id: &str, side: u32, codec: &str, br: u64) -> Asset {
         let mut a = Asset::base(id, AssetKind::Video, String::new(), id, "mp4");

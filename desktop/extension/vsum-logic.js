@@ -253,10 +253,11 @@
         out.tracks = []
       }
     }
-    // 视频自己说的语言：自动字幕（asr）一定是按语音识别出来的；没有就看默认音轨对应的字幕轨
+    // 视频自己说的语言：只有自动字幕（asr）一定是按语音识别出来的。
+    // 页面里的 defaultCaptionTrackIndex 是“按观看者的界面语言挑的默认字幕”，不是视频说的语言（中文用户看英文视频会指到中文轨），不能拿来当依据；
+    // 没有自动字幕时交给 pickTrack 按标题文字、再按偏好判断
     const asr = out.tracks.find((t) => t.auto)
-    const di = text.match(/"defaultCaptionTrackIndex":(\d+)/)
-    out.spoken = asr?.lang || (di && out.tracks[Number(di[1])]?.lang) || ''
+    out.spoken = asr?.lang || ''
     const str = (key) => {
       const i = text.indexOf(`"${key}":"`)
       if (i < 0) return ''

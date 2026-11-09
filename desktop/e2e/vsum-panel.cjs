@@ -60,6 +60,10 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
           }
           if (m.type === 'cc-ai-job') {
             if (o.hold) return { ok: true, state: 'running', done: 0, total: 1, note: '' }
+            if (o.stream && window.__job?.kind === 'transcribe' && !window.__streamed) {
+              window.__streamed = true
+              return { ok: true, state: 'running', done: 30, total: 100, note: '正在转写第 1 / 2 段…', partial: { lines: [{ t: 0, text: '大家好，今天讲讲 Rust。' }], durationMs: 5000, track: '清影转写', progress: 0.5 } }
+            }
             const k = window.__job?.kind || o.resumeKind
             window.__job = window.__job || { kind: k }
             const result = {
@@ -587,6 +591,19 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.close()
   }
 
+  // ---- 转写流式显示：识别出多少先显示多少，全部完成后用完整结果覆盖
+  {
+    const { page } = await open(YT + '&notracks=1', { subs: false, stream: true })
+    await page.waitForFunction(() => window.__roots?.some((r) => /识别中 50%/.test(r.textContent)), null, { timeout: 8000 })
+    const half = await page.evaluate(() => window.__roots.map((r) => r.querySelector('.meta')?.textContent || '').join('|'))
+    ok('识别到一半时先显示已有的 1 句', /1 段/.test(half) && /识别中 50%/.test(half), half)
+    await page.waitForFunction(() => window.__roots?.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '') && !/识别中/.test(r.textContent)), null, { timeout: 8000 })
+    ok('全部识别完后用完整结果覆盖（2 句、轨道回到清影转写）', await page.evaluate(() => window.__roots.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '') && /清影转写/.test(r.querySelector('.meta')?.textContent || ''))))
+    const tr = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-ai-run' && c.req.kind === 'transcribe')?.req)
+    ok('转写请求带视频语言提示字段（英文标题不强行指定）', tr && !tr.lang, JSON.stringify(tr))
+    await page.close()
+  }
+
   // ---- 文稿来源单选：字幕轨 / 音频转写
   {
     const prefs = { local: { vsumPrefs: { autoTranscribe: false, autoOnline: false, srcV: 1 } }, subs: false }
@@ -661,6 +678,45 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await settle(page, 300)
     const saved = await page.evaluate(() => window.__store.vsumLocal && Object.values(window.__store.vsumLocal)[0]?.data?.lines?.length)
     ok('粘贴的文字按视频记住', saved >= 1, String(saved))
+    // 导入 / 粘贴的文稿：带时间的显示时间戳；没有时间戳的行文字要占满整行（以前被挤进 48px 的时间列，一个单词一行）
+    await clickText(page, '文稿')
+    await settle(page, 200)
+    const w = await page.evaluate(() => {
+      const ln = window.__roots.map((r) => r.querySelector('#lines .ln')).find(Boolean)
+      return ln ? { cls: ln.className, text: (ln.querySelector('.one, .mn')?.parentElement || ln).getBoundingClientRect().width, row: ln.getBoundingClientRect().width } : null
+    })
+    ok('导入的文稿每行文字占满整行（不是 48px 窄列）', w && w.text > w.row * 0.6, JSON.stringify(w))
+    await page.close()
+  }
+
+  // ---- 导入真实的 .srt 文件（和用户给的文件同样的写法）：识别时间戳、文字占满整行、视频上显示字幕层
+  {
+    const { page } = await open(YT + '&notracks=1&emptytt=1', { subs: false })
+    await page.waitForFunction(() => window.__roots?.some((r) => /清影也没有|没有字幕|没有找到字幕/.test(r.textContent)), null, { timeout: 8000 })
+    const srt = '1\r\n00:00:00,300 --> 00:00:10,240\r\n[Music]\r\n\r\n2\r\n00:00:10,240 --> 00:00:14,080\r\nHello everyone and welcome back to Mr.\r\n\r\n3\r\n00:00:14,080 --> 00:00:16,960\r\nEnglish channel where learning English\r\n\r\n4\r\n00:00:16,960 --> 00:00:20,800\r\nis easy and fun. I\'m Emily.\r\n'
+    await clickText(page, '导入字幕文件').catch(() => {})
+    const before = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-sublayer-open').length)
+    await page.evaluate((text) => {
+      const inp = window.__roots.flatMap((r) => [...r.querySelectorAll('input[type=file]')]).pop()
+      const dt = new DataTransfer()
+      dt.items.add(new File([text], 'sample.srt', { type: 'application/x-subrip' }))
+      inp.files = dt.files
+      inp.dispatchEvent(new Event('change'))
+    }, srt)
+    await settle(page, 600)
+    await clickText(page, '文稿')
+    await settle(page, 300)
+    const info = await page.evaluate(() => {
+      const root = window.__roots.find((r) => r.querySelector('#lines'))
+      const lns = root ? [...root.querySelectorAll('#lines .ln')] : []
+      const first = lns[0]
+      const textW = first ? (first.querySelector('.one, .mn')?.parentElement || first).getBoundingClientRect().width : 0
+      return { n: lns.length, tm: lns.map((l) => l.querySelector('.tm')?.textContent || ''), textW, rowW: first?.getBoundingClientRect().width || 0 }
+    })
+    ok('导入的 .srt：每句有时间戳（识别出时间）', info.n >= 2 && info.tm.every((t) => /\d/.test(t)) && info.tm.some((t) => t !== '0:00'), JSON.stringify(info))
+    ok('导入的 .srt：文字占满整行，不是一个单词一行', info.textW > 150, JSON.stringify(info))
+    const opened = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-sublayer-open').length)
+    ok('导入的 .srt：视频上打开字幕层', opened > before, `${before} → ${opened}`)
     await page.close()
   }
 

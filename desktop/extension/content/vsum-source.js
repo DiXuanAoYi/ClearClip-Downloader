@@ -235,6 +235,8 @@
     }
     out.lines = V.normalizeLines(cues, { maxLen: 160 })
     if (!out.lines.length) out.lines = cues.map((c) => ({ t: c.t, text: c.text }))
+    // 文件里有真正的时间戳（不是全 0）
+    out.timed = out.lines.some((l) => l.t > 0)
     return out
   }
 

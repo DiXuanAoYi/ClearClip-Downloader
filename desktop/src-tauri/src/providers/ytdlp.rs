@@ -926,12 +926,18 @@ async fn fetch_subtitles_langs(ctx: &Ctx<'_>, page_url: &str, dir: &Path, langs:
 
 const FETCH_SUBS_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 
-/// 在 yt-dlp 取到的字幕里挑一个：先看想要的语言（逗号分隔，前缀匹配），再中文、英文，最后第一个。
+/// 在 yt-dlp 取到的字幕里挑一个：
+/// 1. 先看想要的语言（逗号分隔，前缀匹配；调用方传的是视频说的语言，人工字幕在前、自动生成的 xx-orig 在后）；
+/// 2. 再看视频原语言的自动字幕（`xx-orig`，语音识别出来的，语言一定是视频说的语言）；
+/// 3. 最后才是中文、英文，再不行取第一个。
 pub fn pick_subtitle<'a>(found: &'a [(String, PathBuf)], wanted: &str) -> Option<&'a (String, PathBuf)> {
-    let prefs: Vec<String> = wanted.split(',').map(|x| x.trim().to_lowercase()).filter(|x| !x.is_empty()).chain(["zh".to_string(), "en".to_string()]).collect();
-    prefs
+    let find = |w: &str| found.iter().find(|(l, _)| l.to_lowercase() == w).or_else(|| found.iter().find(|(l, _)| l.to_lowercase().starts_with(w)));
+    let wanted: Vec<String> = wanted.split(',').map(|x| x.trim().to_lowercase()).filter(|x| !x.is_empty()).collect();
+    wanted
         .iter()
-        .find_map(|w| found.iter().find(|(l, _)| l.to_lowercase() == *w).or_else(|| found.iter().find(|(l, _)| l.to_lowercase().starts_with(w.as_str()))))
+        .find_map(|w| find(w))
+        .or_else(|| found.iter().find(|(l, _)| l.to_lowercase().ends_with("-orig")))
+        .or_else(|| ["zh", "en"].iter().find_map(|w| find(w)))
         .or_else(|| found.first())
 }
 
@@ -964,6 +970,23 @@ mod tests {
                 {"format_id": "dash-x", "ext": "mp4", "vcodec": "avc1", "acodec": "none", "width": 854, "height": 480, "url": "https://r/manifest.mpd", "protocol": "http_dash_segments", "fragments": [{"path": "a"}]}
             ]
         })
+    }
+
+    #[test]
+    fn picks_the_original_language_subtitle_first() {
+        let f = |l: &str| (l.to_string(), PathBuf::from(l));
+        // 英文视频：自动生成的英文原文 en-orig 在前，不被中文翻译抢走
+        let found = vec![f("zh-Hans"), f("en-orig")];
+        assert_eq!(pick_subtitle(&found, "").unwrap().0, "en-orig");
+        // 调用方说了视频语言：人工字幕 > 原语言自动字幕
+        let found = vec![f("zh-Hans"), f("en-orig"), f("en")];
+        assert_eq!(pick_subtitle(&found, "en").unwrap().0, "en");
+        assert_eq!(pick_subtitle(&[f("zh-Hans"), f("en-orig")], "en").unwrap().0, "en-orig");
+        // 中文视频有中文字幕：说了是中文就用中文
+        assert_eq!(pick_subtitle(&[f("en"), f("zh-Hans")], "zh").unwrap().0, "zh-Hans");
+        // 没有原语言标记、没说语言：中文、英文的老顺序
+        assert_eq!(pick_subtitle(&[f("en"), f("zh-Hans")], "").unwrap().0, "zh-Hans");
+        assert_eq!(pick_subtitle(&[f("ja")], "").unwrap().0, "ja");
     }
 
     #[test]

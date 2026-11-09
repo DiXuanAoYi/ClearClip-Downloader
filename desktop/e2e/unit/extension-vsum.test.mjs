@@ -140,6 +140,11 @@ assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: 
   // 语音语言取自动字幕轨
   const html = '"captionTracks":[{"baseUrl":"https://x/a","languageCode":"zh-Hans","name":{"simpleText":"中文"}},{"baseUrl":"https://x/b","languageCode":"en","kind":"asr","name":{"simpleText":"English (auto-generated)"}}]'
   assert.equal(V.parseYouTubePage(html).spoken, 'en')
+  // 没有自动字幕：defaultCaptionTrackIndex 是按观看者界面语言挑的，不能当成视频说的语言
+  const manual = '"captionTracks":[{"baseUrl":"https://x/a","languageCode":"zh-Hans","name":{"simpleText":"中文"}},{"baseUrl":"https://x/b","languageCode":"en","name":{"simpleText":"English"}}],"defaultCaptionTrackIndex":0'
+  assert.equal(V.parseYouTubePage(manual).spoken, '')
+  const tr = V.parseYouTubePage(manual).tracks
+  assert.equal(V.pickTrack(tr, [], { title: 'How to Train Your Brain to Speak English' }).lang, 'en', '英文标题、只有人工字幕：选英文，不跟着默认的中文轨')
 }
 
 // ---- 导图

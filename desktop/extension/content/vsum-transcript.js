@@ -18,11 +18,13 @@
       const nowIdx = found[S.hit]
       const tr = S.res.translated
       const mode = S.prefs.view
+      // 每句前面的时间戳；没有时间戳时文字要占满整行
+      const showTm = isVideo()
       const body = h('div', { id: 'lines', onmouseup: onSelect, onmouseover: wordIn, onmouseout: wordOut })
       d.lines.forEach((l, i) => {
         const [main, sub] = V.viewLine(l.text, tr?.[i], mode)
-        body.append(h('div', { class: `ln${hits?.has(i) ? ' hit' : ''}${i === nowIdx ? ' now' : ''}`, 'data-i': i, onclick: () => !getSel() && seek(l.t) },
-          isVideo() && h('span', { class: 'tm', text: V.fmtClock(l.t) }),
+        body.append(h('div', { class: `ln${showTm ? '' : ' nt'}${hits?.has(i) ? ' hit' : ''}${i === nowIdx ? ' now' : ''}`, 'data-i': i, onclick: () => !getSel() && seek(l.t) },
+          showTm && h('span', { class: 'tm', text: V.fmtClock(l.t) }),
           h('span', { style: 'flex:1' }, sub ? h('span', { class: 'mn' }, ...words(main)) : h('span', { class: 'one' }, ...words(main)), sub ? h('span', { class: 'tr' }, ...words(sub)) : null),
           h('button', { class: 'rec', title: '把这句记成笔记', text: '＋', onclick: (e) => (e.stopPropagation(), addNote({ t: l.t, text: l.text })) })))
       })

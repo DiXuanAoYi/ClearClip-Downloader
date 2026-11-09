@@ -107,6 +107,8 @@ struct Job {
     done: usize,
     total: usize,
     result: Option<Value>,
+    /// 还在跑的时候已经有的那一部分结果（转写：识别出多少先给多少）
+    partial: Option<Value>,
     error: Option<String>,
     cancel: Arc<AtomicBool>,
     created: Instant,
@@ -128,7 +130,7 @@ pub fn job_json(id: u64) -> Option<Value> {
         } else {
             "running"
         };
-        json!({"state": state, "done": j.done, "total": j.total, "note": j.note, "result": j.result, "error": j.error})
+        json!({"state": state, "done": j.done, "total": j.total, "note": j.note, "result": j.result, "partial": if state == "running" { j.partial.clone() } else { None }, "error": j.error})
     })
 }
 
@@ -145,7 +147,7 @@ fn new_job() -> (u64, Arc<AtomicBool>) {
         let Some(oldest) = jobs.iter().min_by_key(|(_, j)| j.created).map(|(k, _)| *k) else { break };
         jobs.remove(&oldest);
     }
-    jobs.insert(id, Job { note: String::new(), done: 0, total: 1, result: None, error: None, cancel: cancel.clone(), created: Instant::now() });
+    jobs.insert(id, Job { note: String::new(), done: 0, total: 1, result: None, partial: None, error: None, cancel: cancel.clone(), created: Instant::now() });
     (id, cancel)
 }
 
@@ -481,7 +483,10 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
                 }
             })
         };
-        let out = transcribe_page(&ctx, &url, &lang, subs_only, &track, force_audio).await;
+        let on_partial = |v: Value| {
+            with_job(id, |j| j.partial = Some(v));
+        };
+        let out = transcribe_page(&ctx, &url, &lang, subs_only, &track, force_audio, &on_partial).await;
         if let Ok(v) = &out {
             cache_store(&ctx.st.data_dir, &url, subs_only, &track, v);
         }
@@ -496,7 +501,15 @@ fn start_transcribe(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
 }
 
 /// 先用 yt-dlp 取网页视频自带的在线字幕（人工 / 自动），有就直接用；没有且不是“只取字幕”才取音频转写。
-async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str, subs_only: bool, track: &str, force_audio: bool) -> AppResult<Value> {
+async fn transcribe_page(
+    ctx: &crate::media_tools::JobCtx,
+    url: &str,
+    lang: &str,
+    subs_only: bool,
+    track: &str,
+    force_audio: bool,
+    on_partial: &(dyn Fn(Value) + Sync),
+) -> AppResult<Value> {
     let settings = ctx.st.settings();
     let work = std::env::temp_dir().join(format!("clearclip-vsum-{}-{}", std::process::id(), ctx.id));
     let _ = std::fs::remove_dir_all(&work);
@@ -515,7 +528,7 @@ async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str
                         if !lines.is_empty() {
                             let duration = cues.iter().map(|c| c.end).max().unwrap_or(0);
                             let label = if code.is_empty() { "Supadata 字幕".to_string() } else { format!("Supadata 字幕（{code}）") };
-                            return Ok(json!({"lines": lines, "durationMs": duration, "track": label, "source": "subtitles"}));
+                            return Ok(json!({"lines": lines, "durationMs": duration, "track": label, "source": "subtitles", "lang": code}));
                         }
                     }
                     Ok(None) => {}
@@ -538,7 +551,7 @@ async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str
                     let lines = cues_to_lines(&cues);
                     if !lines.is_empty() {
                         let duration = cues.iter().map(|c| c.end).max().unwrap_or(0);
-                        return Ok(json!({"lines": lines, "durationMs": duration, "track": format!("在线字幕（{code}）"), "source": "subtitles"}));
+                        return Ok(json!({"lines": lines, "durationMs": duration, "track": format!("在线字幕（{code}）"), "source": "subtitles", "lang": code.trim_end_matches("-orig"), "auto": code.ends_with("-orig")}));
                     }
                 }
             }
@@ -557,14 +570,95 @@ async fn transcribe_page(ctx: &crate::media_tools::JobCtx, url: &str, lang: &str
         ctx.note(if force_audio { "正在取音频…" } else { "这个视频没有在线字幕，正在取音频…" });
         let audio = crate::providers::ytdlp::fetch_audio(&pctx, url, &work, || ctx.canceled(), |p| ctx.percent(p * 0.3)).await?;
         ctx.check()?;
-        let cues = ai::transcribe_cues(ctx, &settings, &ffmpeg, &audio, &lang, &work).await?;
+        // 分段转写：每段识别完就把已有的结果交给扩展先显示，全部识别完后用完整结果覆盖
+        let cues = transcribe_streaming(ctx, &settings, &ffmpeg, &audio, &lang, &work, on_partial).await?;
         let lines = cues_to_lines(&cues);
         let duration = cues.iter().map(|c| c.end).max().unwrap_or(0);
-        Ok(json!({"lines": lines, "durationMs": duration, "track": "清影转写", "source": "whisper"}))
+        // 音频的语言：调用方告诉的 > 设置里指定的 > 按识别出的文字猜；翻译时原文一直是它
+        let spoken = if !lang.is_empty() && lang != "auto" { lang.clone() } else { script_lang(&lines.iter().filter_map(|l| l["text"].as_str()).collect::<Vec<_>>().join(" ")).to_string() };
+        Ok(json!({"lines": lines, "durationMs": duration, "track": "清影转写", "source": "whisper", "lang": spoken}))
     }
     .await;
     let _ = std::fs::remove_dir_all(&work);
     result
+}
+
+/// 每段转写多长（秒）：不要太短（每段都要重新加载模型、断句会被切碎），也不要太长（第一批字幕要尽快出来）。
+const STREAM_SEG_SECS: u64 = 90;
+
+/// 分段转写：音频切成几十秒一段，逐段识别，每识别完一段就用 `on_partial` 交出“到目前为止的全部结果”；返回完整结果。
+/// 没有人声的段（识别不出东西）跳过，不算失败。
+async fn transcribe_streaming(
+    ctx: &crate::media_tools::JobCtx,
+    settings: &crate::settings::Settings,
+    ffmpeg: &std::path::Path,
+    audio: &std::path::Path,
+    lang: &str,
+    work: &std::path::Path,
+    on_partial: &(dyn Fn(Value) + Sync),
+) -> AppResult<Vec<crate::subtitle::Cue>> {
+    let parts = ai::split_audio(ffmpeg, audio, &work.join("seg"), STREAM_SEG_SECS).await?;
+    let total = parts.len().max(1);
+    let mut all: Vec<crate::subtitle::Cue> = vec![];
+    let mut last_err: Option<AppError> = None;
+    for (i, (file, offset)) in parts.iter().enumerate() {
+        ctx.check()?;
+        ctx.note(format!("正在转写第 {} / {} 段…（识别出多少先显示多少）", i + 1, total));
+        let sub = work.join(format!("seg-work-{i}"));
+        std::fs::create_dir_all(&sub)?;
+        match ai::transcribe_cues(ctx, settings, ffmpeg, file, lang, &sub).await {
+            Ok(cues) => {
+                all.extend(shift_cues(cues, offset * 1000));
+                on_partial(
+                    json!({"lines": cues_to_lines(&all), "durationMs": all.iter().map(|c| c.end).max().unwrap_or(0), "track": "清影转写", "progress": (i + 1) as f64 / total as f64}),
+                );
+            }
+            Err(e) if e.message.contains("没有识别出任何语音") => {}
+            Err(e) if e.message == "canceled" => return Err(e),
+            Err(e) => {
+                // 已经有结果就先用已有的（比整个失败强），没有结果才报错
+                if all.is_empty() {
+                    return Err(e);
+                }
+                last_err = Some(e);
+                break;
+            }
+        }
+        ctx.percent(30.0 + 70.0 * (i + 1) as f64 / total as f64);
+        let _ = std::fs::remove_dir_all(&sub);
+    }
+    if all.is_empty() {
+        return Err(last_err.unwrap_or_else(|| AppError::msg("没有识别出任何语音。")));
+    }
+    Ok(all)
+}
+
+/// 每条字幕的时间整体后移 `ms` 毫秒（分段识别时，后面的段要接在前面段的后面）。
+pub fn shift_cues(cues: Vec<crate::subtitle::Cue>, ms: u64) -> Vec<crate::subtitle::Cue> {
+    cues.into_iter().map(|c| crate::subtitle::Cue { start: c.start + ms, end: c.end + ms, lines: c.lines }).collect()
+}
+
+/// 文字主要是哪种文字对应的语言：zh / ja / ko；拉丁字母看不出具体语言返回空（别硬说是英语）。
+pub fn script_lang(text: &str) -> &'static str {
+    let (mut kana, mut han, mut hangul, mut latin) = (0usize, 0usize, 0usize, 0usize);
+    for c in text.chars() {
+        match c as u32 {
+            0x3040..=0x30ff => kana += 1,
+            0x4e00..=0x9fff => han += 1,
+            0xac00..=0xd7af => hangul += 1,
+            _ if c.is_ascii_alphabetic() => latin += 1,
+            _ => {}
+        }
+    }
+    if kana > 0 && kana + han >= latin {
+        "ja"
+    } else if hangul > 0 && hangul >= latin {
+        "ko"
+    } else if han > 0 && han * 2 >= latin {
+        "zh"
+    } else {
+        ""
+    }
 }
 
 /// 听写：把写作窗里录的一段话交给现有的语音转文字（本机 whisper.cpp 或云端接口），结果 `{"text": …}` 用任务编号轮询。
