@@ -60,6 +60,10 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
           }
           if (m.type === 'cc-ai-job') {
             if (o.hold) return { ok: true, state: 'running', done: 0, total: 1, note: '' }
+            if (o.stream && window.__job?.kind === 'transcribe' && !window.__streamed) {
+              window.__streamed = true
+              return { ok: true, state: 'running', done: 30, total: 100, note: '正在转写第 1 / 2 段…', partial: { lines: [{ t: 0, text: '大家好，今天讲讲 Rust。' }], durationMs: 5000, track: '清影转写', progress: 0.5 } }
+            }
             const k = window.__job?.kind || o.resumeKind
             window.__job = window.__job || { kind: k }
             const result = {
@@ -584,6 +588,19 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const { page } = await open(YT + '&notracks=1', { subs: false })
     await page.waitForFunction(() => window.__roots?.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '') && /清影转写/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
     ok('没有字幕时自动转写（没点任何按钮）', await page.evaluate(() => window.__calls.some((c) => c.type === 'cc-ai-run' && c.req.kind === 'transcribe')))
+    await page.close()
+  }
+
+  // ---- 转写流式显示：识别出多少先显示多少，全部完成后用完整结果覆盖
+  {
+    const { page } = await open(YT + '&notracks=1', { subs: false, stream: true })
+    await page.waitForFunction(() => window.__roots?.some((r) => /识别中 50%/.test(r.textContent)), null, { timeout: 8000 })
+    const half = await page.evaluate(() => window.__roots.map((r) => r.querySelector('.meta')?.textContent || '').join('|'))
+    ok('识别到一半时先显示已有的 1 句', /1 段/.test(half) && /识别中 50%/.test(half), half)
+    await page.waitForFunction(() => window.__roots?.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '') && !/识别中/.test(r.textContent)), null, { timeout: 8000 })
+    ok('全部识别完后用完整结果覆盖（2 句、轨道回到清影转写）', await page.evaluate(() => window.__roots.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '') && /清影转写/.test(r.querySelector('.meta')?.textContent || ''))))
+    const tr = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-ai-run' && c.req.kind === 'transcribe')?.req)
+    ok('转写请求带视频语言提示字段（英文标题不强行指定）', tr && !tr.lang, JSON.stringify(tr))
     await page.close()
   }
 

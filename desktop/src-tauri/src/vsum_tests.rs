@@ -553,3 +553,29 @@ fn ocr_text_drops_fragments_and_is_capped() {
     let long = "字".repeat(500);
     assert_eq!(ocr_text_of(&[long.as_str()]).chars().count(), 300);
 }
+
+#[test]
+fn streaming_transcription_helpers() {
+    use crate::subtitle::Cue;
+    let cues = vec![Cue { start: 1000, end: 2000, lines: vec!["a".into()] }];
+    let moved = shift_cues(cues, 90_000);
+    assert_eq!((moved[0].start, moved[0].end), (91_000, 92_000));
+    assert_eq!(script_lang("Hello everyone and welcome"), "");
+    assert_eq!(script_lang("大家好，欢迎回来"), "zh");
+    assert_eq!(script_lang("こんにちは、世界"), "ja");
+    assert_eq!(script_lang("안녕하세요 여러분"), "ko");
+    assert_eq!(script_lang("Windows 11 的新功能介绍"), "zh");
+}
+
+#[test]
+fn a_running_job_exposes_its_partial_result_until_it_finishes() {
+    let (id, _) = new_job();
+    with_job(id, |j| j.partial = Some(json!({"lines": [{"t": 0, "text": "hi"}]})));
+    let v = job_json(id).unwrap();
+    assert_eq!(v["state"], "running");
+    assert_eq!(v["partial"]["lines"][0]["text"], "hi");
+    with_job(id, |j| j.result = Some(json!({"lines": []})));
+    let v = job_json(id).unwrap();
+    assert_eq!(v["state"], "done");
+    assert!(v["partial"].is_null(), "完成后只给最终结果");
+}

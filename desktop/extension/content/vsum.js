@@ -76,11 +76,12 @@
     return code ? TL.label(code, S.appLang).split(' · ')[0] : S.prefs.lang.trim()
   }
   const video = () => [...document.querySelectorAll('video')].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0] || null
-  const isVideo = () => S.data && S.data.site !== 'article' && S.data.site !== 'manual'
+  // 导入 / 粘贴的字幕带了时间戳、而且页面上有视频：和视频自己的字幕一样用（显示时间、点击跳转、跟随播放、做字幕层）
+  const isVideo = () => !!S.data && S.data.site !== 'article' && (S.data.site !== 'manual' || (!!S.data.timed && !!video()))
 
   function seek(ms) {
     const v = video()
-    if (v && (isVideo() || (S.data?.site === 'manual' && ms > 0))) {
+    if (v && isVideo()) {
       v.currentTime = ms / 1000
       v.play?.().catch(() => {})
     } else if (/^https?:/.test(S.data?.url || '') && S.data?.site !== 'article') window.open(V.timeLink(S.data.url, ms), '_blank', 'noopener')
@@ -252,7 +253,7 @@
   }
 
   /** 提交一个任务并轮询到结束，返回结果；进度显示在面板顶部，可取消。 */
-  async function submit(req, kind, tag = '') {
+  async function submit(req, kind, tag = '', onPartial = null) {
     const page = S.data?.url || location.href
     let id = 0
     if (tag) {
@@ -283,6 +284,7 @@
           job.total = j.total
           job.note = j.note || ''
           if (j.state !== 'running') finished = true
+          if (onPartial && j.partial?.lines?.length) onPartial(j.partial)
           renderProgress()
         },
       })
@@ -361,6 +363,20 @@
   }
 
   /** 没有字幕：让清影取音频、用语音识别转成带时间的文稿，之后和有字幕的视频一样处理。 */
+  /** 告诉清影视频说的是什么语言（转写 / 取字幕都按它选）：平台给的语音识别字幕语言 > 标题里的汉字 / 假名 / 韩文；看不出来就留空，由清影按设置或自动识别。 */
+  function spokenHint(d) {
+    if (d?.spoken) return d.spoken
+    const s = V.scriptOf(d?.title || document.title)
+    return s === 'zh' || s === 'ja' || s === 'ko' ? s : ''
+  }
+
+  /** 转写进行中：把已经识别出来的先显示在文稿里（不重置摘要等结果，也不存缓存）。 */
+  function showPartial(p) {
+    if (S.closed || !S.data || !p?.lines?.length) return
+    S.data = { ...S.data, lines: p.lines, durationMs: p.durationMs || S.data.durationMs || 0, track: `清影转写（识别中 ${Math.round((p.progress || 0) * 100)}%）`, streaming: true, noSubtitle: false, note: '', trackUrl: '' }
+    render()
+  }
+
   async function transcribeNow() {
     if (S.busy) return toast(ui, '上一个任务还在进行', true)
     if (S.status?.transcribe === false) return toast(ui, '清影里还没有配置语音转文字：到“设置 → AI”选择本机 whisper.cpp 或填写接口', true, 6000)
@@ -372,11 +388,12 @@
       const key = `tr:${url}`
       let r = await cached(key)
       if (!r) {
-        r = await submit({ kind: 'transcribe', url, title }, 'transcribe', key)
+        // 识别出多少先显示多少；全部识别完后用完整结果覆盖，保证每句都有
+        r = await submit({ kind: 'transcribe', url, title, lang: spokenHint(S.data) }, 'transcribe', key, showPartial)
         if (r?.lines?.length) putCache(key, r)
       }
       if (!r?.lines?.length) throw new Error('没有识别出任何语音')
-      setData({ ...S.data, lines: r.lines, durationMs: r.durationMs || S.data?.durationMs || 0, track: r.track, noSubtitle: false, note: '', trackUrl: '', tracks: S.data?.tracks || [] })
+      setData({ ...S.data, lines: r.lines, durationMs: r.durationMs || S.data?.durationMs || 0, track: r.track, spoken: r.lang || S.data?.spoken || '', trackLang: r.lang || '', trackAuto: true, streaming: false, noSubtitle: false, note: '', trackUrl: '', tracks: S.data?.tracks || [] })
       toast(ui, `转写完成，共 ${r.lines.length} 句`)
     } catch (e) {
       toast(ui, e.message, true, 7000)
@@ -519,13 +536,13 @@
         const skey = `sub:${d.url}`
         let r = await cached(skey)
         if (!r) {
-          r = await submit({ kind: 'subtitles', url: d.url, title: d.title }, 'subtitles', skey)
+          r = await submit({ kind: 'subtitles', url: d.url, title: d.title, lang: spokenHint(d) }, 'subtitles', skey)
           if (r?.lines?.length) putCache(skey, r)
         }
         if (S.data !== d) return
         if (r?.lines?.length) {
           S.busy = false
-          setData({ ...d, lines: r.lines, durationMs: r.durationMs || d.durationMs, track: r.track, noSubtitle: false, note: '', trackUrl: '' })
+          setData({ ...d, lines: r.lines, durationMs: r.durationMs || d.durationMs, track: r.track, spoken: r.lang || d.spoken || '', trackLang: r.lang || '', trackAuto: !!r.auto, noSubtitle: false, note: '', trackUrl: '' })
           return
         }
         d.note = `${d.note || '没有找到字幕'}；清影也没有从网站取到在线字幕`

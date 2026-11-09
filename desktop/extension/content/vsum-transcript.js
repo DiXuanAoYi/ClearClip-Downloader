@@ -18,8 +18,8 @@
       const nowIdx = found[S.hit]
       const tr = S.res.translated
       const mode = S.prefs.view
-      // 每句前面的时间戳：视频页一直有；导入的字幕文件（site=manual）只要带了时间、页面上又有视频，也显示（点了能跳转）。没有时间戳时文字要占满整行
-      const showTm = isVideo() || (d.site === 'manual' && !!video() && d.lines.some((l) => l.t > 0))
+      // 每句前面的时间戳；没有时间戳时文字要占满整行
+      const showTm = isVideo()
       const body = h('div', { id: 'lines', onmouseup: onSelect, onmouseover: wordIn, onmouseout: wordOut })
       d.lines.forEach((l, i) => {
         const [main, sub] = V.viewLine(l.text, tr?.[i], mode)
