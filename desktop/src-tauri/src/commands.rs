@@ -822,6 +822,11 @@ pub fn move_task(app: AppHandle, id: i64, to: String) {
 }
 
 #[tauri::command]
+pub fn prioritize_task(app: AppHandle, id: i64) {
+    download::prioritize(&app, id)
+}
+
+#[tauri::command]
 pub fn schedule_task(app: AppHandle, id: i64, start_at: Option<i64>) {
     download::schedule_task(&app, id, start_at)
 }

@@ -188,6 +188,8 @@ struct Entry {
     meta: JobMeta,
     /// 任务详情里显示的过程记录（只在内存里，最多保留最近 300 条）
     log: Vec<LogLine>,
+    /// 被“优先”任务让位：暂停完成后自动回到队列，而不是停在“已暂停”
+    preempt: bool,
 }
 
 /// 任务过程记录里的一行。`at` 是 Unix 毫秒。
@@ -371,7 +373,7 @@ pub fn restore(app: &AppHandle) {
             if status == TaskStatus::Paused && received > 0 {
                 snap.note = Some(format!("上次下载到 {}，继续时从这里开始", human_bytes(received)));
             }
-            let e = Entry { snap, spec, media: Arc::new(media), ctrl, meta, log: Vec::new() };
+            let e = Entry { snap, spec, media: Arc::new(media), ctrl, meta, log: Vec::new(), preempt: false };
             persist(&st, &e);
             list.push(e);
             restored += 1;
@@ -607,6 +609,7 @@ pub fn enqueue_ext(app: &AppHandle, media: MediaInfo, asset_ids: &[String], post
                 ctrl,
                 meta,
                 log: vec![LogLine { at: chrono::Utc::now().timestamp_millis(), text: "已加入队列".into() }],
+                preempt: false,
             });
         }
     }
@@ -706,6 +709,57 @@ pub fn spawn_timer(app: &AppHandle) {
             }
         }
     });
+}
+
+/// 并发已满时，让哪个正在下载的任务让位：优先级最低的，同级取最新加入的；目标网站已达同时下载上限时，只能从同一个网站里选。
+/// `running`：(任务号, 优先级, 网站)。有空位（不用让）或没有可让的返回 None。
+pub fn pick_victim(running: &[(i64, i64, String)], target_platform: &str, concurrency: usize, site_cap: usize) -> Option<i64> {
+    let site_full = running.iter().filter(|r| r.2 == target_platform).count() >= site_cap;
+    if running.len() < concurrency && !site_full {
+        return None;
+    }
+    running.iter().filter(|r| !site_full || r.2 == target_platform).min_by_key(|r| (r.1, std::cmp::Reverse(r.0))).map(|r| r.0)
+}
+
+/// 优先：把这个任务排到最前面并马上开始。没有空位时，让一个优先级最低的正在下载的任务暂时让位（它会自动回到队列继续，不丢进度）。
+pub fn prioritize(app: &AppHandle, id: i64) {
+    let st = state(app);
+    let settings = st.settings();
+    {
+        let mut list = st.downloads.lock();
+        let Some(pos) = list.iter().position(|e| e.snap.id == id) else { return };
+        if !matches!(list[pos].snap.status, TaskStatus::Queued | TaskStatus::Paused | TaskStatus::Failed | TaskStatus::Canceled) {
+            return;
+        }
+        let top = list.iter().map(|e| e.spec.priority).max().unwrap_or(0) + 1;
+        let platform = list[pos].snap.platform.clone();
+        {
+            let e = &mut list[pos];
+            e.spec.priority = top;
+            e.snap.priority = top;
+            e.spec.start_at = None;
+            e.snap.start_at = None;
+            if e.snap.status != TaskStatus::Queued {
+                push_log(e, "优先：重新排队".into());
+                e.snap.status = TaskStatus::Queued;
+                e.snap.error = None;
+                e.snap.error_kind = None;
+            } else {
+                push_log(e, "已设为优先".into());
+            }
+            let _ = st.db.update_job_asset(e.snap.id, &serde_json::to_string(&e.spec).unwrap_or_default());
+            persist(&st, e);
+        }
+        let running: Vec<(i64, i64, String)> =
+            list.iter().filter(|e| e.snap.status == TaskStatus::Running && !e.preempt).map(|e| (e.snap.id, e.spec.priority, e.snap.platform.clone())).collect();
+        if let Some(victim) = pick_victim(&running, &platform, settings.concurrency, site_limit(&st, &settings, &platform)) {
+            if let Some(v) = list.iter_mut().find(|e| e.snap.id == victim) {
+                v.preempt = true;
+                let _ = v.ctrl.send(CTRL_PAUSE);
+            }
+        }
+    }
+    schedule(app);
 }
 
 /// 调整等待中任务的顺序：top / up / down / bottom。
@@ -1646,6 +1700,11 @@ fn finish(app: &AppHandle, st: &AppState, id: i64, outcome: Result<u64, DlError>
                     }
                 }
             }
+            Err(DlError::Paused) if e.preempt => {
+                e.preempt = false;
+                push_log(e, format!("让位给优先任务，已回到队列（已下载 {}）", human_bytes(e.snap.received)));
+                e.snap.status = TaskStatus::Queued;
+            }
             Err(DlError::Paused) => {
                 push_log(e, format!("已暂停（已下载 {}）", human_bytes(e.snap.received)));
                 e.snap.status = TaskStatus::Paused;
@@ -2204,6 +2263,22 @@ pub fn batch_sources(st: &AppState, batch_id: &str) -> Vec<(String, String, Task
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn priority_preempts_the_lowest_priority_running_task() {
+        use super::pick_victim;
+        let s = |p: &str| p.to_string();
+        let running = vec![(1, 5, s("a")), (2, 1, s("b")), (3, 1, s("b")), (4, 9, s("c"))];
+        // 还有空位：不用让
+        assert_eq!(pick_victim(&running, "z", 5, 9), None);
+        // 满了：让优先级最低的；同级取最新（编号大的）
+        assert_eq!(pick_victim(&running, "z", 4, 9), Some(3));
+        // 目标网站已达上限：只能从同一个网站里选，即使别处还有空位
+        assert_eq!(pick_victim(&running, "a", 9, 1), Some(1));
+        assert_eq!(pick_victim(&running, "b", 9, 2), Some(3));
+        // 没有在下载的任务：没人可让
+        assert_eq!(pick_victim(&[], "a", 1, 1), None);
+    }
+
     #[test]
     fn mirrors_rotate_through_every_address_once() {
         let mut a = Asset::base("file", AssetKind::File, "https://a/f".into(), "文件", "bin");

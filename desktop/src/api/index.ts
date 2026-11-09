@@ -222,6 +222,7 @@ export const api = {
   btTrackerStatus: () => invoke<TrackerStatus>('bt_tracker_status'),
   btUpdateTrackers: () => invoke<TrackerStatus>('bt_update_trackers'),
   siteRuleTest: (rule: SiteRule, url: string) => invoke<MediaInfo>('site_rule_test', { rule, url }),
+  prioritizeTask: (id: number) => invoke<void>('prioritize_task', { id }),
   moveTask: (id: number, to: 'top' | 'up' | 'down' | 'bottom') => invoke<void>('move_task', { id, to }),
   scheduleTask: (id: number, startAt: number | null) => invoke<void>('schedule_task', { id, startAt }),
   getAfterAllDone: () => invoke<string>('get_after_all_done'),

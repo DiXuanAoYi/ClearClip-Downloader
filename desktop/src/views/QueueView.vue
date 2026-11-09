@@ -234,6 +234,7 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
           <el-button link size="small" @click="detailId = t.id">详情</el-button>
           <el-button v-if="t.status === 'running' || t.status === 'paused' || t.status === 'queued'" link size="small" @click="run(api.cancelTask, t.id)">取消</el-button>
           <el-button v-else link size="small" @click="run(api.removeTask, t.id)">移除</el-button>
+          <el-button v-if="isWaiting(t)" link size="small" type="warning" title="排到最前并马上开始；下载位已满时，让优先级最低的任务暂时让位（它会自动回到队列，不丢进度）" @click="run(api.prioritizeTask, t.id)">优先</el-button>
           <el-dropdown v-if="isWaiting(t)" trigger="click" @command="(c: string) => onMore(t, c)">
             <el-button link size="small">更多</el-button>
             <template #dropdown>

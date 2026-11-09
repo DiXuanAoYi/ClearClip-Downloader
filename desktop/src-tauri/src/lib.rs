@@ -583,6 +583,7 @@ pub fn run() {
             commands::health_check,
             commands::site_rule_test,
             commands::move_task,
+            commands::prioritize_task,
             commands::schedule_task,
             commands::get_after_all_done,
             commands::batch_extract,
