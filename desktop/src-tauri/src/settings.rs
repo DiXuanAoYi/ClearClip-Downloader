@@ -668,8 +668,10 @@ pub struct LiveSettings {
     pub hotkey_shot: String,
     /// 屏幕边上的小悬浮钮
     pub float_button: bool,
-    /// standard / subtitle / manga
+    /// standard / subtitle / manga / voice（语音翻译）
     pub mode: String,
+    /// 增强识字用哪个语言包：`auto`（按识字语言选）/ `default`（一律用默认的中英文模型）/ 指定的包名
+    pub ocr_pack: String,
     /// 识字：system（Windows 自带）/ enhanced（增强识字组件）/ api（云端识字服务）/ vision（视觉模型）
     pub ocr: String,
     /// 系统识字用的语言（BCP-47，如 ja、en-US）；空表示用已装语言里最合适的
@@ -732,6 +734,12 @@ pub struct LiveSettings {
     /// local（本机 SenseVoice）/ cloud（云端语音识别）
     pub audio_stt: String,
     pub audio_bilingual: bool,
+    /// 听什么：system（电脑正在播放的声音）/ mic（麦克风）
+    pub audio_source: String,
+    /// 边说边出字：说话过程中先显示原文草稿，整句说完再换成定稿和译文（只用本机识别时）
+    pub audio_draft: bool,
+    /// 翻译时带上最近几句当上文（0 = 不带），同一场对话里的称呼、人名、语气保持一致
+    pub audio_context: u8,
     // ---- 按程序记住 ----
     pub profiles: Vec<LiveProfile>,
     /// 保存翻译历史
@@ -750,6 +758,7 @@ impl Default for LiveSettings {
             mode: "standard".into(),
             ocr: "system".into(),
             ocr_lang: String::new(),
+            ocr_pack: "auto".into(),
             ocr_api: OcrApi::default(),
             target_lang: String::new(),
             fps: 2,
@@ -782,6 +791,9 @@ impl Default for LiveSettings {
             audio_lang: String::new(),
             audio_stt: "local".into(),
             audio_bilingual: true,
+            audio_source: "system".into(),
+            audio_draft: true,
+            audio_context: 4,
             profiles: vec![],
             history: true,
         }
@@ -798,14 +810,28 @@ impl LiveSettings {
                 *v = d.into();
             }
         };
-        pick(&mut self.mode, &["standard", "subtitle", "manga"], "standard");
+        pick(&mut self.mode, &["standard", "subtitle", "manga", "voice"], "standard");
         pick(&mut self.ocr, &["system", "enhanced", "api", "vision"], "system");
         pick(&mut self.ocr_api.provider, &["ocrspace", "baidu", "google"], "ocrspace");
         pick(&mut self.sub_place, &["cover", "bar"], "cover");
         pick(&mut self.manga_engine, &["vision", "local"], "vision");
         pick(&mut self.manga_erase, &["fill", "inpaint", "none"], "fill");
         pick(&mut self.manga_font, &["hand", "sans", "serif"], "hand");
+        self.ocr_pack = {
+            let p = self.ocr_pack.trim();
+            if p.is_empty() || p == "auto" || p == "default" || ["japan", "korean", "latin", "cyrillic", "arabic", "devanagari"].contains(&p) {
+                if p.is_empty() {
+                    "auto".into()
+                } else {
+                    p.to_string()
+                }
+            } else {
+                "auto".into()
+            }
+        };
         pick(&mut self.audio_stt, &["local", "cloud"], "local");
+        pick(&mut self.audio_source, &["system", "mic"], "system");
+        self.audio_context = self.audio_context.min(10);
         self.ocr_lang = self.ocr_lang.trim().chars().take(16).collect();
         self.target_lang = self.target_lang.trim().chars().take(40).collect();
         self.audio_lang = self.audio_lang.trim().chars().take(16).collect();

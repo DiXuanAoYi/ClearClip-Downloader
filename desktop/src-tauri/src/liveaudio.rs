@@ -195,13 +195,18 @@ pub fn stop(app: &tauri::AppHandle) {
 
 #[tauri::command]
 pub fn sc_audio_start(app: tauri::AppHandle, state: tauri::State<'_, std::sync::Arc<crate::AppState>>) -> AppResult<crate::livetr::Status> {
+    start_audio(&app, state.inner())
+}
+
+/// 开始听（语音翻译）。已经在听就什么都不做。
+pub fn start_audio(app: &tauri::AppHandle, state: &std::sync::Arc<crate::AppState>) -> AppResult<crate::livetr::Status> {
     if !cfg!(windows) {
-        return Err(AppError::invalid("系统声音字幕目前只支持 Windows。"));
+        return Err(AppError::invalid("语音翻译目前只支持 Windows。"));
     }
     if running() {
         return Ok(crate::livetr::status());
     }
-    let st = state.inner().clone();
+    let st = state.clone();
     let live = st.settings_raw().live;
     if live.audio_stt != "cloud" && !crate::ml::DATA_DIR.get().is_some_and(|d| crate::ml::sensevoice::find_files(d).is_some()) {
         return Err(AppError::invalid("本机语音识别还没装好。请在“设置 → AI”或“设置 → 组件”里安装 SenseVoice，或把语音识别改成云端。"));
@@ -211,12 +216,13 @@ pub fn sc_audio_start(app: tauri::AppHandle, state: tauri::State<'_, std::sync::
         let stop = std::sync::Arc::new(AtomicBool::new(false));
         *STOP.lock().unwrap_or_else(|e| e.into_inner()) = Some(stop.clone());
         RUNNING.store(true, Ordering::Relaxed);
-        crate::livetr::ensure_subbar(&app, &live);
-        crate::livetr::emit_state(&app, "系统声音字幕已开始");
+        crate::livevoice::clear();
+        crate::livetr::ensure_subbar(app, &live);
+        crate::livetr::emit_state(app, "语音翻译已开始");
         let app2 = app.clone();
         std::thread::spawn(move || {
             if let Err(e) = win::run(&app2, &st, &stop) {
-                crate::livetr::emit_state(&app2, &format!("系统声音字幕出错：{}", e.message));
+                crate::livetr::emit_state(&app2, &format!("语音翻译出错：{}", e.message));
             }
             // 只收拾自己的：停了又马上重新开始时，新的那次已经登记好了，不能把它标成“没在运行”
             let mine = {
@@ -234,53 +240,230 @@ pub fn sc_audio_start(app: tauri::AppHandle, state: tauri::State<'_, std::sync::
             }
         });
     }
-    let _ = &app;
+    let _ = app;
     Ok(crate::livetr::status())
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn text_of(cues: &[crate::subtitle::Cue]) -> String {
+    cues.iter().flat_map(|c| c.lines.iter()).map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+async fn recognize(
+    st: &std::sync::Arc<crate::AppState>,
+    wav: &std::path::Path,
+    lang: &str,
+    cloud: bool,
+    stop: &std::sync::Arc<AtomicBool>,
+) -> AppResult<String> {
+    if !cloud {
+        let files = crate::ml::DATA_DIR.get().and_then(|d| crate::ml::sensevoice::find_files(d)).ok_or_else(|| AppError::invalid("本机语音识别还没装好。"))?;
+        let stop2 = stop.clone();
+        let cues = crate::ml::sensevoice::recognize(&files, wav, lang, move || stop2.load(Ordering::Relaxed)).await?;
+        return Ok(text_of(&cues));
+    }
+    let settings = st.settings_raw();
+    let (ep, model) = match crate::ai::stt_pool_endpoint(st, &settings) {
+        Some(ep) => (ep, settings.ai.stt_model.clone()),
+        None => {
+            if settings.ai.stt_model.is_empty() {
+                return Err(AppError::invalid("请先在“设置 → AI”里填写语音转文字的模型名称。"));
+            }
+            (crate::ai::stt_endpoint(st, &settings)?, settings.ai.stt_model.clone())
+        }
+    };
+    let srt = crate::ai::transcribe_rotating(&ep, &model, lang, wav).await?;
+    Ok(text_of(&crate::subtitle::parse_srt(&srt)))
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn emit_sub(app: &tauri::AppHandle, p: crate::livetr::SubPayload) {
+    use tauri::Emitter;
+    let _ = app.emit_to(crate::livetr::SUBBAR, crate::livetr::EVT_SUB, p);
+}
+
+/// 听 + 翻译的主循环（和平台无关）：从 `rx` 取 16 kHz 单声道的声音块，分句、识别、翻译、放进字幕条、记进本次会话。
+/// 采集在各平台的 `win` 里做，把声音块送进 `rx`。
+#[cfg_attr(not(windows), allow(dead_code))]
+fn run_loop(
+    app: &tauri::AppHandle,
+    st: &std::sync::Arc<crate::AppState>,
+    stop: &std::sync::Arc<AtomicBool>,
+    rx: &std::sync::mpsc::Receiver<Vec<f32>>,
+) -> AppResult<()> {
+    use crate::livetr::SubPayload;
+    use crate::livevoice::{DraftGate, SilenceWatch};
+    use std::sync::mpsc::RecvTimeoutError;
+    use std::time::{Duration, Instant};
+
+    let t0 = Instant::now();
+    let mut seg = Segmenter::default();
+    let mut gate = DraftGate::default();
+    let mut silence = SilenceWatch::default();
+    let mut shown_at: Option<Instant> = None;
+    let mut n = 0u32;
+    let mut handle = |chunk: Vec<f32>, seg: &mut Segmenter| -> Vec<Vec<f32>> {
+        let ms = (chunk.len() as u64 * 1000) / u64::from(RATE);
+        let live = st.settings_raw().live;
+        if silence.feed(ms, rms(&chunk), 8_000) {
+            crate::livetr::emit_state(
+                app,
+                if live.audio_source == "mic" {
+                    "好像一直没有声音：请检查麦克风有没有被静音、是不是选对了设备。"
+                } else {
+                    "好像一直没有声音：请确认视频正在播放，并且它用的是系统默认的输出设备。"
+                },
+            );
+        }
+        seg.push(&chunk)
+    };
+    while !stop.load(Ordering::Relaxed) {
+        match rx.recv_timeout(Duration::from_millis(200)) {
+            Ok(chunk) => {
+                let mut ready = handle(chunk, &mut seg);
+                // 积压太多时丢掉最旧的，保证字幕跟得上
+                while let Ok(c) = rx.try_recv() {
+                    ready.extend(handle(c, &mut seg));
+                }
+                while ready.len() > 3 {
+                    ready.remove(0);
+                }
+                let live = st.settings_raw().live;
+                let cloud = live.audio_stt == "cloud";
+                // 边说边出字：这一句还没说完，隔一阵先识别已经说出的部分当草稿（只在本机识别时做，云端按次计费）
+                if ready.is_empty() && live.audio_draft && !cloud {
+                    if let Some(cur) = seg.current() {
+                        let audio_ms = (cur.len() as u64 * 1000) / u64::from(RATE);
+                        let now_ms = t0.elapsed().as_millis() as u64;
+                        if gate.should(now_ms, audio_ms) {
+                            let wav = st.data_dir.join("live_audio_draft.wav");
+                            if std::fs::write(&wav, wav_bytes(cur)).is_ok() {
+                                let began = Instant::now();
+                                let heard = tauri::async_runtime::block_on(recognize(st, &wav, &live.audio_lang, false, stop));
+                                let _ = std::fs::remove_file(&wav);
+                                gate.cost_ms = began.elapsed().as_millis() as u64;
+                                if let Ok(t) = heard {
+                                    let t = clean(&t);
+                                    if !t.is_empty() {
+                                        emit_sub(
+                                            app,
+                                            SubPayload {
+                                                seq: u64::from(n) + 1,
+                                                text: String::new(),
+                                                orig: t,
+                                                bilingual: true,
+                                                font: live.sub_font,
+                                                source: "audio".into(),
+                                                draft: true,
+                                            },
+                                        );
+                                        shown_at = Some(Instant::now());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                for s in ready {
+                    n += 1;
+                    gate.reset();
+                    let ai_target = st.settings_raw().ai.target_lang.clone();
+                    let lang = crate::livetx::target_lang(&live, &ai_target);
+                    let wav = st.data_dir.join(format!("live_audio_{}.wav", n % 4));
+                    if std::fs::write(&wav, wav_bytes(&s)).is_err() {
+                        continue;
+                    }
+                    let heard = tauri::async_runtime::block_on(recognize(st, &wav, &live.audio_lang, cloud, stop));
+                    let _ = std::fs::remove_file(&wav);
+                    let text = match heard {
+                        Ok(t) => clean(&t),
+                        Err(e) => {
+                            crate::livetr::emit_state(app, &format!("识别失败：{}", e.message));
+                            continue;
+                        }
+                    };
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let ctx = crate::livevoice::context(usize::from(live.audio_context));
+                    let tr = crate::livetx::translate_with(app, std::slice::from_ref(&text), &lang, "", "", stop, &ctx)
+                        .ok()
+                        .and_then(|v| v.into_iter().next())
+                        .unwrap_or_default();
+                    if tr.trim().is_empty() {
+                        continue;
+                    }
+                    let end_ms = t0.elapsed().as_millis() as u64;
+                    let start_ms = end_ms.saturating_sub((s.len() as u64 * 1000) / u64::from(RATE));
+                    crate::livevoice::push(start_ms, end_ms, &text, &tr);
+                    emit_sub(
+                        app,
+                        SubPayload {
+                            seq: u64::from(n),
+                            text: tr.clone(),
+                            orig: text.clone(),
+                            bilingual: live.audio_bilingual,
+                            font: live.sub_font,
+                            source: "audio".into(),
+                            draft: false,
+                        },
+                    );
+                    if live.history {
+                        crate::livetx::history_push(
+                            &st.data_dir,
+                            &crate::livetx::Entry { at: crate::db::now(), mode: "audio".into(), exe: String::new(), src: text, text: tr },
+                        );
+                    }
+                    shown_at = Some(Instant::now());
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+        // 一阵没有新句子就把字幕撤掉
+        if shown_at.is_some_and(|t| t.elapsed() > Duration::from_secs(7)) {
+            shown_at = None;
+            emit_sub(
+                app,
+                SubPayload {
+                    seq: u64::from(n) + 2,
+                    text: String::new(),
+                    orig: String::new(),
+                    bilingual: false,
+                    font: 24,
+                    source: "audio".into(),
+                    draft: false,
+                },
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
 mod win {
     use super::*;
-    use crate::livetr::{SubPayload, EVT_SUB, SUBBAR};
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::mpsc;
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
-    use tauri::Emitter;
 
-    fn text_of(cues: &[crate::subtitle::Cue]) -> String {
-        cues.iter().flat_map(|c| c.lines.iter()).map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")
-    }
-
-    async fn recognize(st: &Arc<crate::AppState>, wav: &std::path::Path, lang: &str, cloud: bool, stop: &Arc<AtomicBool>) -> AppResult<String> {
-        if !cloud {
-            let files =
-                crate::ml::DATA_DIR.get().and_then(|d| crate::ml::sensevoice::find_files(d)).ok_or_else(|| AppError::invalid("本机语音识别还没装好。"))?;
-            let stop2 = stop.clone();
-            let cues = crate::ml::sensevoice::recognize(&files, wav, lang, move || stop2.load(Ordering::Relaxed)).await?;
-            return Ok(text_of(&cues));
-        }
-        let settings = st.settings_raw();
-        let (ep, model) = match crate::ai::stt_pool_endpoint(st, &settings) {
-            Some(ep) => (ep, settings.ai.stt_model.clone()),
-            None => {
-                if settings.ai.stt_model.is_empty() {
-                    return Err(AppError::invalid("请先在“设置 → AI”里填写语音转文字的模型名称。"));
-                }
-                (crate::ai::stt_endpoint(st, &settings)?, settings.ai.stt_model.clone())
-            }
-        };
-        let srt = crate::ai::transcribe_rotating(&ep, &model, lang, wav).await?;
-        Ok(text_of(&crate::subtitle::parse_srt(&srt)))
-    }
-
+    /// 采集：`system` 抓电脑正在播放的声音（输出设备的环回），`mic` 抓默认麦克风；声音块转成 16 kHz 单声道送进主循环。
     pub fn run(app: &tauri::AppHandle, st: &Arc<crate::AppState>, stop: &Arc<AtomicBool>) -> AppResult<()> {
         let host = cpal::default_host();
-        let dev = host.default_output_device().ok_or_else(|| AppError::msg("找不到正在播放声音的设备。"))?;
-        let cfg = dev.default_output_config().map_err(|e| AppError::msg(format!("读取声音设备失败：{e}")))?;
+        let mic = st.settings_raw().live.audio_source == "mic";
+        let (dev, cfg) = if mic {
+            let dev = host.default_input_device().ok_or_else(|| AppError::msg("找不到麦克风。"))?;
+            let cfg = dev.default_input_config().map_err(|e| AppError::msg(format!("读取麦克风失败：{e}")))?;
+            (dev, cfg)
+        } else {
+            let dev = host.default_output_device().ok_or_else(|| AppError::msg("找不到正在播放声音的设备。"))?;
+            let cfg = dev.default_output_config().map_err(|e| AppError::msg(format!("读取声音设备失败：{e}")))?;
+            (dev, cfg)
+        };
         let (ch, rate) = (cfg.channels() as usize, cfg.sample_rate().0);
         let (tx, rx) = mpsc::channel::<Vec<f32>>();
-        let err = |e| log::warn!("系统声音采集出错：{e}");
+        let err = |e| log::warn!("声音采集出错：{e}");
         let stream = match cfg.sample_format() {
             cpal::SampleFormat::F32 => dev.build_input_stream(&cfg.clone().into(), move |d: &[f32], _| drop(tx.send(mono16k(d, ch, rate))), err, None),
             cpal::SampleFormat::I16 => dev.build_input_stream(
@@ -294,86 +477,11 @@ mod win {
             ),
             other => return Err(AppError::msg(format!("不支持的声音格式：{other:?}"))),
         }
-        .map_err(|e| AppError::msg(format!("无法抓取系统声音：{e}")))?;
-        stream.play().map_err(|e| AppError::msg(format!("无法开始抓取系统声音：{e}")))?;
-
-        let mut seg = Segmenter::default();
-        let mut shown_at: Option<Instant> = None;
-        let mut n = 0u32;
-        while !stop.load(Ordering::Relaxed) {
-            match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(chunk) => {
-                    let mut ready = seg.push(&chunk);
-                    // 积压太多时丢掉最旧的，保证字幕跟得上
-                    while rx.try_recv().map(|c| ready.extend(seg.push(&c))).is_ok() {}
-                    while ready.len() > 3 {
-                        ready.remove(0);
-                    }
-                    for s in ready {
-                        n += 1;
-                        let live = st.settings_raw().live;
-                        let ai_target = st.settings_raw().ai.target_lang.clone();
-                        let lang = crate::livetx::target_lang(&live, &ai_target);
-                        let wav = st.data_dir.join(format!("live_audio_{}.wav", n % 4));
-                        if std::fs::write(&wav, wav_bytes(&s)).is_err() {
-                            continue;
-                        }
-                        let cloud = live.audio_stt == "cloud";
-                        let heard = tauri::async_runtime::block_on(recognize(st, &wav, &live.audio_lang, cloud, stop));
-                        let _ = std::fs::remove_file(&wav);
-                        let text = match heard {
-                            Ok(t) => clean(&t),
-                            Err(e) => {
-                                crate::livetr::emit_state(app, &format!("识别失败：{}", e.message));
-                                continue;
-                            }
-                        };
-                        if text.is_empty() {
-                            continue;
-                        }
-                        let tr = crate::livetx::translate(app, std::slice::from_ref(&text), &lang, "", "", stop)
-                            .ok()
-                            .and_then(|v| v.into_iter().next())
-                            .unwrap_or_default();
-                        if tr.trim().is_empty() {
-                            continue;
-                        }
-                        let _ = app.emit_to(
-                            SUBBAR,
-                            EVT_SUB,
-                            SubPayload {
-                                seq: u64::from(n),
-                                text: tr.clone(),
-                                orig: text.clone(),
-                                bilingual: live.audio_bilingual,
-                                font: live.sub_font,
-                                source: "audio".into(),
-                            },
-                        );
-                        if live.history {
-                            crate::livetx::history_push(
-                                &st.data_dir,
-                                &crate::livetx::Entry { at: crate::db::now(), mode: "audio".into(), exe: String::new(), src: text, text: tr },
-                            );
-                        }
-                        shown_at = Some(Instant::now());
-                    }
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-            // 一阵没有新句子就把字幕撤掉
-            if shown_at.is_some_and(|t| t.elapsed() > Duration::from_secs(7)) {
-                shown_at = None;
-                let _ = app.emit_to(
-                    SUBBAR,
-                    EVT_SUB,
-                    SubPayload { seq: u64::from(n) + 1, text: String::new(), orig: String::new(), bilingual: false, font: 24, source: "audio".into() },
-                );
-            }
-        }
+        .map_err(|e| AppError::msg(format!("无法抓取声音：{e}")))?;
+        stream.play().map_err(|e| AppError::msg(format!("无法开始抓取声音：{e}")))?;
+        let out = run_loop(app, st, stop, &rx);
         drop(stream);
-        Ok(())
+        out
     }
 }
 

@@ -2159,7 +2159,7 @@ export interface ScreenSettings {
   hotkeyMode: string
   hotkeyShot: string
   floatButton: boolean
-  mode: 'standard' | 'subtitle' | 'manga'
+  mode: 'standard' | 'subtitle' | 'manga' | 'voice'
   ocr: 'system' | 'enhanced' | 'api' | 'vision'
   ocrLang: string
   ocrApi: OcrApi
@@ -2191,9 +2191,17 @@ export interface ScreenSettings {
   mangaSfx: boolean
   mangaFollow: boolean
   mangaNames: boolean
+  /** 增强识字用哪个语言包：auto 按识字语言选 / default 默认 / 指定包名 */
+  ocrPack: string
   audioLang: string
   audioStt: 'local' | 'cloud'
   audioBilingual: boolean
+  /** 听什么：电脑正在播放的声音 / 麦克风 */
+  audioSource: 'system' | 'mic'
+  /** 边说边出字 */
+  audioDraft: boolean
+  /** 翻译时带上最近几句当上文（0 = 不带） */
+  audioContext: number
   profiles: ScreenProfile[]
   history: boolean
 }
@@ -2273,6 +2281,16 @@ export interface ScreenSub {
   bilingual: boolean
   font: number
   source: string
+  /** 边说边出字的草稿：还没说完，没有译文 */
+  draft?: boolean
+}
+
+/** 语音翻译：本次会话里的一句 */
+export interface VoiceEntry {
+  startMs: number
+  endMs: number
+  src: string
+  text: string
 }
 
 export interface ScreenWindow {
@@ -2308,6 +2326,14 @@ export interface ScreenEntry {
   exe: string
   src: string
   text: string
+}
+
+/** 增强识字的语言包 */
+export interface OcrPack {
+  id: string
+  name: string
+  installed: boolean
+  size: number
 }
 
 export interface OcrStatus {

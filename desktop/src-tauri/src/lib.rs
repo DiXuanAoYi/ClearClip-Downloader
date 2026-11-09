@@ -47,6 +47,7 @@ pub mod livecore;
 pub mod liveshot;
 mod livetr;
 pub mod livetx;
+pub mod livevoice;
 pub mod livewin;
 pub mod lut;
 pub mod media_cmds;
@@ -832,6 +833,10 @@ pub fn run() {
             livetr::sc_status,
             liveaudio::sc_audio_start,
             liveaudio::sc_audio_stop,
+            livevoice::sc_audio_transcript,
+            livevoice::sc_audio_clear,
+            livevoice::sc_audio_export,
+            livevoice::sc_audio_summary,
             livetr::sc_start,
             livetr::sc_stop,
             livetr::sc_toggle,
@@ -862,6 +867,10 @@ pub fn run() {
             ocr_paddle::ocr_install,
             ocr_paddle::ocr_import,
             ocr_paddle::ocr_remove,
+            ocr_paddle::ocr_packs,
+            ocr_paddle::ocr_pack_import,
+            ocr_paddle::ocr_pack_install,
+            ocr_paddle::ocr_pack_remove,
             writeassist::write_take,
             writeassist::write_badge_click,
             writeassist::write_off_this_app,
