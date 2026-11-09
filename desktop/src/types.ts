@@ -835,6 +835,8 @@ export interface PairRequest {
   deviceId: string
   name: string
   ip: string
+  /** 6 位验证码，手机网页上显示同一个 */
+  code: string
 }
 
 export interface PhoneInfo {

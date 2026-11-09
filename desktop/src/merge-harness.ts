@@ -14,6 +14,7 @@ import VideoTools from './components/toolbox/VideoTools.vue'
 import ParseView from './views/ParseView.vue'
 import FileTransView from './views/FileTransView.vue'
 import WriteApp from './WriteApp.vue'
+import TransferPanel from './components/TransferPanel.vue'
 import { useAppStore, useParseStore } from './stores/app'
 import { api } from './api'
 import { setLanguage } from './i18n'
@@ -22,7 +23,7 @@ import { setLanguage } from './i18n'
 setLanguage('zh')
 const pinia = createPinia()
 const which = location.hash.slice(1)
-const C: Record<string, Component> = { write: WriteApp, parse: ParseView, float: FloatApp, excerpts: ExcerptsPanel, screen: ScreenView, ai: AiTools, glossary: GlossaryPanel, filetr: FileTransView }
+const C: Record<string, Component> = { write: WriteApp, parse: ParseView, float: FloatApp, excerpts: ExcerptsPanel, screen: ScreenView, ai: AiTools, glossary: GlossaryPanel, filetr: FileTransView, transfer: TransferPanel }
 const store = useAppStore(pinia)
 store.settings = (await api.getSettings()) as never
 ;(window as unknown as { __app: typeof store }).__app = store

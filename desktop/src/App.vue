@@ -175,7 +175,7 @@ onMounted(async () => {
     asking.add(p.deviceId)
     const from = p.ip ? `“${p.name}”（${p.ip}）` : `“${p.name}”`
     try {
-      await ElMessageBox.confirm(`${from}想要向清影发送链接。允许后这台设备以后可以直接发送，配对前发来的链接也会继续处理。可在“设置 → 手机与浏览器扩展”中撤销。`, '新设备请求配对', {
+      await ElMessageBox.confirm(`${from}想要向清影发送链接。${p.code ? `请核对手机上显示的验证码：${p.code}。` : ''}允许后这台设备以后可以直接发送，配对前发来的链接也会继续处理。可在“设置 → 手机与浏览器扩展”中撤销。`, '新设备请求配对', {
         confirmButtonText: '允许',
         cancelButtonText: '拒绝',
         type: 'info',
