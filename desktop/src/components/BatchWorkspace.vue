@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
@@ -25,6 +25,10 @@ const showMore = ref(false)
 const busy = ref(false)
 const ranges = ref<Record<string, [number, number]>>({})
 const opts = ref<BatchOpts>(defaults())
+/** 整批设置默认折成一行摘要，点“修改”才展开 */
+const showSet = ref(false)
+const emit = defineEmits<{ active: [boolean]; added: [] }>()
+watch(visible, (v) => emit('active', v))
 
 function defaults(): BatchOpts {
   const s = app.settings
@@ -66,14 +70,14 @@ onBeforeUnmount(() => {
   stopPreview()
 })
 
-watch(
-  () => app.batchRequest,
-  (r) => {
-    if (!r) return
-    app.batchRequest = null
-    start(r.urls, r.source, !!r.truncated)
-  },
-)
+function takeRequest() {
+  const r = app.batchRequest
+  if (!r) return
+  app.batchRequest = null
+  start(r.urls, r.source, !!r.truncated)
+}
+watch(() => app.batchRequest, takeRequest)
+onMounted(takeRequest)
 
 function stopPreview() {
   if (key.value) api.batchPreviewCancel(key.value).catch(() => {})
@@ -98,7 +102,7 @@ async function start(list: string[], src: string, cut: boolean) {
     try {
       const r = await api.batchEnqueue(urls.value.map((u) => ({ url: u, title: '', media: null })), { ...opts.value, afterDone: 'notify' }, src)
       ElMessage.success(`已建立批次“${r.name}”，${r.pending} 条正在逐条解析并加入队列`)
-      app.view = 'batch'
+      emit('added')
     } catch (e) {
       ElMessage.error(errorText(e))
     } finally {
@@ -270,7 +274,7 @@ async function submit(paused: boolean) {
     if (r.alreadyDownloaded) parts.push(`${r.alreadyDownloaded} 条之前已下载`)
     if (r.alreadyQueued) parts.push(`${r.alreadyQueued} 条已在队列`)
     ElMessage.success(parts.join('，'))
-    app.view = 'batch'
+    emit('added')
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -282,6 +286,20 @@ function cancel() {
   stopPreview()
   visible.value = false
 }
+defineExpose({ cancel, active: visible })
+
+const QUALITY_TEXT = computed(() => QUALITIES.find((q) => q.v === opts.value.quality)?.l ?? '跟随设置')
+const AFTER_TEXT: Record<string, string> = { none: '完成后不操作', notify: '完成后通知', open: '完成后打开文件夹', sleep: '完成后睡眠', shutdown: '完成后关机' }
+/** 设置摘要：折叠时显示的几枚小标签 */
+const summary = computed(() => {
+  const o = opts.value
+  const out = [QUALITY_TEXT.value, `同时 ${o.concurrency} 个`, `间隔 ${o.jitterMin}–${o.jitterMax} 秒`, o.speedLimitKbps ? `限速 ${o.speedLimitKbps} KB/s` : '不限速']
+  if (o.folder) out.push('放进批次文件夹')
+  if (o.dir) out.push('保存到自选位置')
+  if (o.useWindow) out.push('只在设定时段')
+  out.push(AFTER_TEXT[o.afterDone] ?? '')
+  return out.filter(Boolean)
+})
 
 const STATUS: Record<string, { t: string; c: string }> = {
   ok: { t: '可下载', c: 'ok' },
@@ -305,7 +323,7 @@ function hostOf(u: string) {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="批量添加" width="1040px" top="4vh" append-to-body class="bd" :close-on-click-modal="false" @close="stopPreview">
+  <section v-if="visible" class="bw">
     <div class="top">
       <div>
         识别到 <b>{{ urls.length }}</b> 条链接 <span class="mute">· 来源：{{ source }}</span>
@@ -323,8 +341,64 @@ function hostOf(u: string) {
     <el-progress :percentage="urls.length ? Math.round((parsed / urls.length) * 100) : 100" :stroke-width="5" :show-text="false" :status="finished ? 'success' : undefined" />
     <div class="mute small">{{ finished ? `已解析 ${parsed} / ${urls.length}` : `正在解析 ${parsed} / ${urls.length}（同一网站会放慢速度，避免被限制）` }}</div>
 
-    <div class="body">
-      <div class="left">
+        <div class="card setc">
+      <div class="sum">
+        <b>整批设置</b>
+        <span v-for="x in summary" :key="x" class="chip">{{ x }}</span>
+        <span class="sp" />
+        <a class="lk" @click="showSet = !showSet">{{ showSet ? '收起 ▴' : '修改 ▾' }}</a>
+      </div>
+      <div v-if="showSet" class="set">
+          <label>批次名<el-input v-model="opts.name" size="small" placeholder="留空自动命名（批量-月日-时分）" /></label>
+          <label>
+            清晰度
+            <el-select v-model="opts.quality" size="small" @change="runPreview">
+              <el-option v-for="q in QUALITIES" :key="q.v" :value="q.v" :label="q.l" />
+            </el-select>
+          </label>
+          <label>
+            保存到
+            <div class="dir">
+              <el-input v-model="opts.dir" size="small" placeholder="留空用设置里的下载目录" />
+              <el-button size="small" @click="pickDir">选择</el-button>
+            </div>
+          </label>
+          <div class="kv"><span>放进批次文件夹</span><el-switch v-model="opts.folder" size="small" /></div>
+          <label>
+            同时下载数：{{ opts.concurrency }}
+            <el-slider v-model="opts.concurrency" :min="1" :max="5" size="small" />
+          </label>
+          <label>
+            条目间随机间隔（秒）
+            <div class="dir">
+              <el-input-number v-model="opts.jitterMin" :min="0" :max="opts.jitterMax" size="small" controls-position="right" />
+              <span>—</span>
+              <el-input-number v-model="opts.jitterMax" :min="opts.jitterMin" :max="120" size="small" controls-position="right" />
+            </div>
+          </label>
+          <label>
+            整批限速（KB/s，0 不限）
+            <el-input-number v-model="opts.speedLimitKbps" :min="0" :max="1048576" :step="256" size="small" />
+          </label>
+          <label>
+            批次完成后
+            <el-select v-model="opts.afterDone" size="small">
+              <el-option value="none" label="不操作" />
+              <el-option value="notify" label="通知" />
+              <el-option value="open" label="通知并打开文件夹" />
+              <el-option value="sleep" label="睡眠" />
+              <el-option value="shutdown" label="关机" />
+            </el-select>
+          </label>
+          <div class="kv">
+            <span>只在设定时段下载<small v-if="!app.settings?.runWindowOn" class="mute block">先在“设置 → 下载”里开启并设置时段</small></span>
+            <el-switch v-model="opts.useWindow" size="small" :disabled="!app.settings?.runWindowOn" />
+          </div>
+          <small class="mute">文件名模板里可用 <code>{index}</code> 表示批次序号。</small>
+        </div>
+    </div>
+
+    <div class="card listc">
         <div class="chips">
           <button :class="{ on: filter === 'all' }" @click="filter = 'all'">全部 {{ counts.all }}</button>
           <button :class="{ on: filter === 'ok' }" @click="filter = 'ok'">可下载 {{ counts.ok }}</button>
@@ -367,67 +441,14 @@ function hostOf(u: string) {
         </div>
       </div>
 
-      <div class="right">
-        <h4>整批设置</h4>
-        <label>批次名<el-input v-model="opts.name" size="small" placeholder="留空自动命名（批量-月日-时分）" /></label>
-        <label>
-          清晰度
-          <el-select v-model="opts.quality" size="small" @change="runPreview">
-            <el-option v-for="q in QUALITIES" :key="q.v" :value="q.v" :label="q.l" />
-          </el-select>
-        </label>
-        <label>
-          保存到
-          <div class="dir">
-            <el-input v-model="opts.dir" size="small" placeholder="留空用设置里的下载目录" />
-            <el-button size="small" @click="pickDir">选择</el-button>
-          </div>
-        </label>
-        <div class="kv"><span>放进批次文件夹</span><el-switch v-model="opts.folder" size="small" /></div>
-        <label>
-          同时下载数：{{ opts.concurrency }}
-          <el-slider v-model="opts.concurrency" :min="1" :max="5" size="small" />
-        </label>
-        <label>
-          条目间随机间隔（秒）
-          <div class="dir">
-            <el-input-number v-model="opts.jitterMin" :min="0" :max="opts.jitterMax" size="small" controls-position="right" />
-            <span>—</span>
-            <el-input-number v-model="opts.jitterMax" :min="opts.jitterMin" :max="120" size="small" controls-position="right" />
-          </div>
-        </label>
-        <label>
-          整批限速（KB/s，0 不限）
-          <el-input-number v-model="opts.speedLimitKbps" :min="0" :max="1048576" :step="256" size="small" />
-        </label>
-        <label>
-          批次完成后
-          <el-select v-model="opts.afterDone" size="small">
-            <el-option value="none" label="不操作" />
-            <el-option value="notify" label="通知" />
-            <el-option value="open" label="通知并打开文件夹" />
-            <el-option value="sleep" label="睡眠" />
-            <el-option value="shutdown" label="关机" />
-          </el-select>
-        </label>
-        <div class="kv">
-          <span>只在设定时段下载<small v-if="!app.settings?.runWindowOn" class="mute block">先在“设置 → 下载”里开启并设置时段</small></span>
-          <el-switch v-model="opts.useWindow" size="small" :disabled="!app.settings?.runWindowOn" />
-        </div>
-        <small class="mute">文件名模板里可用 <code>{index}</code> 表示批次序号。</small>
-      </div>
-    </div>
-
-    <template #footer>
-      <div class="foot">
+    <div class="foot">
         <span class="mute">已勾选 <b>{{ pickedCount }}</b> 条<template v-if="pickedSize"> · 预计 {{ formatBytes(pickedSize) }}</template></span>
         <span class="sp" />
         <el-button @click="cancel">取消</el-button>
         <el-button :loading="busy" @click="submit(true)">先暂停地加入</el-button>
         <el-button type="primary" :loading="busy" :disabled="!pickedCount" @click="submit(false)">加入队列并开始</el-button>
-      </div>
-    </template>
-  </el-dialog>
+    </div>
+  </section>
 </template>
 
 <style scoped>
@@ -456,13 +477,59 @@ function hostOf(u: string) {
 .warn {
   color: #d9a441;
 }
-.body {
-  display: grid;
-  grid-template-columns: 1fr 260px;
-  gap: 14px;
-  min-height: 0;
+.bw {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
 }
-.left {
+.card {
+  background: var(--cc-card);
+  border: 1px solid var(--cc-line);
+  border-radius: 14px;
+}
+.setc {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sum {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.chip {
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--cc-line);
+  color: var(--cc-mute);
+}
+.lk {
+  cursor: pointer;
+  color: var(--cc-acc);
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.set {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 14px;
+  font-size: 12.5px;
+}
+.set label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.set .kv {
+  align-self: end;
+}
+.listc {
+  padding: 10px 12px;
   min-width: 0;
 }
 .chips {
@@ -489,7 +556,7 @@ function hostOf(u: string) {
   flex: 1;
 }
 .rows {
-  max-height: 46vh;
+  max-height: 52vh;
   overflow: auto;
   border: 1px solid var(--cc-line);
   border-radius: 8px;
@@ -591,24 +658,6 @@ function hostOf(u: string) {
   padding: 24px;
   text-align: center;
 }
-.right {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  font-size: 12.5px;
-  max-height: 56vh;
-  overflow: auto;
-  padding-right: 4px;
-}
-.right h4 {
-  margin: 0;
-  font-size: 13px;
-}
-.right label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 .dir {
   display: flex;
   gap: 6px;
@@ -624,13 +673,20 @@ function hostOf(u: string) {
   display: block;
 }
 .foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 12px 4px 4px;
+  margin: 0 -4px;
+  background: var(--cc-bg, var(--el-bg-color-page));
+  border-top: 1px solid var(--cc-line);
 }
 @media (max-width: 900px) {
-  .body {
-    grid-template-columns: 1fr;
+  .set {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

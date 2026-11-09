@@ -20,8 +20,7 @@ const index = ref(0)
 const input = ref<{ focus: () => void } | null>(null)
 
 const VIEWS: [ViewName, string, string][] = [
-  ['parse', '解析', 'parse jiexi'],
-  ['batch', '批量下载', 'batch piliang xiazai'],
+  ['parse', '解析 / 批量下载', 'parse jiexi batch piliang xiazai'],
   ['queue', '下载队列', 'queue download xiazai duilie'],
   ['subs', '订阅', 'subscriptions dingyue'],
   ['live', '直播', 'live zhibo'],
