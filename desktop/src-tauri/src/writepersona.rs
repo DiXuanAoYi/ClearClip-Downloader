@@ -186,7 +186,22 @@ mod tests {
     fn there_are_fourteen_personas_with_unique_ids_and_the_agreed_names() {
         assert_eq!(PERSONAS.len(), 14);
         let names: Vec<&str> = PERSONAS.iter().map(|p| p.name).collect();
-        for n in ["恋爱军师", "回怼王", "淬毒之嘴", "情话撩人", "催进度", "道歉修复", "超能豆包", "网恋助手", "营销高手", "神评论", "祝福大师", "甜心聊宝", "搞笑担当", "情绪掌控大师"] {
+        for n in [
+            "恋爱军师",
+            "回怼王",
+            "淬毒之嘴",
+            "情话撩人",
+            "催进度",
+            "道歉修复",
+            "超能豆包",
+            "网恋助手",
+            "营销高手",
+            "神评论",
+            "祝福大师",
+            "甜心聊宝",
+            "搞笑担当",
+            "情绪掌控大师",
+        ] {
             assert!(names.contains(&n), "{n}");
         }
         let mut ids: Vec<&str> = PERSONAS.iter().map(|p| p.id).collect();

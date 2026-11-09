@@ -65,6 +65,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
             const result = {
               summary: { summary: '这个视频介绍了 Rust。', points: ['Rust 又快又安全 [0:41]', '结尾致谢'], keywords: ['Rust', '性能'], chapters: [{ title: 'AI 开场', startMs: 0, endMs: 40000 }, { title: 'AI 正文', startMs: 40000, endMs: 125000 }] },
               mindmap: { outline: '# 主题\n- 分支一\n  - 细节\n- 分支二' },
+              flowgraph: { flow: { nodes: [{ id: 'a', title: '发现问题', detail: '页面很慢', kind: 'cause', time: '0:41' }, { id: 'b', title: '压缩图片', kind: 'step', time: '1:10' }, { id: 'c', title: '加载变快', kind: 'result' }], edges: [{ from: 'a', to: 'b', label: '所以' }, { from: 'b', to: 'c', label: '导致' }] } },
               ask: { answer: '因为它没有垃圾回收 [0:41]。', refs: [41000] },
               cards: { cards: [{ q: 'Rust 的特点？', a: '又快又安全', t: 41000 }] },
               quotes: { quotes: [{ text: 'Rust is fast and safe.', t: 41000 }] },
@@ -694,6 +695,34 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.keyboard.press('Escape')
     await settle(page, 200)
     ok('Esc 关闭全屏导图', !(await page.evaluate(() => window.__roots.some((r) => r.querySelector('.mapview')))))
+    await page.close()
+  }
+
+  // ---- 导图页的第二种图：流程图（节点带视频时间，点一下跳过去）
+  {
+    const { page } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '导图')
+    await clickText(page, '流程图')
+    await settle(page, 200)
+    ok('导图页里有“思维导图 / 流程图”两个切换', await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('.mapsw button')].map((b) => b.textContent).join('|') === '思维导图|流程图')))
+    await clickText(page, '生成流程图')
+    await page.waitForFunction(() => window.__roots.some((r) => r.querySelector('.svgbox svg .fn')), null, { timeout: 8000 })
+    const n = await page.evaluate(() => window.__roots.map((r) => r.querySelectorAll('.svgbox svg .fn').length).find(Boolean))
+    ok('流程图里有 3 个节点', n === 3, String(n))
+    ok('连线上有“所以”“导致”', await page.evaluate(() => window.__roots.some((r) => /所以/.test(r.querySelector('.svgbox svg')?.textContent || '') && /导致/.test(r.querySelector('.svgbox svg')?.textContent || ''))))
+    const req = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1)?.req)
+    ok('请求的是 flowgraph', req && req.kind === 'flowgraph', JSON.stringify(req && req.kind))
+    await clickText(page, '全屏查看 / 缩放')
+    await settle(page, 300)
+    ok('全屏标题和提示说明点节点跳到视频', await page.evaluate(() => window.__roots.some((r) => /点节点跳到视频/.test(r.querySelector('.mapview .hint')?.textContent || ''))))
+    await page.evaluate(() => { const v = document.querySelector('video'); window.__seeks = []; Object.defineProperty(v, 'currentTime', { configurable: true, get: () => 0, set: (t) => window.__seeks.push(t) }) })
+    const box = await page.evaluate(() => { const g = window.__roots.map((r) => r.querySelector('.mapview .fn[data-ms="41000"]')).find(Boolean); const b = g.querySelector('rect').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 } })
+    await page.mouse.click(box.x, box.y)
+    await settle(page, 200)
+    const seeks = await page.evaluate(() => window.__seeks)
+    ok('点节点：视频跳到它的时间（0:41）', seeks.length >= 1 && Math.abs(seeks[seeks.length - 1] - 41) < 0.01, JSON.stringify(seeks))
+    await page.keyboard.press('Escape')
     await page.close()
   }
 

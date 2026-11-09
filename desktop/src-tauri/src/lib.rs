@@ -48,7 +48,6 @@ pub mod liveshot;
 mod livetr;
 pub mod livetx;
 pub mod livevoice;
-pub mod writepersona;
 pub mod livewin;
 pub mod lut;
 pub mod media_cmds;
@@ -102,6 +101,7 @@ pub mod vsum;
 mod winframe;
 pub mod writeassist;
 pub mod writebadge;
+pub mod writepersona;
 pub mod writing;
 
 use std::path::PathBuf;

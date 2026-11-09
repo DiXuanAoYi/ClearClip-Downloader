@@ -495,3 +495,37 @@ fn lookup_req_takes_translation() {
     let r: Req = serde_json::from_value(serde_json::json!({ "kind": "lookup", "text": "resilient" })).unwrap();
     assert!(r.trans.is_empty());
 }
+
+#[test]
+fn flowgraph_is_validated_and_chunks_are_chained() {
+    let g = parse_flowgraph(
+        r#"```json
+        {"nodes": [
+          {"id": "a", "title": "发现问题", "detail": "页面很慢", "kind": "cause", "time": "0:30"},
+          {"id": "b", "title": "压缩图片", "kind": "weird", "time": "2:00"},
+          {"id": "b", "title": "重复"},
+          {"id": "c", "title": ""},
+          {"id": "d", "title": "变快", "kind": "result"}
+        ],
+         "edges": [
+          {"from": "a", "to": "b", "label": "所以"},
+          {"from": "a", "to": "b", "label": "重复"},
+          {"from": "b", "to": "b"},
+          {"from": "b", "to": "zzz"},
+          {"from": "b", "to": "d", "label": "一个很长很长很长很长的标签"}
+        ]}
+        ```"#,
+    )
+    .unwrap();
+    assert_eq!(g["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(g["nodes"][1]["kind"], "step", "不认识的类型当步骤");
+    assert_eq!(g["edges"].as_array().unwrap().len(), 2);
+    assert_eq!(g["edges"][1]["label"].as_str().unwrap().chars().count(), 12);
+    assert!(parse_flowgraph("不是 JSON").is_none());
+    assert!(parse_flowgraph(r#"{"nodes": [{"id": "a", "title": "只有一个"}], "edges": []}"#).is_none());
+    // 分段的图接成一条：id 加前缀、上一段最后一个连到下一段第一个
+    let j = join_flowgraphs(vec![g.clone(), g]).unwrap();
+    assert_eq!(j["nodes"].as_array().unwrap().len(), 6);
+    assert!(j["edges"].as_array().unwrap().iter().any(|e| e["from"] == "p0_d" && e["to"] == "p1_a" && e["label"] == "接着"));
+    assert!(j["nodes"].as_array().unwrap().iter().all(|n| n["id"].as_str().unwrap().starts_with('p')));
+}

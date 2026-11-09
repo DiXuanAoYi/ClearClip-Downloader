@@ -750,15 +750,26 @@ mod tests {
         let mut w = WritingSettings::default();
         assert_eq!(with_memory("简短", &w, "weixin.exe"), "简短");
         w.memory_notes = "我叫小林，做产品经理，落款写“小林”".into();
-        for (app, t) in [("weixin.exe", "收到，我晚点看一下哈"), ("outlook.exe", "您好，附件已查收，谢谢。"), ("weixin.exe", "好嘞，周五前给你")] {
+        for (app, t) in [("weixin.exe", "收到，我晚点看一下哈"), ("outlook.exe", "您好，附件已查收，谢谢。"), ("weixin.exe", "好嘞，周五前给你")]
+        {
             w.memory_samples.push(crate::settings::MemSample { app: app.into(), text: t.into() });
         }
         let m = with_memory("简短", &w, "WeiXin.exe");
-        assert!(m.starts_with("简短\n关于我") && m.contains("小林") && m.contains("「好嘞，周五前给你」") && m.contains("「收到，我晚点看一下哈」") && m.contains("「您好，附件已查收，谢谢。」"), "{m}");
+        assert!(
+            m.starts_with("简短\n关于我")
+                && m.contains("小林")
+                && m.contains("「好嘞，周五前给你」")
+                && m.contains("「收到，我晚点看一下哈」")
+                && m.contains("「您好，附件已查收，谢谢。」"),
+            "{m}"
+        );
         let pos = |s: &str| m.find(s).unwrap();
         assert!(pos("好嘞") < pos("您好，附件"), "同一个程序里的写法排在前面");
         // 记忆上限：只留最近 12 条；空的、太长的整理掉
-        w.memory_samples = (0..20).map(|i| crate::settings::MemSample { app: " WeChat.exe ".into(), text: format!(" 第 {i} 条 ") }).chain([crate::settings::MemSample { app: String::new(), text: "  ".into() }]).collect();
+        w.memory_samples = (0..20)
+            .map(|i| crate::settings::MemSample { app: " WeChat.exe ".into(), text: format!(" 第 {i} 条 ") })
+            .chain([crate::settings::MemSample { app: String::new(), text: "  ".into() }])
+            .collect();
         w.sanitize();
         assert_eq!(w.memory_samples.len(), crate::settings::MEMORY_SAMPLES);
         assert_eq!(w.memory_samples.last().unwrap().text, "第 19 条");

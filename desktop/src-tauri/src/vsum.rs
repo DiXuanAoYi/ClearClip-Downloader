@@ -173,7 +173,7 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
     let settings = st.settings();
     let task = match req.kind.as_str() {
         "translate" | "punctuate" | "webtrans" | "domain" | "imgtrans" => crate::ai_pool::Task::Translate,
-        "summary" | "article" | "mindmap" | "cards" | "quotes" | "rewrite" | "comments" => crate::ai_pool::Task::Summary,
+        "summary" | "article" | "mindmap" | "flowgraph" | "cards" | "quotes" | "rewrite" | "comments" => crate::ai_pool::Task::Summary,
         _ => crate::ai_pool::Task::Chat,
     };
     let mut ep = match ai::chat_endpoint_for(&st, &settings, task) {
@@ -719,7 +719,7 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 27] = [
+    const KINDS: [&str; 28] = [
         "answer",
         "write",
         "replyread",
@@ -728,6 +728,7 @@ pub fn check(req: &Req) -> AppResult<()> {
         "stats",
         "summary",
         "mindmap",
+        "flowgraph",
         "cards",
         "quotes",
         "ask",
@@ -757,7 +758,7 @@ pub fn check(req: &Req) -> AppResult<()> {
     if size > MAX_CHARS {
         return Err(AppError::invalid("内容太长，超过了一次能处理的上限。"));
     }
-    let needs_lines = matches!(req.kind.as_str(), "summary" | "mindmap" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
+    let needs_lines = matches!(req.kind.as_str(), "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
     if needs_lines && req.lines.iter().all(|l| l.text.trim().is_empty()) {
         return Err(AppError::invalid("没有可处理的字幕。"));
     }
@@ -830,6 +831,79 @@ fn mindmap_system(lang: &str) -> String {
          each with 2-5 sub-branches, and sub-branches get concrete detail (names, numbers, steps, examples, reasons) as child nodes. \
          Every node is a short phrase or one sentence under 24 words; keep specifics instead of vague wording. No other text."
     )
+}
+
+/// 第二种图：流程 / 因果图。节点是步骤、原因、观点、证据、结果，边是先后或因果。
+fn flowgraph_system(lang: &str) -> String {
+    format!(
+        "You turn a video transcript into a flow / cause-and-effect diagram. Lines look like \"[m:ss] text\". Write in {lang}. Reply with ONE JSON object only: \
+         {{\"nodes\": [{{\"id\": \"n1\", \"title\": short phrase (under 14 words), \"detail\": optional one short sentence with a concrete fact, \"kind\": one of step|cause|claim|evidence|result, \"time\": \"m:ss\" where it is said}}], \
+         \"edges\": [{{\"from\": \"n1\", \"to\": \"n2\", \"label\": 1-3 words such as then / because / so / for example / but}}]}}. \
+         8-16 nodes that follow the order of the video; every node except the first has at least one incoming edge; edges go forward in time; no loops. Use only what the video says; do not invent steps, numbers or causes. If the video is not a process or an argument, still chain its main points in order."
+    )
+}
+
+/// 解析并检查模型给的流程图：节点要有 id 和标题、id 不重复、边必须连着存在的节点、不能自己连自己，最多 40 个节点 80 条边；
+/// 不到 2 个节点返回 None。
+pub fn parse_flowgraph(resp: &str) -> Option<Value> {
+    let v = json_of(resp)?;
+    let mut nodes: Vec<Value> = vec![];
+    let mut ids = std::collections::HashSet::new();
+    for n in v.get("nodes")?.as_array()? {
+        let id = n.get("id").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        let title: String = n.get("title").and_then(Value::as_str).unwrap_or("").trim().chars().take(60).collect();
+        if id.is_empty() || title.is_empty() || !ids.insert(id.clone()) {
+            continue;
+        }
+        let kind = n.get("kind").and_then(Value::as_str).filter(|k| matches!(*k, "step" | "cause" | "claim" | "evidence" | "result")).unwrap_or("step");
+        let detail: String = n.get("detail").and_then(Value::as_str).unwrap_or("").trim().chars().take(120).collect();
+        nodes.push(json!({"id": id, "title": title, "detail": detail, "kind": kind, "time": n.get("time").and_then(Value::as_str).unwrap_or("").trim()}));
+        if nodes.len() >= 40 {
+            break;
+        }
+    }
+    let mut edges: Vec<Value> = vec![];
+    let mut seen = std::collections::HashSet::new();
+    for e in v.get("edges").and_then(Value::as_array).cloned().unwrap_or_default() {
+        let from = e.get("from").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        let to = e.get("to").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        if from == to || !ids.contains(&from) || !ids.contains(&to) || !seen.insert((from.clone(), to.clone())) {
+            continue;
+        }
+        let label: String = e.get("label").and_then(Value::as_str).unwrap_or("").trim().chars().take(12).collect();
+        edges.push(json!({"from": from, "to": to, "label": label}));
+        if edges.len() >= 80 {
+            break;
+        }
+    }
+    (nodes.len() >= 2).then(|| json!({"nodes": nodes, "edges": edges}))
+}
+
+/// 长视频分段画的几张图接成一条：每张图的节点 id 加上段号前缀，上一段最后一个节点连到下一段第一个节点（标“接着”）。
+pub fn join_flowgraphs(parts: Vec<Value>) -> Option<Value> {
+    let mut nodes: Vec<Value> = vec![];
+    let mut edges: Vec<Value> = vec![];
+    let mut tail: Option<String> = None;
+    for (i, p) in parts.into_iter().enumerate() {
+        let pre = |id: &str| format!("p{i}_{id}");
+        let ns = p.get("nodes")?.as_array()?.clone();
+        let first = ns.first()?.get("id")?.as_str()?.to_string();
+        let last = ns.last()?.get("id")?.as_str()?.to_string();
+        for mut n in ns {
+            let id = n.get("id")?.as_str()?.to_string();
+            n["id"] = json!(pre(&id));
+            nodes.push(n);
+        }
+        for e in p.get("edges").and_then(Value::as_array).cloned().unwrap_or_default() {
+            edges
+                .push(json!({"from": pre(e.get("from")?.as_str()?), "to": pre(e.get("to")?.as_str()?), "label": e.get("label").cloned().unwrap_or(json!(""))}));
+        }
+        if let Some(t) = tail.take() {
+            edges.push(json!({"from": t, "to": pre(&first), "label": "接着"}));
+        }
+        tail = Some(pre(&last));
+    }
+    (nodes.len() >= 2).then(|| json!({"nodes": nodes, "edges": edges}))
 }
 
 fn cards_system(lang: &str) -> String {
@@ -1437,6 +1511,20 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
             };
             progress(n, n)?;
             Ok(json!({"outline": clean_outline(&text).ok_or_else(model_err)?}))
+        }
+        "flowgraph" => {
+            let chunks = chunk_lines(&lines, CHUNK_CHARS);
+            let system = pick_system(req, flowgraph_system(lang));
+            let mut graphs = vec![];
+            for (i, c) in chunks.iter().enumerate() {
+                progress(i, chunks.len())?;
+                if let Some(g) = parse_flowgraph(&chat(ep, model, &system, c).await?) {
+                    graphs.push(g);
+                }
+            }
+            progress(chunks.len(), chunks.len())?;
+            let g = if graphs.len() == 1 { graphs.pop() } else { join_flowgraphs(graphs) };
+            Ok(json!({"flow": g.ok_or_else(model_err)?}))
         }
         "cards" | "quotes" => {
             let cards = req.kind == "cards";

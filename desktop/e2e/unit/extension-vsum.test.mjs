@@ -423,3 +423,54 @@ assert.equal(V.commentTime('比例是 3:2 不是时间'), -1)
   assert.equal(next('peek', 'pin'), 'open')
   assert.equal(next('hidden', 'whatever'), 'hidden')
 }
+
+// ---- 第二种图：流程 / 因果图
+{
+  const g = {
+    nodes: [
+      { id: 'a', title: '发现问题', detail: '页面加载很慢', kind: 'cause', time: '0:30' },
+      { id: 'b', title: '定位原因', kind: 'step', time: '2:10' },
+      { id: 'c', title: '压缩图片', detail: '体积减少 60%', kind: 'step', time: '4:00' },
+      { id: 'd', title: '加载变快', kind: 'result', time: '6:05' },
+      { id: 'a', title: '重复的 id' }, // 重复：丢掉
+      { id: 'e', title: '' }, // 没有标题：丢掉
+    ],
+    edges: [
+      { from: 'a', to: 'b', label: '然后' },
+      { from: 'b', to: 'c', label: '所以' },
+      { from: 'c', to: 'd', label: '导致' },
+      { from: 'd', to: 'b', label: '画反了' }, // 形成环：丢掉
+      { from: 'a', to: 'a' }, // 自己指自己
+      { from: 'a', to: 'zzz' }, // 指向不存在的节点
+      { from: 'a', to: 'b', label: '重复' }, // 重复的边
+    ],
+  }
+  const n = V.normalizeFlow(g)
+  assert.equal(n.nodes.length, 4)
+  assert.equal(n.edges.length, 4)
+  assert.equal(n.nodes[0].ms, 30000)
+  assert.equal(V.normalizeFlow({ nodes: [{ id: 'x', title: '一个' }] }), null) // 少于 2 个节点
+  const lay = plain(V.layoutFlow(g))
+  assert.equal(lay.dropped, 1, '环里的那条边被丢掉')
+  assert.equal(lay.edges.length, 3)
+  const byId = Object.fromEntries(lay.nodes.map((x) => [x.id, x]))
+  // 从左到右分层：a < b < c < d
+  assert.ok(byId.a.x < byId.b.x && byId.b.x < byId.c.x && byId.c.x < byId.d.x)
+  assert.equal(byId.a.rank, 0)
+  assert.equal(byId.d.rank, 3)
+  // 同一列的节点不重叠
+  const diamond = plain(V.layoutFlow({ nodes: ['s', 'x', 'y', 't'].map((id) => ({ id, title: id })), edges: [{ from: 's', to: 'x' }, { from: 's', to: 'y' }, { from: 'x', to: 't' }, { from: 'y', to: 't' }] }))
+  const mid = diamond.nodes.filter((q) => q.rank === 1).sort((p, q) => p.y - q.y)
+  assert.equal(mid.length, 2)
+  assert.ok(mid[0].y + mid[0].h <= mid[1].y)
+  assert.ok(diamond.width > 0 && diamond.height > 0)
+  const svg = V.flowSvg(V.layoutFlow(g), false)
+  assert.ok(svg.startsWith('<svg') && svg.endsWith('</svg>'))
+  assert.ok(svg.includes('data-ms="130000"') && svg.includes('marker-end="url(#ah)"') && svg.includes('所以'))
+  const dark = V.flowSvg(V.layoutFlow(g), true)
+  assert.ok(dark.includes('#1d2420') && dark !== svg)
+  assert.ok(!V.flowSvg(V.layoutFlow({ nodes: [{ id: '1', title: '<a&b>' }, { id: '2', title: 'x' }], edges: [] })).includes('<a&b>'), '转义')
+  // 全是环也不会卡死
+  const cyc = V.layoutFlow({ nodes: ['a', 'b', 'c'].map((id) => ({ id, title: id })), edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'a' }] })
+  assert.equal(cyc.nodes.length, 3)
+}
