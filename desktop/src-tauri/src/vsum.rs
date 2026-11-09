@@ -188,6 +188,10 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
     if matches!(req.kind.as_str(), "write" | "stats") {
         // 个人风格：设置里的一两句话，并进每次的额外要求
         req.write.extra = crate::writeassist::with_style(&req.write.extra, &settings.writing.style);
+        // 写作记忆（默认关）：开了才把“关于我”的笔记和以前采用过的写法带给模型
+        if settings.writing.memory {
+            req.write.extra = crate::writeassist::with_memory(&req.write.extra, &settings.writing, &req.write.page);
+        }
     }
     let model = settings.ai.model.clone();
     let default_lang = settings.ai.target_lang.clone();
@@ -1691,7 +1695,15 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
                 }
             }
             progress(n, n)?;
-            let cands: Vec<Value> = outs.iter().map(|t| json!({"text": t, "guard": crate::writing::guard(&o.action, &req.text, t)})).collect();
+            // 人设写出来的内容里不该有输入里没有的数字、时间、网址（可能是模型编的）
+            let persona_src = format!("{}\n{}", req.text, o.extra);
+            let cands: Vec<Value> = outs
+                .iter()
+                .map(|t| {
+                    let g = if o.action == "persona" { crate::writing::guard_reply(&persona_src, t) } else { crate::writing::guard(&o.action, &req.text, t) };
+                    json!({"text": t, "guard": g})
+                })
+                .collect();
             Ok(json!({"candidates": cands}))
         }
         "style" => {

@@ -1096,6 +1096,12 @@ export interface WritingSettings {
   extras: string[]
   /** 帮我回记住的“对方是谁”：程序|称呼 → superior / colleague / … */
   relations?: Record<string, string>
+  /** 写作记忆开关（默认关） */
+  memory?: boolean
+  /** 记忆：关于我的笔记 */
+  memoryNotes?: string
+  /** 记忆：以前采用并写回去的写法 */
+  memorySamples?: { app: string; text: string }[]
 }
 
 /** 快捷键取到的内容 */
@@ -2283,6 +2289,16 @@ export interface ScreenSub {
   source: string
   /** 边说边出字的草稿：还没说完，没有译文 */
   draft?: boolean
+}
+
+/** 清影写作的人设 */
+export interface WritePersona {
+  id: string
+  name: string
+  desc: string
+  /** reply：输入是收到的消息；create：输入是话题 / 情况 / 草稿 */
+  mode: 'reply' | 'create'
+  hint: string
 }
 
 /** 语音翻译：本次会话里的一句 */

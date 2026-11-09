@@ -40,6 +40,8 @@ pub struct Opts {
     pub page: String,
     /// 帮我回（action = reply）和微调（action = tweak）的选项
     pub reply: Reply,
+    /// 人设（action = persona）：见 `writepersona`
+    pub persona: String,
 }
 
 /// “帮我回”：对方是谁 × 我的意思 × 怎么说（语气走 `Opts.tone`）。
@@ -88,7 +90,8 @@ pub struct Fact {
     pub url: String,
 }
 
-pub const ACTIONS: [&str; 20] = [
+pub const ACTIONS: [&str; 21] = [
+    "persona",
     "reply",
     "tweak",
     "rewrite",
@@ -147,6 +150,9 @@ pub fn check_opts(kind: &str, text: &str, o: &Opts) -> AppResult<()> {
             return Err(AppError::invalid("前面的聊天太长（最多 6000 字），只贴最近几条就够了。"));
         }
     }
+    if kind == "write" && o.action == "persona" && crate::writepersona::by_id(&o.persona).is_none() {
+        return Err(AppError::invalid("请先选一个人设。"));
+    }
     if kind == "write" && o.action == "tweak" && !TWEAKS.contains(&o.reply.tweak.as_str()) {
         return Err(AppError::invalid("不支持的微调方式"));
     }
@@ -184,6 +190,7 @@ fn action_line(o: &Opts) -> String {
         "sincere" => "Make the text more sincere and genuine.".into(),
         "concise" => "Make the text concise: cut filler and repetition, keep every important point.".into(),
         "reply" => reply_lines(&o.reply),
+        "persona" => crate::writepersona::action_line(&o.persona),
         "tweak" => format!(
             "The text is a reply the user is about to send. Adjust it: {}. Keep its meaning, its answer (yes / no / not yet / questions), every time, number, name and condition. Output ONLY the adjusted reply.",
             tweak_line(&o.reply.tweak)
@@ -403,7 +410,7 @@ pub fn system_prompt(o: &Opts) -> String {
     if !o.extra.trim().is_empty() {
         lines.push(format!("Extra request from the user: {}", o.extra.trim()));
     }
-    if !matches!(o.action.as_str(), "reply" | "tweak") {
+    if !matches!(o.action.as_str(), "reply" | "tweak" | "persona") {
         lines.push("Keep unchanged: numbers, dates, URLs, @mentions, #hashtags, email addresses, code and inline code, product and person names. Never invent facts, quotes or statistics. Keep line breaks where the input has them unless the format needs a new structure.".into());
     }
     let auto_all = [&o.length, &o.formality, &o.format, &o.tone].iter().all(|v| v.is_empty() || v.as_str() == "auto");
@@ -424,6 +431,9 @@ pub fn system_prompt(o: &Opts) -> String {
 pub fn user_message(o: &Opts, text: &str) -> String {
     if matches!(o.action.as_str(), "reply" | "tweak") {
         return reply_message(o, text);
+    }
+    if o.action == "persona" {
+        return crate::writepersona::user_message(&o.persona, text);
     }
     if o.action == "stats" {
         let facts: Vec<String> =
@@ -466,7 +476,7 @@ pub struct Guard {
 
 /// 动作本来就会删减内容时，“缺东西”不算问题。
 fn may_drop(action: &str) -> bool {
-    matches!(action, "summarize" | "shorten" | "concise" | "continue" | "translate" | "reply" | "tweak")
+    matches!(action, "summarize" | "shorten" | "concise" | "continue" | "translate" | "reply" | "tweak" | "persona")
 }
 
 pub fn guard(action: &str, src: &str, out: &str) -> Guard {
@@ -476,7 +486,7 @@ pub fn guard(action: &str, src: &str, out: &str) -> Guard {
     let off = match action {
         "summarize" | "shorten" | "concise" | "continue" | "translate" => ratio > 4.0,
         // 回复的长短和收到的消息没有关系
-        "reply" | "tweak" => false,
+        "reply" | "tweak" | "persona" => false,
         _ => !(0.25..=4.0).contains(&ratio),
     };
     Guard { warn: !missing.is_empty() || off, missing, ratio, added: vec![] }
@@ -865,6 +875,23 @@ mod tests {
 
     fn opts(action: &str) -> Opts {
         Opts { action: action.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn persona_action_needs_a_known_persona_and_puts_the_persona_and_safety_rules_in_the_prompt() {
+        let mut o = opts("persona");
+        assert!(check_opts("write", "他说我又迟到了", &o).is_err(), "没选人设");
+        o.persona = "nope".into();
+        assert!(check_opts("write", "他说我又迟到了", &o).is_err(), "不认识的人设");
+        o.persona = "clapback".into();
+        assert!(check_opts("write", "他说我又迟到了", &o).is_ok());
+        let p = system_prompt(&o);
+        assert!(p.contains("回怼王") && p.contains("never about the person") && p.contains("Safety rules"));
+        assert!(!p.contains("Keep unchanged"), "人设不要求原样保留原文");
+        assert!(user_message(&o, " 他说我又迟到了 ").starts_with("MESSAGE TO RESPOND TO"));
+        // 长短不算问题；凭空多出来的数字要提醒
+        assert!(!guard("persona", "迟到", &"字".repeat(200)).warn);
+        assert!(guard_reply("他说我迟到了", "那我们 8 点见").warn);
     }
 
     #[test]

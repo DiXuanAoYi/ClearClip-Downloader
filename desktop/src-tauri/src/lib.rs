@@ -48,6 +48,7 @@ pub mod liveshot;
 mod livetr;
 pub mod livetx;
 pub mod livevoice;
+pub mod writepersona;
 pub mod livewin;
 pub mod lut;
 pub mod media_cmds;
@@ -834,6 +835,10 @@ pub fn run() {
             liveaudio::sc_audio_start,
             liveaudio::sc_audio_stop,
             livevoice::sc_audio_transcript,
+            writepersona::write_personas,
+            writeassist::write_memory_set,
+            writeassist::write_memory_clear,
+            writeassist::write_memory_forget,
             livevoice::sc_audio_clear,
             livevoice::sc_audio_export,
             livevoice::sc_audio_summary,

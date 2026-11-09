@@ -327,6 +327,79 @@ pub fn with_style(extra: &str, style: &str) -> String {
     }
 }
 
+/// 写作记忆并进额外要求里：关于我的笔记 + 以前采用过的写法（同一个程序里的优先，最多 4 条），让模型学你的口吻。
+pub fn with_memory(extra: &str, w: &WritingSettings, app: &str) -> String {
+    let notes = w.memory_notes.trim();
+    let app = app.trim().to_lowercase();
+    let mut pick: Vec<&str> = w.memory_samples.iter().filter(|s| !app.is_empty() && s.app == app).rev().take(4).map(|s| s.text.as_str()).collect();
+    for s in w.memory_samples.iter().rev() {
+        if pick.len() >= 4 {
+            break;
+        }
+        if !pick.contains(&s.text.as_str()) {
+            pick.push(s.text.as_str());
+        }
+    }
+    let mut out = extra.trim().to_string();
+    let mut add = |line: String| {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&line);
+    };
+    if !notes.is_empty() {
+        add(format!("关于我（记忆，只在相关时用，不要硬塞进去）：{notes}"));
+    }
+    if !pick.is_empty() {
+        add(format!("我以前采用过的写法（学习口吻和用词习惯，不要照抄内容）：{}", pick.iter().map(|t| format!("「{t}」")).collect::<Vec<_>>().join(" ")));
+    }
+    out
+}
+
+/// 用户把一段结果写回去了：记忆开着时记下来，当作“我喜欢的写法”。
+pub fn remember_applied(state: &AppState, app: &str, text: &str) {
+    let t = text.trim();
+    if t.chars().count() < 6 || t.chars().count() > 300 {
+        return;
+    }
+    let (app, t) = (app.trim().to_lowercase(), t.to_string());
+    let _ = state.update_settings(|s| {
+        if s.writing.memory {
+            s.writing.memory_samples.retain(|x| x.text != t);
+            s.writing.memory_samples.push(crate::settings::MemSample { app, text: t });
+            s.writing.sanitize();
+        }
+    });
+}
+
+/// 写作记忆：开关和笔记。
+#[tauri::command]
+pub fn write_memory_set(state: tauri::State<'_, Arc<AppState>>, on: bool, notes: String) -> Result<(), String> {
+    save_prefs(&state, |c| {
+        c.memory = on;
+        c.memory_notes = notes;
+    })
+}
+
+/// 清空写作记忆（笔记和记下的写法），开关不动。
+#[tauri::command]
+pub fn write_memory_clear(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    save_prefs(&state, |c| {
+        c.memory_notes.clear();
+        c.memory_samples.clear();
+    })
+}
+
+/// 删掉记忆里的一条采用过的写法。
+#[tauri::command]
+pub fn write_memory_forget(state: tauri::State<'_, Arc<AppState>>, index: usize) -> Result<(), String> {
+    save_prefs(&state, |c| {
+        if index < c.memory_samples.len() {
+            c.memory_samples.remove(index);
+        }
+    })
+}
+
 #[tauri::command]
 pub fn write_dictate(app: AppHandle, audio: Vec<u8>, ext: String) -> Result<u64, String> {
     crate::vsum::start_dictation(&app, audio, &ext).map_err(|e| e.message)
@@ -343,8 +416,12 @@ pub fn write_cancel(id: u64) -> bool {
 }
 
 #[tauri::command]
-pub fn write_apply(app: AppHandle, text: String, replace: bool) -> Result<String, String> {
-    apply(&app, &text, replace)
+pub fn write_apply(app: AppHandle, state: tauri::State<'_, Arc<AppState>>, text: String, replace: bool, source_app: Option<String>) -> Result<String, String> {
+    let r = apply(&app, &text, replace);
+    if r.is_ok() {
+        remember_applied(&state, source_app.as_deref().unwrap_or(""), &text);
+    }
+    r
 }
 
 #[tauri::command]
@@ -669,6 +746,24 @@ mod tests {
         assert_eq!(with_style("", ""), "");
         assert_eq!(with_style(" 简短 ", ""), "简短");
         assert_eq!(with_style("", "口语化"), "我的写作风格：口语化");
+        // 写作记忆：笔记 + 以前采用过的写法（同一个程序的优先），没有记忆就什么都不加
+        let mut w = WritingSettings::default();
+        assert_eq!(with_memory("简短", &w, "weixin.exe"), "简短");
+        w.memory_notes = "我叫小林，做产品经理，落款写“小林”".into();
+        for (app, t) in [("weixin.exe", "收到，我晚点看一下哈"), ("outlook.exe", "您好，附件已查收，谢谢。"), ("weixin.exe", "好嘞，周五前给你")] {
+            w.memory_samples.push(crate::settings::MemSample { app: app.into(), text: t.into() });
+        }
+        let m = with_memory("简短", &w, "WeiXin.exe");
+        assert!(m.starts_with("简短\n关于我") && m.contains("小林") && m.contains("「好嘞，周五前给你」") && m.contains("「收到，我晚点看一下哈」") && m.contains("「您好，附件已查收，谢谢。」"), "{m}");
+        let pos = |s: &str| m.find(s).unwrap();
+        assert!(pos("好嘞") < pos("您好，附件"), "同一个程序里的写法排在前面");
+        // 记忆上限：只留最近 12 条；空的、太长的整理掉
+        w.memory_samples = (0..20).map(|i| crate::settings::MemSample { app: " WeChat.exe ".into(), text: format!(" 第 {i} 条 ") }).chain([crate::settings::MemSample { app: String::new(), text: "  ".into() }]).collect();
+        w.sanitize();
+        assert_eq!(w.memory_samples.len(), crate::settings::MEMORY_SAMPLES);
+        assert_eq!(w.memory_samples.last().unwrap().text, "第 19 条");
+        assert_eq!(w.memory_samples[0].app, "wechat.exe");
+        assert!(!WritingSettings::default().memory, "写作记忆默认关闭");
         assert_eq!(with_style("简短", "口语化"), "简短\n我的写作风格：口语化");
     }
 

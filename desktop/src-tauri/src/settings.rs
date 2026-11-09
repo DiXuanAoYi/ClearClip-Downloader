@@ -561,7 +561,24 @@ pub struct WritingSettings {
     pub extras: Vec<String>,
     /// 帮我回记住的“对方是谁”：键是“程序|对方称呼”（不知道称呼时只有程序），值是 superior / colleague / …
     pub relations: std::collections::BTreeMap<String, String>,
+    /// 写作记忆开关（默认关）：开了才会记住你采用过的写法，并把记忆带进每次的提示词
+    pub memory: bool,
+    /// 记忆：关于我的笔记（身份、常用称呼、落款、偏好）；用户自己写，也可以清空
+    pub memory_notes: String,
+    /// 记忆：以前采用并写回去的写法（最近的在后）
+    pub memory_samples: Vec<MemSample>,
 }
+
+/// 记忆里的一条：采用过的一段文字和它写在哪个程序里。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct MemSample {
+    pub app: String,
+    pub text: String,
+}
+
+/// 记忆里最多留几条采用过的写法
+pub const MEMORY_SAMPLES: usize = 12;
 
 impl Default for WritingSettings {
     fn default() -> Self {
@@ -579,6 +596,9 @@ impl Default for WritingSettings {
             last_action: String::new(),
             extras: vec![],
             relations: Default::default(),
+            memory: false,
+            memory_notes: String::new(),
+            memory_samples: vec![],
         }
     }
 }
@@ -601,6 +621,15 @@ impl WritingSettings {
             self.win = [0; 4];
         }
         self.relations.retain(|k, v| !k.trim().is_empty() && k.chars().count() <= 80 && crate::writing::RELATIONS.contains(&v.as_str()));
+        self.memory_notes = self.memory_notes.trim().chars().take(1000).collect();
+        self.memory_samples = self
+            .memory_samples
+            .iter()
+            .map(|s| MemSample { app: s.app.trim().to_lowercase().chars().take(60).collect(), text: s.text.trim().chars().take(300).collect() })
+            .filter(|s| !s.text.is_empty())
+            .collect();
+        let extra = self.memory_samples.len().saturating_sub(MEMORY_SAMPLES);
+        self.memory_samples.drain(..extra);
         while self.relations.len() > 300 {
             let first = self.relations.keys().next().cloned().unwrap_or_default();
             self.relations.remove(&first);
