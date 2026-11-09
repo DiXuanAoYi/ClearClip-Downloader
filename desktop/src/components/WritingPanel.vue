@@ -11,6 +11,22 @@ const offText = computed({
   get: () => form.value.offApps.join('\n'),
   set: (v: string) => (form.value.offApps = v.split(/[\n,，;；]/).map((s) => s.trim()).filter(Boolean)),
 })
+async function saveMemory() {
+  try {
+    await api.writeMemorySet(!!form.value.memory, form.value.memoryNotes ?? '')
+  } catch (e) {
+    learnMsg.value = errorText(e)
+  }
+}
+async function forget(i: number) {
+  await api.writeMemoryForget(i).catch(() => {})
+  form.value.memorySamples = (form.value.memorySamples ?? []).filter((_, k) => k !== i)
+}
+async function clearMemory() {
+  await api.writeMemoryClear().catch(() => {})
+  form.value.memoryNotes = ''
+  form.value.memorySamples = []
+}
 const samples = ref('')
 const learning = ref(false)
 const learnMsg = ref('')
@@ -91,11 +107,33 @@ const paused = computed(() => form.value.pausedUntil * 1000 > Date.now())
           <small class="mute">{{ learnMsg }}</small>
         </div>
       </div>
+      <div class="kv">
+        <span>写作记忆<small class="mute block">默认关闭。开了以后：记住你写回过的写法（最多 12 条），再加上下面“关于我”的笔记，每次一起交给你选的模型，让它更像你写的。记忆只存在本机，关掉后不再使用，可以随时清空。</small></span>
+        <el-switch v-model="form.memory" @change="saveMemory" />
+      </div>
+      <template v-if="form.memory">
+        <div class="kv stack">
+          <span>关于我<small class="mute block">身份、常用称呼、落款、偏好。例如：我叫小林，产品经理；给客户用“您”；落款写“小林”。</small></span>
+          <el-input v-model="form.memoryNotes" type="textarea" :rows="3" maxlength="1000" show-word-limit placeholder="只在相关时用，不会硬塞进每句话" @change="saveMemory" />
+        </div>
+        <div class="kv stack">
+          <span>记下的写法（{{ (form.memorySamples ?? []).length }}）</span>
+          <div v-if="!(form.memorySamples ?? []).length" class="mute">还没有。你在写作窗里点“替换原文”或“替换到…”后，这次写回去的文字会记在这里。</div>
+          <div v-for="(m, i) in form.memorySamples ?? []" :key="i" class="mem">
+            <span class="mute">{{ m.app || '—' }}</span>
+            <span class="mtx">{{ m.text }}</span>
+            <el-button size="small" text type="danger" @click="forget(i)">忘掉</el-button>
+          </div>
+          <el-button size="small" :disabled="!form.memoryNotes && !(form.memorySamples ?? []).length" @click="clearMemory">清空全部记忆</el-button>
+        </div>
+      </template>
     </section>
   </div>
 </template>
 
 <style scoped>
+.mem { display: grid; grid-template-columns: 90px 1fr auto; gap: 8px; align-items: baseline; font-size: 12.5px }
+.mtx { word-break: break-word }
 .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; align-items: start; }
 .group { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 h3 { margin: 0; font-size: 12px; color: var(--cc-mute); font-weight: 500; letter-spacing: 0.08em; }

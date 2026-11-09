@@ -100,6 +100,7 @@ const rest = computed(() => (plan.value ? Math.max(0, plan.value.segments - plan
         <el-checkbox v-model="o.skipHeaders">不翻译页眉、页脚和页码</el-checkbox>
         <el-checkbox v-model="o.skipCode">不翻译公式、代码和网址</el-checkbox>
         <el-checkbox v-model="o.skipRefs">不翻译参考文献</el-checkbox>
+        <el-checkbox v-model="o.scanAuto" title="有文字层的 PDF 里夹着扫描页时，自动识字并一起翻译">自动识别扫描页</el-checkbox>
         <el-checkbox v-model="o.preview">先译完预览，我检查后再生成文件</el-checkbox>
       </div>
       <div class="est">

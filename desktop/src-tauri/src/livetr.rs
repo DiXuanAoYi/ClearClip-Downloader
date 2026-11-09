@@ -91,6 +91,9 @@ pub struct SubPayload {
     pub bilingual: bool,
     pub font: u8,
     pub source: String,
+    /// 边说边出字的草稿（还没说完，没有译文）：字幕条里淡一点显示，整句说完后被定稿替换
+    #[serde(default)]
+    pub draft: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -425,6 +428,59 @@ fn save_live(st: &AppState, f: impl FnOnce(&mut LiveSettings)) {
 // ---------- 悬浮窗 ----------
 // 屏幕翻译的控制以前在一个单独的小悬浮钮里；现在并进清影的悬浮窗（tray.rs 的 FLOAT），桌面上只有一个。
 
+// ---------- 排版稳定：前后两次识别的同一块译文，位置和字号不抖 ----------
+
+/// 把这一轮识别出的块和上一轮已经贴出去的块对一下：原文几乎一样、位置差不多的，沿用上一轮的位置、大小和字号。
+/// 识字每次会有几个像素的偏差、框宽高差一点点、字号估算差一两个像素，不处理的话译文会在原地一抖一抖；
+/// 位置真的动了（滚动、拖动）就按新的来。字号同时吸附到整数像素，减少无意义的变化。
+pub(crate) fn stabilize(prev: &[OBlock], mut new: Vec<OBlock>) -> Vec<OBlock> {
+    let mut used = vec![false; prev.len()];
+    for b in &mut new {
+        b.font = b.font.round().max(1.0);
+        let mut best: Option<(usize, f32)> = None;
+        for (i, p) in prev.iter().enumerate() {
+            if used[i] || p.vertical != b.vertical {
+                continue;
+            }
+            let tol = (b.h.min(p.h) * 0.45).clamp(4.0, 24.0);
+            let close = (b.x - p.x).abs() <= tol * 1.5 && (b.y - p.y).abs() <= tol && (b.w - p.w).abs() <= tol * 2.0 && (b.h - p.h).abs() <= tol * 1.5;
+            if !close {
+                continue;
+            }
+            let sim = livecore::similarity(&b.orig, &p.orig);
+            if sim >= 0.8 && best.is_none_or_lt(sim) {
+                best = Some((i, sim));
+            }
+        }
+        if let Some((i, _)) = best {
+            used[i] = true;
+            let p = &prev[i];
+            b.x = p.x;
+            b.y = p.y;
+            b.w = p.w;
+            b.h = p.h;
+            if (b.font - p.font).abs() <= (p.font * 0.15).max(1.0) {
+                b.font = p.font;
+            }
+            // 原文完全一样：译文也沿用，不因为模型这次换了个说法就跳字
+            if p.orig == b.orig && !p.text.is_empty() {
+                b.text = p.text.clone();
+            }
+        }
+    }
+    new
+}
+
+trait BestSim {
+    fn is_none_or_lt(&self, v: f32) -> bool;
+}
+
+impl BestSim for Option<(usize, f32)> {
+    fn is_none_or_lt(&self, v: f32) -> bool {
+        self.map_or(true, |(_, s)| v > s)
+    }
+}
+
 // ---------- 会话循环 ----------
 
 struct Runner {
@@ -450,6 +506,8 @@ struct Runner {
     seen_hist: std::collections::VecDeque<String>,
     last_mode: String,
     errors: u32,
+    /// 上一轮贴出去的块（排版稳定用）
+    last_blocks: std::sync::Mutex<Vec<OBlock>>,
 }
 
 impl Runner {
@@ -548,6 +606,7 @@ impl Runner {
                     bilingual: false,
                     font: 24,
                     source: "screen".into(),
+                    draft: false,
                 },
             );
         }
@@ -558,6 +617,12 @@ impl Runner {
         if self.stop.load(Ordering::Relaxed) {
             return;
         }
+        let blocks = {
+            let mut last = self.last_blocks.lock().unwrap_or_else(|e| e.into_inner());
+            let out = if blocks.is_empty() { blocks } else { stabilize(&last, blocks) };
+            last.clone_from(&out);
+            out
+        };
         let p = OPayload {
             seq: SEQ.fetch_add(1, Ordering::Relaxed),
             mode: mode.to_string(),
@@ -831,6 +896,7 @@ impl Runner {
                             bilingual: live.sub_bilingual,
                             font: live.sub_font,
                             source: "screen".into(),
+                            draft: false,
                         },
                     );
                 } else {
@@ -985,6 +1051,7 @@ pub fn start(app: &AppHandle, st: &Arc<AppState>, mut target: Target, mode: Opti
         seen_hist: Default::default(),
         last_mode: mode,
         errors: 0,
+        last_blocks: std::sync::Mutex::new(Vec::new()),
     };
     std::thread::Builder::new().name("live-translate".into()).spawn(move || runner.run()).map_err(|e| AppError::msg(e.to_string()))?;
     Ok(status())
@@ -994,6 +1061,15 @@ pub fn toggle(app: &AppHandle) {
     let Some(st) = livetx::state_of(app) else { return };
     if is_running() {
         stop(app);
+        return;
+    }
+    // 语音翻译模式：不抓屏、不用框选，开始键就是开始 / 停止听
+    if st.settings_raw().live.mode == "voice" {
+        if crate::liveaudio::running() {
+            crate::liveaudio::stop(app);
+        } else if let Err(e) = crate::liveaudio::start_audio(app, &st) {
+            let _ = app.emit("toast://error", e.message);
+        }
         return;
     }
     let (hwnd, exe) = crate::writeassist::foreground();
@@ -1017,17 +1093,19 @@ pub fn toggle(app: &AppHandle) {
 }
 
 pub fn cycle_mode(app: &AppHandle) {
-    let next = |m: &str| match m {
+    // 屏幕会话里只有三种画面模式；没在翻译时多一个“语音”
+    let next = |m: &str, with_voice: bool| match m {
         "standard" => "subtitle",
         "subtitle" => "manga",
+        "manga" if with_voice => "voice",
         _ => "standard",
     };
     let cur = lock(&SESSION).as_ref().map(|s| lock_in(&s.mode).clone());
     match cur {
-        Some(m) => set_mode(app, next(&m)),
+        Some(m) => set_mode(app, next(&m, false)),
         None => {
             if let Some(st) = livetx::state_of(app) {
-                let m = next(&st.settings_raw().live.mode).to_string();
+                let m = next(&st.settings_raw().live.mode, true).to_string();
                 save_live(&st, |l| l.mode = m);
                 let _ = app.emit(EVT_STATE, status());
             }
@@ -1036,7 +1114,11 @@ pub fn cycle_mode(app: &AppHandle) {
 }
 
 pub fn set_mode(app: &AppHandle, mode: &str) {
-    if !["standard", "subtitle", "manga"].contains(&mode) {
+    if !["standard", "subtitle", "manga", "voice"].contains(&mode) {
+        return;
+    }
+    // 语音翻译不抓屏：屏幕会话里不能切到它（会话里只有三种画面模式）
+    if mode == "voice" && lock(&SESSION).is_some() {
         return;
     }
     if let Some(s) = lock(&SESSION).as_ref() {
@@ -1354,6 +1436,46 @@ pub fn sc_cache_clear() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ob(x: f32, y: f32, w: f32, h: f32, orig: &str, text: &str, font: f32) -> OBlock {
+        OBlock {
+            x,
+            y,
+            w,
+            h,
+            text: text.into(),
+            orig: orig.into(),
+            fg: "#fff".into(),
+            bg: "#000".into(),
+            font,
+            vertical: false,
+            lines: 1,
+            center: false,
+            align: 0,
+        }
+    }
+
+    #[test]
+    fn jitter_between_recognitions_is_absorbed_but_real_movement_is_not() {
+        let prev = vec![ob(100.0, 200.0, 300.0, 40.0, "Start new game", "开始新游戏", 22.0), ob(100.0, 300.0, 300.0, 40.0, "Options", "选项", 22.0)];
+        // 同一块：偏了 2 像素、宽高差 3、字号 23：全部沿用上一轮，译文不换
+        let new = vec![ob(102.0, 199.0, 303.0, 41.0, "Start new game", "开始一局新游戏", 23.2)];
+        let out = stabilize(&prev, new);
+        assert_eq!((out[0].x, out[0].y, out[0].w, out[0].h, out[0].font), (100.0, 200.0, 300.0, 40.0, 22.0));
+        assert_eq!(out[0].text, "开始新游戏");
+        // 往下滚了 60 像素：按新的位置
+        let moved = stabilize(&prev, vec![ob(100.0, 260.0, 300.0, 40.0, "Start new game", "开始新游戏", 22.0)]);
+        assert_eq!(moved[0].y, 260.0);
+        // 原文变了（换了一句）：不沿用旧译文
+        let changed = stabilize(&prev, vec![ob(101.0, 200.0, 300.0, 40.0, "Continue game", "继续游戏", 22.0)]);
+        assert_eq!(changed[0].text, "继续游戏");
+        assert_eq!(changed[0].x, 101.0);
+        // 两块不会都去配同一个旧块
+        let two = stabilize(&prev, vec![ob(100.0, 201.0, 300.0, 40.0, "Options", "选项", 22.0), ob(100.0, 300.0, 300.0, 40.0, "Options", "选项", 22.0)]);
+        assert_eq!(two.len(), 2);
+        // 字号吸附到整数；竖排和横排不互相配
+        assert_eq!(stabilize(&[], vec![ob(0.0, 0.0, 10.0, 10.0, "a", "b", 17.4)])[0].font, 17.0);
+    }
 
     #[test]
     fn gate_waits_for_stability_then_processes() {

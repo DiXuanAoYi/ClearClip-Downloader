@@ -55,6 +55,7 @@ const banner = computed(() => {
   return `这一页译好了 ${done} 段，还有 ${todoCount.value} 段没译（虚线框）。没译的先显示原文，不会整页空白；点虚线框可以自己写译文。`
 })
 function focusBlock(i: number) {
+  sel.value = i
   const el = document.querySelector<HTMLElement>(`.pdfcv .blk[data-idx="${i}"]`)
   el?.focus()
   el?.scrollIntoView({ block: 'center', inline: 'center' })
@@ -72,6 +73,65 @@ function blkStyle(b: PdfLayout['blocks'][number]) {
     fontSize: `${Math.max(3, b.size * k.value)}px`,
   }
 }
+
+// ---------- 选中一块：拖动移动、拖右下角改大小、调字号（存进缓存，预览和生成文件都按它来） ----------
+const sel = ref(-1)
+const selBlock = computed(() => (lay.value?.blocks ?? []).find((b) => b.index === sel.value && !b.skipped) ?? null)
+function selStyle(b: PdfLayout['blocks'][number]) {
+  const { left, top, width, height } = blkStyle(b)
+  return { left, top, width, height }
+}
+async function persist(b: PdfLayout['blocks'][number]) {
+  try {
+    await api.filetrBlockAdjust(props.path, props.target, lay.value!.viewPage, b.index, [...b.rect], b.size)
+    b.adjusted = true
+  } catch (e) {
+    ElMessage.error(errorText(e))
+    void load()
+  }
+}
+let gesture: { kind: 'move' | 'size'; x: number; y: number; rect: [number, number, number, number]; b: PdfLayout['blocks'][number] } | null = null
+function startGesture(e: PointerEvent, b: PdfLayout['blocks'][number], kind: 'move' | 'size') {
+  gesture = { kind, x: e.clientX, y: e.clientY, rect: [...b.rect], b }
+  window.addEventListener('pointermove', onGesture)
+  window.addEventListener('pointerup', endGesture, { once: true })
+}
+function onGesture(e: PointerEvent) {
+  const g = gesture
+  if (!g) return
+  const pp = k.value * tf.value.s // 1 个 PDF 点 = pp 个屏幕像素
+  const dx = (e.clientX - g.x) / pp
+  const dy = -(e.clientY - g.y) / pp
+  const [l, bt, r, t] = g.rect
+  if (g.kind === 'move') g.b.rect = [l + dx, bt + dy, r + dx, t + dy]
+  else g.b.rect = [l, Math.min(bt + dy, t - 6), Math.max(r + dx, l + 8), t]
+  fitAll()
+}
+async function endGesture() {
+  window.removeEventListener('pointermove', onGesture)
+  const g = gesture
+  gesture = null
+  if (g && g.rect.some((v, i) => Math.abs(v - g.b.rect[i]) > 0.01)) await persist(g.b)
+}
+async function bumpSize(d: number) {
+  const b = selBlock.value
+  if (!b) return
+  b.size = Math.min(200, Math.max(3, Math.round((b.size + d) * 10) / 10))
+  fitAll()
+  await persist(b)
+}
+async function resetAdj() {
+  const b = selBlock.value
+  if (!b) return
+  try {
+    await api.filetrBlockAdjust(props.path, props.target, lay.value!.viewPage, b.index, null, null)
+    await load()
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+watch([page, () => props.path], () => (sel.value = -1))
+onBeforeUnmount(() => window.removeEventListener('pointermove', onGesture))
 
 async function load() {
   if (!props.path) return
@@ -235,6 +295,15 @@ onBeforeUnmount(() => ro?.disconnect())
       <el-button size="small" :loading="busy" @click="load">刷新</el-button>
     </div>
 
+    <div v-if="selBlock && mode !== 'export'" class="adjbar">
+      <b>选中的这一块</b>
+      <span class="mute">字号</span>
+      <el-button size="small" aria-label="字号减小" @click="bumpSize(-0.5)">－</el-button>
+      <span class="sz">{{ selBlock.size.toFixed(1) }} pt</span>
+      <el-button size="small" aria-label="字号增大" @click="bumpSize(0.5)">＋</el-button>
+      <el-button v-if="selBlock.adjusted" size="small" @click="resetAdj">还原位置和大小</el-button>
+      <span class="mute hint">拖 ✥ 移动，拖右下角改大小；放不下会自动缩小字号（最小 6 磅）。</span>
+    </div>
     <div v-if="banner" class="banner">
       <span>{{ banner }}</span>
       <el-button v-if="todoCount && !running" size="small" type="primary" @click="emit('continue')">继续翻译</el-button>
@@ -283,10 +352,15 @@ onBeforeUnmount(() => ro?.disconnect())
                 :title="(b.trans.trim() ? '点一下直接改；' : '未译 · 点一下可以自己写；') + (b.src.length > 60 ? b.src.slice(0, 60) + '…' : b.src)"
                 contenteditable="plaintext-only"
                 spellcheck="false"
+                @focus="sel = b.index"
                 @blur="save(b, $event)"
                 @keydown.esc.prevent="($event.target as HTMLElement).blur()"
                 @dblclick.stop="retranslate(b)"
               >{{ b.trans }}</div>
+              <div v-if="selBlock" class="sel" :style="selStyle(selBlock)">
+                <span class="grip" title="按住拖动，移动这一块" @pointerdown.stop.prevent="startGesture($event, selBlock, 'move')">✥</span>
+                <span class="rsz" title="按住拖动，改这一块的大小" @pointerdown.stop.prevent="startGesture($event, selBlock, 'size')" />
+              </div>
             </template>
           </div>
         </div>
@@ -330,6 +404,12 @@ onBeforeUnmount(() => ro?.disconnect())
 .side .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .side em { font-style: normal; color: var(--el-text-color-secondary) }
 .side em.td { color: #b4561a; font-weight: 700 }
+.adjbar { display: flex; align-items: center; gap: 8px; padding: 5px 14px; border-bottom: 1px solid var(--el-border-color-lighter); background: var(--el-color-primary-light-9); font-size: 12.5px; flex-wrap: wrap }
+.adjbar .sz { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums }
+.adjbar .hint { margin-left: auto }
+.sel { position: absolute; pointer-events: none; z-index: 5; border: 1.5px solid var(--el-color-primary) }
+.sel .grip { position: absolute; left: -1px; top: -20px; height: 18px; min-width: 22px; padding: 0 4px; background: var(--el-color-primary); color: #fff; border-radius: 4px 4px 0 0; font-size: 12px; line-height: 18px; text-align: center; cursor: move; pointer-events: auto; user-select: none }
+.sel .rsz { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--el-color-primary); border: 2px solid #fff; border-radius: 3px; cursor: nwse-resize; pointer-events: auto }
 .blk.todo { border: 1.5px dashed #d9762b; min-height: 6px }
 .vp { flex: 1; min-height: 0; display: flex; gap: 10px; overflow: hidden; background: var(--el-fill-color-light); padding: 4px; position: relative }
 .vp > figure { flex: 1; margin: 0; display: flex; flex-direction: column; gap: 6px; overflow: auto; min-width: 0 }

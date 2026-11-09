@@ -122,6 +122,7 @@ async function loadTakeoverForm() {
   $('tkMin').value = cfg.minSizeMB
   $('tkAllow').value = cfg.allowSites.join('\n')
   $('tkDeny').value = cfg.denySites.join('\n')
+  $('streamSites').value = streamFirstSites((await api.storage.local.get('streamSites')).streamSites).join('\n')
   $('tkNotify').checked = cfg.notify
 }
 
@@ -869,7 +870,9 @@ $('send').onclick = async () => {
   msg('发送中…')
   try {
     const synced = await firstTimeSync(tab.url)
-    const r = await sendUrl(await tidyUrl(tab.url))
+    const st = await streamForPage(tab)
+    if (st && !st.item) return msg('这个网站要先在页面里把视频播放起来，扩展才能识别到视频流；播放后再点“发送当前页面”。', 'err')
+    const r = st ? await sendUrl(sniffedPayload(st.item, tab.url, tab.title)) : await sendUrl(await tidyUrl(tab.url))
     msg(r.state === 'pending_pair' ? '第一次使用：请在电脑上点“允许”完成配对' : (synced ? `已发送，并首次同步了 ${synced.count} 个 Cookie（${synced.site}）` : '已发送，清影会开始解析下载'), 'ok')
   } catch (e) {
     msg(e.message, 'err')
@@ -919,6 +922,7 @@ $('tkDefaultTypes').onclick = () => {
 $('tkSave').onclick = async () => {
   const lines = (id) => $(id).value.split(/[\s,;]+/)
   await api.storage.local.set({
+    streamSites: streamFirstSites(lines('streamSites')),
     takeover: normalizeTakeover({
       enabled: $('tkEnabled').checked,
       mode: $('tkMode').value,

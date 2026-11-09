@@ -173,6 +173,9 @@ pub fn classify_stderr(stderr: &str) -> AppError {
     if lower.contains("not a bot") {
         msg.push_str("\n这是 YouTube 的“确认不是机器人”检查：请先在浏览器里登录 YouTube，再用清影扩展同步该网站的 Cookie（扩展“工具”→ 同步 Cookie），然后重试；换网络/关掉代理也可能有帮助。");
     }
+    if kind == ErrorKind::Unsupported {
+        msg.push_str("\n这个页面的源码里没有找到视频地址（多半是播放时才通过接口取到）。可以在装了清影扩展的浏览器里打开这个页面并播放，再用扩展“页面媒体总览”里嗅探到的 m3u8 / mp4 发送给清影；如果是站点自己的加密或签名接口，清影下不了。");
+    }
     AppError::new(kind, msg)
 }
 
@@ -1084,6 +1087,8 @@ mod tests {
         );
         assert_eq!(classify_stderr("ERROR: Unable to download webpage: <urlopen error timed out>").kind, ErrorKind::Network);
         assert_eq!(classify_stderr("ERROR: Unsupported URL: https://x").kind, ErrorKind::Unsupported);
+        let e = classify_stderr("ERROR: Unsupported URL: https://huangguoai.com/videos/embed/11923");
+        assert!(e.message.contains("Unsupported URL") && e.message.contains("页面媒体总览"), "{}", e.message);
         assert_eq!(classify_stderr("ERROR: [x] The uploader has not made this video available in your country").kind, ErrorKind::GeoBlocked);
         assert_eq!(classify_stderr("ERROR: HTTP Error 429: Too Many Requests").kind, ErrorKind::RateLimited);
         assert!(classify_stderr("WARNING: a\nERROR: boom").message.ends_with("boom"));

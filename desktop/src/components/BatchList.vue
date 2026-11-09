@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { open, save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
 import { useAppStore, useQueueStore } from '../stores/app'
 import type { BatchView } from '../types'
@@ -65,40 +65,40 @@ async function exportFailed(b: BatchView) {
   }
 }
 
-async function importFile() {
-  const p = await open({ multiple: false, filters: [{ name: '链接清单', extensions: ['txt', 'csv', 'md', 'html', 'htm'] }] })
-  if (!p || typeof p !== 'string') return
-  try {
-    const [list, cut] = await api.batchReadFile(p)
-    if (!list.length) {
-      ElMessage.info('文件里没有找到链接')
-      return
-    }
-    app.openBatch(list, '导入文件', cut)
-  } catch (e) {
-    ElMessage.error(errorText(e))
-  }
+const tab = ref<'run' | 'end'>('run')
+const running = computed(() => batches.value.filter((b) => !finished(b)))
+const ended = computed(() => batches.value.filter(finished))
+const shown = computed(() => (tab.value === 'run' ? running.value : ended.value))
+// 没有进行中的批次、但有已结束的：默认看已结束
+watch(
+  () => [running.value.length, ended.value.length],
+  ([r, e]) => {
+    if (tab.value === 'run' && !r && e && !userPicked) tab.value = 'end'
+  },
+)
+let userPicked = false
+function pick(t: 'run' | 'end') {
+  userPicked = true
+  tab.value = t
 }
 </script>
 
 <template>
-  <div class="page">
+  <section class="bl">
     <div class="head">
-      <h2>批量下载</h2>
-      <div class="acts">
-        <el-button type="primary" @click="app.openBatch([], '手动添加')">新建批量下载</el-button>
-        <el-button @click="importFile">从文件导入…</el-button>
-      </div>
+      <b>批次</b>
+      <button :class="{ on: tab === 'run' }" @click="pick('run')">进行中 {{ running.length }}</button>
+      <button :class="{ on: tab === 'end' }" @click="pick('end')">已结束 {{ ended.length }}</button>
+      <span class="sp" />
+      <span class="mute small">每个批次的详细任务在“下载队列”里按批次筛选</span>
     </div>
-    <p class="mute small hint">一次加入几十上百条链接：先预览（去重、标出已下载过的），再统一设置并发、限速、保存位置和完成后动作。也可以直接把含链接的文本文件拖进窗口，或在解析页点“批量添加…”。</p>
-
-    <div v-if="!batches.length" class="empty card">
-      <b>还没有批次</b>
-      <span class="mute">点“新建批量下载”粘贴链接，或把 .txt / .csv 文件拖进来。</span>
+    <div v-if="!shown.length" class="empty card">
+      <b>{{ tab === 'run' ? '没有进行中的批次' : '还没有已结束的批次' }}</b>
+      <span class="mute">上面切到“批量下载”，粘贴多条链接或导入 .txt / .csv，就会在这里出现。</span>
     </div>
 
     <div v-else class="list">
-      <div v-for="b in batches" :key="b.id" class="bx card">
+      <div v-for="b in shown" :key="b.id" class="bx card">
         <div class="bh">
           <b class="ellipsis" :title="b.name">{{ b.name }}</b>
           <span class="mute small">{{ b.source }} · {{ b.done }}/{{ b.total }} 完成</span>
@@ -123,23 +123,44 @@ async function importFile() {
         </div>
       </div>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped>
+.bl {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
-.acts {
-  display: flex;
-  gap: 8px;
+.head b {
+  font-size: 15px;
+  margin-right: 4px;
 }
-.hint {
-  margin: 0;
+.head button {
+  border: 1px solid var(--cc-line);
+  background: var(--cc-card);
+  color: var(--cc-fg);
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.head button.on {
+  background: var(--cc-fg);
+  color: var(--cc-card);
+  border-color: var(--cc-fg);
+}
+.sp {
+  flex: 1;
+}
+.small {
+  font-size: 12px;
 }
 .empty {
   padding: 28px;

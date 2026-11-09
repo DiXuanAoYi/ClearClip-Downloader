@@ -61,6 +61,25 @@ pub struct PairRequest {
     pub device_id: String,
     pub name: String,
     pub ip: String,
+    /// 6 位验证码：电脑上的确认框和手机网页上显示同一个，让人核对是不是自己的设备
+    pub code: String,
+}
+
+/// 生成 6 位数字验证码（不以 0 开头，方便口头核对）。
+pub fn pair_code() -> String {
+    use aes_gcm::aead::rand_core::RngCore;
+    let n = aes_gcm::aead::OsRng.next_u32() % 900_000 + 100_000;
+    n.to_string()
+}
+
+/// 这台电脑的名字（手机网页上显示“已连接 · xxx”）；取不到就用“电脑”。
+pub fn pc_name() -> String {
+    ["COMPUTERNAME", "HOSTNAME", "HOST"]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok())
+        .map(|s| s.trim().chars().take(30).collect::<String>())
+        .find(|s| !s.is_empty())
+        .unwrap_or_else(|| "电脑".into())
 }
 
 /// 手机网页显示的一条发送记录。
@@ -249,7 +268,7 @@ pub fn ensure_paired(app: &AppHandle, device: &str, name: &str, peer: &SocketAdd
     let name: String = if name.trim().is_empty() { "手机".into() } else { name.trim().chars().take(40).collect() };
     let mut pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner());
     if !pending.iter().any(|p| p.device_id == device) {
-        let req = PairRequest { device_id: device.to_string(), name, ip: peer.ip().to_string() };
+        let req = PairRequest { device_id: device.to_string(), name, ip: peer.ip().to_string(), code: pair_code() };
         pending.push(req.clone());
         drop(pending);
         let _ = app.emit(EVT_PAIR_REQUEST, req);
@@ -381,7 +400,7 @@ fn restore_pending(app: &AppHandle) {
     let mut pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner());
     for r in rows.into_iter().filter(|r| r.created_at > since && !r.device.is_empty()) {
         if !pending.iter().any(|p| p.device_id == r.device) {
-            pending.push(PairRequest { device_id: r.device, name: r.device_name, ip: String::new() });
+            pending.push(PairRequest { device_id: r.device, name: r.device_name, ip: String::new(), code: pair_code() });
         }
     }
 }
@@ -689,10 +708,16 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             let dname = req.query.get("dname").map(|s| s.as_str()).unwrap_or("");
             let paired = ensure_paired(&app, &device, dname, &peer);
             let settings = state.settings();
+            // 还没配对：把验证码给手机显示，和电脑上的确认框核对
+            let code = if paired {
+                String::new()
+            } else {
+                state.phone.pending.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|p| p.device_id == device).map(|p| p.code.clone()).unwrap_or_default()
+            };
             json(
                 sock,
                 "200 OK",
-                serde_json::json!({"paired": paired, "maxMb": settings.phone.max_upload_mb, "version": app.package_info().version.to_string()}),
+                serde_json::json!({"paired": paired, "code": code, "pcName": crate::phone::pc_name(), "maxMb": settings.phone.max_upload_mb, "version": app.package_info().version.to_string()}),
             )
             .await;
         }
@@ -816,7 +841,7 @@ fn receive(app: &AppHandle, device: &str, name: &str, peer: &SocketAddr, text: S
         });
         process(app.clone(), id);
     } else {
-        let req = PairRequest { device_id: device.to_string(), name: name.to_string(), ip: peer.ip().to_string() };
+        let req = PairRequest { device_id: device.to_string(), name: name.to_string(), ip: peer.ip().to_string(), code: pair_code() };
         let mut pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner());
         if !pending.iter().any(|p| p.device_id == device) {
             pending.push(req.clone());

@@ -81,6 +81,11 @@ pub fn cache_clear() {
 /// 返回和输入等长；某一条失败时那一条是原文。
 /// `exe` 是被翻译的软件（可以为空）：按它挑术语库和 AI 专家（生效范围写 `app:软件名`），只带上这个软件用得到的术语，省提示词也更准。
 pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, exe: &str, stop: &AtomicBool) -> AppResult<Vec<String>> {
+    translate_with(app, texts, lang, title, exe, stop, "")
+}
+
+/// 和 `translate` 一样，另外带上同一场对话里前面几句（`history`，每行“原文 → 译文”）：称呼、人名、语气保持一致。
+pub fn translate_with(app: &AppHandle, texts: &[String], lang: &str, title: &str, exe: &str, stop: &AtomicBool, history: &str) -> AppResult<Vec<String>> {
     let app_key = crate::glossary::app_key(exe);
     let mut out: Vec<Option<String>> = texts.iter().map(|t| cache_get(lang, &app_key, t)).collect();
     let todo: Vec<usize> = (0..texts.len()).filter(|i| out[*i].is_none()).collect();
@@ -91,7 +96,7 @@ pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, exe
             "lang": lang,
             "title": title,
             "url": crate::glossary::app_url(exe),
-            "context": "Short user-interface strings, menu items, buttons, dialogue lines or captions captured from the screen of an application or game. Keep them concise; keep names, numbers and key labels intact. OCR may contain small recognition errors; read through them.",
+            "context": context_text(history),
             "lines": lines,
         }))
         .map_err(|e| AppError::msg(e.to_string()))?;
@@ -112,6 +117,15 @@ pub fn translate(app: &AppHandle, texts: &[String], lang: &str, title: &str, exe
         }
     }
     Ok(out.into_iter().zip(texts).map(|(o, t)| o.unwrap_or_else(|| t.clone())).collect())
+}
+
+/// 给翻译任务的背景说明：屏幕上抓到的短文字；有上文（语音翻译的前几句）时一并给出，只翻译新的那一句。
+fn context_text(history: &str) -> String {
+    let base = "Short user-interface strings, menu items, buttons, dialogue lines or captions captured from the screen of an application or game. Keep them concise; keep names, numbers and key labels intact. OCR may contain small recognition errors; read through them.";
+    if history.trim().is_empty() {
+        return base.to_string();
+    }
+    format!("Live speech from an ongoing conversation, meeting or video, transcribed by speech recognition (it may contain small errors; read through them). Keep names, terms, forms of address and tone consistent with the earlier lines below, but translate ONLY the new line(s) you are given.\nEarlier lines (original → translation):\n{}", history.trim())
 }
 
 // ---------- 漫画：视觉模型 ----------

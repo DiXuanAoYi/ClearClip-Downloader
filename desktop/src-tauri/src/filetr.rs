@@ -24,6 +24,10 @@ pub enum Kind {
     Md,
     Sub,
     Docx,
+    /// PowerPoint：每张幻灯片、备注里的文字
+    Pptx,
+    /// Excel：单元格里的文字（共享字符串）、绘图里的文本框
+    Xlsx,
     Epub,
     /// 只能抽出文字，输出为 TXT；扫描版（只有图片）会先用视觉模型识字
     Pdf,
@@ -37,6 +41,8 @@ pub fn kind_of(p: &Path) -> Option<Kind> {
         "md" | "markdown" => Some(Kind::Md),
         "srt" | "vtt" | "ass" | "ssa" => Some(Kind::Sub),
         "docx" => Some(Kind::Docx),
+        "pptx" => Some(Kind::Pptx),
+        "xlsx" => Some(Kind::Xlsx),
         "epub" => Some(Kind::Epub),
         "pdf" => Some(Kind::Pdf),
         "png" | "jpg" | "jpeg" | "jfif" | "webp" => Some(Kind::Img),
@@ -234,32 +240,14 @@ pub fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-static W_PARA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<w:p(?:\s[^>]*)?>.*?</w:p>").unwrap());
-static W_T: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<w:t(?:\s[^>]*)?>(.*?)</w:t>").unwrap());
-
 pub fn extract_docx(xml: &str) -> Vec<Slot> {
-    W_PARA
-        .find_iter(xml)
-        .filter_map(|m| {
-            let text: String = W_T.captures_iter(m.as_str()).map(|c| xml_unescape(&c[1])).collect();
-            let text = text.trim().to_string();
-            worth(&text).then(|| Slot { start: m.start(), end: m.end(), text, prefix: String::new() })
-        })
-        .collect()
+    crate::fmtmark::docx_slots(xml)
 }
 
-/// 把 Word 段落的文字换成译文：第一个文字块放译文，其余清空（段落格式、编号、对齐都保留）。
+/// 把 Word 段落的文字换成译文：一段里有几种格式时按标记放回各自的格式；否则第一个文字块放译文，其余清空
+/// （段落格式、编号、对齐都保留）。
 fn docx_replace(para: &str, trans: &str) -> String {
-    let mut first = true;
-    W_T.replace_all(para, |_: &regex::Captures| {
-        if first {
-            first = false;
-            format!("<w:t xml:space=\"preserve\">{}</w:t>", xml_escape(trans))
-        } else {
-            "<w:t></w:t>".to_string()
-        }
-    })
-    .into_owned()
+    crate::fmtmark::docx_replace(para, trans)
 }
 
 static HTML_OPEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<(p|h[1-6]|li|dt|dd|figcaption|caption|th|td)(?:\s[^>]*)?>").unwrap());
@@ -311,9 +299,12 @@ fn scan_html(raw: &str, lower: &str, lo: usize, hi: usize, out: &mut Vec<Slot>) 
             // 外层只是容器（li 里套 p、blockquote 里套 p）：翻译里面那一层
             scan_html(raw, lower, m.end(), close, out);
         } else {
-            let text = xml_unescape(HTML_TAG.replace_all(&HTML_BR.replace_all(inner, " "), "").trim());
-            let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-            if worth(&text) {
+            let text = crate::fmtmark::html_text(inner).unwrap_or_else(|| {
+                let t = xml_unescape(HTML_TAG.replace_all(&HTML_BR.replace_all(inner, " "), "").trim());
+                t.split_whitespace().collect::<Vec<_>>().join(" ")
+            });
+            let plain = crate::fmtmark::strip(&text);
+            if worth(&plain) {
                 out.push(Slot { start: m.start(), end, text, prefix: String::new() });
             }
         }
@@ -328,10 +319,7 @@ pub fn extract_html(raw: &str) -> Vec<Slot> {
 }
 
 fn html_replace(block: &str, trans: &str) -> String {
-    match (block.find('>'), block.rfind("</")) {
-        (Some(a), Some(b)) if a < b => format!("{}{}{}", &block[..=a], xml_escape(trans), &block[b..]),
-        _ => block.to_string(),
-    }
+    crate::fmtmark::html_replace(block, trans)
 }
 
 // ---------- 按片段位置写回 ----------
@@ -350,6 +338,8 @@ pub fn render_part(kind: Kind, part: &Part, trans: &[Option<String>], offset: us
                 let t = t.trim();
                 let line = match kind {
                     Kind::Docx => docx_replace(orig, t),
+                    Kind::Pptx => crate::fmtmark::pptx_replace(orig, t),
+                    Kind::Xlsx => crate::fmtmark::xlsx_replace(orig, t),
                     Kind::Epub => html_replace(orig, t),
                     _ => format!("{}{}", s.prefix, t),
                 };
@@ -390,9 +380,40 @@ pub fn load(path: &Path, kind: Kind) -> AppResult<Vec<Part>> {
         }
         Kind::Docx => {
             let mut z = zip::ZipArchive::new(std::fs::File::open(path)?).map_err(|_| AppError::invalid("这不是有效的 docx 文件。"))?;
-            let raw = read_zip_entry(&mut z, "word/document.xml")?;
-            let slots = extract_docx(&raw);
-            Ok(vec![Part { name: "word/document.xml".into(), raw, slots }])
+            let _ = read_zip_entry(&mut z, "word/document.xml")?;
+            // 正文 + 页眉页脚、脚注尾注、批注
+            let names = zip_names(&mut z, |n| {
+                n == "word/document.xml"
+                    || n == "word/footnotes.xml"
+                    || n == "word/endnotes.xml"
+                    || n == "word/comments.xml"
+                    || (n.starts_with("word/header") || n.starts_with("word/footer")) && n.ends_with(".xml")
+            });
+            xml_parts(&mut z, names, extract_docx)
+        }
+        Kind::Pptx => {
+            let mut z = zip::ZipArchive::new(std::fs::File::open(path)?).map_err(|_| AppError::invalid("这不是有效的 pptx 文件。"))?;
+            let names = zip_names(&mut z, |n| (n.starts_with("ppt/slides/slide") || n.starts_with("ppt/notesSlides/notesSlide")) && n.ends_with(".xml"));
+            if names.is_empty() {
+                return Err(AppError::invalid("这不是有效的 pptx 文件。"));
+            }
+            xml_parts(&mut z, names, crate::fmtmark::pptx_slots)
+        }
+        Kind::Xlsx => {
+            let mut z = zip::ZipArchive::new(std::fs::File::open(path)?).map_err(|_| AppError::invalid("这不是有效的 xlsx 文件。"))?;
+            let names = zip_names(&mut z, |n| n == "xl/sharedStrings.xml" || (n.starts_with("xl/drawings/drawing") && n.ends_with(".xml")));
+            if names.is_empty() {
+                return Err(AppError::invalid("这个表格里没有可翻译的文字。"));
+            }
+            let mut parts = vec![];
+            for name in names {
+                let raw = read_zip_entry(&mut z, &name)?;
+                let slots = if name.ends_with("sharedStrings.xml") { crate::fmtmark::xlsx_slots(&raw) } else { crate::fmtmark::pptx_slots(&raw) };
+                if !slots.is_empty() {
+                    parts.push(Part { name, raw, slots });
+                }
+            }
+            Ok(parts)
         }
         Kind::Epub => {
             let mut z = zip::ZipArchive::new(std::fs::File::open(path)?).map_err(|_| AppError::invalid("这不是有效的 epub 文件。"))?;
@@ -421,6 +442,31 @@ pub fn load(path: &Path, kind: Kind) -> AppResult<Vec<Part>> {
         Kind::Img => Err(AppError::invalid("图片需要先识字：开始翻译时会用视觉模型识别。")),
         Kind::Sub => Err(AppError::invalid("字幕文件走字幕通道。")),
     }
+}
+
+/// 压缩包里满足条件的条目名（按名字里的数字自然排序：slide2 在 slide10 前面）。
+fn zip_names(z: &mut zip::ZipArchive<std::fs::File>, keep: impl Fn(&str) -> bool) -> Vec<String> {
+    let mut names: Vec<String> = (0..z.len()).filter_map(|i| z.by_index(i).ok().map(|f| f.name().to_string())).filter(|n| keep(n)).collect();
+    let num = |s: &str| -> (String, u64) {
+        let digits: String = s.chars().filter(|c| c.is_ascii_digit()).collect();
+        (s.trim_end_matches(".xml").trim_end_matches(|c: char| c.is_ascii_digit()).to_string(), digits.parse().unwrap_or(0))
+    };
+    names.sort_by_key(|n| num(n));
+    // 正文排在页眉页脚之前
+    names.sort_by_key(|n| !(n == "word/document.xml" || n.starts_with("ppt/slides/") || n == "xl/sharedStrings.xml"));
+    names
+}
+
+fn xml_parts(z: &mut zip::ZipArchive<std::fs::File>, names: Vec<String>, slots_of: fn(&str) -> Vec<Slot>) -> AppResult<Vec<Part>> {
+    let mut parts = vec![];
+    for name in names {
+        let raw = read_zip_entry(z, &name)?;
+        let slots = slots_of(&raw);
+        if !slots.is_empty() {
+            parts.push(Part { name, raw, slots });
+        }
+    }
+    Ok(parts)
 }
 
 /// 把改过的几个条目写回压缩包，其余条目原样复制（EPUB 的 mimetype 必须第一个且不压缩）。
@@ -471,6 +517,8 @@ pub struct Opts {
     pub skip_code: bool,
     /// 不翻译参考文献（从“References / 参考文献”那一段起）
     pub skip_refs: bool,
+    /// 有文字层的 PDF 里夹着扫描页时，自动给这些页识字并一起翻译（只对 PDF 版面翻译有效）
+    pub scan_auto: bool,
 }
 
 impl Default for Opts {
@@ -485,6 +533,7 @@ impl Default for Opts {
             skip_headers: true,
             skip_code: true,
             skip_refs: false,
+            scan_auto: true,
         }
     }
 }
@@ -538,6 +587,29 @@ pub struct ViewPage {
     /// 按设置不翻译的片段（页眉页脚、公式代码、参考文献）：保留原文，不算失败
     #[serde(default)]
     pub skip: Vec<usize>,
+    /// 手动调过位置 / 字号的块（序号 → 调整）：版面预览和生成文件都按它来
+    #[serde(default)]
+    pub adj: std::collections::BTreeMap<usize, BlockAdj>,
+    /// 译后检查发现的问题（片段序号 → 提示）：只提示，不阻断
+    #[serde(default)]
+    pub qa: std::collections::BTreeMap<usize, Vec<String>>,
+}
+
+/// 手动调整：`rect` 是 (左, 下, 右, 上)（PDF 点），`size` 是字号（点）；没写的沿用自动算出来的。
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockAdj {
+    #[serde(default)]
+    pub rect: Option<[f32; 4]>,
+    #[serde(default)]
+    pub size: Option<f32>,
+}
+
+impl BlockAdj {
+    pub fn apply(&self, rect: (f32, f32, f32, f32), size: f32) -> ((f32, f32, f32, f32), f32) {
+        let r = self.rect.map_or(rect, |r| (r[0], r[1], r[2], r[3]));
+        (r, self.size.filter(|s| *s >= 3.0).unwrap_or(size))
+    }
 }
 
 // ---------- 扫描件 / 图片：视觉模型识字 ----------
@@ -793,12 +865,15 @@ pub fn preview(path: &Path) -> AppResult<View> {
 
 /// 翻译一份文件，返回输出文件路径。
 /// 文字版 PDF：把译文按块写回原位置，存成新的 PDF。`trans` 和各页的块按顺序一一对应。
+#[allow(clippy::too_many_arguments)]
 async fn write_pdf_layout(
     ctx: &JobCtx,
     input: &Path,
     lib: &Path,
     pages: &[crate::pdfx::PageInfo],
     trans: &[Option<String>],
+    adj: &[Option<BlockAdj>],
+    scan: Option<&[Vec<ScanBlock>]>,
     mode: crate::pdfx::Mode,
     base: &str,
 ) -> AppResult<PathBuf> {
@@ -808,9 +883,19 @@ async fn write_pdf_layout(
     for (pi, p) in pages.iter().enumerate() {
         for b in &p.blocks {
             if let Some(Some(t)) = trans.get(at) {
-                plans[pi].items.push(Item { remove: b.runs.clone(), rect: (b.l, b.b, b.r, b.t), size: b.size, rgb: b.rgb, bg: None, text: t.clone() });
+                let (rect, size) = adj.get(at).copied().flatten().map_or(((b.l, b.b, b.r, b.t), b.size), |a| a.apply((b.l, b.b, b.r, b.t), b.size));
+                plans[pi].items.push(Item { remove: b.runs.clone(), rect, size, rgb: b.rgb, bg: None, text: t.clone() });
             }
             at += 1;
+        }
+    }
+    // 夹在文字页里的扫描页：用识字得到的位置，没有原文字可删，靠盖底色
+    for (pi, blocks) in scan.into_iter().flatten().enumerate().take(plans.len()) {
+        for b in blocks {
+            let Some(rect) = b.rect else { continue };
+            if !b.trans.trim().is_empty() {
+                plans[pi].items.push(Item { remove: vec![], rect, size: b.size, rgb: b.rgb, bg: b.bg, text: b.trans.clone() });
+            }
         }
     }
     // 译文先用原文所在处的背景色盖一层再写（和版面画布里看到的一样）：原文就算有一部分没被删干净（图片里的字、描边字）也不会透出来
@@ -869,6 +954,155 @@ fn pdf_rect(px: (f32, f32, f32, f32), img: (usize, usize), page: (f32, f32)) -> 
     (left, page.1 - bottom, right, page.1 - top)
 }
 
+/// 混合 PDF 里的扫描页：没有文字层、也没读出文字块的页（整份都是扫描版的情形走另一条路，不在这里）。
+pub(crate) fn mixed_scan_pages(pages: &[crate::pdfx::PageInfo]) -> Vec<usize> {
+    pages.iter().enumerate().filter(|(_, p)| !p.has_text && p.blocks.is_empty()).map(|(i, _)| i).collect()
+}
+
+/// 给混合 PDF 的扫描页识字并翻译；结果存成旁路文件（和整份扫描版同一个文件，阅读器里按页读取），下次直接用。
+#[allow(clippy::too_many_arguments)]
+async fn ocr_mixed(
+    ctx: &JobCtx,
+    input: &Path,
+    opts: &Opts,
+    lib: &Path,
+    ep: &ai::Endpoint,
+    settings: &crate::settings::Settings,
+    target: &str,
+    pages: &[crate::pdfx::PageInfo],
+    scans: &[usize],
+) -> AppResult<Vec<Vec<ScanBlock>>> {
+    let engine = opts.engine();
+    let sp = scan_path(&ctx.st.data_dir, input, target, engine);
+    if let Some(sc) = std::fs::read(&sp).ok().and_then(|b| serde_json::from_slice::<Vec<Vec<ScanBlock>>>(&b).ok()).filter(|sc| sc.len() == pages.len()) {
+        ctx.note(format!("扫描页（{} 页）用上次识别、翻译好的内容", scans.len()));
+        return Ok(sc);
+    }
+    let which: Vec<usize> = scans.iter().copied().take(OCR_MAX_PAGES).collect();
+    ctx.note(format!(
+        "这份 PDF 里有 {} 页是扫描页，自动识字并翻译{}",
+        scans.len(),
+        if scans.len() > which.len() { format!("（只处理前 {} 页）", which.len()) } else { String::new() }
+    ));
+    // 扫描页识字失败不该让整份文档失败：出错就跳过这些页，文字页照常翻译
+    let out = match ocr_pages(ctx, input, engine, lib, ep, settings, target, pages, &which).await {
+        Ok((out, failed)) => {
+            if failed > 0 {
+                ctx.note(format!("有 {failed} 页扫描页识字失败，已跳过"));
+            }
+            out
+        }
+        Err(e) if e.message.contains("取消") => return Err(e),
+        Err(e) => {
+            ctx.note(format!("扫描页识字失败，已跳过：{}", e.message));
+            vec![vec![]; pages.len()]
+        }
+    };
+    if out.iter().any(|p| !p.is_empty()) {
+        if let Ok(b) = serde_json::to_vec(&out) {
+            let _ = std::fs::write(&sp, b);
+        }
+    }
+    Ok(out)
+}
+
+/// 逐页渲染、识字、翻译：`which` 是要处理的页下标，返回每页一组带位置的译文块（没处理的页是空的）和失败页数。
+#[allow(clippy::too_many_arguments)]
+async fn ocr_pages(
+    ctx: &JobCtx,
+    input: &Path,
+    engine: &str,
+    lib: &Path,
+    ep: &ai::Endpoint,
+    settings: &crate::settings::Settings,
+    target: &str,
+    pages: &[crate::pdfx::PageInfo],
+    which: &[usize],
+) -> AppResult<(Vec<Vec<ScanBlock>>, usize)> {
+    use crate::pdfx::{contrast, png_of_rgba, sample_bg};
+    use base64::Engine;
+    let total = which.len();
+    let mut out: Vec<Vec<ScanBlock>> = vec![vec![]; pages.len()];
+    let mut failed = 0usize;
+    for (j, &i) in which.iter().enumerate() {
+        let page = &pages[i];
+        ctx.check()?;
+        ctx.percent(90.0 * j as f64 / total as f64);
+        let (l2, in2) = (lib.to_path_buf(), input.to_path_buf());
+        let width = if engine == "vision" { 1500 } else { 2000 };
+        let (w, h, rgba) =
+            tokio::task::spawn_blocking(move || crate::pdfx::render_page(&l2, &in2, i, width)).await.map_err(|e| AppError::msg(e.to_string()))??;
+        let mut blocks: Vec<ScanBlock> = vec![];
+        if engine == "vision" {
+            ctx.note(format!("扫描页：视觉模型识字并翻译 第 {} / {} 页", i + 1, total));
+            let png = png_of_rgba(w, h, &rgba)?;
+            let url = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&png));
+            let resp = match ai::chat_img(ep, &settings.ai.model, &crate::imgtrans::system(target), "Translate the text in this image.", &url).await {
+                Ok(r) => r,
+                Err(e) => {
+                    let e = crate::imgtrans::vision_hint(e);
+                    if j == 0 {
+                        return Err(e);
+                    }
+                    ctx.note(format!("第 {} 页识别失败，已跳过：{}", i + 1, e.message));
+                    failed += 1;
+                    continue;
+                }
+            };
+            for b in crate::imgtrans::parse_blocks(&resp).unwrap_or_default() {
+                if b.translation.trim().is_empty() {
+                    continue;
+                }
+                let Some([x, y, bw, bh]) = b.rect else {
+                    blocks.push(ScanBlock { src: b.text, trans: b.translation, rect: None, size: 10.0, rgb: [0, 0, 0], bg: None });
+                    continue;
+                };
+                let px = (x as f32 * w as f32, y as f32 * h as f32, (x + bw) as f32 * w as f32, (y + bh) as f32 * h as f32);
+                let rect = pdf_rect(px, (w, h), (page.w, page.h));
+                let bgbox = (px.0 as usize, px.1 as usize, (px.2 as usize).min(w - 1), (px.3 as usize).min(h - 1));
+                let bg = sample_bg(&rgba, w, h, bgbox);
+                let n = b.translation.chars().count().max(1) as f32;
+                let size = ((rect.2 - rect.0) * (rect.3 - rect.1) / (n * 1.4)).sqrt().clamp(6.5, 16.0);
+                blocks.push(ScanBlock { src: b.text, trans: b.translation, rect: Some(rect), size, rgb: contrast(bg), bg: Some(bg) });
+            }
+        } else {
+            ctx.note(format!("扫描页：{}识字 第 {} / {} 页", if engine == "api" { "在线接口" } else { "本机增强" }, i + 1, total));
+            let mut bgra = rgba.clone();
+            for p in bgra.chunks_exact_mut(4) {
+                p.swap(0, 2);
+            }
+            let lines = match recognize_lines(&ctx.st, engine, bgra, w, h).await {
+                Ok(l) => l,
+                Err(e) => {
+                    if j == 0 {
+                        return Err(e);
+                    }
+                    ctx.note(format!("第 {} 页识字失败，已跳过：{}", i + 1, e.message));
+                    failed += 1;
+                    continue;
+                }
+            };
+            let groups: Vec<_> = crate::livecore::group_lines(&lines).into_iter().filter(|g| worth(&g.text)).collect();
+            if !groups.is_empty() {
+                ctx.note(format!("扫描页：翻译 第 {} / {} 页（{} 块）", i + 1, total, groups.len()));
+                let texts: Vec<String> = groups.iter().map(|g| g.text.clone()).collect();
+                let tr = translate_texts(&ctx.st, settings, ep, target, &texts, &|_, _| ctx.check()).await?;
+                for (g, t) in groups.iter().zip(tr.texts) {
+                    let Some(t) = t.filter(|t| !t.trim().is_empty()) else { continue };
+                    let px = (g.x, g.y, g.x + g.w, g.y + g.h);
+                    let rect = pdf_rect(px, (w, h), (page.w, page.h));
+                    let bgbox = (px.0.max(0.0) as usize, px.1.max(0.0) as usize, (px.2 as usize).min(w - 1), (px.3 as usize).min(h - 1));
+                    let bg = sample_bg(&rgba, w, h, bgbox);
+                    let size = (g.em / h as f32 * page.h * 0.9).clamp(6.5, 28.0);
+                    blocks.push(ScanBlock { src: g.text.clone(), trans: t, rect: Some(rect), size, rgb: contrast(bg), bg: Some(bg) });
+                }
+            }
+        }
+        out[i] = blocks;
+    }
+    Ok((out, failed))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_pdf_scanned(
     ctx: &JobCtx,
@@ -880,8 +1114,7 @@ async fn run_pdf_scanned(
     target: &str,
     pages: Vec<crate::pdfx::PageInfo>,
 ) -> AppResult<PathBuf> {
-    use crate::pdfx::{contrast, png_of_rgba, sample_bg, Item, PagePlan};
-    use base64::Engine;
+    use crate::pdfx::{Item, PagePlan};
     let engine = opts.engine();
     let data_dir = ctx.st.data_dir.clone();
     let (sp, vp) = (scan_path(&data_dir, input, target, engine), cache_path(&data_dir, input, target));
@@ -910,85 +1143,9 @@ async fn run_pdf_scanned(
             if pages.len() > OCR_MAX_PAGES {
                 ctx.note(format!("共 {} 页，只处理前 {OCR_MAX_PAGES} 页", pages.len()));
             }
-            let mut out: Vec<Vec<ScanBlock>> = vec![];
-            let mut failed = 0usize;
-            for (i, page) in pages.iter().enumerate().take(total) {
-                ctx.check()?;
-                ctx.percent(90.0 * i as f64 / total as f64);
-                let (l2, in2) = (lib.to_path_buf(), input.to_path_buf());
-                let width = if engine == "vision" { 1500 } else { 2000 };
-                let (w, h, rgba) =
-                    tokio::task::spawn_blocking(move || crate::pdfx::render_page(&l2, &in2, i, width)).await.map_err(|e| AppError::msg(e.to_string()))??;
-                let mut blocks: Vec<ScanBlock> = vec![];
-                if engine == "vision" {
-                    ctx.note(format!("扫描页：视觉模型识字并翻译 第 {} / {} 页", i + 1, total));
-                    let png = png_of_rgba(w, h, &rgba)?;
-                    let url = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&png));
-                    let resp = match ai::chat_img(ep, &settings.ai.model, &crate::imgtrans::system(target), "Translate the text in this image.", &url).await {
-                        Ok(r) => r,
-                        Err(e) => {
-                            let e = crate::imgtrans::vision_hint(e);
-                            if i == 0 {
-                                return Err(e);
-                            }
-                            ctx.note(format!("第 {} 页识别失败，已跳过：{}", i + 1, e.message));
-                            failed += 1;
-                            out.push(vec![]);
-                            continue;
-                        }
-                    };
-                    for b in crate::imgtrans::parse_blocks(&resp).unwrap_or_default() {
-                        if b.translation.trim().is_empty() {
-                            continue;
-                        }
-                        let Some([x, y, bw, bh]) = b.rect else {
-                            blocks.push(ScanBlock { src: b.text, trans: b.translation, rect: None, size: 10.0, rgb: [0, 0, 0], bg: None });
-                            continue;
-                        };
-                        let px = (x as f32 * w as f32, y as f32 * h as f32, (x + bw) as f32 * w as f32, (y + bh) as f32 * h as f32);
-                        let rect = pdf_rect(px, (w, h), (page.w, page.h));
-                        let bgbox = (px.0 as usize, px.1 as usize, (px.2 as usize).min(w - 1), (px.3 as usize).min(h - 1));
-                        let bg = sample_bg(&rgba, w, h, bgbox);
-                        let n = b.translation.chars().count().max(1) as f32;
-                        let size = ((rect.2 - rect.0) * (rect.3 - rect.1) / (n * 1.4)).sqrt().clamp(6.5, 16.0);
-                        blocks.push(ScanBlock { src: b.text, trans: b.translation, rect: Some(rect), size, rgb: contrast(bg), bg: Some(bg) });
-                    }
-                } else {
-                    ctx.note(format!("扫描页：{}识字 第 {} / {} 页", if engine == "api" { "在线接口" } else { "本机增强" }, i + 1, total));
-                    let mut bgra = rgba.clone();
-                    for p in bgra.chunks_exact_mut(4) {
-                        p.swap(0, 2);
-                    }
-                    let lines = match recognize_lines(&ctx.st, engine, bgra, w, h).await {
-                        Ok(l) => l,
-                        Err(e) => {
-                            if i == 0 {
-                                return Err(e);
-                            }
-                            ctx.note(format!("第 {} 页识字失败，已跳过：{}", i + 1, e.message));
-                            failed += 1;
-                            out.push(vec![]);
-                            continue;
-                        }
-                    };
-                    let groups: Vec<_> = crate::livecore::group_lines(&lines).into_iter().filter(|g| worth(&g.text)).collect();
-                    if !groups.is_empty() {
-                        ctx.note(format!("扫描页：翻译 第 {} / {} 页（{} 块）", i + 1, total, groups.len()));
-                        let texts: Vec<String> = groups.iter().map(|g| g.text.clone()).collect();
-                        let tr = translate_texts(&ctx.st, settings, ep, target, &texts, &|_, _| ctx.check()).await?;
-                        for (g, t) in groups.iter().zip(tr.texts) {
-                            let Some(t) = t.filter(|t| !t.trim().is_empty()) else { continue };
-                            let px = (g.x, g.y, g.x + g.w, g.y + g.h);
-                            let rect = pdf_rect(px, (w, h), (page.w, page.h));
-                            let bgbox = (px.0.max(0.0) as usize, px.1.max(0.0) as usize, (px.2 as usize).min(w - 1), (px.3 as usize).min(h - 1));
-                            let bg = sample_bg(&rgba, w, h, bgbox);
-                            let size = (g.em / h as f32 * page.h * 0.9).clamp(6.5, 28.0);
-                            blocks.push(ScanBlock { src: g.text.clone(), trans: t, rect: Some(rect), size, rgb: contrast(bg), bg: Some(bg) });
-                        }
-                    }
-                }
-                out.push(blocks);
-            }
+            let which: Vec<usize> = (0..total).collect();
+            let (mut out, failed) = ocr_pages(ctx, input, engine, lib, ep, settings, target, &pages, &which).await?;
+            out.truncate(total);
             if out.iter().all(|b| b.iter().all(|x| x.rect.is_none())) {
                 return Err(AppError::invalid(if engine == "vision" {
                     "视觉模型没有从页面里识别出带位置的文字。确认选的模型支持看图，或页面是否清晰。"
@@ -1009,6 +1166,8 @@ async fn run_pdf_scanned(
                         page: Some(i),
                         done: true,
                         skip: vec![],
+                        adj: Default::default(),
+                        qa: Default::default(),
                     })
                     .collect(),
                 failed,
@@ -1033,10 +1192,12 @@ async fn run_pdf_scanned(
     // 3. 写回 PDF（译文被改成空的块不写，保留原样）
     let mut plans = vec![PagePlan::default(); pages.len()];
     let mut any = 0usize;
+    let cached_view = load_cache(&cache_path(&data_dir, input, target));
     for (pi, page) in scan.iter().enumerate().take(plans.len()) {
-        for b in page {
+        for (k, b) in page.iter().enumerate() {
             let (Some(rect), false) = (b.rect, b.trans.trim().is_empty()) else { continue };
-            plans[pi].items.push(Item { remove: vec![], rect, size: b.size, rgb: b.rgb, bg: b.bg, text: b.trans.clone() });
+            let (rect, size) = cached_view.as_ref().and_then(|v| v.pages.get(pi)).and_then(|p| p.adj.get(&k)).map_or((rect, b.size), |a| a.apply(rect, b.size));
+            plans[pi].items.push(Item { remove: vec![], rect, size, rgb: b.rgb, bg: b.bg, text: b.trans.clone() });
             any += 1;
         }
     }
@@ -1061,7 +1222,9 @@ fn trans_setup(st: &crate::AppState, settings: &crate::settings::Settings, targe
     let terms = if settings.ai.glossary_on { st.glossary.terms_for("", ai::lang_tag(target)) } else { vec![] };
     let guide = st.experts.resolve(&settings.ai.expert, settings.ai.expert_auto, "").map(|e| crate::experts::guide_block(&e)).unwrap_or_default();
     let base = if profile == crate::tm::Profile::Subtitle { ai::translate_system(target) } else { crate::vsum::webtrans_system(target) };
-    (format!("{base}{guide}"), terms)
+    // 文档里一段有几种格式（粗体、斜体、链接）时，文字里带 <r1>…</r1> 这样的格式标记：要原样保留
+    let marks = if profile == crate::tm::Profile::Subtitle { "" } else { FORMAT_MARKS_HINT };
+    (format!("{base}{guide}{marks}"), terms)
 }
 
 fn profile_of(kind: Kind) -> crate::tm::Profile {
@@ -1071,6 +1234,8 @@ fn profile_of(kind: Kind) -> crate::tm::Profile {
         crate::tm::Profile::Document
     }
 }
+
+const FORMAT_MARKS_HINT: &str = "\n\nSome lines contain format tags such as <r1>…</r1><r2>…</r2> that mark differently formatted parts of the same paragraph. Translate the text inside each tag and KEEP every tag exactly once, in pairs, with the same numbers; do not add, remove, merge or renumber tags. You may reorder the tagged parts when the target language needs a different word order. Lines without tags stay plain text.";
 
 /// 翻译一批文字；返回和输入等长，失败的那条是 None。
 async fn translate_texts(
@@ -1099,6 +1264,8 @@ struct LBlock {
     trans: String,
     /// 按设置不翻译的块（页眉页脚、公式代码、参考文献）
     skipped: bool,
+    /// 位置 / 字号是手动调过的
+    adjusted: bool,
 }
 
 struct Collected {
@@ -1176,7 +1343,18 @@ pub(crate) fn match_cached_page(view: &mut Option<View>, pages: &[crate::pdfx::P
         None => {
             // 这一页还没轮到：先在缓存里占个位，在页面上直接改译文也能存下来
             let at = v.pages.iter().position(|p| p.page.is_some_and(|x| x > page)).unwrap_or(v.pages.len());
-            v.pages.insert(at, ViewPage { trans: vec![None; texts.len()], src: texts, page: Some(page), done: false, skip: vec![] });
+            v.pages.insert(
+                at,
+                ViewPage {
+                    trans: vec![None; texts.len()],
+                    src: texts,
+                    page: Some(page),
+                    done: false,
+                    skip: vec![],
+                    adj: Default::default(),
+                    qa: Default::default(),
+                },
+            );
             m.view_page = at;
             m.dirty = true;
         }
@@ -1211,17 +1389,21 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
         view_page = m.view_page;
         done = m.done;
         note = m.note;
+        let adj = view.as_ref().and_then(|v| v.pages.get(view_page)).map(|p| p.adj.clone()).unwrap_or_default();
         for (k, b) in pages[page].blocks.iter().enumerate() {
+            let a = adj.get(&k);
+            let (rect, size) = a.map_or(((b.l, b.b, b.r, b.t), b.size), |a| a.apply((b.l, b.b, b.r, b.t), b.size));
             blocks.push(LBlock {
                 index: k,
-                rect: (b.l, b.b, b.r, b.t),
-                size: b.size,
+                rect,
+                size,
                 rgb: b.rgb,
                 bg: None,
                 remove: b.runs.clone(),
                 src: b.text.clone(),
                 trans: trans[k].clone().unwrap_or_default(),
                 skipped: skip.contains(&k),
+                adjusted: a.is_some(),
             });
         }
     } else {
@@ -1232,11 +1414,27 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
             None => note = "这一页是扫描页（没有文字层），还没有识字、翻译结果。".into(),
             Some(sc) => {
                 if let Some(list) = sc.get(page) {
-                    let edited = view.as_ref().and_then(|v| v.pages.get(page)).filter(|v| v.trans.len() == list.len());
+                    // 整份扫描版的缓存按 PDF 页号存；混合 PDF（版面缓存）里页是压缩过的，对不上，扫描页暂不读阅读器里的改动
+                    let plain = view.as_ref().filter(|v| !v.layout);
+                    let edited = plain.and_then(|v| v.pages.get(page)).filter(|v| v.trans.len() == list.len());
+                    let adj = plain.and_then(|v| v.pages.get(page)).map(|p| p.adj.clone()).unwrap_or_default();
                     for (k, b) in list.iter().enumerate() {
                         let Some(rect) = b.rect else { continue };
                         let trans = edited.map(|v| v.trans[k].clone().unwrap_or_default()).unwrap_or_else(|| b.trans.clone());
-                        blocks.push(LBlock { index: k, rect, size: b.size, rgb: b.rgb, bg: b.bg, remove: vec![], src: b.src.clone(), trans, skipped: false });
+                        let a = adj.get(&k);
+                        let (rect, size) = a.map_or((rect, b.size), |a| a.apply(rect, b.size));
+                        blocks.push(LBlock {
+                            index: k,
+                            rect,
+                            size,
+                            rgb: b.rgb,
+                            bg: b.bg,
+                            remove: vec![],
+                            src: b.src.clone(),
+                            trans,
+                            skipped: false,
+                            adjusted: a.is_some(),
+                        });
                     }
                     done = true;
                 }
@@ -1267,6 +1465,8 @@ pub struct LayoutBlock {
     pub trans: String,
     /// 按设置不翻译（页眉页脚、公式代码、参考文献）：保留原文，不算“未译”
     pub skipped: bool,
+    /// 位置 / 字号是手动调过的
+    pub adjusted: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1314,6 +1514,7 @@ pub async fn page_layout(st: &crate::AppState, input: &Path, target: &str, ocr: 
             src: b.src,
             trans: b.trans,
             skipped: b.skipped,
+            adjusted: b.adjusted,
         })
         .collect();
     Ok(PageLayout { pages, view_page, w: size.0, h: size.1, image, blocks, done, note })
@@ -1366,9 +1567,49 @@ pub fn edit_seg(data_dir: &Path, input: &Path, target: &str, page: usize, index:
         crate::tm::store_edited(data_dir, profile_of(kind), target, &src, t);
     }
     *slot = if t.is_empty() { None } else { Some(t.to_string()) };
+    // 人改过的译文不再提示
+    if let Some(p) = v.pages.get_mut(page) {
+        p.qa.remove(&index);
+    }
     v.failed = v.pages.iter().map(|p| p.trans.iter().filter(|t| t.is_none()).count()).sum();
     save_cache(&cp, &v);
     Ok(())
+}
+
+/// 版面里手动调了一块的位置 / 字号：写回缓存（`adj` 为 None = 还原成自动排版）。
+pub fn adjust_block(data_dir: &Path, input: &Path, target: &str, page: usize, index: usize, adj: Option<BlockAdj>) -> AppResult<()> {
+    let cp = cache_path(data_dir, input, target);
+    let mut v = load_cache(&cp).ok_or_else(|| AppError::not_found("这个文件还没有译文，先翻译。"))?;
+    let p = v.pages.get_mut(page).ok_or_else(|| AppError::not_found("找不到这一页。"))?;
+    if let Some(a) = adj {
+        if let Some(r) = a.rect {
+            if !r.iter().all(|x| x.is_finite()) || r[2] - r[0] < 4.0 || r[3] - r[1] < 4.0 {
+                return Err(AppError::invalid("这个框太小或位置不对。"));
+            }
+        }
+        if a.size.is_some_and(|s| !s.is_finite() || !(3.0..=200.0).contains(&s)) {
+            return Err(AppError::invalid("字号要在 3 到 200 之间。"));
+        }
+        p.adj.insert(index, a);
+    } else {
+        p.adj.remove(&index);
+    }
+    save_cache(&cp, &v);
+    Ok(())
+}
+
+/// 一页的译后检查：片段序号 → 问题。不翻译的片段和没有译文的不查。
+pub(crate) fn qa_of(src: &[String], trans: &[Option<String>], terms: &[(String, String)], skip: &[usize]) -> std::collections::BTreeMap<usize, Vec<String>> {
+    src.iter()
+        .zip(trans)
+        .enumerate()
+        .filter(|(i, _)| !skip.contains(i))
+        .filter_map(|(i, (s, t))| {
+            let t = t.as_deref()?;
+            let m = crate::transqa::check(s, t, terms);
+            (!m.is_empty()).then_some((i, m))
+        })
+        .collect()
 }
 
 /// 阅读器里点“重译”：把这一段原文重新翻一遍，结果写进缓存并返回。
@@ -1397,6 +1638,8 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
         ctx.note("还没安装 PDF 排版组件，这次只输出 TXT；在“文件翻译”页点“安装 PDF 排版组件”后可以原处排版。");
     }
     let mut layout_pages: Option<Vec<crate::pdfx::PageInfo>> = None;
+    // 夹在文字页里的扫描页：识字 + 翻译好的块（每页一组；文字页是空的）
+    let mut scan_extra: Option<Vec<Vec<ScanBlock>>> = None;
 
     // 1. 切片段
     let mut cues: Vec<Cue> = vec![];
@@ -1422,6 +1665,13 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
                     })
                     .collect();
                 part_pdf = pages.iter().enumerate().filter(|(_, p)| !p.blocks.is_empty()).map(|(i, _)| i).collect();
+                // 混合 PDF：没有文字层的页（扫描页）自动识字、翻译，和文字页一起写回
+                let scans = mixed_scan_pages(&pages);
+                if opts.scan_auto && !scans.is_empty() {
+                    scan_extra = Some(ocr_mixed(ctx, input, &opts, lib, &ep, &settings, &target, &pages, &scans).await?);
+                } else if !scans.is_empty() {
+                    ctx.note(format!("有 {} 页是扫描页（没有文字层），已按设置跳过；勾选“自动识别扫描页”可以一起翻译。", scans.len()));
+                }
                 layout_pages = Some(pages);
             } else if pages.iter().all(|p| !p.has_text) {
                 ctx.note("这份 PDF 是扫描版（没有文字层），改用视觉模型识字并按位置翻译");
@@ -1475,6 +1725,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     // 缓存一开始就写好所有页（没轮到的页 done = false）：中途停止、失败、版面预览都能按页对上。
     let profile = profile_of(kind);
     let (system, terms) = trans_setup(&ctx.st, &settings, &target, profile);
+    let term_pairs: Vec<(String, String)> = terms.iter().map(|t| (t.source.clone(), t.target.clone())).collect();
     let tv = crate::tm::terms_version(&ctx.st);
     let mut view = View {
         input: input.to_string_lossy().into_owned(),
@@ -1487,6 +1738,14 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
         total_pages: layout_pages.as_ref().map_or(sizes.len(), |p| p.len()),
     };
     {
+        // 版面里手动调过的位置 / 字号跟着页走：重新翻译、继续翻译都不能丢
+        let old = load_cache(&cpath);
+        let adj_of = |pn: Option<usize>, n: usize| {
+            old.as_ref().and_then(|o| o.pages.iter().find(|p| p.page == pn && p.src.len() == n)).map(|p| p.adj.clone()).unwrap_or_default()
+        };
+        let qa_old = |pn: Option<usize>, n: usize| {
+            old.as_ref().and_then(|o| o.pages.iter().find(|p| p.page == pn && p.src.len() == n)).map(|p| p.qa.clone()).unwrap_or_default()
+        };
         let mut at = 0usize;
         for (pi, n) in sizes.iter().enumerate() {
             view.pages.push(ViewPage {
@@ -1495,6 +1754,8 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
                 page: page_no[pi],
                 done: false,
                 skip: (at..at + n).filter(|i| skip.contains(i)).map(|i| i - at).collect(),
+                adj: adj_of(page_no[pi], *n),
+                qa: qa_old(page_no[pi], *n),
             });
             at += n;
         }
@@ -1534,6 +1795,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
         }
         view.pages[pi].trans = trans[at..at + n].to_vec();
         view.pages[pi].done = true;
+        view.pages[pi].qa = qa_of(&texts[at..at + n], &trans[at..at + n], &term_pairs, &view.pages[pi].skip);
         view.failed =
             view.pages.iter().filter(|p| p.done).map(|p| p.trans.iter().enumerate().filter(|(k, t)| t.is_none() && !p.skip.contains(k)).count()).sum();
         save_cache(&cpath, &view);
@@ -1553,7 +1815,8 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
 
     // 3. 写回
     let out = if let (Some(pages), Some(lib)) = (&layout_pages, &layout_lib) {
-        write_pdf_layout(ctx, input, lib, pages, &t.texts, crate::pdfx::Mode::parse(&opts.pdf_mode), &base).await?
+        let adj: Vec<Option<BlockAdj>> = view.pages.iter().flat_map(|p| (0..p.src.len()).map(|k| p.adj.get(&k).copied())).collect();
+        write_pdf_layout(ctx, input, lib, pages, &t.texts, &adj, scan_extra.as_deref(), crate::pdfx::Mode::parse(&opts.pdf_mode), &base).await?
     } else if kind == Kind::Sub {
         let d = if opts.bilingual { Display::OrigTop } else { Display::Trans };
         let out = ai::out_beside(input, &base, tag, "srt");

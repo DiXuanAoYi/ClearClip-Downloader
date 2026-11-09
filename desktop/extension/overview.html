@@ -40,6 +40,22 @@
     <button id="pickOnPage" class="sec small" title="回到网页，直接点图片、视频、链接来勾选，勾完一起发送">在页面上点选…</button>
     <button id="pageLinks" class="sec small" title="收集本页所有视频链接，在清影里打开批量添加面板">本页所有视频链接 → 清影</button>
   </div>
+  <div id="nameBar">
+    <label class="inline">命名
+      <select id="nameMode">
+        <option value="orig">保持原名</option>
+        <option value="tpl">自定义模板</option>
+        <option value="ai">AI 总结命名</option>
+      </select>
+    </label>
+    <span id="tplBox" class="hidden">
+      <input id="tpl" type="text" spellcheck="false" maxlength="80" placeholder="{序号}-{标题}" aria-label="命名模板" />
+      <span class="chips" id="tplChips"></span>
+    </span>
+    <button id="aiName" class="sec small hidden" title="让清影里的大模型根据图片说明、链接文字起名；选中的项才会起名，可以再手动改">AI 起名（所选）</button>
+    <label id="ocrBox" class="inline hidden" title="用清影本机识字读出图片里的文字，作为起名依据（读图会慢一点）"><input id="ocrOn" type="checkbox" checked /> 读取图片里的文字</label>
+    <span id="nameHint" class="mute"></span>
+  </div>
   <div id="msg"></div>
   <div id="grid"></div>
   <div id="empty" class="mute hidden">这个页面里没有找到符合条件的内容。试试把“最小边长”调小。</div>
@@ -54,6 +70,7 @@
   <script src="takeover.js"></script>
   <script src="sniff.js"></script>
   <script src="media-sniff.js"></script>
+  <script src="naming.js"></script>
   <script src="engines.js"></script>
   <script src="overview.js"></script>
 </body>

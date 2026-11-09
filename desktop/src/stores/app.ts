@@ -4,7 +4,7 @@ import { api, errorKind, errorText, events } from '../api'
 import { clone } from '../utils/merge3'
 import type { AppInfo, BatchRequest, ErrorKind, HistoryItem, LockStatus, MediaInfo, Settings, TaskSnapshot } from '../types'
 
-export type ViewName = 'parse' | 'batch' | 'queue' | 'subs' | 'live' | 'screen' | 'filetr' | 'library' | 'vocab' | 'tools' | 'safebox' | 'settings'
+export type ViewName = 'parse' | 'queue' | 'subs' | 'live' | 'screen' | 'filetr' | 'library' | 'vocab' | 'tools' | 'safebox' | 'settings'
 export type LibraryTab = 'files' | 'inbox' | 'transfer' | 'history'
 export type ToolboxTab = 'video' | 'normalize' | 'edit' | 'lut' | 'subtitle' | 'tags' | 'ai'
 export type SettingsTab = 'download' | 'parse' | 'network' | 'accounts' | 'phone' | 'ai' | 'automation' | 'security' | 'components' | 'diagnostics' | 'general'
@@ -41,6 +41,8 @@ export const useAppStore = defineStore('app', () => {
 
   /** 请求打开“批量添加”面板（链接已提取好）；面板打开后清空 */
   const batchRequest = ref<BatchRequest | null>(null)
+  /** 主页的模式：单个解析 / 批量下载（批量不再是单独的页面） */
+  const homeMode = ref<'single' | 'batch'>('single')
   /** 下载队列只看某个批次（批量下载页点“查看任务”）；null = 全部 */
   const queueBatch = ref<string | null>(null)
   function goQueueBatch(id: string | null) {
@@ -49,6 +51,8 @@ export const useAppStore = defineStore('app', () => {
   }
   function openBatch(urls: string[], source: string, truncated = false) {
     batchRequest.value = { urls, source, truncated }
+    homeMode.value = 'batch'
+    view.value = 'parse'
   }
 
   function goSettings(tab: SettingsTab) {
@@ -137,7 +141,7 @@ export const useAppStore = defineStore('app', () => {
   }
   media.addEventListener('change', applyTheme)
 
-  return { filetrRequest, goFiletr, settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, queueBatch, goQueueBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme, settingsRev }
+  return { homeMode, filetrRequest, goFiletr, settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, queueBatch, goQueueBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme, settingsRev }
 })
 
 /** 下载队列，监听后端事件保持同步。 */

@@ -10,6 +10,18 @@
       return ''
     }
   }
+  const clip = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n)
+  /** 一个媒体元素的“说明”和“周围的字”：title / aria-label / figcaption 当说明；所在块里最近的标题和一小段文字当周围的字。给 AI 起名用。 */
+  const contextOf = (el) => {
+    if (!el || !el.closest) return {}
+    const fig = el.closest('figure')
+    const cap = clip(el.title || el.getAttribute('aria-label') || fig?.querySelector('figcaption')?.textContent || el.closest('a[title]')?.title, 80)
+    let box = el.parentElement
+    for (let i = 0; i < 4 && box && clip(box.textContent, 400).length < 20; i++) box = box.parentElement
+    const head = box?.querySelector?.('h1,h2,h3,h4,h5,h6')
+    const near = clip([head?.textContent, box && !head ? box.textContent : box?.querySelector?.('p')?.textContent].filter(Boolean).join(' '), 120)
+    return { ...(cap ? { cap } : {}), ...(near ? { near } : {}) }
+  }
   const add = (kind, raw, extra = {}) => {
     const url = abs(raw)
     if (!url) return
@@ -41,12 +53,12 @@
     const h = img.naturalHeight || img.height
     const lazy = img.dataset.original || img.dataset.src || img.dataset.lazySrc || img.dataset.origin || ''
     const src = best(img.srcset) || lazy || img.currentSrc || img.src
-    add('image', src, { w, h, alt: img.alt || '', thumb: img.currentSrc || img.src })
+    add('image', src, { w, h, alt: img.alt || '', thumb: img.currentSrc || img.src, ...contextOf(img) })
   }
   for (const s of document.querySelectorAll('picture source[srcset]')) add('image', best(s.srcset))
   for (const v of document.querySelectorAll('video')) {
     const src = v.currentSrc || v.src
-    if (src) add('video', src, { w: v.videoWidth, h: v.videoHeight, dur: isFinite(v.duration) ? v.duration : 0, thumb: v.poster ? abs(v.poster) : '' })
+    if (src) add('video', src, { w: v.videoWidth, h: v.videoHeight, dur: isFinite(v.duration) ? v.duration : 0, thumb: v.poster ? abs(v.poster) : '', ...contextOf(v) })
     for (const s of v.querySelectorAll('source[src]')) add('video', s.src, { w: v.videoWidth, h: v.videoHeight })
     if (v.poster) add('image', v.poster, { alt: '视频封面' })
   }
@@ -72,5 +84,8 @@
     const m = /url\((['"]?)(.*?)\1\)/.exec(getComputedStyle(el).backgroundImage || '')
     if (m && !m[2].startsWith('data:')) add('image', m[2], { w: Math.round(r.width), h: Math.round(r.height), alt: '背景图' })
   }
-  return { frame: location.href, title: document.title, items: out }
+  // 页面正文摘录（给 AI 理解页面主题用）：优先文章区域，最多 1500 字
+  const main = document.querySelector('article,main,[role="main"]') || document.body
+  const excerpt = clip(main?.innerText, 1500)
+  return { frame: location.href, title: document.title, items: out, excerpt }
 })()

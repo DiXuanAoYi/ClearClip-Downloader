@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText } from './api'
 import { useLanguage } from './i18n/useLanguage'
-import type { Excerpt, WritePending, WritingSettings } from './types'
+import type { Excerpt, WritePending, WritePersona, WritingSettings } from './types'
 import { isWord, speechLang } from './utils/selection'
 import { floatToInt16, int16ToBase64, level as pcmLevel, resampleTo16k } from './utils/pcm'
 import { joinFinals } from './utils/dictation'
@@ -132,7 +132,12 @@ async function pasteIn() {
     error.value = '读不到剪贴板，请直接按 Ctrl+V 粘贴'
   }
 }
-const canRun = computed(() => !!text.value.trim() && !busy.value && !missing.value)
+// 人设：选一个，输入收到的消息或话题，一次给出结果
+const personas = ref<WritePersona[]>([])
+const personaId = ref('')
+const persona = computed(() => personas.value.find((p) => p.id === personaId.value))
+void api.writePersonas().then((l) => (personas.value = l)).catch(() => {})
+const canRun = computed(() => !!text.value.trim() && !busy.value && !missing.value && (tab.value !== 'persona' || !!personaId.value))
 
 async function load() {
   const p = await api.writeTake()
@@ -309,7 +314,7 @@ async function run() {
   try {
     const req = isReply.value
       ? buildReplyRequest(form.value, text.value, src.value?.app)
-      : buildWriteRequest({ action: action.value, text: text.value, preset: tab.value === 'rewrite' ? presetById(presetId.value) : undefined, extra: extra.value, target: target.value, app: src.value?.app, tone: tab.value === 'rewrite' ? rwTone.value : '' })
+      : buildWriteRequest({ action: action.value, text: text.value, preset: tab.value === 'rewrite' ? presetById(presetId.value) : undefined, extra: extra.value, target: target.value, app: src.value?.app, tone: tab.value === 'rewrite' ? rwTone.value : '', persona: personaId.value })
     jobId = await api.writeRun(req)
     for (;;) {
       await new Promise((r) => setTimeout(r, 450))
@@ -528,7 +533,7 @@ async function stop() {
 async function apply(replace: boolean) {
   if (!out.value) return
   try {
-    done.value = await api.writeApply(out.value, replace)
+    done.value = await api.writeApply(out.value, replace, src.value?.app)
     if (replace && done.value === '已替换') {
       canUndo.value = true
       clearTimeout(undoTimer)
@@ -761,6 +766,23 @@ onBeforeUnmount(() => {
           </div>
         </template>
 
+        <!-- 人设 -->
+        <template v-else-if="tab === 'persona'">
+          <section class="grp">
+            <span class="lbl">选一个人设</span>
+            <div class="personas">
+              <button v-for="p in personas" :key="p.id" class="pcard" :class="{ on: personaId === p.id }" :aria-pressed="personaId === p.id" :title="p.desc" @click="personaId = p.id">
+                <b>{{ p.name }}</b>
+                <small>{{ p.desc }}</small>
+              </button>
+            </div>
+          </section>
+          <small class="hint">{{ persona ? persona.hint : '人设只是说话的风格：不辱骂、不歧视、不编造，恋爱类的不教操控和伪造身份。' }}</small>
+          <section class="opts">
+            <input v-model="extra" class="ex" placeholder="额外要求（可选，比如：别太长、带点东北话）" maxlength="200" />
+          </section>
+        </template>
+
         <!-- 检查 -->
         <small v-else-if="tab === 'check'" class="hint">找出错别字、语病、标点和不通顺的地方，逐条给出改法。</small>
 
@@ -875,6 +897,11 @@ html.dark .shell .ghost.on { color: var(--acc); }
 html.dark .shell .foot a { color: var(--acc); }
 /* 暗色：选中的选项和主按钮用亮橙底配深色字（亮色主题用深一档的橙） */
 html.dark .shell .wa { --pick: #f5a466; --go: #f08a3c; --gofg: #1a2023; --look: #b9c3bf; --dash: #3a4448; }
+.personas { display: grid; grid-template-columns: 1fr 1fr; gap: 6px }
+.pcard { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font: inherit }
+.pcard b { font-size: 13px }
+.pcard small { font-size: 11px; opacity: .7; line-height: 1.3 }
+.pcard.on { border-color: var(--acc); background: var(--pick) }
 </style>
 
 <style scoped>

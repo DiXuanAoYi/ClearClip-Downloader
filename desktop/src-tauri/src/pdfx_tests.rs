@@ -28,6 +28,23 @@ fn lines_of_one_paragraph_become_one_block_and_a_heading_stays_apart() {
 }
 
 #[test]
+fn a_line_split_into_two_runs_with_slightly_different_heights_is_still_one_line() {
+    // 同一行的右半段比左半段高 0.6 点（排序后右半段先到）：不能裂成两块
+    let mut right = run(1, "ensus standards that have been developed", 250.0, 700.6, 420.0, 10.0);
+    right.t = right.b + 10.0;
+    let runs = vec![
+        run(0, "Welding Society (AWS) are voluntary cons", 72.0, 700.0, 249.0, 10.0),
+        right,
+        run(2, "American National Standards Institute (ANSI).", 72.0, 687.0, 300.0, 10.0),
+    ];
+    let blocks = group_blocks(&runs);
+    assert_eq!(blocks.len(), 1, "{blocks:?}");
+    assert_eq!(blocks[0].lines, 2);
+    assert!(blocks[0].text.starts_with("Welding Society (AWS) are voluntary consensus standards"), "{}", blocks[0].text);
+    assert_eq!((blocks[0].l, blocks[0].r), (72.0, 420.0));
+}
+
+#[test]
 fn two_columns_do_not_merge_and_a_finished_short_line_ends_the_paragraph() {
     let runs = vec![
         run(0, "Left column first line of text here", 72.0, 700.0, 260.0, 10.0),

@@ -28,6 +28,7 @@ pub mod experts;
 pub mod experts_cmds;
 pub mod filetr;
 pub mod filetr_ext;
+pub mod fmtmark;
 pub mod glossary;
 pub mod glossary_cmds;
 pub mod grab;
@@ -46,6 +47,7 @@ pub mod livecore;
 pub mod liveshot;
 mod livetr;
 pub mod livetx;
+pub mod livevoice;
 pub mod livewin;
 pub mod lut;
 pub mod media_cmds;
@@ -54,6 +56,7 @@ pub mod media_tools;
 pub mod ml;
 pub mod model;
 pub mod mt;
+pub mod mt_cloud;
 pub mod naming;
 pub mod net;
 pub mod notify;
@@ -87,6 +90,7 @@ pub mod tm;
 pub mod tools;
 pub mod track;
 pub mod transfer;
+pub mod transqa;
 mod tray;
 pub mod upload;
 pub mod vault;
@@ -98,6 +102,7 @@ pub mod vsum;
 mod winframe;
 pub mod writeassist;
 pub mod writebadge;
+pub mod writepersona;
 pub mod writing;
 
 use std::path::PathBuf;
@@ -578,6 +583,7 @@ pub fn run() {
             commands::health_check,
             commands::site_rule_test,
             commands::move_task,
+            commands::prioritize_task,
             commands::schedule_task,
             commands::get_after_all_done,
             commands::batch_extract,
@@ -704,6 +710,7 @@ pub fn run() {
             ai_cmds::filetr_page_preview,
             ai_cmds::filetr_page_layout,
             ai_cmds::filetr_edit,
+            ai_cmds::filetr_block_adjust,
             ai_cmds::filetr_retranslate,
             ai_cmds::filetr_plan,
             ai_cmds::filetr_recent,
@@ -754,6 +761,7 @@ pub fn run() {
             vocab::vocab_add,
             vocab::vocab_remove,
             vocab::vocab_review,
+            vocab::vocab_anki_push,
             vocab::vocab_export,
             videocache::videocache_infos,
             videocache::videocache_get,
@@ -829,6 +837,14 @@ pub fn run() {
             livetr::sc_status,
             liveaudio::sc_audio_start,
             liveaudio::sc_audio_stop,
+            livevoice::sc_audio_transcript,
+            writepersona::write_personas,
+            writeassist::write_memory_set,
+            writeassist::write_memory_clear,
+            writeassist::write_memory_forget,
+            livevoice::sc_audio_clear,
+            livevoice::sc_audio_export,
+            livevoice::sc_audio_summary,
             livetr::sc_start,
             livetr::sc_stop,
             livetr::sc_toggle,
@@ -859,6 +875,10 @@ pub fn run() {
             ocr_paddle::ocr_install,
             ocr_paddle::ocr_import,
             ocr_paddle::ocr_remove,
+            ocr_paddle::ocr_packs,
+            ocr_paddle::ocr_pack_import,
+            ocr_paddle::ocr_pack_install,
+            ocr_paddle::ocr_pack_remove,
             writeassist::write_take,
             writeassist::write_badge_click,
             writeassist::write_off_this_app,

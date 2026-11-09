@@ -56,6 +56,56 @@ async function sendText(text, extra = {}) {
   return r.state === 'pending_pair'
 }
 
+/** 把图片缩到最长边 1400 像素以内、压成 JPEG，返回 data URL（给清影识字用，体积要小）。读不到 / 解不了返回空串。 */
+async function shrinkImage(url, referrer = '') {
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 15000)
+  try {
+    const r = await fetch(url, { signal: ctl.signal, credentials: 'include', referrer: referrer || undefined, referrerPolicy: 'no-referrer-when-downgrade' })
+    if (!r.ok) return ''
+    const blob = await r.blob()
+    if (blob.size > 12 * 1024 * 1024) return ''
+    const bmp = await createImageBitmap(blob)
+    const k = Math.min(1, 1400 / Math.max(bmp.width, bmp.height))
+    const w = Math.max(1, Math.round(bmp.width * k))
+    const h = Math.max(1, Math.round(bmp.height * k))
+    const cv = new OffscreenCanvas(w, h)
+    const g = cv.getContext('2d')
+    g.fillStyle = '#fff'
+    g.fillRect(0, 0, w, h)
+    g.drawImage(bmp, 0, 0, w, h)
+    let q = 0.85
+    let out = await cv.convertToBlob({ type: 'image/jpeg', quality: q })
+    while (out.size > 1_100_000 && q > 0.4) {
+      q -= 0.15
+      out = await cv.convertToBlob({ type: 'image/jpeg', quality: q })
+    }
+    if (out.size > 1_100_000) return ''
+    const bytes = new Uint8Array(await out.arrayBuffer())
+    let bin = ''
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+    return `data:image/jpeg;base64,${btoa(bin)}`
+  } catch {
+    return ''
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** 读出一张图片里的文字（清影本机识字），最多等 60 秒；失败返回空串。 */
+async function ocrOfImage(url, referrer) {
+  const image = await shrinkImage(url, referrer)
+  if (!image) return ''
+  const sub = await call('/api/v1/ai/run', { kind: 'ocrtext', image })
+  const deadline = Date.now() + 60_000
+  for (;;) {
+    await sleep(400)
+    const j = await call(`/api/v1/ai/job?id=${encodeURIComponent(String(sub.id))}`)
+    if (j.state === 'done') return String(j.result?.text || '')
+    if (j.state === 'error' || j.state === 'cancelled' || Date.now() > deadline) return ''
+  }
+}
+
 /** 一批要发送的项目：image 走 /api/grab，video 作为媒体发送，link / page 发送地址让清影解析。 */
 /** 读一个媒体地址开头的几百字节，认出真实格式和大小。读不到不报错，返回空结果。 */
 async function probeMedia(url, referrer = '') {
@@ -91,8 +141,38 @@ async function probeMedia(url, referrer = '') {
   return out
 }
 
+/**
+ * 选集：打开这一集的页面（后台标签页、静音），等它播放起来、扩展嗅探到视频流后取下流地址并关掉标签页。
+ * 最多等 25 秒；没识别到返回 null。
+ */
+async function streamOfPage(url, timeoutMs = 25000) {
+  const tab = await api.tabs.create({ url, active: false })
+  try {
+    const t0 = Date.now()
+    while (Date.now() - t0 < timeoutMs) {
+      await sleep(1000)
+      try {
+        // 后台标签页不一定自动播放：静音后主动播一下（静音的播放浏览器一般允许）
+        await api.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          func: () => document.querySelectorAll('video').forEach((v) => ((v.muted = true), v.play?.().catch(() => {}))),
+        })
+      } catch {
+        // 页面还没加载好 / 不允许注入：下一轮再试
+      }
+      const item = pickStream(await getSniffed(tab.id))
+      if (item) return { item, title: (await api.tabs.get(tab.id).catch(() => tab))?.title || '' }
+    }
+    return null
+  } finally {
+    api.tabs.remove(tab.id).catch(() => {})
+  }
+}
+
 async function sendBatch(items, tab) {
   const page = tab?.url || ''
+  const { streamSites } = await api.storage.local.get('streamSites')
+  const sites = streamFirstSites(streamSites)
   let sent = 0
   let failed = 0
   let pairing = false
@@ -102,10 +182,15 @@ async function sendBatch(items, tab) {
       let p = false
       if (it.kind === 'image') {
         const real = it.ext || (await probeMedia(it.url, page)).ext
-        const r = await grabUrl({ url: it.url, referrer: page, mime: it.mime || (real && ccSniff.MIME[real]) || '', filename: real ? ccSniff.fileNameFor(it.url, real) : '' })
+        const r = await grabUrl({ url: it.url, referrer: page, mime: it.mime || (real && ccSniff.MIME[real]) || '', filename: it.name ? ccNaming.withExt(ccNaming.cleanName(it.name), real) : real ? ccSniff.fileNameFor(it.url, real) : '' })
         p = r.state === 'pending_pair'
+      } else if (it.kind !== 'video' && isStreamFirst(it.url, sites)) {
+        // 选集：这一集的页面里没有视频地址，开页面取到真实的视频流再发
+        const r = await streamOfPage(it.url)
+        if (!r) throw new Error('没有识别到这一集的视频流（页面没有播放起来）：' + shortUrl(it.url))
+        p = await sendText(sniffedPayload(r.item, it.url, it.name || r.title || tab?.title))
       } else if (it.kind === 'video' && /^https?:/i.test(it.url) && it.url !== page) {
-        p = await sendText(sniffedPayload({ url: it.url }, page, tab?.title))
+        p = await sendText(sniffedPayload({ url: it.url }, page, it.name || tab?.title))
       } else {
         p = await sendText(await tidyUrl(it.url || page))
       }
@@ -151,6 +236,8 @@ function pageVideoLinks() {
 /** 本页所有视频链接：收集后交给清影，在电脑上打开批量添加面板。 */
 async function sendPageVideoLinks(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用这个功能')
+  const { streamSites } = await api.storage.local.get('streamSites')
+  if (isStreamFirst(tab.url, streamFirstSites(streamSites))) throw new Error('这个网站要一集一集取视频流：请用“批量选取”点选要下载的集数。')
   const [res] = await api.scripting.executeScript({ target: { tabId: tab.id }, func: pageVideoLinks })
   const urls = (res && res.result) || []
   if (!urls.length) throw new Error('这个页面上没有找到视频链接')
@@ -166,6 +253,7 @@ async function openOverview(tab) {
   const frames = await injectFiles(tab.id, ['content/collect.js'], true)
   const items = []
   const seen = new Set()
+  const excerpt = (frames.find((f) => f.excerpt && f.frame === tab.url) || frames.find((f) => f.excerpt))?.excerpt || ''
   for (const f of frames) {
     for (const it of f.items || []) {
       const key = `${it.kind}|${it.url}`
@@ -176,7 +264,7 @@ async function openOverview(tab) {
   }
   const sniffed = arrangeSniffed(await getSniffed(tab.id)).map((x) => ({ url: x.url, kind: x.kind, label: sniffLabel(x) }))
   const key = `overview:${Date.now()}`
-  await sessionStore.set({ [key]: { page: tab.url, title: tab.title || '', tabId: tab.id, items, sniffed } })
+  await sessionStore.set({ [key]: { page: tab.url, title: tab.title || '', tabId: tab.id, items, sniffed, excerpt } })
   await api.tabs.create({ url: api.runtime.getURL(`overview.html?k=${encodeURIComponent(key)}`), index: tab.index + 1 })
 }
 
@@ -331,6 +419,42 @@ const HANDLERS = {
         return { ...(await call('/api/v1/vocab/clips')) }
       default:
         throw new Error('不支持的操作')
+    }
+  },
+  // 总览：让清影里的大模型起名字。依据：网页标题、页面正文摘录（理解主题）、每项的图片说明 / 周围文字，以及图片里识出的文字（OCR，本机识字）。
+  'cc-ai-name': async (m) => {
+    const items = (Array.isArray(m.items) ? m.items : []).slice(0, 60)
+    if (!items.length) return { names: [] }
+    // 先给图片读字（最多 12 张，3 张并行；读不出来就不带，不影响起名）
+    const ocr = new Array(items.length).fill('')
+    if (m.ocr !== false) {
+      const todo = items.map((x, i) => i).filter((i) => items[i].kind === 'image' && /^https?:/i.test(items[i].url || '')).slice(0, 12)
+      let next = 0
+      const worker = async () => {
+        while (next < todo.length) {
+          const i = todo[next++]
+          try {
+            ocr[i] = await ocrOfImage(items[i].url, String(m.page || ''))
+          } catch {
+            /* 这张读不了：只用其他信息 */
+          }
+        }
+      }
+      await Promise.all([worker(), worker(), worker()])
+    }
+    const lines = items.map((x, t) => ({
+      t,
+      text: [x.kind, x.alt && `alt: ${x.alt}`, x.cap && `caption: ${x.cap}`, x.text && x.text !== x.alt && `link: ${x.text}`, x.orig && `file: ${x.orig}`, x.near && `near: ${x.near}`, ocr[t] && `OCR: ${ocr[t]}`].filter(Boolean).join(' | ').slice(0, 420),
+    }))
+    const sub = await call('/api/v1/ai/run', { kind: 'namer', title: String(m.title || '').slice(0, 200), text: String(m.excerpt || '').slice(0, 1500), lang: String(m.lang || ''), lines })
+    const deadline = Date.now() + 2 * 60_000
+    for (;;) {
+      await sleep(450)
+      const j = await call(`/api/v1/ai/job?id=${encodeURIComponent(String(sub.id))}`)
+      if (j.state === 'done') return { names: j.result?.names || [], ocr: ocr.map((t) => !!t) }
+      if (j.state === 'error') throw new Error(j.error || 'AI 命名失败了')
+      if (j.state === 'cancelled') throw new Error('已取消')
+      if (Date.now() > deadline) throw new Error('AI 命名超时')
     }
   },
   'cc-ai-run': async (m) => ({ ...(await call('/api/v1/ai/run', m.req && typeof m.req === 'object' ? m.req : {})) }),

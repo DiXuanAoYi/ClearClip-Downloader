@@ -243,7 +243,7 @@ fn system_ocr(bgra: &[u8], w: usize, h: usize, lang: &str) -> AppResult<Vec<OLin
 /// 识别一帧。`engine` 是 system / enhanced / api。
 pub fn recognize(cx: &Ctx<'_>, engine: &str, bgra: &[u8], w: usize, h: usize) -> AppResult<Vec<OLine>> {
     match engine {
-        "enhanced" => crate::ocr_paddle::recognize(cx.data_dir, bgra, w, h),
+        "enhanced" => crate::ocr_paddle::recognize(cx.data_dir, &lang_hint(cx.live), &cx.live.ocr_pack, bgra, w, h),
         "api" => {
             let png = png_data(bgra, w, h)?;
             let lang = lang_hint(cx.live);

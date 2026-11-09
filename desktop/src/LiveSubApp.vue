@@ -17,7 +17,7 @@ function drag(e: MouseEvent) {
 onMounted(async () => {
   document.documentElement.style.background = 'transparent'
   document.body.style.background = 'transparent'
-  offs = await Promise.all([api.onScreenSub((s) => (sub.value = s.text ? s : null)), api.onScreenHidden((h) => (hidden.value = h))])
+  offs = await Promise.all([api.onScreenSub((s) => (sub.value = s.text || (s.draft && s.orig) ? s : null)), api.onScreenHidden((h) => (hidden.value = h))])
 })
 onBeforeUnmount(() => offs.forEach((f) => f()))
 </script>
@@ -25,8 +25,8 @@ onBeforeUnmount(() => offs.forEach((f) => f()))
 <template>
   <div class="bar" @mousedown="drag">
     <div v-if="sub && !hidden" class="box" :style="{ fontSize: sub.font + 'px' }">
-      <div v-if="sub.bilingual && sub.orig" class="orig">{{ sub.orig }}</div>
-      <div class="tr">{{ sub.text }}</div>
+      <div v-if="(sub.bilingual || sub.draft) && sub.orig" class="orig" :class="{ draft: sub.draft }">{{ sub.orig }}</div>
+      <div v-if="sub.text" class="tr">{{ sub.text }}</div>
     </div>
   </div>
 </template>
@@ -40,5 +40,6 @@ html, body { margin: 0; background: transparent !important; overflow: hidden; }
 .bar { width: 100vw; height: 100vh; display: flex; align-items: flex-end; justify-content: center; cursor: move; user-select: none; }
 .box { max-width: 100%; box-sizing: border-box; padding: 6px 16px 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.72); color: #fff; text-align: center; font-family: -apple-system, 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif; line-height: 1.35; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
 .orig { font-size: 0.68em; opacity: 0.75; margin-bottom: 2px; }
+.orig.draft { font-size: 1em; opacity: 0.6; font-style: italic; margin-bottom: 0 }
 .tr { font-weight: 600; }
 </style>

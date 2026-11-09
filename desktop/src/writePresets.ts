@@ -18,6 +18,7 @@ export const ACTIONS: WriteAction[] = [
   { id: 'continue', name: '续写' },
   { id: 'polite', name: '更礼貌' },
   { id: 'persuasive', name: '更有说服力' },
+  { id: 'persona', name: '人设' },
 ]
 
 export interface Preset {
@@ -46,8 +47,8 @@ export function presetById(id: string): Preset | undefined {
 }
 
 /** 合成发给后端的请求。`style` 的个人风格由后端并入。 */
-export function buildWriteRequest(opts: { action: WriteAction; text: string; preset?: Preset; extra?: string; target?: string; app?: string; tone?: string }) {
-  const { action, text, preset, extra, target, app, tone } = opts
+export function buildWriteRequest(opts: { action: WriteAction; text: string; preset?: Preset; extra?: string; target?: string; app?: string; tone?: string; persona?: string }) {
+  const { action, text, preset, extra, target, app, tone, persona } = opts
   const hint = [preset?.hint, extra?.trim()].filter(Boolean).join('\n')
   return {
     kind: action.grammar ? 'grammar' : 'write',
@@ -60,18 +61,20 @@ export function buildWriteRequest(opts: { action: WriteAction; text: string; pre
       target: action.id === 'translate' ? (target ?? '') : '',
       tone: !action.grammar && tone ? tone : 'auto',
       page: app ?? '',
+      persona: action.id === 'persona' ? (persona ?? '') : '',
     },
   }
 }
 
 // ---------- 写作窗的四个标签 ----------
 
-export type Tab = 'reply' | 'rewrite' | 'check' | 'more'
+export type Tab = 'reply' | 'rewrite' | 'check' | 'more' | 'persona'
 export const TABS: { id: Tab; name: string }[] = [
   { id: 'reply', name: '帮我回' },
   { id: 'rewrite', name: '改写润色' },
   { id: 'check', name: '检查' },
   { id: 'more', name: '翻译 · 更多' },
+  { id: 'persona', name: '人设' },
 ]
 /** 每个标签里能选的动作（ACTIONS 的 id） */
 export const TAB_ACTIONS: Record<Tab, string[]> = {
@@ -79,6 +82,7 @@ export const TAB_ACTIONS: Record<Tab, string[]> = {
   rewrite: ['rewrite', 'optimize', 'concise', 'shorten', 'polite', 'persuasive'],
   check: ['grammar'],
   more: ['translate', 'summarize', 'continue'],
+  persona: ['persona'],
 }
 export const tabOf = (actionId: string): Tab => (Object.keys(TAB_ACTIONS) as Tab[]).find((t) => TAB_ACTIONS[t].includes(actionId)) ?? 'rewrite'
 export const actionById = (id: string): WriteAction => ACTIONS.find((a) => a.id === id) ?? ACTIONS[0]

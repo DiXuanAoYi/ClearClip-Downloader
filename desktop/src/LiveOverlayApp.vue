@@ -124,7 +124,7 @@ onBeforeUnmount(() => {
   <div v-if="!hidden" class="edge" :class="{ paused }"><span>{{ paused ? '已暂停' : '翻译中' }}</span></div>
   <div v-if="note" class="note">{{ note }}</div>
   <div v-if="payload && !hidden" class="ov">
-    <div v-for="(b, i) in payload.blocks" :key="payload.seq + ':' + i" :ref="(el) => setEl(i, el)" :style="style(b, payload, i)">
+    <div v-for="(b, i) in payload.blocks" :key="i + ':' + b.orig" :ref="(el) => setEl(i, el)" :style="style(b, payload, i)">
       <span v-if="payload.bilingual && b.orig" :style="ORIG_STYLE">{{ b.orig }}</span>
       <span :style="trStyle(b, payload)">{{ b.text }}</span>
     </div>

@@ -60,7 +60,7 @@ const INIT = `
 `
 
 ;(async () => {
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
@@ -70,7 +70,7 @@ const INIT = `
   await page.waitForTimeout(400)
 
   // —— 批量下载页：批次卡片；队列：分页 ——
-  ok('批量下载页显示批次卡片', (await page.locator('.bx').count()) === 1)
+  ok('批次区显示批次卡片', (await page.locator('.bx').count()) === 1)
   ok('批次卡片显示完成进度', (await page.locator('.bx').innerText()).includes('1/4 完成'))
   ok('任务行显示批次序号', (await page.locator('.seq').count()) >= 1)
   await page.locator('.tabs button', { hasText: '失败' }).click()
@@ -85,27 +85,31 @@ const INIT = `
 
   // —— 批量添加面板 ——
   await page.evaluate(() => window.__app.openBatch(['https://a.com/1', 'https://a.com/old', 'https://b.com/bad', 'https://c.com/login', 'https://d.com/list', 'https://a.com/2'], '粘贴'))
-  await page.waitForSelector('.bd .row')
+  await page.waitForSelector('.bw .row')
   await page.waitForTimeout(400)
-  ok('面板列出 6 条', (await page.locator('.bd .row').count()) === 6)
-  const chips = await page.locator('.bd .chips').innerText()
+  ok('面板列出 6 条', (await page.locator('.bw .row').count()) === 6)
+  const chips = await page.locator('.bw .chips').innerText()
   ok('筛选标签带数量', chips.includes('全部 6') && chips.includes('已下载过 1') && chips.includes('需登录 1') && chips.includes('不支持 1'), chips)
-  ok('可下载的默认勾选、已下载过的不勾选', (await page.locator('.bd .row input[type=checkbox]:checked').count()) === 3)
-  ok('6 条默认放进批次文件夹', await page.locator('.bd .kv', { hasText: '批次文件夹' }).locator('.is-checked').count() === 1)
-  ok('列表项显示展开范围', (await page.locator('.bd .rng').count()) === 1)
-  await page.locator('.bd .chips button', { hasText: '需登录' }).click()
-  ok('点“需登录”只显示 1 条', (await page.locator('.bd .row').count()) === 1)
-  await page.locator('.bd .chips button', { hasText: '全部' }).click()
-  const foot = await page.locator('.bd .foot').innerText()
+  ok('可下载的默认勾选、已下载过的不勾选', (await page.locator('.bw .row input[type=checkbox]:checked').count()) === 3)
+  ok('整批设置默认折叠成一行摘要', (await page.locator('.bw .set').count()) === 0 && (await page.locator('.bw .sum').innerText()).includes('放进批次文件夹'))
+  await page.locator('.bw .sum .lk').click()
+  ok('点“修改”展开完整设置', (await page.locator('.bw .set').count()) === 1)
+  ok('6 条默认放进批次文件夹', await page.locator('.bw .kv', { hasText: '批次文件夹' }).locator('.is-checked').count() === 1)
+  ok('列表项显示展开范围', (await page.locator('.bw .rng').count()) === 1)
+  await page.locator('.bw .chips button', { hasText: '需登录' }).click()
+  ok('点“需登录”只显示 1 条', (await page.locator('.bw .row').count()) === 1)
+  await page.locator('.bw .chips button', { hasText: '全部' }).click()
+  const foot = await page.locator('.bw .foot').innerText()
   ok('底部显示已勾选条数', foot.includes('已勾选 7 条'), foot) // 2 个普通 + 5 项列表
-  await page.locator('.bd .foot button', { hasText: '加入队列并开始' }).click()
+  await page.locator('.bw .foot button', { hasText: '加入队列并开始' }).click()
   await page.waitForTimeout(300)
   const enq = await page.evaluate(() => window.__enq)
   ok('提交的条目：普通 2 条带解析结果，列表展开 5 条待解析', enq && enq.items.length === 7 && enq.items.filter((i) => i.media).length === 2, JSON.stringify(enq && enq.items.length))
   ok('提交带批次选项与来源', enq && enq.opts.folder === true && enq.opts.concurrency === 2 && enq.source === '粘贴')
-  ok('提交后切到批量下载页', await page.evaluate(() => window.__app.view === 'batch'))
+  ok('提交后工作区收起，批次区里仍在', (await page.locator('.bw').count()) === 0 && (await page.locator('.bx').count()) >= 1)
+  ok('openBatch 会把主页切到批量模式', await page.evaluate(() => window.__app.homeMode === 'batch' && window.__app.view === 'parse'))
 
-  // 设置里关闭预览：直接整批加入，不打开面板
+  // 设置里关闭预览：直接整批加入，不打开工作区
   await page.evaluate(() => { window.__enq = null; window.__app.settings.batchPreview = false; window.__app.openBatch(['https://a.com/9', 'https://a.com/10'], '剪贴板') })
   await page.waitForTimeout(300)
   ok('关闭预览时直接加入（不打开面板）', await page.evaluate(() => window.__enq && window.__enq.items.length === 2 && window.__enq.items.every((i) => !i.media)))
@@ -113,7 +117,7 @@ const INIT = `
   // 从“新建批量下载”进来：没有链接时直接露出粘贴框
   await page.evaluate(() => { window.__app.settings.batchPreview = true; window.__app.openBatch([], '手动添加') })
   await page.waitForTimeout(300)
-  ok('空链接打开面板时直接显示粘贴框', (await page.locator('.bd .more textarea').count()) === 1)
+  ok('空链接打开面板时直接显示粘贴框', (await page.locator('.bw .more textarea').count()) === 1)
 
   ok('页面没有脚本错误', errors.length === 0, errors.join('; '))
   await page.screenshot({ path: '/tmp/batch-ui.png' })

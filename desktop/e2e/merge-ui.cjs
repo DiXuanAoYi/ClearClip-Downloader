@@ -74,6 +74,10 @@ const INIT = `
         case 'glossary_folder_add': window.__gl.folders.push(args.path); return window.__gl
         case 'glossary_save': window.__glSaved = args.glossary; return args.glossary
         case 'media_job_start': window.__job = args.job; return 5
+        case 'sc_audio_transcript': return [{ startMs: 1000, endMs: 3000, src: 'Hello everyone', text: '大家好' }, { startMs: 65000, endMs: 67000, src: 'Next topic', text: '下一个话题' }]
+        case 'sc_audio_summary': return '## Overview\\n本次会议做了开场。'
+        case 'sc_set_mode': window.__sc = { ...window.__sc, mode: args.mode }; return window.__sc
+        case 'sc_audio_start': window.__audioStarted = true; return { ...window.__sc, audio: true }
         default: return null
       }
     },
@@ -82,7 +86,7 @@ const INIT = `
 `
 
 ;(async () => {
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })
   const errors = []
   const open = async (hash, viewport = { width: 1200, height: 900 }) => {
     const page = await browser.newPage({ viewport })
@@ -141,6 +145,26 @@ const INIT = `
     await page.locator('.it textarea').blur()
     await page.waitForTimeout(300)
     ok('加笔记保存到后端', await page.evaluate(() => window.__calls.some((c) => c.cmd === 'excerpt_note' && c.args.note === '有用')))
+    await page.close()
+  }
+
+  // 2b. 屏幕翻译 → 语音模式：不用框选屏幕，有本次记录、导出和一键总结
+  {
+    const page = await open('screen')
+    ok('四种模式里有“语音”', (await page.locator('.modes .mode').allInnerTexts()).some((t) => t.includes('语音')))
+    await page.locator('.modes .mode', { hasText: '语音' }).click()
+    await page.waitForTimeout(400)
+    const head = await page.locator('.scr .card h3').allInnerTexts()
+    ok('语音模式：第一步是“听什么”，不再要求框选屏幕', head.some((t) => t.includes('听什么')) && !head.some((t) => t.includes('翻译哪里')), head.join('|'))
+    ok('可选电脑声音 / 麦克风', (await page.locator('.scr .row label.el-radio-button').allInnerTexts()).some((t) => t.includes('麦克风')))
+    const rows = await page.locator('.vrow').allInnerTexts()
+    ok('本次记录列出每一句（带时间）', rows.length === 2 && rows[0].includes('00:01') && rows[1].includes('01:05') && rows[1].includes('下一个话题'), rows.join(' | '))
+    await page.getByRole('button', { name: '一键总结', exact: true }).click()
+    await page.waitForTimeout(300)
+    ok('一键总结显示模型给的总结', (await page.locator('.vsum').innerText()).includes('本次会议做了开场'))
+    await page.getByRole('button', { name: /^开始听/ }).first().click()
+    await page.waitForTimeout(200)
+    ok('点“开始听”：直接开始，不需要目标窗口', await page.evaluate(() => window.__audioStarted === true))
     await page.close()
   }
 

@@ -20,8 +20,6 @@ import DisclaimerDialog from './components/DisclaimerDialog.vue'
 import OnboardingDialog from './components/OnboardingDialog.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PlayerDialog from './components/PlayerDialog.vue'
-import BatchAddDialog from './components/BatchAddDialog.vue'
-import BatchView from './views/BatchView.vue'
 import elEn from 'element-plus/es/locale/lang/en'
 import elZh from 'element-plus/es/locale/lang/zh-cn'
 import { useLanguage } from './i18n/useLanguage'
@@ -85,7 +83,6 @@ const loadError = ref('')
 
 const navs: { id: ViewName; label: string }[] = [
   { id: 'parse', label: '解析' },
-  { id: 'batch', label: '批量下载' },
   { id: 'queue', label: '下载队列' },
   { id: 'subs', label: '订阅' },
   { id: 'live', label: '直播' },
@@ -175,7 +172,7 @@ onMounted(async () => {
     asking.add(p.deviceId)
     const from = p.ip ? `“${p.name}”（${p.ip}）` : `“${p.name}”`
     try {
-      await ElMessageBox.confirm(`${from}想要向清影发送链接。允许后这台设备以后可以直接发送，配对前发来的链接也会继续处理。可在“设置 → 手机与浏览器扩展”中撤销。`, '新设备请求配对', {
+      await ElMessageBox.confirm(`${from}想要向清影发送链接。${p.code ? `请核对手机上显示的验证码：${p.code}。` : ''}允许后这台设备以后可以直接发送，配对前发来的链接也会继续处理。可在“设置 → 手机与浏览器扩展”中撤销。`, '新设备请求配对', {
         confirmButtonText: '允许',
         cancelButtonText: '拒绝',
         type: 'info',
@@ -295,7 +292,6 @@ onMounted(async () => {
     </aside>
     <main class="main">
       <ParseView v-show="app.view === 'parse'" />
-      <BatchView v-if="app.view === 'batch'" />
       <QueueView v-if="app.view === 'queue'" />
       <SubsView v-if="app.view === 'subs'" />
       <LiveView v-if="app.view === 'live'" />
@@ -311,7 +307,6 @@ onMounted(async () => {
     <OnboardingDialog />
     <CommandPalette />
     <PlayerDialog />
-    <BatchAddDialog />
     <div v-if="dragging" class="dropzone">松开以导入链接（支持链接文本和 .txt 文件）</div>
     <el-dialog :model-value="!!countdown" :title="countdown?.action === 'shutdown' ? '即将关机' : '即将睡眠'" width="360px" :close-on-click-modal="false" :show-close="false">
       <p>全部下载已完成，将在 <b class="mono">{{ countdown?.left }}</b> 秒后{{ countdown?.action === 'shutdown' ? '关机' : '睡眠' }}。</p>

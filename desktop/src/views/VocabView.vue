@@ -192,6 +192,20 @@ const FORMATS = [
   ['json', 'JSON', 'json'],
 ] as const
 
+const pushing = ref(false)
+/** 直接发到本机正在运行的 Anki（AnkiConnect 插件）。 */
+async function pushToAnki() {
+  pushing.value = true
+  try {
+    const [added, skipped] = await api.vocabAnkiPush('清影生词')
+    ElMessage.success(`已发送到 Anki：新增 ${added} 张${skipped ? `，${skipped} 张已存在或没加成` : ''}`)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    pushing.value = false
+  }
+}
+
 async function exportAs(f: (typeof FORMATS)[number]) {
   const path = await save({ defaultPath: `生词本.${f[2]}`, filters: [{ name: f[1], extensions: [f[2]] }] })
   if (!path) return
@@ -304,9 +318,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <b>导出</b>
           <div class="btns">
             <el-button type="primary" size="small" :disabled="!stats.total" @click="exportAs(FORMATS[0])">导出到 Anki</el-button>
+            <el-button size="small" :loading="pushing" :disabled="!stats.total" @click="pushToAnki">直接发送到 Anki</el-button>
             <el-button v-for="f in FORMATS.slice(1)" :key="f[0]" size="small" :disabled="!stats.total" @click="exportAs(f)">{{ f[1] }}</el-button>
           </div>
-          <div class="hint">Anki 卡片正面是挖空原句，背面是释义和出处；在浏览器里的“生词”页也能一键导出。</div>
+          <div class="hint">Anki 卡片正面是挖空原句，背面是释义和出处；在浏览器里的“生词”页也能一键导出。“直接发送”需要先打开 Anki 并装好 AnkiConnect 插件。</div>
         </div>
 
         <div class="exp">

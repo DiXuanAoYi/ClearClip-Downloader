@@ -28,7 +28,7 @@
     tab: 'summary',
     status: null, // 清影的状态：{ ready, model, lang, transcribe, maxChars }
     prefs: { style: 'standard', lang: '', follow: true, tab: 'summary', autoOnline: true, autoTranscribe: true, srcV: 1, view: 'both', lead: 3, prompts: {}, theme: 'auto', fs: 13 },
-    res: {}, // 本次的结果：summary / outline / cards / quotes / translated / rewrite
+    res: {}, // 本次的结果：summary / outline / flow / cards / quotes / translated / rewrite
     chat: [],
     hit: 0, // 当前搜索命中的第几处
     detached: false, // 用户手动滚走了，不再自动跟随
@@ -1085,7 +1085,7 @@
     S, V, actsBar, addNote, h, localKey, render, saveFile, seek, sel, send, toast, ui
   })
   const { tabMindmap } = TABS_.mindmap({
-    S, V, actsBar, copy, h, isDark, onKey, saveFile, task, toast, ui
+    S, V, actsBar, copy, h, isDark, isVideo, onKey, render, saveFile, seek, task, toast, ui
   })
 
   for (const ev of ['wheel', 'touchmove']) {

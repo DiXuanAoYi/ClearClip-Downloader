@@ -495,3 +495,61 @@ fn lookup_req_takes_translation() {
     let r: Req = serde_json::from_value(serde_json::json!({ "kind": "lookup", "text": "resilient" })).unwrap();
     assert!(r.trans.is_empty());
 }
+
+#[test]
+fn flowgraph_is_validated_and_chunks_are_chained() {
+    let g = parse_flowgraph(
+        r#"```json
+        {"nodes": [
+          {"id": "a", "title": "发现问题", "detail": "页面很慢", "kind": "cause", "time": "0:30"},
+          {"id": "b", "title": "压缩图片", "kind": "weird", "time": "2:00"},
+          {"id": "b", "title": "重复"},
+          {"id": "c", "title": ""},
+          {"id": "d", "title": "变快", "kind": "result"}
+        ],
+         "edges": [
+          {"from": "a", "to": "b", "label": "所以"},
+          {"from": "a", "to": "b", "label": "重复"},
+          {"from": "b", "to": "b"},
+          {"from": "b", "to": "zzz"},
+          {"from": "b", "to": "d", "label": "一个很长很长很长很长的标签"}
+        ]}
+        ```"#,
+    )
+    .unwrap();
+    assert_eq!(g["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(g["nodes"][1]["kind"], "step", "不认识的类型当步骤");
+    assert_eq!(g["edges"].as_array().unwrap().len(), 2);
+    assert_eq!(g["edges"][1]["label"].as_str().unwrap().chars().count(), 12);
+    assert!(parse_flowgraph("不是 JSON").is_none());
+    assert!(parse_flowgraph(r#"{"nodes": [{"id": "a", "title": "只有一个"}], "edges": []}"#).is_none());
+    // 分段的图接成一条：id 加前缀、上一段最后一个连到下一段第一个
+    let j = join_flowgraphs(vec![g.clone(), g]).unwrap();
+    assert_eq!(j["nodes"].as_array().unwrap().len(), 6);
+    assert!(j["edges"].as_array().unwrap().iter().any(|e| e["from"] == "p0_d" && e["to"] == "p1_a" && e["label"] == "接着"));
+    assert!(j["nodes"].as_array().unwrap().iter().all(|n| n["id"].as_str().unwrap().starts_with('p')));
+}
+
+#[test]
+fn namer_results_are_cleaned_into_file_names() {
+    let r = "```json\n[\"海边日落: 橙色的天空\", \"  a/b\\\\c?d  \", \"...\", \"x\"]\n```";
+    let v = parse_names(r, 4).unwrap();
+    assert_eq!(v[0], "海边日落 橙色的天空");
+    assert_eq!(v[1], "a b c d");
+    assert_eq!(v[2], "", "只有点号的名字留空，交给调用方退回原名");
+    assert_eq!(v[3], "x");
+    assert!(parse_names(r, 3).is_none(), "数量对不上就当失败");
+    assert!(parse_names("没有数组", 1).is_none());
+    let long = format!("[\"{}\"]", "字".repeat(100));
+    assert_eq!(parse_names(&long, 1).unwrap()[0].chars().count(), 60);
+    let sys = namer_system("简体中文");
+    assert!(sys.contains("简体中文") && sys.contains("JSON array"));
+}
+
+#[test]
+fn ocr_text_drops_fragments_and_is_capped() {
+    assert_eq!(ocr_text_of(&["春季  新品", "·", "A", "SALE 50% OFF"]), "春季 新品 / SALE 50% OFF");
+    assert_eq!(ocr_text_of(&[]), "");
+    let long = "字".repeat(500);
+    assert_eq!(ocr_text_of(&[long.as_str()]).chars().count(), 300);
+}

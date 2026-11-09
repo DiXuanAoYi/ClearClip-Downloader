@@ -835,6 +835,8 @@ export interface PairRequest {
   deviceId: string
   name: string
   ip: string
+  /** 6 位验证码，手机网页上显示同一个 */
+  code: string
 }
 
 export interface PhoneInfo {
@@ -1096,6 +1098,12 @@ export interface WritingSettings {
   extras: string[]
   /** 帮我回记住的“对方是谁”：程序|称呼 → superior / colleague / … */
   relations?: Record<string, string>
+  /** 写作记忆开关（默认关） */
+  memory?: boolean
+  /** 记忆：关于我的笔记 */
+  memoryNotes?: string
+  /** 记忆：以前采用并写回去的写法 */
+  memorySamples?: { app: string; text: string }[]
 }
 
 /** 快捷键取到的内容 */
@@ -2159,7 +2167,7 @@ export interface ScreenSettings {
   hotkeyMode: string
   hotkeyShot: string
   floatButton: boolean
-  mode: 'standard' | 'subtitle' | 'manga'
+  mode: 'standard' | 'subtitle' | 'manga' | 'voice'
   ocr: 'system' | 'enhanced' | 'api' | 'vision'
   ocrLang: string
   ocrApi: OcrApi
@@ -2191,9 +2199,17 @@ export interface ScreenSettings {
   mangaSfx: boolean
   mangaFollow: boolean
   mangaNames: boolean
+  /** 增强识字用哪个语言包：auto 按识字语言选 / default 默认 / 指定包名 */
+  ocrPack: string
   audioLang: string
   audioStt: 'local' | 'cloud'
   audioBilingual: boolean
+  /** 听什么：电脑正在播放的声音 / 麦克风 */
+  audioSource: 'system' | 'mic'
+  /** 边说边出字 */
+  audioDraft: boolean
+  /** 翻译时带上最近几句当上文（0 = 不带） */
+  audioContext: number
   profiles: ScreenProfile[]
   history: boolean
 }
@@ -2273,6 +2289,26 @@ export interface ScreenSub {
   bilingual: boolean
   font: number
   source: string
+  /** 边说边出字的草稿：还没说完，没有译文 */
+  draft?: boolean
+}
+
+/** 清影写作的人设 */
+export interface WritePersona {
+  id: string
+  name: string
+  desc: string
+  /** reply：输入是收到的消息；create：输入是话题 / 情况 / 草稿 */
+  mode: 'reply' | 'create'
+  hint: string
+}
+
+/** 语音翻译：本次会话里的一句 */
+export interface VoiceEntry {
+  startMs: number
+  endMs: number
+  src: string
+  text: string
 }
 
 export interface ScreenWindow {
@@ -2310,6 +2346,14 @@ export interface ScreenEntry {
   text: string
 }
 
+/** 增强识字的语言包 */
+export interface OcrPack {
+  id: string
+  name: string
+  installed: boolean
+  size: number
+}
+
 export interface OcrStatus {
   installed: boolean
   dir: string
@@ -2326,6 +2370,8 @@ export interface FileTransPage {
   done?: boolean
   /** 按设置不翻译的片段序号（页眉页脚、公式代码、参考文献） */
   skip?: number[]
+  /** 译后检查发现的问题：片段序号 → 提示（只提示，不阻断） */
+  qa?: Record<string, string[]>
 }
 
 export interface FileTransView {
@@ -2352,6 +2398,8 @@ export interface FtOpts {
   skipHeaders: boolean
   skipCode: boolean
   skipRefs: boolean
+  /** 有文字层的 PDF 里夹着扫描页时自动识字并一起翻译 */
+  scanAuto: boolean
 }
 
 /** 开始前的估算 */
@@ -2441,7 +2489,7 @@ export interface PdfLayout {
   w: number
   h: number
   image: string
-  blocks: { index: number; rect: [number, number, number, number]; size: number; rgb: [number, number, number]; bg: [number, number, number]; src: string; trans: string; skipped: boolean }[]
+  blocks: { index: number; rect: [number, number, number, number]; size: number; rgb: [number, number, number]; bg: [number, number, number]; src: string; trans: string; skipped: boolean; adjusted: boolean }[]
   /** 这一页处理过了（译完或失败） */
   done: boolean
   /** 要告诉用户的情况（没译、重新匹配过、扫描页没识字…），没有就是空 */

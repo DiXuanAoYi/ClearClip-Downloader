@@ -12,6 +12,9 @@ import ErrorAlert from '../components/ErrorAlert.vue'
 import SubtitlePicker, { type SubMode } from '../components/SubtitlePicker.vue'
 import ClipPicker from '../components/ClipPicker.vue'
 import PlaylistPicker from '../components/PlaylistPicker.vue'
+import BatchWorkspace from '../components/BatchWorkspace.vue'
+import BatchList from '../components/BatchList.vue'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
 
 const app = useAppStore()
 const parse = useParseStore()
@@ -218,6 +221,44 @@ watch(
   { immediate: true },
 )
 
+// ---------- 主页的“单个解析 / 批量下载”：批量就地完成，不再另开页面 ----------
+const ws = ref<InstanceType<typeof BatchWorkspace> | null>(null)
+const batchOn = ref(false)
+const batchText = ref('')
+function setMode(m: 'single' | 'batch') {
+  if (m === 'single') {
+    ws.value?.cancel()
+    batchOn.value = false // 切走后工作区会被卸载，来不及发出“已关闭”
+  }
+  app.homeMode = m
+}
+let batchTimer: number | undefined
+/** 批量模式下粘贴 / 输入：识别出链接就直接进入预览 */
+function onBatchText() {
+  window.clearTimeout(batchTimer)
+  batchTimer = window.setTimeout(async () => {
+    const found = batchText.value.trim() ? await api.batchExtract(batchText.value).catch(() => []) : []
+    if (found.length) {
+      batchText.value = ''
+      app.openBatch(found, '粘贴')
+    }
+  }, 250)
+}
+async function importBatchFile() {
+  const p = await openDialog({ multiple: false, filters: [{ name: '链接清单', extensions: ['txt', 'csv', 'md', 'html', 'htm'] }] })
+  if (!p || typeof p !== 'string') return
+  try {
+    const [list, cut] = await api.batchReadFile(p)
+    if (!list.length) {
+      ElMessage.info('文件里没有找到链接')
+      return
+    }
+    app.openBatch(list, '导入文件', cut)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+
 let detectTimer: number | undefined
 watch(
   () => parse.text,
@@ -225,6 +266,13 @@ watch(
     window.clearTimeout(detectTimer)
     detectTimer = window.setTimeout(async () => {
       links.value = t.trim() ? await api.detectLinks(t) : []
+      // 粘贴了多条链接：自动切到批量下载，就地预览
+      if (links.value.length > 1 && !batchOn.value) {
+        const urls = links.value.map((l) => l.url)
+        parse.text = ''
+        links.value = []
+        app.openBatch(urls, '粘贴')
+      }
     }, 200)
   },
 )
@@ -571,7 +619,15 @@ function recentKind(r: HistoryItem) {
 
 <template>
   <div class="page">
+    <!-- 单个解析 / 批量下载 -->
+    <div class="modes" role="tablist">
+      <button type="button" role="tab" :class="{ on: app.homeMode === 'single' }" :aria-selected="app.homeMode === 'single'" @click="setMode('single')">单个解析</button>
+      <button type="button" role="tab" :class="{ on: app.homeMode === 'batch' }" :aria-selected="app.homeMode === 'batch'" @click="setMode('batch')">批量下载</button>
+      <span class="mute modes-hint">{{ app.homeMode === 'single' ? '粘贴多条链接会自动切到“批量下载”' : '粘贴多条链接、导入 .txt / .csv，去重预览后统一加入队列' }}</span>
+    </div>
+
     <!-- 粘贴栏 -->
+    <template v-if="app.homeMode === 'single'">
     <div class="paste">
       <div class="pastebox">
         <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>
@@ -601,21 +657,24 @@ function recentKind(r: HistoryItem) {
         <div class="sites">{{ supported || '读取中…' }}</div>
       </el-popover>
     </div>
+    </template>
 
-    <div v-if="links.length > 1" class="batch card">
-      <span>检测到 <b>{{ links.length }}</b> 条链接</span>
-      <span class="pz-note">先预览（去重、标出已下载过的），再整批加入队列。</span>
-      <el-button @click="app.openBatch(links.map((l) => l.url), '粘贴')">批量添加…</el-button>
-    </div>
+    <template v-else>
+      <div v-if="!batchOn" class="bpaste">
+        <el-input v-model="batchText" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" resize="none" placeholder="粘贴多条链接（一行一条或混在文案里都行），或把 .txt / .csv 文件拖到窗口里" aria-label="批量链接" @input="onBatchText" />
+        <el-button class="bimp" @click="importBatchFile">导入文件…</el-button>
+      </div>
+      <BatchWorkspace ref="ws" @active="batchOn = $event" />
+    </template>
 
-    <ErrorAlert v-if="parse.error" :message="parse.error" :kind="parse.errorKind" :site="parse.errorSite" />
+    <ErrorAlert v-if="parse.error && app.homeMode === 'single'" :message="parse.error" :kind="parse.errorKind" :site="parse.errorSite" />
 
-    <div v-if="parse.loading && !result" class="layout">
+    <div v-if="app.homeMode === 'single' && parse.loading && !result" class="layout">
       <div class="work card skeleton"><el-skeleton animated :rows="6" /></div>
       <div class="dl card skeleton"><el-skeleton animated :rows="8" /></div>
     </div>
 
-    <div v-if="result" class="layout">
+    <div v-if="app.homeMode === 'single' && result" class="layout">
       <!-- 左：作品 -->
       <section class="work card" aria-label="作品信息">
         <button type="button" class="cover" :class="{ portrait }" :aria-label="result.kind === 'images' ? '大图预览' : '预览'" @click="preview = true" @dblclick.stop>
@@ -860,7 +919,7 @@ function recentKind(r: HistoryItem) {
       </section>
     </div>
 
-    <section v-if="!result && !parse.loading && parse.recent.length" class="recent card">
+    <section v-if="app.homeMode === 'single' && !result && !parse.loading && parse.recent.length" class="recent card">
       <div class="pz-sh rhead">
         <span class="pz-st">最近解析</span>
         <span class="pz-sa"><button type="button" class="pz-link" @click="clearRecent">清空</button></span>
@@ -873,7 +932,7 @@ function recentKind(r: HistoryItem) {
       </button>
     </section>
 
-    <section v-if="!result && !parse.loading && !parse.recent.length && !parse.error" class="empty card">
+    <section v-if="app.homeMode === 'single' && !result && !parse.loading && !parse.recent.length && !parse.error" class="empty card">
       <h3>复制分享链接，就能保存无水印作品</h3>
       <ol>
         <li>在 App 里点“分享 → 复制链接”。</li>
@@ -900,6 +959,9 @@ function recentKind(r: HistoryItem) {
         </el-carousel>
       </div>
     </el-dialog>
+
+    <!-- 批次：批量模式，或单个模式的空闲主页（没有解析结果时）都显示 -->
+    <BatchList v-if="app.homeMode === 'batch' || (!result && !parse.loading && !parse.error)" />
   </div>
 </template>
 
@@ -1501,5 +1563,48 @@ function recentKind(r: HistoryItem) {
   .frow .spec {
     display: none;
   }
+}
+.modes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.modes button {
+  border: 0;
+  background: var(--cc-line);
+  color: var(--cc-mute);
+  padding: 7px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.modes button:first-child {
+  border-radius: 10px 0 0 10px;
+}
+.modes button:nth-child(2) {
+  border-radius: 0 10px 10px 0;
+  margin-left: -4px;
+}
+.modes button.on {
+  background: var(--cc-card);
+  color: var(--cc-fg);
+  box-shadow: 0 0 0 1px var(--cc-line), 0 1px 3px rgba(0, 0, 0, 0.08);
+  position: relative;
+  z-index: 1;
+}
+.modes-hint {
+  margin-left: 10px;
+  font-size: 12.5px;
+}
+.bpaste {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.bpaste :deep(.el-textarea) {
+  flex: 1;
+}
+.bimp {
+  height: 54px;
 }
 </style>

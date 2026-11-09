@@ -75,6 +75,39 @@ function sniffedPayload(item, pageUrl, title) {
   return `${item.url}${sep}cc-referer=${enc(pageUrl || '')}&cc-title=${enc((title || '').slice(0, 120))}`
 }
 
+// ---------- 发送页面时改发视频流 ----------
+// 有些网站的视频页没有视频地址（播放时才通过接口取到），清影解析页面会失败；但浏览器播放时已经看到了真实的视频流。
+// 这些网站上点“发送当前页面”，改发页面里嗅探到的视频流（带上页面作 Referer）。名单可以在设置里改。
+
+const STREAM_FIRST_DEFAULT = ['huangguoai.com']
+
+/** 存储里的名单整理成小写主机名列表；没存过用默认名单（存成空数组 = 一个都不用）。 */
+function streamFirstSites(raw) {
+  if (!Array.isArray(raw)) return STREAM_FIRST_DEFAULT.slice()
+  return [...new Set(raw.map(normalizeSite).filter(Boolean))]
+}
+
+function isStreamFirst(url, sites) {
+  const h = hostOf(url)
+  return !!h && sites.some((s) => hostInSite(h, s))
+}
+
+/** 在嗅探到的记录里挑一条最该发的：视频流 / 视频文件（不要图片、音频），优先主清单，其次最新的。 */
+function pickStream(items) {
+  const media = (items || []).filter((x) => x && (x.kind === 'hls' || x.kind === 'dash' || x.kind === 'video') && /^https?:/i.test(x.url))
+  if (!media.length) return null
+  const master = media.filter((x) => x.detail && Array.isArray(x.detail.variants) && x.detail.variants.length)
+  const pool = master.length ? master : media
+  return pool.slice().sort((a, b) => (b.at || 0) - (a.at || 0))[0]
+}
+
+/** 这个标签页发送“当前页面”要不要改发视频流：不在名单里返回 null；在名单里返回 { item }（没嗅探到时 item 为 null）。 */
+async function streamForPage(tab) {
+  const { streamSites } = await api.storage.local.get('streamSites')
+  if (!tab?.url || !isStreamFirst(tab.url, streamFirstSites(streamSites))) return null
+  return { item: pickStream(await getSniffed(tab.id)) }
+}
+
 const KIND_NAME = { hls: '视频流 (m3u8)', dash: '视频流 (mpd)', video: '视频文件', audio: '音频文件', image: '图片' }
 
 // ---------- 清单解析：时长、清晰度、预估大小、是否加密 ----------

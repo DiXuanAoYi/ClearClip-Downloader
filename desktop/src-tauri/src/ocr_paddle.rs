@@ -43,6 +43,58 @@ pub fn find_files(data_dir: &Path) -> Option<Files> {
     (f.det.is_file() && f.rec.is_file() && f.dict.is_file()).then_some(f)
 }
 
+// ---------- 语言包：每种文字一个“识别模型 + 字典” ----------
+// 默认的中英文模型认不了日文假名、韩文、西里尔字母、阿拉伯文、带重音符号的拉丁字母。语言包放在 `models/ocr/packs/<包名>/`
+// （`rec.onnx` + `dict.txt`，可选 `det.onnx`，没有就用默认的检测模型）。识字时按“识字语言”自动选包，没装对应的包就用默认的。
+
+/// 内置的语言包：(包名, 显示名, 包含的语言代码前缀)。
+pub const PACKS: &[(&str, &str, &[&str])] = &[
+    ("japan", "日语", &["ja"]),
+    ("korean", "韩语", &["ko"]),
+    (
+        "latin",
+        "拉丁字母语言（法、德、西、意、葡、荷、土耳其、越南语等）",
+        &["fr", "de", "es", "it", "pt", "nl", "tr", "vi", "pl", "cs", "sv", "da", "no", "fi", "ro", "hu", "id", "ms", "ca", "en-gb"],
+    ),
+    ("cyrillic", "西里尔字母语言（俄、乌克兰、保加利亚语等）", &["ru", "uk", "bg", "sr", "be", "kk"]),
+    ("arabic", "阿拉伯字母语言（阿拉伯、波斯、乌尔都语）", &["ar", "fa", "ur"]),
+    ("devanagari", "天城文（印地语等）", &["hi", "mr", "ne"]),
+];
+
+/// 识字语言（如 `ja`、`ja-JP`、`fr-FR`）对应哪个语言包；中文、英文和说不清的返回 None（用默认模型）。
+pub fn pack_for_lang(lang: &str) -> Option<&'static str> {
+    let l = lang.trim().to_lowercase();
+    if l.is_empty() || l.starts_with("zh") || l == "en" || l.starts_with("en-us") {
+        return None;
+    }
+    PACKS.iter().find(|(_, _, langs)| langs.iter().any(|p| l == *p || l.starts_with(&format!("{p}-")))).map(|(id, _, _)| *id)
+}
+
+fn pack_dir(data_dir: &Path, id: &str) -> PathBuf {
+    dir_of(data_dir).join("packs").join(id)
+}
+
+/// 语言包的文件（识别模型和字典都在才算装好；检测模型沿用默认的，包里自带的优先）。
+pub fn find_pack(data_dir: &Path, id: &str) -> Option<Files> {
+    if !PACKS.iter().any(|(p, _, _)| *p == id) {
+        return None;
+    }
+    let base = find_files(data_dir)?;
+    let d = pack_dir(data_dir, id);
+    let (rec, dict, det) = (d.join("rec.onnx"), d.join("dict.txt"), d.join("det.onnx"));
+    (rec.is_file() && dict.is_file()).then(|| Files { det: if det.is_file() { det } else { base.det }, rec, dict })
+}
+
+/// 这次识字用哪套文件：`pack` 是设置里的选择（`auto` = 按识字语言选；`default` = 一律用默认；或指定包名）。
+pub fn files_for(data_dir: &Path, lang: &str, pack: &str) -> Option<Files> {
+    let want = match pack {
+        "default" => None,
+        "" | "auto" => pack_for_lang(lang),
+        id => Some(PACKS.iter().map(|(p, _, _)| *p).find(|p| *p == id).unwrap_or("")),
+    };
+    want.filter(|w| !w.is_empty()).and_then(|id| find_pack(data_dir, id)).or_else(|| find_files(data_dir))
+}
+
 // ---------- 纯算法 ----------
 
 fn round32(v: f32) -> usize {
@@ -266,12 +318,13 @@ impl Engine {
 }
 
 /// 用已安装的组件识别一张图（引擎在内存里缓存，路径变了才重新装载）。
-pub fn recognize(data_dir: &Path, bgra: &[u8], w: usize, h: usize) -> AppResult<Vec<OLine>> {
-    let files = find_files(data_dir)
+pub fn recognize(data_dir: &Path, lang: &str, pack: &str, bgra: &[u8], w: usize, h: usize) -> AppResult<Vec<OLine>> {
+    let files = files_for(data_dir, lang, pack)
         .ok_or_else(|| AppError::new(crate::error::ErrorKind::NeedUpdate, "还没有安装“增强识字组件”。到“屏幕翻译 → 识字”里下载或导入。"))?;
     let mut g = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
-    if g.as_ref().map_or(true, |(p, _)| *p != files.det) {
-        *g = Some((files.det.clone(), Engine::load(&files)?));
+    // 换了语言包（识别模型不同）要重新装载
+    if g.as_ref().map_or(true, |(p, _)| *p != files.rec) {
+        *g = Some((files.rec.clone(), Engine::load(&files)?));
     }
     match g.as_mut() {
         Some((_, e)) => e.recognize(bgra, w, h),
@@ -299,6 +352,93 @@ pub fn status_of(data_dir: &Path) -> OcrStatus {
         size,
         supported: cfg!(not(all(windows, target_arch = "aarch64"))),
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackInfo {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+    pub size: u64,
+}
+
+pub fn packs_of(data_dir: &Path) -> Vec<PackInfo> {
+    PACKS
+        .iter()
+        .map(|(id, name, _)| {
+            let d = pack_dir(data_dir, id);
+            let size = ["rec.onnx", "dict.txt", "det.onnx"].iter().filter_map(|f| std::fs::metadata(d.join(f)).ok()).map(|m| m.len()).sum();
+            PackInfo { id: (*id).into(), name: (*name).into(), installed: find_pack(data_dir, id).is_some(), size }
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn ocr_packs(state: St<'_>) -> Vec<PackInfo> {
+    packs_of(&state.data_dir)
+}
+
+/// 导入语言包的文件：`kind` 是 rec / dict / det。需要先装好默认的增强识字组件（检测模型沿用它）。
+#[tauri::command]
+pub fn ocr_pack_import(state: St<'_>, id: String, kind: String, path: String) -> AppResult<Vec<PackInfo>> {
+    if !PACKS.iter().any(|(p, _, _)| *p == id) {
+        return Err(AppError::invalid("没有这个语言包。"));
+    }
+    let name = match kind.as_str() {
+        "rec" => "rec.onnx",
+        "dict" => "dict.txt",
+        "det" => "det.onnx",
+        _ => return Err(AppError::invalid("kind 只能是 rec / dict / det")),
+    };
+    let src = PathBuf::from(&path);
+    if !src.is_file() {
+        return Err(AppError::not_found("找不到这个文件"));
+    }
+    if kind == "dict" {
+        let text = std::fs::read_to_string(&src).map_err(|_| AppError::invalid("字典要是 UTF-8 文本文件。"))?;
+        if text.lines().count() < 20 {
+            return Err(AppError::invalid("这个字典的行数太少，不像识别模型的字典。"));
+        }
+    }
+    let dir = pack_dir(&state.data_dir, &id);
+    std::fs::create_dir_all(&dir)?;
+    std::fs::copy(&src, dir.join(name))?;
+    *ENGINE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    Ok(packs_of(&state.data_dir))
+}
+
+/// 从地址下载语言包的识别模型和字典（地址由你提供，比如 RapidOCR 模型库里对应语言的 rec.onnx 和字典）。
+#[tauri::command]
+pub async fn ocr_pack_install(app: AppHandle, state: St<'_>, id: String, rec_url: String, dict_url: String) -> AppResult<Vec<PackInfo>> {
+    if !PACKS.iter().any(|(p, _, _)| *p == id) {
+        return Err(AppError::invalid("没有这个语言包。"));
+    }
+    let (rec_url, dict_url) = (rec_url.trim().to_string(), dict_url.trim().to_string());
+    if !rec_url.starts_with("http") || !dict_url.starts_with("http") {
+        return Err(AppError::invalid("请填写识别模型和字典的下载地址（http 开头）。"));
+    }
+    let dir = pack_dir(&state.data_dir, &id);
+    std::fs::create_dir_all(&dir)?;
+    let rec = fetch(&state, &app, &rec_url, "识别模型").await?;
+    let dict = fetch(&state, &app, &dict_url, "字典").await?;
+    let text = String::from_utf8(dict).map_err(|_| AppError::msg("字典不是 UTF-8 文本"))?;
+    if text.lines().count() < 20 {
+        return Err(AppError::msg("下载到的字典不对（行数太少）。"));
+    }
+    std::fs::write(dir.join("rec.onnx"), rec)?;
+    std::fs::write(dir.join("dict.txt"), text)?;
+    *ENGINE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    Ok(packs_of(&state.data_dir))
+}
+
+#[tauri::command]
+pub fn ocr_pack_remove(state: St<'_>, id: String) -> Vec<PackInfo> {
+    if PACKS.iter().any(|(p, _, _)| *p == id) {
+        let _ = std::fs::remove_dir_all(pack_dir(&state.data_dir, &id));
+        *ENGINE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+    packs_of(&state.data_dir)
 }
 
 #[tauri::command]
@@ -404,6 +544,48 @@ pub fn ocr_import(state: St<'_>, kind: String, path: String) -> AppResult<OcrSta
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn languages_map_to_packs_and_chinese_english_use_the_default() {
+        assert_eq!(pack_for_lang("ja"), Some("japan"));
+        assert_eq!(pack_for_lang("ja-JP"), Some("japan"));
+        assert_eq!(pack_for_lang("ko-KR"), Some("korean"));
+        assert_eq!(pack_for_lang("fr-FR"), Some("latin"));
+        assert_eq!(pack_for_lang("ru"), Some("cyrillic"));
+        assert_eq!(pack_for_lang("ar-SA"), Some("arabic"));
+        assert_eq!(pack_for_lang("hi"), Some("devanagari"));
+        for l in ["", "zh-Hans-CN", "zh", "en", "en-US", "xx"] {
+            assert_eq!(pack_for_lang(l), None, "{l}");
+        }
+        // 前缀要按“语言-地区”切：jam 不是 ja
+        assert_eq!(pack_for_lang("jam"), None);
+    }
+
+    #[test]
+    fn pack_files_are_chosen_by_language_and_fall_back_to_the_default() {
+        let dir = std::env::temp_dir().join(format!("cc-ocrpack-{}", std::process::id()));
+        let base = dir_of(&dir);
+        std::fs::create_dir_all(&base).unwrap();
+        for f in [DET_FILE, REC_FILE, DICT_FILE] {
+            std::fs::write(base.join(f), "x").unwrap();
+        }
+        // 没装日语包：日语也用默认
+        assert_eq!(files_for(&dir, "ja", "auto").unwrap().rec, base.join(REC_FILE));
+        let jp = base.join("packs").join("japan");
+        std::fs::create_dir_all(&jp).unwrap();
+        std::fs::write(jp.join("rec.onnx"), "x").unwrap();
+        assert_eq!(files_for(&dir, "ja", "auto").unwrap().rec, base.join(REC_FILE)); // 字典还没有：不算装好
+        std::fs::write(jp.join("dict.txt"), "x").unwrap();
+        let f = files_for(&dir, "ja-JP", "auto").unwrap();
+        assert_eq!((f.rec, f.dict, f.det), (jp.join("rec.onnx"), jp.join("dict.txt"), base.join(DET_FILE)));
+        // 强制默认 / 指定包 / 语言是中文
+        assert_eq!(files_for(&dir, "ja", "default").unwrap().rec, base.join(REC_FILE));
+        assert_eq!(files_for(&dir, "zh-CN", "auto").unwrap().rec, base.join(REC_FILE));
+        assert_eq!(files_for(&dir, "", "japan").unwrap().rec, jp.join("rec.onnx"));
+        assert!(packs_of(&dir).iter().any(|p| p.id == "japan" && p.installed));
+        assert!(!packs_of(&dir).iter().any(|p| p.id == "korean" && p.installed));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn sizes_are_multiples_of_32() {

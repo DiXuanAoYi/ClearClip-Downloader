@@ -117,12 +117,29 @@ fn make_lines(runs: &[Run]) -> Vec<Line> {
     let mut lines: Vec<Line> = vec![];
     for r in order {
         let mid = (r.b + r.t) / 2.0;
-        let hit = lines
-            .iter_mut()
-            .rev()
-            .take(8)
-            .find(|ln| (cy(ln) - mid).abs() <= ln.size.max(r.size) * 0.45 && r.l >= ln.l - 1.0 && r.l - ln.r <= ln.size.max(r.size) * 2.5);
+        // 同一行里的两段文字，纵向中心可能差零点几个点：按“先上后下”排序后右边那段会排在左边那段前面，
+        // 所以左边相邻的也要接上（接在行首），不然一行会裂成两块。
+        let near = |ln: &Line| (cy(ln) - mid).abs() <= ln.size.max(r.size) * 0.45;
+        let hit = lines.iter_mut().rev().take(8).find(|ln| {
+            near(ln)
+                && ((r.l >= ln.l - 1.0 && r.l - ln.r <= ln.size.max(r.size) * 2.5)
+                    || (r.l < ln.l - 1.0 && ln.l - r.r <= ln.size.max(r.size) * 2.5 && r.r <= ln.l + ln.size.max(r.size) * 0.5))
+        });
         match hit {
+            Some(ln) if r.l < ln.l - 1.0 => {
+                let gap = ln.l - r.r;
+                let sep = if gap > ln.size * 0.15 && !is_cjk_char(r.text.chars().last().unwrap_or(' ')) && !is_cjk_char(ln.text.chars().next().unwrap_or(' ')) {
+                    " "
+                } else {
+                    ""
+                };
+                ln.text = format!("{}{}{}", r.text.trim_end(), sep, ln.text.trim_start());
+                ln.runs.insert(0, r.idx);
+                ln.l = r.l;
+                ln.b = ln.b.min(r.b);
+                ln.t = ln.t.max(r.t);
+                ln.size = ln.size.max(r.size);
+            }
             Some(ln) => {
                 let gap = r.l - ln.r;
                 let sep = if gap > ln.size * 0.15 && !is_cjk_char(ln.text.chars().last().unwrap_or(' ')) && !is_cjk_char(r.text.chars().next().unwrap_or(' ')) {

@@ -2,10 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
-import type { AppGlossaryPack, OcrStatus, ScreenEntry, ScreenSettings, ScreenStatus, ScreenTarget, ScreenTry, ScreenWindow, ShotEntry } from '../types'
+import type { AppGlossaryPack, OcrPack, OcrStatus, ScreenEntry, ScreenSettings, ScreenStatus, ScreenTarget, ScreenTry, ScreenWindow, ShotEntry, VoiceEntry } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import { clone, merge3 } from '../utils/merge3'
 
@@ -39,6 +39,7 @@ const MODES: { id: ScreenSettings['mode']; name: string; desc: string }[] = [
   { id: 'standard', name: '标准', desc: '画面上的文字块被译文盖住，适合游戏界面、软件菜单、网页和文档。' },
   { id: 'subtitle', name: '字幕', desc: '只盯字幕区，译文稳定后才显示；换句子时去重、跨屏合并，适合看视频。' },
   { id: 'manga', name: '漫画', desc: '用视觉模型整页识别、翻译，竖排原文译成竖排，横排译成横排；翻页自动清除。' },
+  { id: 'voice', name: '语音', desc: '听电脑正在播放的声音或麦克风（视频、直播、会议），先转成文字再翻译，显示在字幕条里；可导出字幕、一键总结。' },
 ]
 const OCRS: { id: ScreenSettings['ocr']; name: string }[] = [
   { id: 'system', name: 'Windows 自带（快、不用下载）' },
@@ -120,6 +121,11 @@ async function loadWins() {
 
 onMounted(async () => {
   await refresh()
+  void loadVoice()
+  void loadPacks2()
+  voiceTimer = setInterval(() => {
+    if (st.value.audio) void loadVoice()
+  }, 2000)
   void loadWins()
   void loadHist()
   void loadPacks()
@@ -131,7 +137,10 @@ onMounted(async () => {
     await api.onOcrDownload((p) => (dl.value = p.got >= p.total && p.total > 0 ? null : { got: p.got, total: p.total })),
   ]
 })
-onBeforeUnmount(() => offs.forEach((f) => f()))
+onBeforeUnmount(() => {
+  offs.forEach((f) => f())
+  clearInterval(voiceTimer)
+})
 
 async function ensureMangaAck(mode: string): Promise<boolean> {
   if (mode !== 'manga' || form.value.mangaEngine !== 'vision' || form.value.mangaAck) return true
@@ -148,6 +157,7 @@ async function ensureMangaAck(mode: string): Promise<boolean> {
 async function setMode(m: ScreenSettings['mode']) {
   if (!(await ensureMangaAck(m))) return
   form.value.mode = m
+  if (m === 'voice') tab.value = 'audio'
   try {
     st.value = await api.scSetMode(m)
   } catch (e) {
@@ -265,6 +275,37 @@ async function importOcr(kind: 'det' | 'rec' | 'dict') {
     ElMessage.error(errorText(e))
   }
 }
+// ---------- 增强识字的语言包 ----------
+const ocrPacks = ref<OcrPack[]>([])
+async function loadPacks2() {
+  ocrPacks.value = await api.ocrPacks().catch(() => ocrPacks.value)
+}
+async function importPack(id: string, kind: 'rec' | 'dict' | 'det') {
+  const f = await open({ multiple: false, title: kind === 'dict' ? '选择这个语言的字典（.txt）' : '选择这个语言的识别模型（.onnx）' })
+  if (typeof f !== 'string') return
+  try {
+    ocrPacks.value = await api.ocrPackImport(id, kind, f)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+async function installPack(id: string) {
+  try {
+    const rec = await ElMessageBox.prompt('识别模型（.onnx）的下载地址', '安装语言包', { inputPlaceholder: 'https://…/xxx_rec.onnx' })
+    const dict = await ElMessageBox.prompt('字典（.txt）的下载地址', '安装语言包', { inputPlaceholder: 'https://…/xxx_dict.txt' })
+    dl.value = { got: 0, total: 0 }
+    ocrPacks.value = await api.ocrPackInstall(id, rec.value, dict.value)
+    ElMessage.success('语言包已装好')
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(errorText(e))
+  } finally {
+    dl.value = null
+  }
+}
+async function removePack(id: string) {
+  ocrPacks.value = await api.ocrPackRemove(id).catch(() => ocrPacks.value)
+}
+
 async function removeOcr() {
   ocr.value = await api.ocrRemove().catch(() => ocr.value)
 }
@@ -285,6 +326,46 @@ async function audioOn() {
 async function audioOff() {
   await api.audioStop().catch(() => {})
   await refresh()
+  await loadVoice()
+}
+
+// ---------- 语音翻译：本次会话的记录、导出、总结 ----------
+const voice = ref<VoiceEntry[]>([])
+const summary = ref('')
+const summarizing = ref(false)
+let voiceTimer: ReturnType<typeof setInterval> | undefined
+async function loadVoice() {
+  voice.value = await api.voiceTranscript().catch(() => voice.value)
+}
+const clock = (ms: number) => {
+  const s = Math.floor(ms / 1000)
+  return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+async function exportVoice(kind: 'srt' | 'txt') {
+  try {
+    const dest = await saveDialog({ defaultPath: `语音翻译.${kind}`, filters: [{ name: kind.toUpperCase(), extensions: [kind] }] })
+    if (!dest) return
+    const n = await api.voiceExport(kind, form.value.audioBilingual, dest)
+    ElMessage.success(`已导出 ${n} 句`)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+async function summarize() {
+  summarizing.value = true
+  summary.value = ''
+  try {
+    summary.value = await api.voiceSummary()
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    summarizing.value = false
+  }
+}
+async function clearVoice() {
+  await api.voiceClear().catch(() => {})
+  voice.value = []
+  summary.value = ''
 }
 async function clearCache() {
   await api.scCacheClear().catch(() => {})
@@ -329,7 +410,22 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 
     <el-alert v-if="!st.supported" type="info" :closable="false" show-icon title="屏幕翻译目前只支持 Windows。其他系统暂时不能用。" />
 
-    <section class="card">
+    <section v-if="form.mode === 'voice'" class="card">
+      <h3>1. 听什么</h3>
+      <div class="row">
+        <el-radio-group v-model="form.audioSource">
+          <el-radio-button value="system">电脑正在播放的声音</el-radio-button>
+          <el-radio-button value="mic">麦克风</el-radio-button>
+        </el-radio-group>
+        <el-button v-if="!st.audio" type="success" :disabled="!st.supported" @click="audioOn">开始听（{{ form.hotkey }}）</el-button>
+        <el-button v-else type="danger" @click="audioOff">停止（{{ form.hotkey }}）</el-button>
+        <span v-if="st.audio" class="ok">正在听</span>
+        <span v-if="st.msg" class="mute">{{ st.msg }}</span>
+      </div>
+      <small class="mute">不用框选屏幕。译文显示在字幕条里（可拖动、缩放）。选“电脑正在播放的声音”时，要让视频用系统默认的输出设备播放。</small>
+    </section>
+
+    <section v-else class="card">
       <h3>1. 翻译哪里</h3>
       <div class="row">
         <b>{{ targetText }}</b>
@@ -443,6 +539,26 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
             <el-button size="small" text @click="importOcr('dict')">字典</el-button>
           </div>
         </div>
+        <div v-if="form.ocr === 'enhanced' || ocr?.installed" class="field">
+          <label>语言包（默认的中英文模型认不了日文假名、韩文、俄文、阿拉伯文、带重音的拉丁字母）</label>
+          <div class="row">
+            <el-select v-model="form.ocrPack" size="small" style="width: 260px">
+              <el-option value="auto" label="自动（按识字语言选，没装就用默认）" />
+              <el-option value="default" label="一律用默认的中英文模型" />
+              <el-option v-for="p in ocrPacks.filter((x) => x.installed)" :key="p.id" :value="p.id" :label="`固定用：${p.name}`" />
+            </el-select>
+          </div>
+          <div v-for="p in ocrPacks" :key="p.id" class="row pack">
+            <span class="pname">{{ p.name }}</span>
+            <span v-if="p.installed" class="ok">已安装 · {{ formatBytes(p.size) }}</span>
+            <span v-else class="mute">未安装</span>
+            <el-button size="small" text :disabled="!ocr?.installed" @click="importPack(p.id, 'rec')">导入识别模型</el-button>
+            <el-button size="small" text :disabled="!ocr?.installed" @click="importPack(p.id, 'dict')">导入字典</el-button>
+            <el-button size="small" text :disabled="!ocr?.installed" @click="installPack(p.id)">从地址安装</el-button>
+            <el-button v-if="p.installed" size="small" text type="danger" @click="removePack(p.id)">删除</el-button>
+          </div>
+          <small class="mute">语言包是对应语言的 PaddleOCR 识别模型（ONNX）加字典，可以从 RapidOCR 的模型库里找；要先装好上面的增强识字组件（检测模型沿用它）。识字语言选“日语”等之后会自动用对应的包。</small>
+        </div>
         <div v-if="form.ocr === 'api'" class="field">
           <label>云端识字服务</label>
           <el-select v-model="form.ocrApi.provider" size="small" style="width: 220px">
@@ -524,8 +640,8 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         <small class="mute">原文是竖排的，译文也竖排；原文横排的，译文也横排。翻页（画面大幅变化）时旧译文自动清除。{{ form.mangaAck ? '已确认过上传提示。' : '第一次使用会提示一次上传图片的说明。' }}</small>
       </el-tab-pane>
 
-      <el-tab-pane label="系统声音字幕" name="audio">
-        <p class="mute">把电脑正在播放的声音（视频、直播、会议）实时转成文字并翻译，显示在字幕条里。需要本机语音识别组件，先在“设置 → AI”里装好 SenseVoice。</p>
+      <el-tab-pane label="语音翻译" name="audio">
+        <p class="mute">把电脑正在播放的声音（视频、直播、会议）或麦克风实时转成文字并翻译，显示在字幕条里。需要本机语音识别组件，先在“设置 → AI”里装好 SenseVoice，或改用云端识别。</p>
         <div class="grid">
           <div class="field"><label>听的语言</label><el-input v-model="form.audioLang" size="small" placeholder="留空 = 自动判断" /></div>
           <div class="field">
@@ -537,10 +653,27 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           </div>
         </div>
         <div class="kv"><span>字幕条里同时显示原文</span><el-switch v-model="form.audioBilingual" /></div>
+        <div class="kv"><span>边说边出字（先显示原文草稿，说完再换成译文；只在本机识别时）</span><el-switch v-model="form.audioDraft" :disabled="form.audioStt === 'cloud'" /></div>
+        <div class="field"><label>翻译时带上最近几句当上文：{{ form.audioContext || '不带' }}</label><el-slider v-model="form.audioContext" :min="0" :max="10" /></div>
+        <small class="mute">带上文能让同一场对话里的人名、称呼、语气保持一致；会多发一点字给翻译模型。</small>
         <div class="row">
-          <el-button type="primary" :disabled="!st.supported || st.audio" @click="audioOn">开始系统声音字幕</el-button>
+          <el-button type="primary" :disabled="!st.supported || st.audio" @click="audioOn">开始听</el-button>
           <el-button :disabled="!st.audio" @click="audioOff">停止</el-button>
           <span v-if="st.audio" class="ok">运行中</span>
+        </div>
+        <div class="vbox">
+          <div class="row">
+            <b>本次记录（{{ voice.length }} 句）</b>
+            <el-button size="small" :disabled="!voice.length" @click="exportVoice('srt')">导出 SRT 字幕</el-button>
+            <el-button size="small" :disabled="!voice.length" @click="exportVoice('txt')">导出 TXT</el-button>
+            <el-button size="small" type="primary" :loading="summarizing" :disabled="!voice.length" @click="summarize">一键总结</el-button>
+            <el-button size="small" text :disabled="!voice.length" @click="clearVoice">清空</el-button>
+          </div>
+          <div v-if="!voice.length" class="mute">开始听之后，每一句都会记在这里；可以回看、导出，或让模型总结成会议纪要。</div>
+          <div v-else class="vlist">
+            <div v-for="(e, i) in voice" :key="i" class="vrow"><span class="vt">{{ clock(e.startMs) }}</span><span class="vs">{{ e.src }}</span><span class="vx">{{ e.text }}</span></div>
+          </div>
+          <div v-if="summary" class="vsum"><div class="row"><b>总结</b><el-button size="small" text @click="copy(summary)">复制</el-button></div><pre>{{ summary }}</pre></div>
         </div>
       </el-tab-pane>
 
@@ -630,4 +763,13 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 .hrow { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; font-size: 13px }
 .hrow:hover { background: var(--el-fill-color-light) }
 .hs { color: var(--el-text-color-secondary); font-size: 12px }
+.pack { align-items: center }
+.pname { width: 330px; flex: none; font-size: 13px }
+.vbox { margin-top: 12px; display: flex; flex-direction: column; gap: 8px }
+.vlist { max-height: 260px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px }
+.vrow { display: grid; grid-template-columns: 52px 1fr 1fr; gap: 8px; font-size: 12.5px }
+.vt { color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums }
+.vs { color: var(--el-text-color-regular) }
+.vx { font-weight: 600 }
+.vsum pre { white-space: pre-wrap; font: inherit; margin: 4px 0 0; padding: 8px 10px; background: var(--el-fill-color-lighter); border-radius: 8px; max-height: 320px; overflow: auto }
 </style>

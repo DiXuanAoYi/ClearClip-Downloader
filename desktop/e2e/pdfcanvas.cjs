@@ -29,6 +29,7 @@ const INIT = `
         case 'filetr_page_layout': return layout()
         case 'filetr_page_preview': return { orig: layout().image, trans: layout().image, pages: 3, items: 2 }
         case 'filetr_edit': return null
+        case 'filetr_block_adjust': return null
         case 'filetr_retranslate': return '重译结果'
         default: return null
       }
@@ -100,6 +101,40 @@ const INIT = `
   await blk.dblclick()
   await page.waitForTimeout(200)
   ok('双击一块：重译', await page.evaluate(() => window.__calls.some((c) => c.cmd === 'filetr_retranslate' && c.args.index === 0)))
+
+  // 选中一块：调字号、拖动移动、拖右下角改大小、还原
+  await page.getByText('适应宽度').click()
+  await page.waitForTimeout(150)
+  const calls = () => page.evaluate(() => window.__calls.filter((c) => c.cmd === 'filetr_block_adjust'))
+  await page.locator('.blk').nth(1).click()
+  await page.waitForTimeout(150)
+  ok('点一块：出现调整条和移动 / 改大小的手柄', (await cnt('.adjbar')) === 1 && (await cnt('.sel .grip')) === 1 && (await cnt('.sel .rsz')) === 1)
+  await page.getByLabel('字号增大').click()
+  await page.waitForTimeout(150)
+  let c = await calls()
+  ok('字号 ＋：存 11.5 磅，位置一并存下', c.length === 1 && c[0].args.index === 1 && c[0].args.size === 11.5 && c[0].args.rect.length === 4, JSON.stringify(c))
+  const g = await page.locator('.sel .grip').boundingBox()
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(g.x + g.width / 2 + 40, g.y + g.height / 2 + 30, { steps: 4 })
+  await page.mouse.up()
+  await page.waitForTimeout(200)
+  c = await calls()
+  const mv = c[c.length - 1].args.rect
+  ok('拖 ✥：整块右移、下移（PDF 点，y 轴朝上所以下移 = 数值变小）', mv[0] > 52 && mv[1] < 560 && Math.abs(mv[2] - mv[0] - 508) < 0.5 && Math.abs(mv[3] - mv[1] - 40) < 0.5, JSON.stringify(mv))
+  const rz = await page.locator('.sel .rsz').boundingBox()
+  await page.mouse.move(rz.x + rz.width / 2, rz.y + rz.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(rz.x + rz.width / 2 + 30, rz.y + rz.height / 2 + 20, { steps: 4 })
+  await page.mouse.up()
+  await page.waitForTimeout(200)
+  c = await calls()
+  const rs = c[c.length - 1].args.rect
+  ok('拖右下角：变宽变高，左上角不动', rs[2] - rs[0] > 508 && rs[3] - rs[1] > 40 && Math.abs(rs[0] - mv[0]) < 0.01 && Math.abs(rs[3] - mv[3]) < 0.01, JSON.stringify([mv, rs]))
+  await page.getByRole('button', { name: '还原位置和大小' }).click()
+  await page.waitForTimeout(200)
+  c = await calls()
+  ok('还原：发 null / null', c[c.length - 1].args.rect === null && c[c.length - 1].args.size === null)
 
   // 导出效果
   await page.getByText('导出效果').click()

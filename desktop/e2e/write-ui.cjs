@@ -56,6 +56,7 @@ const INIT = (pending, extra = {}) => `
         case 'write_take': return window.__pending
         case 'write_run': { const id = jobId++; window.__reqs.push(args.req); jobs[id] = answer(args.req); return id }
         case 'write_job': return { state: 'done', result: jobs[args.id] }
+        case 'write_personas': return ['恋爱军师|reply','回怼王|reply','淬毒之嘴|create','情话撩人|create','催进度|create','道歉修复|create','超能豆包|create','网恋助手|reply','营销高手|create','神评论|create','祝福大师|create','甜心聊宝|reply','搞笑担当|reply','情绪掌控大师|reply'].map((x, i) => ({ id: 'p' + i, name: x.split('|')[0], desc: x.split('|')[0] + '的说明', mode: x.split('|')[1], hint: '输入提示' + i }))
         case 'write_relation': window.__rel = args; return null
         case 'write_prefs': window.__prefs = args; return null
         case 'write_apply': window.__applied = args; return args.replace ? '已替换' : '已复制'
@@ -67,7 +68,7 @@ const INIT = (pending, extra = {}) => `
 `
 
 ;(async () => {
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })
   const errors = []
   const open = async (pending, extra) => {
     const page = await browser.newPage({ viewport: { width: 520, height: 1100 } })
@@ -84,7 +85,8 @@ const INIT = (pending, extra = {}) => `
   {
     const page = await open({ text: '小李，这周六公司有客户来访，需要人手帮忙接待，你方便过来加个班吗？大概上午 9 点到下午 3 点。', fromSelection: true, app: 'WeChat.exe', canReplace: true, note: '' })
     const tabs = await page.locator('.tabs .tab').allInnerTexts()
-    ok('四个标签：帮我回 / 改写润色 / 检查 / 翻译 · 更多', tabs.join('|') === '帮我回|改写润色|检查|翻译 · 更多', tabs.join('|'))
+    ok('五个标签放得下（不横向溢出）', await page.locator('.tabs').evaluate((e) => e.scrollWidth <= e.clientWidth + 1))
+    ok('五个标签：帮我回 / 改写润色 / 检查 / 翻译 · 更多 / 人设', tabs.join('|') === '帮我回|改写润色|检查|翻译 · 更多|人设', tabs.join('|'))
     ok('从微信取的文字直接停在“帮我回”', (await page.locator('.tab.on').innerText()) === '帮我回')
     ok('有“收到的消息”和“＋ 贴上前面的聊天”', (await page.locator('.recv').innerText()).includes('收到的消息') && (await page.locator('.recv .lnk').innerText()).includes('贴上前面的聊天'))
     await page.waitForFunction(() => document.querySelector('.look b'), null, { timeout: 4000 }).catch(() => {})
@@ -195,6 +197,27 @@ const INIT = (pending, extra = {}) => `
     ok('我的收藏：空的时候有说明', (await page.locator('.favs').innerText()).includes('还没有收藏'))
     const prefs = await page.evaluate(() => window.__prefs)
     ok('切标签记住上次的动作', prefs?.lastAction === 'translate', JSON.stringify(prefs))
+    await page.close()
+  }
+
+  // 4. 人设：14 个，选一个才能生成，请求里带人设 id；写回时带上来源程序（写作记忆用）
+  {
+    const page = await open({ text: '你这人怎么老是迟到', fromSelection: true, app: 'WeChat.exe', canReplace: true, note: '' })
+    await page.locator('.tab', { hasText: '人设' }).click()
+    await page.waitForTimeout(300)
+    const names = await page.locator('.pcard b').allInnerTexts()
+    ok('人设标签里有 14 个人设', names.length === 14 && ['恋爱军师', '回怼王', '淬毒之嘴', '情话撩人', '催进度', '道歉修复', '超能豆包', '网恋助手', '营销高手', '神评论', '祝福大师', '甜心聊宝', '搞笑担当', '情绪掌控大师'].every((n) => names.includes(n)), names.join(','))
+    ok('没选人设时不能生成', await page.locator('.go').first().isDisabled())
+    await page.locator('.pcard', { hasText: '回怼王' }).click()
+    ok('选了人设显示它的输入提示', (await page.locator('.hint').first().innerText()).includes('输入提示1'))
+    await page.locator('.go').first().click()
+    await page.waitForTimeout(500)
+    const req = await page.evaluate(() => window.__reqs.at(-1))
+    ok('请求里带人设：action=persona + 人设 id', req && req.kind === 'write' && req.write.action === 'persona' && req.write.persona === 'p1', JSON.stringify(req))
+    await page.locator('.res .go.sm').first().click()
+    await page.waitForTimeout(300)
+    const ap = await page.evaluate(() => window.__applied)
+    ok('写回时带上来源程序', ap && ap.sourceApp === 'WeChat.exe', JSON.stringify(ap))
     await page.close()
   }
 

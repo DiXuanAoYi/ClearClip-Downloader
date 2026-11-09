@@ -43,3 +43,14 @@ body.noscroll { overflow: hidden; }
 #viewer button.sec { background: #ffffff1f; color: #fff; border-color: #ffffff33; width: auto; margin: 0; }
 #viewer button.small { width: auto; margin: 0; }
 #viewer .keys { font-size: 12px; }
+
+#nameBar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; }
+#nameBar label.inline { display: flex; align-items: center; gap: 6px; margin: 0; }
+#nameBar select { width: auto; padding: 4px 6px; }
+#nameBar button { margin: 0; width: auto; }
+#tplBox { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+#tpl { width: 240px; margin: 0; }
+.chips button { margin: 0 2px 0 0; padding: 2px 8px; font-size: 12px; border-radius: 999px; background: transparent; color: var(--mute); border: 1px solid var(--line); cursor: pointer; width: auto; }
+.cell .nm { display: none; margin: 0 6px 6px; width: calc(100% - 12px); box-sizing: border-box; padding: 4px 6px; font-size: 12px; }
+.cell.on .nm { display: block; }
+.cell .nm.ai { border-color: var(--ok); }
