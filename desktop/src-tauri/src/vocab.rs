@@ -131,7 +131,7 @@ pub struct NewWord {
     pub time_sec: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Word {
     pub id: i64,
@@ -379,6 +379,75 @@ pub fn export(data_dir: &Path, format: &str) -> AppResult<(String, &'static str)
     })
 }
 
+// ---------- 直接发送到 Anki（AnkiConnect） ----------
+
+/// 一张卡片：正面 / 背面（HTML）。和导出文件里的内容一致。
+pub fn anki_cards(words: &[Word]) -> Vec<(String, String)> {
+    let meaning_of = |w: &Word| if w.ctx_meaning.is_empty() { w.meaning.clone() } else { format!("{}（本句：{}）", w.meaning, w.ctx_meaning) };
+    words
+        .iter()
+        .map(|w| {
+            let front = if w.sentence.is_empty() { w.word.clone() } else { w.sentence.replace(&w.word, &format!("<b>{}</b>", w.word)) };
+            let back = format!("<b>{}</b> {} {}<br>{}{}", w.word, w.phonetic, w.pos, meaning_of(w), if w.source_title.is_empty() { String::new() } else { format!("<br><small>{}</small>", w.source_title) });
+            (front, back)
+        })
+        .collect()
+}
+
+/// AnkiConnect 的 addNotes 请求体：用内置的“Basic”笔记类型，正面 / 背面两个字段，已有同样正面的卡片不重复添加。
+pub fn anki_add_notes(deck: &str, cards: &[(String, String)]) -> Value {
+    let notes: Vec<Value> = cards
+        .iter()
+        .map(|(f, b)| json!({"deckName": deck, "modelName": "Basic", "fields": {"Front": f, "Back": b}, "options": {"allowDuplicate": false, "duplicateScope": "deck"}, "tags": ["clearclip"]}))
+        .collect();
+    json!({"action": "addNotes", "version": 6, "params": {"notes": notes}})
+}
+
+/// 解析 addNotes 的返回：(新加了几张, 已存在 / 没加成功几张)。
+pub fn anki_result(resp: &Value) -> AppResult<(usize, usize)> {
+    if let Some(e) = resp.get("error").and_then(Value::as_str) {
+        return Err(AppError::msg(format!("Anki 说：{e}")));
+    }
+    let arr = resp.get("result").and_then(Value::as_array).ok_or_else(|| AppError::parser("Anki 没有返回结果。"))?;
+    let added = arr.iter().filter(|x| !x.is_null()).count();
+    Ok((added, arr.len() - added))
+}
+
+/// 把生词本直接发到本机正在运行的 Anki（需要装好 AnkiConnect 插件）。`url` 留空用 http://127.0.0.1:8765。
+#[tauri::command]
+pub async fn vocab_anki_push(state: St<'_>, deck: String, url: Option<String>) -> AppResult<(usize, usize)> {
+    let words = list(&state.data_dir, "", "all", 5000)?;
+    if words.is_empty() {
+        return Err(AppError::invalid("生词本里还没有单词。"));
+    }
+    let deck = if deck.trim().is_empty() { "清影生词" } else { deck.trim() };
+    let url = url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty()).unwrap_or_else(|| "http://127.0.0.1:8765".into());
+    let client = &state.dl_client;
+    let call = |body: Value| {
+        let (client, url) = (client.clone(), url.clone());
+        async move {
+            let r = client
+                .post(&url)
+                .timeout(std::time::Duration::from_secs(30))
+                .json(&body)
+                .send()
+                .await
+                .map_err(|_| AppError::new(crate::error::ErrorKind::Network, "连不上 Anki：请先打开 Anki，并安装 AnkiConnect 插件（插件代码 2055492159）。"))?;
+            r.json::<Value>().await.map_err(|_| AppError::parser("Anki 返回的不是有效的 JSON。"))
+        }
+    };
+    // 牌组不存在就建（已存在不会报错）
+    anki_result_ok(&call(json!({"action": "createDeck", "version": 6, "params": {"deck": deck}})).await?)?;
+    anki_result(&call(anki_add_notes(deck, &anki_cards(&words))).await?)
+}
+
+fn anki_result_ok(resp: &Value) -> AppResult<()> {
+    match resp.get("error").and_then(Value::as_str) {
+        Some(e) => Err(AppError::msg(format!("Anki 说：{e}"))),
+        None => Ok(()),
+    }
+}
+
 // ---------- 命令 ----------
 
 // ---------- 原声（录下的这一句，导出 Anki 时一起打包） ----------
@@ -526,6 +595,25 @@ pub fn vocab_export(state: St<'_>, format: String, path: String) -> AppResult<St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn anki_connect_payload_and_result() {
+        let w = Word { word: "serendipity".into(), phonetic: "/ˌserənˈdɪpəti/".into(), pos: "n.".into(), meaning: "意外发现".into(), sentence: "It was pure serendipity.".into(), source_title: "Demo".into(), ..Default::default() };
+        let cards = anki_cards(&[w.clone(), Word { word: "x".into(), meaning: "叉".into(), ..Default::default() }]);
+        assert_eq!(cards[0].0, "It was pure <b>serendipity</b>.");
+        assert!(cards[0].1.starts_with("<b>serendipity</b> /ˌserənˈdɪpəti/ n.<br>意外发现") && cards[0].1.contains("<small>Demo</small>"));
+        assert_eq!(cards[1].0, "x", "没有原句时正面就是单词");
+        let body = anki_add_notes("清影生词", &cards);
+        assert_eq!(body["action"], "addNotes");
+        assert_eq!(body["version"], 6);
+        assert_eq!(body["params"]["notes"][0]["deckName"], "清影生词");
+        assert_eq!(body["params"]["notes"][0]["modelName"], "Basic");
+        assert_eq!(body["params"]["notes"][0]["options"]["allowDuplicate"], false);
+        // 返回：null 表示没加成（重复）
+        assert_eq!(anki_result(&json!({"result": [1496198395707i64, null, 1496198395708i64], "error": null})).unwrap(), (2, 1));
+        assert!(anki_result(&json!({"result": null, "error": "deck was not found"})).unwrap_err().message.contains("deck was not found"));
+        assert!(anki_result(&json!({})).is_err());
+    }
 
     #[test]
     fn clips_are_saved_per_word_and_packed_into_the_anki_zip() {

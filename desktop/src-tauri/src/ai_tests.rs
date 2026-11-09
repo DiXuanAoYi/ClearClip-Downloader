@@ -630,6 +630,92 @@ async fn each_machine_translation_provider_speaks_its_own_protocol() {
     assert!(translate(&client, Kind::DeepL, &d, Some("k"), "", "泰语", &texts).await.is_err());
 }
 
+fn form(body: &[u8]) -> std::collections::HashMap<String, String> {
+    url::form_urlencoded::parse(body).map(|(k, v)| (k.into_owned(), v.into_owned())).collect()
+}
+
+#[tokio::test]
+async fn chinese_machine_translation_providers_sign_and_parse_correctly() {
+    use crate::mt::{translate, youdao_sign, Kind};
+    use md5::{Digest, Md5};
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let texts = vec!["Hello".to_string(), "It's fine".to_string()];
+
+    // 百度：两段用换行拼成一批；签名 = md5(appid + q + salt + 密钥)；密钥栏是“应用ID:密钥”
+    let seen = Arc::new(Mutex::new(std::collections::HashMap::new()));
+    let s = seen.clone();
+    let b = mock(Arc::new(move |path, body, _| {
+        assert_eq!(path, "/api/trans/vip/translate");
+        *s.lock().unwrap() = form(body);
+        (200, r#"{"from":"en","to":"zh","trans_result":[{"src":"Hello","dst":"你好"},{"src":"It's fine","dst":"没问题"}]}"#.into())
+    }))
+    .await;
+    let out = translate(&client, Kind::Baidu, &b, Some("2015063000000001:12345678"), "", "简体中文", &texts).await.unwrap();
+    assert_eq!(out, ["你好", "没问题"]);
+    let f = seen.lock().unwrap().clone();
+    assert_eq!((f["q"].as_str(), f["to"].as_str(), f["appid"].as_str()), ("Hello\nIt's fine", "zh", "2015063000000001"));
+    assert_eq!(f["sign"], hex::encode(Md5::digest(format!("{}{}{}12345678", f["appid"], f["q"], f["salt"]).as_bytes())));
+    // 百度的错误码说成人话；密钥格式不对本地就报错
+    let bad = mock(Arc::new(|_, _, _| (200, r#"{"error_code":"54003","error_msg":"Invalid Access Limit"}"#.into()))).await;
+    assert!(translate(&client, Kind::Baidu, &bad, Some("a:b"), "", "简体中文", &texts).await.unwrap_err().message.contains("太频繁"));
+    assert!(translate(&client, Kind::Baidu, &b, Some("只有一段"), "", "简体中文", &texts).await.unwrap_err().message.contains("应用ID:密钥"));
+
+    // 有道：一次一段；签名 = sha256(应用ID + input + salt + curtime + 密钥)，长文字的 input 取前 10 + 长度 + 后 10
+    let calls = Arc::new(Mutex::new(vec![]));
+    let c = calls.clone();
+    let y = mock(Arc::new(move |path, body, _| {
+        assert_eq!(path, "/api");
+        let f = form(body);
+        assert_eq!(f["signType"], "v3");
+        assert_eq!(f["sign"], youdao_sign("yid", &f["q"], &f["salt"], &f["curtime"], "ysec"));
+        c.lock().unwrap().push(f["q"].clone());
+        (200, format!(r#"{{"errorCode":"0","translation":["译:{}"]}}"#, f["q"]))
+    }))
+    .await;
+    let out = translate(&client, Kind::Youdao, &y, Some("yid:ysec"), "", "简体中文", &texts).await.unwrap();
+    assert_eq!(out, ["译:Hello", "译:It's fine"]);
+    assert_eq!(calls.lock().unwrap().len(), 2);
+    let long = "abcdefghijklmnopqrstuvwxyz";
+    assert_eq!(youdao_sign("A", long, "S", "T", "K"), hex::encode(sha2::Sha256::digest("Aabcdefghij26qrstuvwxyzSTK".as_bytes())));
+    assert_eq!(youdao_sign("A", "short", "S", "T", "K"), hex::encode(sha2::Sha256::digest("AshortSTK".as_bytes())));
+    let yerr = mock(Arc::new(|_, _, _| (200, r#"{"errorCode":"202"}"#.into()))).await;
+    assert!(translate(&client, Kind::Youdao, &yerr, Some("a:b"), "", "简体中文", &texts).await.unwrap_err().message.contains("签名"));
+
+    // 彩云：整批一次，token 在请求头，目标是 auto2zh；只支持中英日
+    let seen = Arc::new(Mutex::new(String::new()));
+    let s = seen.clone();
+    let cy = mock(Arc::new(move |path, body, _| {
+        *s.lock().unwrap() = format!("{path} {}", String::from_utf8_lossy(body));
+        (200, r#"{"target":["你好","没问题"]}"#.into())
+    }))
+    .await;
+    let out = translate(&client, Kind::Caiyun, &cy, Some("tok"), "", "简体中文", &texts).await.unwrap();
+    assert_eq!(out, ["你好", "没问题"]);
+    let sent = seen.lock().unwrap().clone();
+    assert!(sent.starts_with("/v1/translator") && sent.contains(r#""trans_type":"auto2zh""#) && sent.contains(r#""source":["Hello","It's fine"]"#), "{sent}");
+    assert!(translate(&client, Kind::Caiyun, &cy, Some("tok"), "", "法语", &texts).await.unwrap_err().message.contains("不支持"));
+
+    // 小牛：一次一段
+    let n = mock(Arc::new(|path, body, _| {
+        assert_eq!(path, "/NiuTransServer/translation");
+        let f = form(body);
+        assert_eq!((f["apikey"].as_str(), f["to"].as_str()), ("nk", "zh"));
+        (200, format!(r#"{{"from":"en","to":"zh","tgt_text":"译:{}"}}"#, f["src_text"]))
+    }))
+    .await;
+    assert_eq!(translate(&client, Kind::Niutrans, &n, Some("nk"), "", "简体中文", &texts).await.unwrap(), ["译:Hello", "译:It's fine"]);
+}
+
+#[test]
+fn baidu_batches_split_by_length_and_newlines() {
+    use crate::mt::baidu_batches;
+    let t = |s: &str| s.to_string();
+    assert_eq!(baidu_batches(&[t("a"), t("b"), t("c")]), vec![vec![0, 1, 2]]);
+    assert_eq!(baidu_batches(&[t("a"), t("x\ny"), t("c")]), vec![vec![0], vec![1], vec![2]], "含换行的单独一批");
+    let big = "字".repeat(1000);
+    assert_eq!(baidu_batches(&[big.clone(), big.clone(), t("z")]), vec![vec![0], vec![1, 2]], "超过 1500 字就分批");
+}
+
 #[tokio::test]
 async fn pool_routes_translation_to_machine_translation_but_skips_it_for_other_requests() {
     use crate::mt::Kind;

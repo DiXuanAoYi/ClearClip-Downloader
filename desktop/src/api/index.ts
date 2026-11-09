@@ -537,6 +537,7 @@ export const api = {
   vocabStats: () => invoke<VocabStats>('vocab_stats'),
   vocabRemove: (id: number) => invoke<void>('vocab_remove', { id }),
   vocabReview: (id: number, grade: number) => invoke<VocabWord>('vocab_review', { id, grade }),
+  vocabAnkiPush: (deck: string, url?: string) => invoke<[number, number]>('vocab_anki_push', { deck, url }),
   vocabExport: (format: string, path: string) => invoke<string>('vocab_export', { format, path }),
   safeboxStatus: () => invoke<SafeStatus>('safebox_status'),
   safeboxCreate: (password: string) => invoke<void>('safebox_create', { password }),

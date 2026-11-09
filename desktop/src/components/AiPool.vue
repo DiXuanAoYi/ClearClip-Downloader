@@ -26,12 +26,13 @@ const REASON: Record<string, string> = { quota: '额度用完', rate: '请求太
 
 const addable = computed(() => presets.value.filter((p) => !ai.value.pool.some((e) => e.preset === p.id)))
 const presetOf = (e: PoolEntry) => presets.value.find((p) => p.id === e.preset)
-// 机器翻译服务（Google / 微软 / DeepL / DeepLX）：不是对话模型，没有“模型名”，只用于翻译
-const isMt = (e: PoolEntry) => ['google', 'microsoft', 'deepl', 'deeplx'].includes(e.kind)
+// 机器翻译服务（Google / 微软 / DeepL / DeepLX / 百度 / 有道 / 彩云 / 小牛）：不是对话模型，没有“模型名”，只用于翻译
+const MT_KINDS = ['google', 'microsoft', 'deepl', 'deeplx', 'baidu', 'youdao', 'caiyun', 'niutrans']
+const isMt = (e: PoolEntry) => MT_KINDS.includes(e.kind)
 const baseLabel = (e: PoolEntry) => (!isMt(e) ? '接口地址' : e.kind === 'deeplx' ? '接口地址（完整，必填）' : '接口地址（留空 = 官方）')
 const basePlaceholder = (e: PoolEntry) => (e.kind === 'deeplx' ? 'http://127.0.0.1:1188/translate' : isMt(e) ? '官方地址' : '')
-const chatPresets = computed(() => addable.value.filter((p) => !['google', 'microsoft', 'deepl', 'deeplx'].includes(p.kind)))
-const mtPresets = computed(() => addable.value.filter((p) => ['google', 'microsoft', 'deepl', 'deeplx'].includes(p.kind)))
+const chatPresets = computed(() => addable.value.filter((p) => !MT_KINDS.includes(p.kind)))
+const mtPresets = computed(() => addable.value.filter((p) => MT_KINDS.includes(p.kind)))
 
 async function refresh() {
   const list = await api.aiPoolStatus().catch(() => [] as PoolStatus[])
@@ -214,7 +215,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
           </template>
         </label>
         <div class="keyrow">
-          <el-input v-model="keys[e.id]" size="small" type="password" show-password :placeholder="presetOf(e)?.local || e.kind === 'deeplx' ? '没设密钥可留空' : status[e.id]?.hasKey ? '输入新密钥可替换' : '粘贴 API 密钥'" />
+          <el-input v-model="keys[e.id]" size="small" type="password" show-password :placeholder="presetOf(e)?.local || e.kind === 'deeplx' ? '没设密钥可留空' : status[e.id]?.hasKey ? '输入新密钥可替换' : (e.kind === 'baidu' || e.kind === 'youdao' ? '应用ID:密钥（英文冒号连起来）' : '粘贴 API 密钥')" />
           <el-button size="small" :disabled="!(keys[e.id] || '').trim()" @click="saveKey(e)">保存</el-button>
           <el-button v-if="status[e.id]?.hasKey" size="small" @click="keys[e.id] = ''; saveKey(e)">清除</el-button>
         </div>

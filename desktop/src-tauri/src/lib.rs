@@ -759,6 +759,7 @@ pub fn run() {
             vocab::vocab_add,
             vocab::vocab_remove,
             vocab::vocab_review,
+            vocab::vocab_anki_push,
             vocab::vocab_export,
             videocache::videocache_infos,
             videocache::videocache_get,

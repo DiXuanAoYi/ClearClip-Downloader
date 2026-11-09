@@ -1,4 +1,4 @@
-//! 机器翻译服务（Google Cloud Translation / 微软 Azure Translator / DeepL / DeepLX）。
+//! 机器翻译服务（Google Cloud Translation / 微软 Azure Translator / DeepL / DeepLX / 百度翻译 / 有道翻译 / 彩云小译 / 小牛翻译）。
 //!
 //! 它们不是对话接口，不能用“兼容 OpenAI”那一栏填。这里把它们接进模型池：翻译字幕、网页翻译、文件翻译、
 //! 屏幕翻译走池子时，如果挑中的是机器翻译服务，就改调它们各自的接口；摘要、问答这类需要“理解”的任务不会用到它们。
@@ -19,6 +19,14 @@ pub enum Kind {
     Microsoft,
     DeepL,
     DeepLX,
+    /// 百度翻译开放平台：密钥栏填“应用ID:密钥”
+    Baidu,
+    /// 有道智云：密钥栏填“应用ID:应用密钥”
+    Youdao,
+    /// 彩云小译：密钥栏填 token（只支持译成中文 / 英文 / 日文）
+    Caiyun,
+    /// 小牛翻译：密钥栏填 apikey
+    Niutrans,
 }
 
 impl Kind {
@@ -28,6 +36,10 @@ impl Kind {
             "microsoft" => Kind::Microsoft,
             "deepl" => Kind::DeepL,
             "deeplx" => Kind::DeepLX,
+            "baidu" => Kind::Baidu,
+            "youdao" => Kind::Youdao,
+            "caiyun" => Kind::Caiyun,
+            "niutrans" => Kind::Niutrans,
             _ => Kind::Chat,
         }
     }
@@ -43,7 +55,38 @@ impl Kind {
             Kind::Microsoft => "微软翻译",
             Kind::DeepL => "DeepL",
             Kind::DeepLX => "DeepLX",
+            Kind::Baidu => "百度翻译",
+            Kind::Youdao => "有道翻译",
+            Kind::Caiyun => "彩云小译",
+            Kind::Niutrans => "小牛翻译",
         }
+    }
+}
+
+/// 国内几家的目标语言代码：(百度, 有道, 彩云, 小牛)。空串 = 这家不支持。
+fn cn_codes(tag: &str) -> (&'static str, &'static str, &'static str, &'static str) {
+    match tag {
+        "zh" => ("zh", "zh-CHS", "auto2zh", "zh"),
+        "zh-Hant" => ("cht", "zh-CHT", "", "cht"),
+        "en" => ("en", "en", "auto2en", "en"),
+        "ja" => ("jp", "ja", "auto2ja", "ja"),
+        "ko" => ("kor", "ko", "", "ko"),
+        "fr" => ("fra", "fr", "", "fr"),
+        "de" => ("de", "de", "", "de"),
+        "es" => ("spa", "es", "", "es"),
+        "ru" => ("ru", "ru", "", "ru"),
+        "pt" => ("pt", "pt", "", "pt"),
+        "it" => ("it", "it", "", "it"),
+        "ar" => ("ara", "ar", "", "ar"),
+        "th" => ("th", "th", "", "th"),
+        "vi" => ("vie", "vi", "", "vi"),
+        "id" => ("id", "id", "", "id"),
+        "tr" => ("tr", "tr", "", "tr"),
+        "pl" => ("pl", "pl", "", "pl"),
+        "nl" => ("nl", "nl", "", "nl"),
+        "uk" => ("ukr", "uk", "", "uk"),
+        "hi" => ("hi", "hi", "", "hi"),
+        _ => ("", "", "", ""),
     }
 }
 
@@ -78,10 +121,15 @@ fn codes(tag: &str) -> Option<(&'static str, &'static str, &'static str)> {
 pub fn target_code(kind: Kind, lang: &str) -> AppResult<&'static str> {
     let tag = crate::ai::lang_tag(lang);
     let (g, m, d) = codes(tag).ok_or_else(|| AppError::invalid(format!("机器翻译服务不认识目标语言“{lang}”，请选常见语言，或把对话模型排在前面。")))?;
+    let (bd, yd, cy, nt) = cn_codes(tag);
     let c = match kind {
         Kind::Google => g,
         Kind::Microsoft => m,
         Kind::DeepL | Kind::DeepLX => d,
+        Kind::Baidu => bd,
+        Kind::Youdao => yd,
+        Kind::Caiyun => cy,
+        Kind::Niutrans => nt,
         Kind::Chat => "",
     };
     if c.is_empty() {
@@ -286,12 +334,161 @@ pub async fn translate(
             }
             out
         }
+        Kind::Baidu => {
+            let (appid, secret) = need_pair(key, kind)?;
+            let url = format!("{}/api/trans/vip/translate", base_or(base, "https://fanyi-api.baidu.com"));
+            let mut out = Vec::with_capacity(texts.len());
+            // 能用换行拼在一起的就一批译（省请求；免费版每秒 1 次）：一批不超过 1500 个字，且每段里没有换行
+            for batch in baidu_batches(texts) {
+                let q = batch.iter().map(|i| texts[*i].as_str()).collect::<Vec<_>>().join("\n");
+                let salt = salt();
+                let sign = md5_hex(&format!("{appid}{q}{salt}{secret}"));
+                let v = send_json(client, kind, client.post(&url).form(&[("q", q.as_str()), ("from", "auto"), ("to", to), ("appid", appid), ("salt", salt.as_str()), ("sign", sign.as_str())])).await?;
+                if let Some(code) = v.get("error_code").and_then(Value::as_str) {
+                    return Err(baidu_error(code, v.get("error_msg").and_then(Value::as_str).unwrap_or("")));
+                }
+                let got: Vec<String> = v.get("trans_result").and_then(Value::as_array).map(|a| a.iter().map(|t| t.get("dst").and_then(Value::as_str).unwrap_or("").to_string()).collect()).unwrap_or_default();
+                if got.len() != batch.len() {
+                    return Err(AppError::parser("百度翻译返回的条数不对。"));
+                }
+                out.extend(got);
+            }
+            out
+        }
+        Kind::Youdao => {
+            let (appid, secret) = need_pair(key, kind)?;
+            let url = format!("{}/api", base_or(base, "https://openapi.youdao.com"));
+            let mut out = Vec::with_capacity(texts.len());
+            for t in texts {
+                let salt = salt();
+                let curtime = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()).to_string();
+                let sign = youdao_sign(appid, t, &salt, &curtime, secret);
+                let v = send_json(
+                    client,
+                    kind,
+                    client.post(&url).form(&[("q", t.as_str()), ("from", "auto"), ("to", to), ("appKey", appid), ("salt", salt.as_str()), ("sign", sign.as_str()), ("signType", "v3"), ("curtime", curtime.as_str())]),
+                )
+                .await?;
+                let code = v.get("errorCode").and_then(Value::as_str).unwrap_or("");
+                if code != "0" {
+                    return Err(AppError::msg(format!("有道翻译出错（{code}）：{}", youdao_error(code))));
+                }
+                let tr = v.pointer("/translation/0").and_then(Value::as_str).ok_or_else(|| AppError::parser("有道翻译没有返回译文。"))?;
+                out.push(tr.to_string());
+            }
+            out
+        }
+        Kind::Caiyun => {
+            let token = need_key()?;
+            let url = format!("{}/v1/translator", base_or(base, "https://api.interpreter.caiyunai.com"));
+            let v = send_json(
+                client,
+                kind,
+                client.post(url).header("X-Authorization", format!("token {token}")).json(&json!({"source": texts, "trans_type": to, "request_id": "clearclip", "detect": true})),
+            )
+            .await?;
+            v.get("target")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().map(|t| t.as_str().unwrap_or("").to_string()).collect())
+                .ok_or_else(|| AppError::parser(format!("彩云小译没有返回译文：{}", v.get("message").and_then(Value::as_str).unwrap_or(""))))?
+        }
+        Kind::Niutrans => {
+            let apikey = need_key()?;
+            let url = format!("{}/NiuTransServer/translation", base_or(base, "https://api.niutrans.com"));
+            let mut out = Vec::with_capacity(texts.len());
+            for t in texts {
+                let v = send_json(client, kind, client.post(&url).form(&[("from", "auto"), ("to", to), ("apikey", apikey), ("src_text", t.as_str())])).await?;
+                if let Some(code) = v.get("error_code").and_then(Value::as_str) {
+                    return Err(AppError::msg(format!("小牛翻译出错（{code}）：{}", v.get("error_msg").and_then(Value::as_str).unwrap_or(""))));
+                }
+                let tr = v.get("tgt_text").and_then(Value::as_str).ok_or_else(|| AppError::parser("小牛翻译没有返回译文。"))?;
+                out.push(tr.to_string());
+            }
+            out
+        }
         Kind::Chat => return Err(AppError::invalid("不是机器翻译服务。")),
     };
     if out.len() != texts.len() {
         return Err(AppError::parser(format!("{} 返回的条数不对（要 {}，给了 {}）。", kind.label(), texts.len(), out.len())));
     }
     Ok(out)
+}
+
+/// “应用ID:密钥”拆成两段（百度、有道）。
+fn need_pair(key: Option<&str>, kind: Kind) -> AppResult<(&str, &str)> {
+    key.and_then(|k| k.split_once(':')).map(|(a, b)| (a.trim(), b.trim())).filter(|(a, b)| !a.is_empty() && !b.is_empty()).ok_or_else(|| {
+        AppError::invalid(format!("{} 的密钥栏要填“应用ID:密钥”（用英文冒号连起来）。", kind.label()))
+    })
+}
+
+fn salt() -> String {
+    format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos()))
+}
+
+fn md5_hex(s: &str) -> String {
+    use md5::{Digest, Md5};
+    hex::encode(Md5::digest(s.as_bytes()))
+}
+
+/// 有道 v3 签名：sha256(应用ID + input + salt + curtime + 应用密钥)，input 是原文（超过 20 个字取前 10 个 + 总长度 + 后 10 个）。
+pub fn youdao_sign(appid: &str, q: &str, salt: &str, curtime: &str, secret: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let chars: Vec<char> = q.chars().collect();
+    let input: String = if chars.len() <= 20 { q.to_string() } else { format!("{}{}{}", chars[..10].iter().collect::<String>(), chars.len(), chars[chars.len() - 10..].iter().collect::<String>()) };
+    hex::encode(Sha256::digest(format!("{appid}{input}{salt}{curtime}{secret}").as_bytes()))
+}
+
+/// 百度一批最多 1500 个字、每段不含换行；含换行的段单独一批。返回每批里文字的序号。
+pub fn baidu_batches(texts: &[String]) -> Vec<Vec<usize>> {
+    let mut out: Vec<Vec<usize>> = vec![];
+    let mut cur: Vec<usize> = vec![];
+    let mut n = 0usize;
+    for (i, t) in texts.iter().enumerate() {
+        let len = t.chars().count();
+        if t.contains('\n') || len > 1500 {
+            if !cur.is_empty() {
+                out.push(std::mem::take(&mut cur));
+                n = 0;
+            }
+            out.push(vec![i]);
+            continue;
+        }
+        if n + len > 1500 && !cur.is_empty() {
+            out.push(std::mem::take(&mut cur));
+            n = 0;
+        }
+        cur.push(i);
+        n += len + 1;
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+fn baidu_error(code: &str, msg: &str) -> AppError {
+    let hint = match code {
+        "52003" => "应用ID 或密钥不对",
+        "54003" => "请求太频繁（免费版每秒 1 次），稍后再试",
+        "54004" => "账户余额不足",
+        "58001" => "不支持这个目标语言",
+        "54001" => "签名错误，请检查密钥",
+        _ => msg,
+    };
+    AppError::msg(format!("百度翻译出错（{code}）：{hint}"))
+}
+
+fn youdao_error(code: &str) -> &'static str {
+    match code {
+        "108" => "应用ID 不对",
+        "202" => "签名失败，请检查应用密钥",
+        "206" => "时间戳不对，请校准电脑时间",
+        "207" => "请求重复",
+        "401" => "账户欠费",
+        "411" => "访问太频繁",
+        "102" => "不支持的语言",
+        _ => "见有道智云文档",
+    }
 }
 
 /// Google v2 即使 `format=text` 也会把 `'` `&` 等写成 HTML 实体。
