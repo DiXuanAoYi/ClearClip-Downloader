@@ -56,6 +56,7 @@ pub mod media_tools;
 pub mod ml;
 pub mod model;
 pub mod mt;
+pub mod mt_cloud;
 pub mod naming;
 pub mod net;
 pub mod notify;

@@ -706,6 +706,73 @@ async fn chinese_machine_translation_providers_sign_and_parse_correctly() {
     assert_eq!(translate(&client, Kind::Niutrans, &n, Some("nk"), "", "简体中文", &texts).await.unwrap(), ["译:Hello", "译:It's fine"]);
 }
 
+#[tokio::test]
+async fn cloud_machine_translation_providers_send_signed_requests() {
+    use crate::mt::{char_batches, translate, Kind};
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let texts = vec!["Hello".to_string(), "It's fine".to_string()];
+
+    // 腾讯：整批一次，POST JSON；返回 Response.TargetTextList；错误在 Response.Error
+    let seen = Arc::new(Mutex::new(String::new()));
+    let s = seen.clone();
+    let t = mock(Arc::new(move |path, body, _| {
+        *s.lock().unwrap() = format!("{path} {}", String::from_utf8_lossy(body));
+        (200, r#"{"Response":{"TargetTextList":["你好","没问题"],"RequestId":"x"}}"#.into())
+    }))
+    .await;
+    assert_eq!(translate(&client, Kind::Tencent, &t, Some("AKID:sk"), "", "简体中文", &texts).await.unwrap(), ["你好", "没问题"]);
+    let sent = seen.lock().unwrap().clone();
+    assert!(sent.starts_with("/ ") && sent.contains(r#""Target":"zh""#) && sent.contains(r#""SourceTextList":["Hello","It's fine"]"#), "{sent}");
+    let terr = mock(Arc::new(|_, _, _| (200, r#"{"Response":{"Error":{"Code":"AuthFailure.SignatureFailure","Message":"bad sign"}}}"#.into()))).await;
+    assert!(translate(&client, Kind::Tencent, &terr, Some("a:b"), "", "简体中文", &texts).await.unwrap_err().message.contains("AuthFailure.SignatureFailure"));
+    assert!(translate(&client, Kind::Tencent, &t, Some("a:b"), "", "波兰语", &texts).await.unwrap_err().message.contains("不支持"), "腾讯没有波兰语");
+
+    // 阿里：一次一段，参数在查询串里
+    let paths = Arc::new(Mutex::new(vec![]));
+    let p = paths.clone();
+    let a = mock(Arc::new(move |path, _, _| {
+        p.lock().unwrap().push(path.to_string());
+        (200, r#"{"Code":"200","Data":{"Translated":"译文","WordCount":"5"}}"#.into())
+    }))
+    .await;
+    assert_eq!(translate(&client, Kind::Aliyun, &a, Some("LTAI:sk"), "", "简体中文", &texts).await.unwrap(), ["译文", "译文"]);
+    let ps = paths.lock().unwrap().clone();
+    assert_eq!(ps.len(), 2);
+    assert!(ps[0].contains("SourceText=Hello") && ps[0].contains("TargetLanguage=zh") && ps[0].contains("Scene=general"), "{}", ps[0]);
+    let aerr = mock(Arc::new(|_, _, _| (200, r#"{"Code":"10001","Message":"Throttling"}"#.into()))).await;
+    assert!(translate(&client, Kind::Aliyun, &aerr, Some("a:b"), "", "简体中文", &texts).await.unwrap_err().message.contains("Throttling"));
+
+    // 火山：整批一次，查询串里带 Action / Version
+    let seen = Arc::new(Mutex::new(String::new()));
+    let s = seen.clone();
+    let v = mock(Arc::new(move |path, body, _| {
+        *s.lock().unwrap() = format!("{path} {}", String::from_utf8_lossy(body));
+        (200, r#"{"TranslationList":[{"Translation":"你好"},{"Translation":"没问题"}],"ResponseMetadata":{}}"#.into())
+    }))
+    .await;
+    assert_eq!(translate(&client, Kind::Volcano, &v, Some("ak:sk"), "", "简体中文", &texts).await.unwrap(), ["你好", "没问题"]);
+    let sent = seen.lock().unwrap().clone();
+    assert!(
+        sent.contains("Action=TranslateText")
+            && sent.contains("Version=2020-06-01")
+            && sent.contains(r#""TargetLanguage":"zh""#)
+            && sent.contains(r#""TextList":["Hello","It's fine"]"#),
+        "{sent}"
+    );
+    let verr = mock(Arc::new(|_, _, _| (200, r#"{"ResponseMetadata":{"Error":{"Code":"SignatureDoesNotMatch","Message":"bad"}}}"#.into()))).await;
+    assert!(translate(&client, Kind::Volcano, &verr, Some("a:b"), "", "简体中文", &texts).await.unwrap_err().message.contains("SignatureDoesNotMatch"));
+
+    // 密钥栏要填“ID:密钥”
+    assert!(translate(&client, Kind::Tencent, &t, Some("只有一段"), "", "简体中文", &texts).await.unwrap_err().message.contains("应用ID:密钥"));
+
+    // 分批：字数和条数两个上限
+    let s = |n: usize| "字".repeat(n);
+    assert_eq!(char_batches(&[s(10), s(10), s(10)], 25, 99), vec![vec![0, 1], vec![2]]);
+    assert_eq!(char_batches(&[s(1), s(1), s(1)], 99, 2), vec![vec![0, 1], vec![2]]);
+    assert_eq!(char_batches(&[s(50)], 25, 99), vec![vec![0]], "单条超长自己一组");
+    assert!(char_batches(&[], 25, 99).is_empty());
+}
+
 #[test]
 fn baidu_batches_split_by_length_and_newlines() {
     use crate::mt::baidu_batches;

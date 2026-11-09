@@ -27,6 +27,12 @@ pub enum Kind {
     Caiyun,
     /// 小牛翻译：密钥栏填 apikey
     Niutrans,
+    /// 腾讯云机器翻译：密钥栏填“SecretId:SecretKey”
+    Tencent,
+    /// 阿里云机器翻译：密钥栏填“AccessKeyId:AccessKeySecret”
+    Aliyun,
+    /// 火山引擎机器翻译：密钥栏填“AccessKeyId:SecretAccessKey”
+    Volcano,
 }
 
 impl Kind {
@@ -40,6 +46,9 @@ impl Kind {
             "youdao" => Kind::Youdao,
             "caiyun" => Kind::Caiyun,
             "niutrans" => Kind::Niutrans,
+            "tencent" => Kind::Tencent,
+            "aliyun" => Kind::Aliyun,
+            "volcano" => Kind::Volcano,
             _ => Kind::Chat,
         }
     }
@@ -59,6 +68,9 @@ impl Kind {
             Kind::Youdao => "有道翻译",
             Kind::Caiyun => "彩云小译",
             Kind::Niutrans => "小牛翻译",
+            Kind::Tencent => "腾讯翻译",
+            Kind::Aliyun => "阿里翻译",
+            Kind::Volcano => "火山翻译",
         }
     }
 }
@@ -87,6 +99,33 @@ fn cn_codes(tag: &str) -> (&'static str, &'static str, &'static str, &'static st
         "uk" => ("ukr", "uk", "", "uk"),
         "hi" => ("hi", "hi", "", "hi"),
         _ => ("", "", "", ""),
+    }
+}
+
+/// 三家云厂商的目标语言代码：(腾讯, 阿里, 火山)。空串 = 这家不支持。
+fn cloud_codes(tag: &str) -> (&'static str, &'static str, &'static str) {
+    match tag {
+        "zh" => ("zh", "zh", "zh"),
+        "zh-Hant" => ("zh-TW", "zh-tw", "zh-Hant"),
+        "en" => ("en", "en", "en"),
+        "ja" => ("ja", "ja", "ja"),
+        "ko" => ("ko", "ko", "ko"),
+        "fr" => ("fr", "fr", "fr"),
+        "de" => ("de", "de", "de"),
+        "es" => ("es", "es", "es"),
+        "ru" => ("ru", "ru", "ru"),
+        "pt" => ("pt", "pt", "pt"),
+        "it" => ("it", "it", "it"),
+        "ar" => ("ar", "ar", "ar"),
+        "th" => ("th", "th", "th"),
+        "vi" => ("vi", "vi", "vi"),
+        "id" => ("id", "id", "id"),
+        "tr" => ("tr", "tr", "tr"),
+        "pl" => ("", "pl", "pl"),
+        "nl" => ("", "nl", "nl"),
+        "uk" => ("", "uk", "uk"),
+        "hi" => ("hi", "hi", "hi"),
+        _ => ("", "", ""),
     }
 }
 
@@ -122,6 +161,7 @@ pub fn target_code(kind: Kind, lang: &str) -> AppResult<&'static str> {
     let tag = crate::ai::lang_tag(lang);
     let (g, m, d) = codes(tag).ok_or_else(|| AppError::invalid(format!("机器翻译服务不认识目标语言“{lang}”，请选常见语言，或把对话模型排在前面。")))?;
     let (bd, yd, cy, nt) = cn_codes(tag);
+    let (tx, al, vc) = cloud_codes(tag);
     let c = match kind {
         Kind::Google => g,
         Kind::Microsoft => m,
@@ -130,6 +170,9 @@ pub fn target_code(kind: Kind, lang: &str) -> AppResult<&'static str> {
         Kind::Youdao => yd,
         Kind::Caiyun => cy,
         Kind::Niutrans => nt,
+        Kind::Tencent => tx,
+        Kind::Aliyun => al,
+        Kind::Volcano => vc,
         Kind::Chat => "",
     };
     if c.is_empty() {
@@ -434,6 +477,76 @@ pub async fn translate(
             }
             out
         }
+        Kind::Tencent => {
+            let (id, secret) = need_pair(key, kind)?;
+            let (host, url) = cloud_host(base, "https://tmt.tencentcloudapi.com");
+            let mut out = Vec::with_capacity(texts.len());
+            for batch in char_batches(texts, 1500, 40) {
+                let payload =
+                    json!({"Source": "auto", "Target": to, "ProjectId": 0, "SourceTextList": batch.iter().map(|i| texts[*i].as_str()).collect::<Vec<_>>()})
+                        .to_string();
+                let headers =
+                    crate::mt_cloud::tencent_headers(id, secret, unix_now(), &host, "tmt", "TextTranslateBatch", "2018-03-21", "ap-guangzhou", &payload);
+                let v = send_json(client, kind, with_headers(client.post(&url), &headers).body(payload)).await?;
+                if let Some(e) = v.pointer("/Response/Error") {
+                    return Err(AppError::msg(format!("腾讯翻译出错（{}）：{}", e["Code"].as_str().unwrap_or(""), e["Message"].as_str().unwrap_or(""))));
+                }
+                let got: Vec<String> = v
+                    .pointer("/Response/TargetTextList")
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().map(|t| t.as_str().unwrap_or("").to_string()).collect())
+                    .ok_or_else(|| AppError::parser("腾讯翻译没有返回译文。"))?;
+                if got.len() != batch.len() {
+                    return Err(AppError::parser("腾讯翻译返回的条数不对。"));
+                }
+                out.extend(got);
+            }
+            out
+        }
+        Kind::Aliyun => {
+            let (id, secret) = need_pair(key, kind)?;
+            let (host, url) = cloud_host(base, "https://mt.cn-hangzhou.aliyuncs.com");
+            let mut out = Vec::with_capacity(texts.len());
+            for t in texts {
+                // 一次译一段（上限 5000 字，超过的截断）
+                let text: String = t.chars().take(5000).collect();
+                let q = [("FormatType", "text"), ("Scene", "general"), ("SourceLanguage", "auto"), ("TargetLanguage", to), ("SourceText", text.as_str())];
+                let nonce = format!("{}{}", unix_now(), salt());
+                let headers = crate::mt_cloud::aliyun_headers(id, secret, unix_now(), &nonce, &host, "TranslateGeneral", "2018-10-12", &q);
+                let v = send_json(client, kind, with_headers(client.post(&url).query(&q), &headers)).await?;
+                let code = v.get("Code").map(|c| c.as_str().map(str::to_string).unwrap_or_else(|| c.to_string())).unwrap_or_default();
+                if code != "200" {
+                    return Err(AppError::msg(format!("阿里翻译出错（{code}）：{}", v.get("Message").and_then(Value::as_str).unwrap_or(""))));
+                }
+                let tr = v.pointer("/Data/Translated").and_then(Value::as_str).ok_or_else(|| AppError::parser("阿里翻译没有返回译文。"))?;
+                out.push(tr.to_string());
+            }
+            out
+        }
+        Kind::Volcano => {
+            let (ak, sk) = need_pair(key, kind)?;
+            let (host, url) = cloud_host(base, "https://translate.volcengineapi.com");
+            let query = "Action=TranslateText&Version=2020-06-01";
+            let mut out = Vec::with_capacity(texts.len());
+            for batch in char_batches(texts, 4000, 16) {
+                let payload = json!({"TargetLanguage": to, "TextList": batch.iter().map(|i| texts[*i].as_str()).collect::<Vec<_>>()}).to_string();
+                let headers = crate::mt_cloud::volc_headers(ak, sk, unix_now(), &host, "cn-north-1", "translate", query, &payload);
+                let v = send_json(client, kind, with_headers(client.post(format!("{url}/?{query}")), &headers).body(payload)).await?;
+                if let Some(e) = v.pointer("/ResponseMetadata/Error") {
+                    return Err(AppError::msg(format!("火山翻译出错（{}）：{}", e["Code"].as_str().unwrap_or(""), e["Message"].as_str().unwrap_or(""))));
+                }
+                let got: Vec<String> = v
+                    .get("TranslationList")
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().map(|t| t.get("Translation").and_then(Value::as_str).unwrap_or("").to_string()).collect())
+                    .ok_or_else(|| AppError::parser("火山翻译没有返回译文。"))?;
+                if got.len() != batch.len() {
+                    return Err(AppError::parser("火山翻译返回的条数不对。"));
+                }
+                out.extend(got);
+            }
+            out
+        }
         Kind::Chat => return Err(AppError::invalid("不是机器翻译服务。")),
     };
     if out.len() != texts.len() {
@@ -442,7 +555,46 @@ pub async fn translate(
     Ok(out)
 }
 
-/// “应用ID:密钥”拆成两段（百度、有道）。
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// 给请求加上一组请求头。
+fn with_headers(mut req: reqwest::RequestBuilder, headers: &[(String, String)]) -> reqwest::RequestBuilder {
+    for (k, v) in headers {
+        req = req.header(k.as_str(), v.as_str());
+    }
+    req
+}
+
+/// 接口地址 → (主机名, 去掉结尾斜杠的地址)。地址栏留空用官方的。
+fn cloud_host(base: &str, default: &str) -> (String, String) {
+    let url = base_or(base, default).trim_end_matches('/').to_string();
+    let host = reqwest::Url::parse(&url).ok().and_then(|u| u.host_str().map(|h| h.to_string())).unwrap_or_default();
+    (host, url)
+}
+
+/// 把一批文字按“总字数不超过 max_chars、条数不超过 max_items”分成几组（返回每组里的下标）；单条超长的自己一组。
+pub fn char_batches(texts: &[String], max_chars: usize, max_items: usize) -> Vec<Vec<usize>> {
+    let mut out: Vec<Vec<usize>> = vec![];
+    let mut cur: Vec<usize> = vec![];
+    let mut size = 0usize;
+    for (i, t) in texts.iter().enumerate() {
+        let n = t.chars().count();
+        if !cur.is_empty() && (size + n > max_chars || cur.len() >= max_items) {
+            out.push(std::mem::take(&mut cur));
+            size = 0;
+        }
+        cur.push(i);
+        size += n;
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+/// “应用ID:密钥”拆成两段（百度、有道、腾讯、阿里、火山）。
 fn need_pair(key: Option<&str>, kind: Kind) -> AppResult<(&str, &str)> {
     key.and_then(|k| k.split_once(':'))
         .map(|(a, b)| (a.trim(), b.trim()))
