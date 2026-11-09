@@ -47,7 +47,7 @@ fn width(s: &str) -> usize {
 
 fn word_in(hay: &str, needle: &str) -> bool {
     let (h, n) = (hay.to_lowercase(), needle.to_lowercase());
-    if n.chars().any(|c| crate::pdfx::is_wide(c)) {
+    if n.chars().any(crate::pdfx::is_wide) {
         return h.contains(&n);
     }
     let mut from = 0;
