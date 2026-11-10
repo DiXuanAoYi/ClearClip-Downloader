@@ -7,7 +7,7 @@ import path from 'node:path'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
 const PORT = 5199
-const suites = process.argv.slice(2).length ? process.argv.slice(2) : ['ops.cjs', 'edit.cjs', 'region.cjs', 'hdr.cjs', 'subtitle.cjs', 'proxy.cjs', 'transcript.cjs', 'keyframes.cjs', 'beats.cjs', 'highlights.cjs', 'background.cjs', 'vocals.cjs', 'vsum-panel.cjs', 'sublayer-session.cjs', 'video-dock.cjs', 'merge-ui.cjs', 'parse-ui.cjs', 'write-ui.cjs', 'webtrans.cjs', 'bili-sub.cjs', 'batch-ui.cjs', 'audio.cjs', 'pdfcanvas.cjs', 'filetr-ui.cjs']
+const suites = process.argv.slice(2).length ? process.argv.slice(2) : ['ops.cjs', 'edit.cjs', 'region.cjs', 'hdr.cjs', 'subtitle.cjs', 'proxy.cjs', 'transcript.cjs', 'keyframes.cjs', 'beats.cjs', 'highlights.cjs', 'background.cjs', 'vocals.cjs', 'vsum-panel.cjs', 'sublayer-session.cjs', 'video-dock.cjs', 'merge-ui.cjs', 'parse-ui.cjs', 'write-ui.cjs', 'webtrans.cjs', 'bili-sub.cjs', 'batch-ui.cjs', 'audio.cjs', 'pdfcanvas.cjs', 'filetr-ui.cjs', 'toolbox-ui.cjs']
 
 for (const tool of ['ffmpeg', 'ffprobe']) {
   if (spawnSync(tool, ['-version'], { stdio: 'ignore' }).status !== 0) {

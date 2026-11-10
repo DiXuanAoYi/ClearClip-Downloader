@@ -8,13 +8,26 @@ import { useAppStore } from '../../stores/app'
 import type { AiStatus, Chapter, JobSnap } from '../../types'
 import { parseChapterLines } from '../../utils/time'
 import FileInput from './FileInput.vue'
+import { pickKinds } from '../../utils/toolbox'
 
-const props = defineProps<{ preset?: string[]; mode?: 'transcribe' | 'summarize' | 'correct' }>()
+const props = defineProps<{ preset?: string[]; mode?: 'transcribe' | 'summarize' | 'correct'; bare?: boolean }>()
 const app = useAppStore()
 const mode = ref<'transcribe' | 'summarize' | 'correct'>(props.mode ?? 'transcribe')
 const status = ref<AiStatus | null>(null)
-const media = ref<string[]>(props.mode === 'transcribe' ? [...(props.preset ?? [])] : [])
-const subs = ref<string[]>(props.mode && props.mode !== 'transcribe' ? [...(props.preset ?? [])] : [])
+const media = ref<string[]>(pickKinds(props.preset ?? [], ['video', 'audio']))
+const subs = ref<string[]>(pickKinds(props.preset ?? [], ['subtitle']))
+// 侧栏切换模式、文件篮变化时跟着更新
+watch(
+  () => props.mode,
+  (m) => m && (mode.value = m),
+)
+watch(
+  () => props.preset,
+  (p) => {
+    media.value = pickKinds(p ?? [], ['video', 'audio'])
+    subs.value = pickKinds(p ?? [], ['subtitle'])
+  },
+)
 const language = ref('')
 // 生成字幕 / 纠错的选项
 const correct = ref<'auto' | 'conservative' | 'aggressive' | 'rules' | 'off'>('auto')
@@ -123,7 +136,7 @@ async function writeChapters() {
 
 <template>
   <div class="ai">
-    <div class="modes">
+    <div v-if="!bare" class="modes">
       <el-radio-group v-model="mode" size="small">
         <el-radio-button value="transcribe">生成字幕</el-radio-button>
         <el-radio-button value="correct">AI 纠错</el-radio-button>
@@ -138,7 +151,7 @@ async function writeChapters() {
         <el-alert v-if="status && !status.sttReady" type="warning" :closable="false" show-icon title="还没有配置语音转文字">
           <el-button link type="primary" size="small" @click="app.goSettings('ai')">去“设置 → AI”配置</el-button>
         </el-alert>
-        <FileInput v-model="media" :kinds="['video', 'audio']" :extensions="['mp4', 'mkv', 'webm', 'mov', 'flv', 'ts', 'm4v', 'mp3', 'm4a', 'flac', 'wav', 'ogg', 'opus', 'aac']" label="视频或音频" />
+        <FileInput v-model="media" main :kinds="['video', 'audio']" :extensions="['mp4', 'mkv', 'webm', 'mov', 'flv', 'ts', 'm4v', 'mp3', 'm4a', 'flac', 'wav', 'ogg', 'opus', 'aac']" label="视频或音频" />
         <label class="row"><span>语言</span><el-input v-model="language" size="small" class="short mono" placeholder="留空用设置里的；zh / en / ja" /></label>
         <label class="row">
           <span>AI 纠错</span>
@@ -183,7 +196,7 @@ async function writeChapters() {
         <el-alert v-if="status && !status.chatReady && correctMode !== 'rules'" type="warning" :closable="false" show-icon title="还没有配置对话模型，只能用“只用规则”">
           <el-button link type="primary" size="small" @click="app.goSettings('ai')">去“设置 → AI”配置</el-button>
         </el-alert>
-        <FileInput v-model="subs" :kinds="['subtitle']" :extensions="['srt', 'vtt', 'ass', 'ssa']" label="字幕文件" />
+        <FileInput v-model="subs" main :kinds="['subtitle']" :extensions="['srt', 'vtt', 'ass', 'ssa']" label="字幕文件" />
         <label class="row">
           <span>力度</span>
           <el-radio-group v-model="correctMode" size="small">
@@ -199,7 +212,7 @@ async function writeChapters() {
         <el-alert v-if="status && !status.chatReady" type="warning" :closable="false" show-icon title="还没有配置对话模型">
           <el-button link type="primary" size="small" @click="app.goSettings('ai')">去“设置 → AI”配置</el-button>
         </el-alert>
-        <FileInput v-model="subs" :kinds="['subtitle']" :extensions="['srt', 'vtt', 'ass', 'ssa']" label="字幕文件" />
+        <FileInput v-model="subs" main :kinds="['subtitle']" :extensions="['srt', 'vtt', 'ass', 'ssa']" label="字幕文件" />
       </template>
       <div class="go"><el-button type="primary" :loading="busy" @click="go">开始</el-button></div>
     </div>

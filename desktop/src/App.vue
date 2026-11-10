@@ -80,18 +80,22 @@ function cancelPower() {
 }
 const loadError = ref('')
 
-const navs: { id: ViewName; label: string }[] = [
-  { id: 'parse', label: '解析' },
-  { id: 'queue', label: '下载队列' },
-  { id: 'subs', label: '订阅' },
-  { id: 'live', label: '直播' },
-  { id: 'screen', label: '屏幕翻译' },
-  { id: 'library', label: '媒体库' },
-  { id: 'filetr', label: '文件翻译' },
-  { id: 'vocab', label: '生词与摘录' },
-  { id: 'tools', label: '工具箱' },
-  { id: 'settings', label: '设置' },
+// icon：只在工具箱里（主导航收成图标条时）显示
+const navs: { id: ViewName; label: string; icon: string }[] = [
+  { id: 'parse', label: '解析', icon: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1' },
+  { id: 'queue', label: '下载队列', icon: 'M12 4v11M7 11l5 5 5-5M5 20h14' },
+  { id: 'subs', label: '订阅', icon: 'M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0' },
+  { id: 'live', label: '直播', icon: 'M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.5 7.5a6 6 0 0 0 0 9M16.5 7.5a6 6 0 0 1 0 9' },
+  { id: 'screen', label: '屏幕翻译', icon: 'M4 5h16v11H4zM8 20h8M9 9h6M9 12h4' },
+  { id: 'library', label: '媒体库', icon: 'M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5' },
+  { id: 'filetr', label: '文件翻译', icon: 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4' },
+  { id: 'vocab', label: '生词与摘录', icon: 'M7 4h10v17l-5-4-5 4z' },
+  { id: 'tools', label: '工具箱', icon: 'M4 8h16v11H4zM9 8V5h6v3M4 13h16' },
+  { id: 'settings', label: '设置', icon: 'M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4' },
 ]
+/** 在工具箱里，主导航默认收成图标条（点最上面的“≡”展开，记住选择） */
+const railMode = computed(() => app.view === 'tools')
+const compact = computed(() => railMode.value && !app.navOpen)
 
 const footer = computed(() => {
   if (queue.active > 0) return `下载中 ${queue.counts.running} · 等待 ${queue.counts.queued}`
@@ -267,22 +271,31 @@ onMounted(async () => {
     <h2>启动失败</h2>
     <p class="selectable">{{ loadError }}</p>
   </div>
-  <div v-else-if="ready && app.settings" class="shell" :inert="app.lock.locked" @dragover.prevent="dragging = true" @dragleave.self="dragging = false" @drop.prevent="onHtmlDrop">
-    <aside class="side">
-      <div class="brand">清<i>影</i></div>
+  <div v-else-if="ready && app.settings" class="shell" :class="{ compact }" :inert="app.lock.locked" @dragover.prevent="dragging = true" @dragleave.self="dragging = false" @drop.prevent="onHtmlDrop">
+    <aside class="side" :class="{ compact }">
+      <div v-if="railMode" class="railtop">
+        <button type="button" class="burger" :aria-label="app.navOpen ? '收起主导航' : '展开主导航'" :aria-expanded="app.navOpen" @click="app.setNavOpen(!app.navOpen)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+        </button>
+        <div v-if="!compact" class="brand">清<i>影</i></div>
+      </div>
+      <div v-else class="brand">清<i>影</i></div>
       <button
         v-for="n in navs"
         :key="n.id"
         class="nav"
         :class="{ on: app.view === n.id }"
+        :title="compact ? n.label : undefined"
+        :aria-label="n.label"
         type="button"
         @click="n.id === 'library' && app.inboxUnhandled > 0 ? app.goLibrary('inbox') : (app.view = n.id)"
       >
-        <span>{{ n.label }}</span>
-        <em v-if="n.id === 'queue' && queue.active > 0">{{ queue.active }}</em>
-        <em v-if="n.id === 'library' && app.inboxUnhandled > 0" class="warn" :title="`收到的链接里有 ${app.inboxUnhandled} 条需要处理`">{{ app.inboxUnhandled }}</em>
+        <svg v-if="railMode" class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="n.icon" /></svg>
+        <span v-if="!compact">{{ n.label }}</span>
+        <em v-if="!compact && n.id === 'queue' && queue.active > 0">{{ queue.active }}</em>
+        <em v-if="!compact && n.id === 'library' && app.inboxUnhandled > 0" class="warn" :title="`收到的链接里有 ${app.inboxUnhandled} 条需要处理`">{{ app.inboxUnhandled }}</em>
       </button>
-      <div class="foot">
+      <div v-if="!compact" class="foot">
         <button v-if="app.settings.security.privacyMode" class="priv" type="button" title="点击关闭隐私模式" @click="togglePrivacy">● 隐私模式</button>
         <div>{{ footer }}</div>
         <div v-if="app.settings.watchClipboard" class="watch">● 剪贴板监听中</div>
@@ -326,6 +339,54 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 184px 1fr;
   height: 100%;
+}
+.shell.compact {
+  grid-template-columns: 56px 1fr;
+}
+.side.compact {
+  padding: 12px 8px;
+}
+.railtop {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.railtop .brand {
+  padding: 0 4px;
+}
+.burger {
+  all: unset;
+  cursor: pointer;
+  box-sizing: border-box;
+  width: 40px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--cc-mute);
+}
+.burger:hover {
+  background: var(--cc-acc-soft);
+  color: var(--cc-fg);
+}
+.burger:focus-visible {
+  outline: 2px solid var(--cc-acc);
+}
+.nav .ico {
+  flex: none;
+}
+.side.compact .nav {
+  justify-content: center;
+  padding: 9px 0;
+}
+.side:not(.compact) .nav:has(.ico) {
+  justify-content: flex-start;
+  gap: 12px;
+}
+.side:not(.compact) .nav:has(.ico) em {
+  margin-left: auto;
 }
 .side {
   background: var(--cc-side);

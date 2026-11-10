@@ -4,8 +4,15 @@ import { ElMessage } from 'element-plus'
 import { api, errorText } from '../../api'
 import type { MediaInfoLite } from '../../types'
 import FileInput from './FileInput.vue'
+import { pickKinds } from '../../utils/toolbox'
 
-const files = ref<string[]>([])
+const props = defineProps<{ preset?: string[] }>()
+const files = ref<string[]>(pickKinds(props.preset ?? [], ['audio']).slice(0, 1))
+// 文件篮里有多个文件时，一次改一个：用第一个音频
+watch(
+  () => props.preset,
+  (p) => (files.value = pickKinds(p ?? [], ['audio']).slice(0, 1)),
+)
 const cover = ref<string[]>([])
 const info = ref<MediaInfoLite | null>(null)
 const busy = ref(false)
@@ -59,7 +66,7 @@ async function save() {
   <div class="tt card">
     <h3>音频标签</h3>
     <p class="mute desc">给音乐文件（MP3、M4A、FLAC 等）写入标题、艺术家、专辑和封面，保存为新文件，不重新编码。</p>
-    <FileInput v-model="files" :extensions="['mp3', 'm4a', 'flac', 'opus', 'ogg', 'wav', 'mp4']" :kinds="['audio']" label="音频文件" />
+    <FileInput v-model="files" main :extensions="['mp3', 'm4a', 'flac', 'opus', 'ogg', 'wav', 'mp4']" :kinds="['audio']" label="音频文件" />
     <div v-if="info" class="form">
       <label><span>标题</span><el-input v-model="f.title" size="small" /></label>
       <label><span>艺术家</span><el-input v-model="f.artist" size="small" /></label>

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../../api'
 import type { SubJob, SubOp } from '../../types'
 import { parseClock } from '../../utils/time'
 import FileInput from './FileInput.vue'
+import { pickKinds } from '../../utils/toolbox'
 import SubtitleEditor from '../library/SubtitleEditor.vue'
 
 const OPS = [
@@ -20,7 +21,13 @@ const OPS = [
 const op = ref('edit')
 const editing = ref(false)
 const cur = computed(() => OPS.find((o) => o.id === op.value)!)
-const files = ref<string[]>([])
+const props = defineProps<{ preset?: string[] }>()
+const files = ref<string[]>(pickKinds(props.preset ?? [], ['subtitle']).slice(0, 1))
+// 文件篮里有多个字幕时，一次改一个：用第一个
+watch(
+  () => props.preset,
+  (p) => (files.value = pickKinds(p ?? [], ['subtitle']).slice(0, 1)),
+)
 const second = ref<string[]>([])
 const format = ref('')
 const busy = ref(false)
@@ -89,7 +96,7 @@ async function run() {
     <div class="panel card">
       <h3>{{ cur.name }}</h3>
       <p class="mute desc">{{ cur.desc }}</p>
-      <FileInput v-model="files" :extensions="exts" :kinds="['subtitle']" :label="op === 'danmaku' ? '弹幕 XML 文件' : '字幕文件'" />
+      <FileInput v-model="files" main :extensions="exts" :kinds="['subtitle']" :label="op === 'danmaku' ? '弹幕 XML 文件' : '字幕文件'" />
       <div class="form">
         <label v-if="op === 'shift'">
           <span>偏移（秒）</span>

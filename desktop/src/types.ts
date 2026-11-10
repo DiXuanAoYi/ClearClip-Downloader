@@ -488,6 +488,27 @@ export interface VideoPreview {
   changed: boolean
 }
 
+/** 工具箱预览：取哪一帧、做什么变换 */
+export type FrameOp = { kind: 'none' } | { kind: 'rotate'; mode: string } | { kind: 'landscape'; width: number; height: number; mode: string }
+
+export interface FramePreview {
+  before: string
+  after: string
+  changed: boolean
+}
+
+/** “试一小段”的结果 */
+export interface ToolTrial {
+  before: string
+  after: string
+  afterIsImage: boolean
+  beforeBytes: number
+  afterBytes: number
+  secs: number
+  totalSecs: number | null
+  note: string | null
+}
+
 export interface CapsSummary {
   version: string
   edition: 'full' | 'lite'
