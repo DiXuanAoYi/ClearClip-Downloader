@@ -4,7 +4,7 @@ import { api, errorKind, errorText, events } from '../api'
 import { clone } from '../utils/merge3'
 import type { AppInfo, BatchRequest, ErrorKind, HistoryItem, LockStatus, MediaInfo, Settings, TaskSnapshot } from '../types'
 
-export type ViewName = 'parse' | 'queue' | 'subs' | 'live' | 'screen' | 'filetr' | 'library' | 'vocab' | 'tools' | 'safebox' | 'settings'
+export type ViewName = 'parse' | 'queue' | 'subs' | 'live' | 'screen' | 'filetr' | 'library' | 'vocab' | 'tools' | 'settings'
 export type LibraryTab = 'files' | 'inbox' | 'transfer' | 'history'
 export type ToolboxTab = 'video' | 'normalize' | 'edit' | 'lut' | 'subtitle' | 'tags' | 'ai'
 export type SettingsTab = 'download' | 'parse' | 'network' | 'accounts' | 'phone' | 'ai' | 'automation' | 'security' | 'components' | 'diagnostics' | 'general'

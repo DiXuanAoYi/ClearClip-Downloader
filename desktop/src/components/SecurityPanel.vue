@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SafeboxView from '../views/SafeboxView.vue'
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errorText } from '../api'
@@ -161,8 +162,8 @@ async function wipe() {
           把敏感文件加密存放
           <small class="mute block">AES-256 加密，文件名也隐藏，只有输入保险箱密码才能打开。忘记密码无法找回。</small>
         </span>
-        <el-button size="small" type="primary" @click="app.view = 'safebox'">打开保险箱</el-button>
       </div>
+      <SafeboxView embedded />
       <div class="kv">
         <span>空闲自动上锁<small class="mute block">保险箱一段时间没有操作后自动上锁，并清除解密出来的临时文件；0 表示不自动上锁</small></span>
         <span><el-input-number v-model="form.safeboxAutoLockMinutes" :min="0" :max="1440" size="small" /> 分钟</span>
