@@ -47,6 +47,8 @@ export const useAppStore = defineStore('app', () => {
   watch(view, (n, o) => {
     if (n === 'tools' && o !== 'tools') toolsFrom.value = o
   })
+  /** 文件翻译正在版面里调整：主导航和左栏都收起来，给页面让地方 */
+  const layoutWork = ref(false)
   /** 工具箱里主导航是否展开（默认收成图标条），记住选择 */
   const navOpen = ref(readNavOpen())
   function setNavOpen(v: boolean) {
@@ -167,7 +169,7 @@ export const useAppStore = defineStore('app', () => {
   }
   media.addEventListener('change', applyTheme)
 
-  return { homeMode, filetrRequest, goFiletr, settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, queueBatch, goQueueBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, toolFiles, toolsFrom, navOpen, setNavOpen, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme, settingsRev }
+  return { homeMode, filetrRequest, goFiletr, settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, queueBatch, goQueueBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, toolFiles, toolsFrom, navOpen, layoutWork, setNavOpen, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme, settingsRev }
 })
 
 /** 下载队列，监听后端事件保持同步。 */

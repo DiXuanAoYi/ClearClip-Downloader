@@ -136,6 +136,17 @@ const INIT = `
   ok('搜索：命中的页在页栏标出来', (await page.locator('.rail .thumb.hit').count()) === 2)
   await page.getByPlaceholder('搜索原文 / 译文').fill('')
 
+  // 7b. 版面里调整时：左栏收成图标条，主导航收起；出来再展开
+  ok('平时左栏是完整的', (await page.locator('.lc').count()) === 1 && (await page.locator('.lrail').count()) === 0)
+  await page.evaluate(() => { window.__app.layoutWork = true })
+  await page.waitForTimeout(200)
+  ok('进版面：左栏收成图标条', (await page.locator('.lrail').count()) === 1 && (await page.locator('.lc').count()) === 0)
+  await page.locator('.lrail button[aria-label="展开左栏"]').click()
+  ok('点 » 展开左栏，并能再收起', (await page.locator('.lc').count()) === 1 && (await page.getByRole('button', { name: '« 收起左栏' }).count()) === 1)
+  await page.evaluate(() => { window.__app.layoutWork = false })
+  await page.waitForTimeout(200)
+  ok('出版面：左栏恢复', (await page.locator('.lc').count()) === 1)
+
   // 8. 开始前确认
   await page.evaluate(() => window.__app.goFiletr(['/d/new.pdf']))
   await page.waitForSelector('.el-dialog')

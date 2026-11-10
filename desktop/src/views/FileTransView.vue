@@ -28,9 +28,16 @@ const over = ref(false)
 const experts = ref<AiExpert[]>([])
 const advanced = ref(false)
 const confirmStart = ref(true)
+// 左栏：进版面调整时自动收成图标条，出来再展开；也可以手动收放
+const leftOpen = ref(true)
+watch(
+  () => app.layoutWork,
+  (v) => (leftOpen.value = !v),
+)
+const taskCount = computed(() => tasks.value.length)
 
 // 设置：常用的放前面，高级收起来；记在本机
-const o = ref<FtOpts>({ bilingual: true, target: app.settings?.ai.targetLang || '简体中文', pdfMode: 'inplace', ocr: 'vision', preview: true, pages: '', skipHeaders: true, skipCode: true, skipRefs: false, scanAuto: true })
+const o = ref<FtOpts>({ bilingual: true, target: app.settings?.ai.targetLang || '简体中文', pdfMode: 'inplace', ocr: 'vision', preview: true, pages: '', skipHeaders: true, skipCode: true, skipRefs: false, scanAuto: true, lineBreaks: 'sentence' })
 function restoreOpts() {
   try {
     const s = localStorage.getItem(LS)
@@ -359,7 +366,16 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
       <p>PDF（含扫描版）、Word、PPT、Excel、EPUB、TXT、Markdown、字幕、图片，译完版面和格式不变，可双语对照，术语和专家沿用你的设置</p>
     </header>
     <div class="cols">
-      <aside class="lc">
+      <aside v-if="!leftOpen" class="lrail" aria-label="左栏（已收起）">
+        <button type="button" title="展开左栏" aria-label="展开左栏" @click="leftOpen = true">»</button>
+        <button type="button" title="选择文件" aria-label="选择文件" @click="choose">＋</button>
+        <button type="button" :title="`任务（${taskCount}）`" :aria-label="`任务，${taskCount} 个`" @click="leftOpen = true">
+          任务<i v-if="taskCount">{{ taskCount }}</i>
+        </button>
+        <button type="button" title="翻译设置" aria-label="翻译设置" @click="leftOpen = true">设置</button>
+      </aside>
+      <aside v-else class="lc">
+        <button v-if="app.layoutWork" type="button" class="lfold" @click="leftOpen = false">« 收起左栏</button>
         <div class="drop" :class="{ over }" @click="choose">
           <b>把文件拖到这里，或点击选择</b>
           <div class="fmt"><span v-for="f in FORMATS" :key="f">{{ f }}</span></div>
@@ -404,6 +420,14 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
             </div>
             <div class="fld"><span>术语库</span><el-switch v-model="glossaryOn" size="small" /><small class="mute">按内容自动带入相关术语</small></div>
             <div class="fld"><span>预览</span><el-switch v-model="o.preview" size="small" /><small class="mute">先译完在右边检查、改译文，再点“生成文件”</small></div>
+            <div class="fld">
+              <span>换行</span>
+              <el-select v-model="o.lineBreaks" size="small" class="grow">
+                <el-option value="sentence" label="句号处保留换行（默认）" />
+                <el-option value="all" label="每一行单独翻译" />
+                <el-option value="merge" label="全部并成一段" />
+              </el-select>
+            </div>
             <div class="fld"><span>排除</span><div class="chk"><el-checkbox v-model="o.skipHeaders" size="small">页眉页脚页码</el-checkbox><el-checkbox v-model="o.skipCode" size="small">公式代码网址</el-checkbox><el-checkbox v-model="o.skipRefs" size="small">参考文献</el-checkbox></div></div>
             <div class="fld"><span>扫描页</span><div class="chk"><el-checkbox v-model="o.scanAuto" size="small" title="有文字层的 PDF 里夹着扫描页时，自动识字并一起翻译">自动识别扫描页</el-checkbox></div></div>
 <div class="fld">
@@ -459,6 +483,11 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 .h1 h1 { margin: 0; font-size: 26px }
 .h1 p { margin: 0; color: var(--el-text-color-secondary) }
 .cols { flex: 1; display: flex; gap: 18px; min-height: 0 }
+.lrail { width: 46px; flex: none; display: flex; flex-direction: column; gap: 8px; align-items: stretch }
+.lrail button { position: relative; border: 1px solid var(--el-border-color); background: var(--el-bg-color); color: var(--el-text-color-primary); border-radius: 10px; padding: 9px 0; cursor: pointer; font: inherit; font-size: 12px; line-height: 1.2 }
+.lrail button:hover { border-color: var(--el-color-primary); color: var(--el-color-primary) }
+.lrail button i { position: absolute; top: -6px; right: -4px; min-width: 16px; height: 16px; line-height: 16px; font-style: normal; font-size: 11px; border-radius: 8px; background: var(--el-color-primary); color: #fff }
+.lfold { border: 0; background: none; text-align: left; color: var(--el-color-primary); cursor: pointer; font: inherit; font-size: 12.5px; padding: 0 2px }
 .lc { width: 330px; flex: none; display: flex; flex-direction: column; gap: 12px; overflow-y: auto }
 .mute { color: var(--el-text-color-secondary); font-size: 12.5px }
 .drop { border: 2px dashed var(--el-border-color); border-radius: 12px; padding: 18px 14px; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; background: var(--el-bg-color); cursor: pointer }

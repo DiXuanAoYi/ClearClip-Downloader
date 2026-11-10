@@ -94,7 +94,7 @@ const navs: { id: ViewName; label: string; icon: string }[] = [
   { id: 'settings', label: '设置', icon: 'M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4' },
 ]
 /** 在工具箱里，主导航默认收成图标条（点最上面的“≡”展开，记住选择） */
-const railMode = computed(() => app.view === 'tools')
+const railMode = computed(() => app.view === 'tools' || (app.view === 'filetr' && app.layoutWork))
 const compact = computed(() => railMode.value && !app.navOpen)
 
 const footer = computed(() => {

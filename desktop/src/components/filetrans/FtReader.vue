@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useAppStore } from '../../stores/app'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../../api'
 import type { FileTransView, FtOpts } from '../../types'
@@ -13,7 +14,15 @@ const emit = defineEmits<{
   (e: 'export', kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-trans' | 'copy'): void
 }>()
 
+const app = useAppStore()
 const show = ref<'src' | 'both' | 'trans' | 'layout'>('both')
+// 在版面里调整时，主导航和左栏自动收起
+watch(
+  () => show.value === 'layout' && !!props.path,
+  (v) => (app.layoutWork = v),
+  { immediate: true },
+)
+onBeforeUnmount(() => (app.layoutWork = false))
 const page = ref(0) // 阅读器里的页序号
 const pdfPage = ref(0) // 版面里的 PDF 页号（从 0 起）
 const only = ref<'all' | 'todo' | 'fail'>('all')
