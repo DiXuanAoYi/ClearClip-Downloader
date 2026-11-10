@@ -263,7 +263,14 @@ fn pdfium_roundtrip_reads_blocks_and_writes_the_translation_in_place() {
     // 写回译文（用测试字体，字形可能缺，但文字对象要在原位置）
     let mut plan = PagePlan::default();
     for (b, tr) in pages[0].blocks.iter().zip(["Translated title", "Translated paragraph with several words that need wrapping inside the same box."]) {
-        plan.items.push(Item { remove: b.runs.clone(), rect: (b.l, b.b, b.r.max(b.l + 300.0), b.t), size: b.size, rgb: b.rgb, bg: None, text: tr.into() });
+        plan.items.push(Item {
+            remove: b.runs.clone(),
+            rect: (b.l, b.b, b.r.max(b.l + 300.0), b.t),
+            size: b.size,
+            rgb: b.rgb,
+            text: tr.into(),
+            ..Item::default()
+        });
     }
     let out = dir.join("out.pdf");
     apply(&lib, &font, &src, &out, &[plan.clone()], Mode::InPlace, |_, _| {}).unwrap();
@@ -286,5 +293,128 @@ fn pdfium_roundtrip_reads_blocks_and_writes_the_translation_in_place() {
     assert_eq!((tw, th), (w, h));
     assert_ne!(trgba, rgba, "译文页要和原页不同");
     assert_eq!(render_page(&lib, &src, 0, 400).unwrap().2, rgba, "原文件不变");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn lines_ending_with_a_full_stop_keep_their_line_break() {
+    let runs = vec![
+        run(0, "This is sample body text showing how your content will appear in presentations.", 50.0, 500.0, 480.0, 12.0),
+        run(1, "The typography pairs perfectly with the color palette for a cohesive design.", 50.0, 485.0, 470.0, 12.0),
+    ];
+    let b = group_blocks(&runs);
+    assert_eq!(b.len(), 1, "{b:?}");
+    assert_eq!(b[0].text, "This is sample body text showing how your content will appear in presentations.\nThe typography pairs perfectly with the color palette for a cohesive design.");
+    // 旧行为：全部接成一段
+    let m = group_blocks_with(&runs, LineMode::Merge);
+    assert_eq!(m[0].text, "This is sample body text showing how your content will appear in presentations. The typography pairs perfectly with the color palette for a cohesive design.");
+    // 每一行都保留换行
+    let two = vec![run(0, "wrapped in the middle of", 50.0, 500.0, 300.0, 12.0), run(1, "a sentence that goes on.", 50.0, 485.0, 250.0, 12.0)];
+    assert_eq!(group_blocks_with(&two, LineMode::All)[0].text, "wrapped in the middle of\na sentence that goes on.");
+    assert_eq!(group_blocks(&two)[0].text, "wrapped in the middle of a sentence that goes on.", "行尾不是句号：仍然接成一句");
+}
+
+#[test]
+fn abbreviations_numbers_and_ellipses_are_not_sentence_ends() {
+    for yes in ["Done.", "是的。", "Really?", "好！", "He left at 5 p.m. sharp."] {
+        assert!(ends_with_stop(yes), "{yes}");
+    }
+    for no in ["See Fig.", "e.g.", "Dr.", "Mr. Smith and Dr.", "3.", "12.", "J.", "Wait...", "no ending", "ends with comma,", "Item no."] {
+        assert!(!ends_with_stop(no), "{no}");
+    }
+}
+
+#[test]
+fn the_background_is_the_most_common_non_text_color_not_whatever_surrounds_the_box() {
+    // 40×20：整页底色深紫；框 (10..30, 5..15) 里是玫瑰色文字（含抗锯齿的中间色）；框右边紧挨着一块亮色块
+    let (w, h) = (40usize, 20usize);
+    let bg = [91u8, 47, 72];
+    let rose = [212u8, 165, 165];
+    let mut rgba = vec![0u8; w * h * 4];
+    for y in 0..h {
+        for x in 0..w {
+            let c = if x >= 31 { [244, 169, 0] } else { bg };
+            rgba[(y * w + x) * 4..(y * w + x) * 4 + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
+        }
+    }
+    for y in 7..13 {
+        for x in 12..28 {
+            let c = if (x + y) % 5 == 0 { [152, 106, 118] } else { rose };
+            rgba[(y * w + x) * 4..(y * w + x) * 4 + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
+        }
+    }
+    let got = sample_bg_smart(&rgba, w, h, (10, 5, 30, 15), rose);
+    assert_eq!(got, bg, "框里文字之外最多的是底色");
+    // 老办法（框外一圈的中位数）在右边有亮色块时仍对，但框几乎被文字占满时就会错；这里拿满框文字的情况对一下
+    let mut full = rgba.clone();
+    for y in 3..17 {
+        for x in 8..32 {
+            full[(y * w + x) * 4..(y * w + x) * 4 + 4].copy_from_slice(&[rose[0], rose[1], rose[2], 255]);
+        }
+    }
+    // 几乎全是文字：退回框外一圈，不会返回文字色
+    let fb = sample_bg_smart(&full, w, h, (10, 5, 30, 15), rose);
+    assert_ne!(fb, rose);
+}
+
+#[test]
+fn gradients_blend_evenly_between_stops() {
+    let st = [[0u8, 0, 0], [100, 100, 100], [200, 0, 0]];
+    assert_eq!(gradient_at(&st, 0.0), [0, 0, 0]);
+    assert_eq!(gradient_at(&st, 0.25), [50, 50, 50]);
+    assert_eq!(gradient_at(&st, 0.5), [100, 100, 100]);
+    assert_eq!(gradient_at(&st, 1.0), [200, 0, 0]);
+    assert_eq!(gradient_at(&[], 0.5), [255, 255, 255]);
+    assert_eq!(gradient_at(&[[5, 6, 7]], 0.9), [5, 6, 7]);
+}
+
+#[test]
+fn text_keeps_its_size_and_grows_down_when_there_is_room_and_only_then_shrinks() {
+    let text = "这是示例正文，展示您的内容在演示文稿中的呈现效果，字体排印与配色方案完美搭配，打造协调统一的设计。";
+    // 原框只有一行高，但下面有的是地方：保持原字号，多行往下长
+    let f = fit_keep(text, 200.0, 120.0, 12.0, 6.0);
+    assert_eq!(f.size, 12.0);
+    assert!(f.lines.len() > 1);
+    // 下面没地方：先缩，但不低于 85% 就能放下的话停在 85% 以上
+    let tight = fit_keep(text, 200.0, f.lines.len() as f32 * 12.0 * 1.28 * 0.9, 12.0, 6.0);
+    assert!(tight.size < 12.0 && tight.size >= 12.0 * 0.85 - 0.01, "{}", tight.size);
+    // 实在放不下才继续缩（最小 6）
+    let tiny = fit_keep(text, 40.0, 10.0, 12.0, 6.0);
+    assert!(tiny.size <= 12.0 * 0.85 && tiny.size >= 6.0);
+}
+
+#[test]
+fn a_block_may_grow_down_until_the_next_block_underneath() {
+    let mk = |rect: (f32, f32, f32, f32)| Item { rect, size: 10.0, ..Item::default() };
+    // A 在上，B 紧挨着它下面（水平重叠），C 在右边另一栏
+    let mut items = vec![mk((50.0, 680.0, 300.0, 700.0)), mk((50.0, 640.0, 300.0, 670.0)), mk((350.0, 600.0, 500.0, 700.0))];
+    assign_room(&mut items, 800.0);
+    assert!((items[0].room.unwrap() - (700.0 - 672.0)).abs() < 0.01, "{:?}", items[0].room);
+    assert!(items[1].room.unwrap() > 600.0, "下面没有别的块：一直到页面下边距");
+    assert!(items[2].room.unwrap() > 600.0, "别的栏的块不挡路");
+    // 不会比原来的框还矮
+    assert!(items[0].room.unwrap() >= 20.0);
+}
+
+/// 渲染出来的页面颜色顺序要对：纯红色的块渲染后 R=255、B=0（以前把 R 和 B 对调了，页面里红蓝是反的）。
+#[test]
+#[ignore = "needs the PDFium library; run with CC_PDFIUM_LIB set"]
+fn rendered_pages_keep_red_as_red() {
+    use pdfium_render::prelude::*;
+    let lib = PathBuf::from(std::env::var("CC_PDFIUM_LIB").expect("CC_PDFIUM_LIB"));
+    let dir = std::env::temp_dir().join(format!("cc-pdfx-red-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("red.pdf");
+    {
+        let pdfium = bind(&lib).unwrap();
+        let mut doc = pdfium.create_new_pdf().unwrap();
+        let mut page = doc.pages_mut().create_page_at_start(PdfPagePaperSize::a4()).unwrap();
+        let rect = PdfRect::new(PdfPoints::new(0.0), PdfPoints::new(0.0), PdfPoints::new(842.0), PdfPoints::new(595.0));
+        page.objects_mut().create_path_object_rect(rect, None, None, Some(PdfColor::new(255, 0, 0, 255))).unwrap();
+        doc.save_to_file(&src).unwrap();
+    }
+    let (w, h, rgba) = render_page(&lib, &src, 0, 200).unwrap();
+    let i = ((h / 2) * w + w / 2) * 4;
+    assert_eq!(&rgba[i..i + 4], &[255, 0, 0, 255], "红色页面中心像素应该是红的：{:?}", &rgba[i..i + 4]);
     let _ = std::fs::remove_dir_all(&dir);
 }

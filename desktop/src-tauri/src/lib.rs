@@ -713,6 +713,8 @@ pub fn run() {
             ai_cmds::filetr_page_layout,
             ai_cmds::filetr_edit,
             ai_cmds::filetr_block_adjust,
+            ai_cmds::filetr_block_style,
+            ai_cmds::filetr_replace_color,
             ai_cmds::filetr_retranslate,
             ai_cmds::filetr_plan,
             ai_cmds::filetr_recent,
