@@ -2,6 +2,13 @@
 
 版本号与 `tauri.conf.json` 一致；每个版本对应一个 `desktop-v<版本>` 的 Release。
 
+## 未发布
+
+### 解析：B站创作者首页、合集、收藏夹
+- 粘贴创作者首页（`space.bilibili.com/<uid>`、`/video`）、“合集和列表”页（`/lists`）、单个合集或视频列表（`/lists/<id>?type=season|series`、`/channel/collectiondetail`、`/channel/seriesdetail`）、收藏夹（`/favlist?fid=`、`/medialist/play/ml<id>`）、稍后再看，以及 b23.tv 短链指向它们的，都会解析成一个列表，勾选后批量下载；之前这些页面报“没能识别出 BV 号”。
+- 创作者首页取全部投稿（分页，最多 1000 条）；“合集和列表”把这个创作者所有合集和视频列表合在一起，标题前标上所属合集；失效的收藏条目自动跳过。收藏夹、稍后再看、私密合集需要先登录 B站。
+- 其他平台：YouTube 频道 / 播放列表等原来就由 yt-dlp 解析成列表；抖音、快手、小红书、微博的主页和合集目前仍没有内置支持。
+
 ## 1.13.0（扩展 1.23.0）
 
 ### 文件翻译：版面工作台

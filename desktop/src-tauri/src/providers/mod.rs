@@ -1,6 +1,7 @@
 //! 各平台解析器。每个平台实现 [`Provider`]，新增平台时只需加一个文件并在 [`all`] 里注册。
 
 pub mod bilibili;
+pub mod bilibili_list;
 pub mod custom;
 pub mod douyin;
 pub mod generic;
