@@ -23,7 +23,10 @@ assert.equal(N.stripExt('v1.2'), 'v1.2', '版本号不当扩展名（后缀要�
 const date = new Date(2026, 10, 9)
 const one = (tpl, o = {}) => N.applyTemplate(tpl, { index: 2, total: 12, title: '东京:夜景', orig: 'IMG_01.jpg', host: 'www.example.com', kind: 'image', date, ...o })
 assert.equal(one('{序号}-{标题}'), '03-东京 夜景')
-assert.equal(one('{站点}_{日期}_{原名}'), 'example.com_20261109_IMG_01')
+// 模块在 vm 里加载，传进去的 Date 过不了 instanceof，所以这里用的是当天日期；期望值也按当天算，不写死
+const today = new Date()
+const ymd = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
+assert.equal(one('{站点}_{日期}_{原名}'), `example.com_${ymd}_IMG_01`)
 assert.equal(one('{类型}{序号}'), '图片03')
 assert.equal(one('{说明}-{序号}', { alt: '海边/日落' }), '海边 日落-03')
 assert.equal(one('{未知}-{序号}'), '{未知}-03', '不认识的占位符原样保留')
