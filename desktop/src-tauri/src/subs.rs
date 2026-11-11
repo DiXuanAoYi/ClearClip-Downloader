@@ -385,6 +385,19 @@ fn jitter() -> u64 {
 
 /// 获取列表：抖音用户主页用隐藏窗口，其他用接口或 yt-dlp。
 pub async fn fetch_list(app: &AppHandle, url: &str, limit: usize) -> AppResult<ListResult> {
+    // 快手 / 小红书 / 微博的主页，以及抖音合集：和解析页一样用隐藏窗口读
+    if !listing::is_douyin_user(url) {
+        if let Some(spec) = crate::weblist::classify(url) {
+            let c = crate::weblist::collect(app, &spec, limit.max(10)).await?;
+            return Ok(ListResult {
+                title: c.title.clone(),
+                platform: spec.site.id().into(),
+                platform_name: spec.site.name().into(),
+                avatar: None,
+                entries: crate::weblist::to_sub_entries(&c),
+            });
+        }
+    }
     if listing::is_douyin_user(url) {
         let ids = douyin_user_ids(app, url).await?;
         return Ok(ListResult {

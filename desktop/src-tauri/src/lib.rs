@@ -100,6 +100,7 @@ pub mod videocache;
 pub mod vidnorm;
 pub mod vocab;
 pub mod vsum;
+pub mod weblist;
 mod winframe;
 pub mod writeassist;
 pub mod writebadge;
