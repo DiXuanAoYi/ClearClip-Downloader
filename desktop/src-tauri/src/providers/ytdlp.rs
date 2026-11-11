@@ -118,6 +118,8 @@ fn proxy_arg(ctx: &Ctx<'_>, url: &str) -> Option<String> {
 }
 
 pub async fn resolve(ctx: &Ctx<'_>, url: &str) -> AppResult<MediaInfo> {
+    // YouTube 频道首页不带标签时，yt-dlp 返回的是标签列表；默认取“视频”标签
+    let url = &super::listing::normalize_url(url);
     let (mut cmd, cookie_file) = command(ctx, url)?;
     cmd.args(["-J", "--flat-playlist", "--"]).arg(url).stdout(Stdio::piped()).stderr(Stdio::piped());
     let out = tokio::time::timeout(RESOLVE_TIMEOUT, cmd.output())
@@ -133,6 +135,20 @@ pub async fn resolve(ctx: &Ctx<'_>, url: &str) -> AppResult<MediaInfo> {
     let v: Value = serde_json::from_slice(&out.stdout).map_err(|e| AppError::parser(format!("yt-dlp 输出无法解析：{e}")))?;
     ctx.record("ytdlp", "info", url, &String::from_utf8_lossy(&out.stdout));
     from_json_with(&v, url, &SubPrefs::from_settings(ctx.settings))
+}
+
+/// 平铺列表里的这一项本身是不是列表（频道的“播放列表”标签、合集），要展开才有视频。
+pub fn entry_is_list(e: &Value, url: &str) -> bool {
+    if s(e, "_type").as_deref() == Some("playlist") {
+        return true;
+    }
+    let key = s(e, "ie_key").unwrap_or_default();
+    if key.ends_with("Tab") || key.ends_with("Playlist") || key.ends_with("Channel") {
+        return true;
+    }
+    let Ok(u) = Url::parse(url) else { return false };
+    let host = u.host_str().unwrap_or("").to_ascii_lowercase();
+    host.ends_with("youtube.com") && u.path() == "/playlist" && u.query_pairs().any(|(k, _)| k == "list")
 }
 
 /// 把 yt-dlp 的报错转换成带类型的错误，界面据此给出下一步操作。
@@ -425,6 +441,7 @@ pub fn from_json_with(v: &Value, source_url: &str, prefs: &SubPrefs) -> AppResul
                 }
                 // 去掉 yt-dlp 内部传参用的片段
                 let url = url.split("#__youtubedl_smuggle").next().unwrap_or(&url).to_string();
+                let is_list = entry_is_list(e, &url);
                 Some(PlaylistEntry {
                     // 没有 ID 时用链接（序号会随新内容插入而变化，不能用来去重）
                     id: s(e, "id").unwrap_or_else(|| url.clone()),
@@ -434,6 +451,8 @@ pub fn from_json_with(v: &Value, source_url: &str, prefs: &SubPrefs) -> AppResul
                     thumbnail: s(e, "thumbnail")
                         .or_else(|| e.get("thumbnails").and_then(|t| t.as_array()).and_then(|a| a.iter().rev().find_map(|t| s(t, "url")))),
                     index: u(e, "playlist_index").unwrap_or(i as u32 + 1),
+                    is_list,
+                    count: u(e, "playlist_count"),
                 })
             })
             .collect();
@@ -951,6 +970,19 @@ pub fn output_path(part: &Path, ext: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn nested_lists_are_marked() {
+        let tab = serde_json::json!({"_type": "url", "ie_key": "YoutubeTab", "id": "PL1", "title": "AI新聞", "url": "https://www.youtube.com/playlist?list=PL1", "playlist_count": 42});
+        let plain = serde_json::json!({"_type": "url", "ie_key": "Youtube", "id": "v1", "title": "视频", "url": "https://www.youtube.com/watch?v=v1"});
+        assert!(entry_is_list(&tab, "https://www.youtube.com/playlist?list=PL1"));
+        assert!(!entry_is_list(&plain, "https://www.youtube.com/watch?v=v1"));
+        assert!(entry_is_list(&serde_json::json!({}), "https://www.youtube.com/playlist?list=PL2"));
+        let v = serde_json::json!({"_type": "playlist", "id": "UC1", "title": "彼德 - Playlists", "uploader": "彼德", "entries": [tab, plain]});
+        let info = from_json(&v, "https://www.youtube.com/@x/playlists").unwrap();
+        assert!(info.entries[0].is_list && info.entries[0].count == Some(42));
+        assert!(!info.entries[1].is_list);
+    }
+
     use super::*;
 
     fn sample() -> Value {

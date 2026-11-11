@@ -37,12 +37,13 @@ const playlist = {
   entries: [...Array(10)].map((_, i) => ({ id: 'e' + i, index: i + 1, title: `第 ${i + 1} 集`, url: 'https://x/' + i, durationMs: 600000, thumbnail: null })),
 }
 
-const init = (result, dark) => `
+const init = (result, dark, extra = {}) => `
 (() => {
   const cbs = {}; let cbId = 1; let evId = 1
   window.__calls = []
   window.__result = ${JSON.stringify(result)}
   window.__dark = ${dark}
+  window.__extra = ${JSON.stringify(extra)}
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} }
   window.__TAURI_INTERNALS__ = {
     transformCallback(cb) { const id = cbId++; cbs[id] = cb; return id },
@@ -59,6 +60,9 @@ const init = (result, dark) => `
         case 'list_history': return []
         case 'enqueue': return { tasks: [{ id: 1 }], alreadyQueued: 0, alreadyDownloaded: 0 }
         case 'enqueue_entries': return args.entryIds.length
+        case 'resolve_link': return window.__result
+        case 'creator_tabs': return window.__extra.tabs || { tabs: [], active: '' }
+        case 'expand_list': return window.__extra.kids[args.url]
         case 'make_slideshow': return '/tmp/x.mp4'
         case 'subs_add': return { id: 1 }
         default: return null
@@ -71,10 +75,10 @@ const init = (result, dark) => `
 ;(async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })
   const errors = []
-  const open = async (result, dark = false) => {
+  const open = async (result, dark = false, extra = {}) => {
     const page = await browser.newPage({ viewport: { width: 1100, height: 1000 } })
     page.on('pageerror', (e) => errors.push(e.message))
-    await page.addInitScript(init(result, dark))
+    await page.addInitScript(init(result, dark, extra))
     await page.goto(`http://127.0.0.1:${PORT}/merge-harness.html#parse`)
     await page.waitForTimeout(1200)
     return page
@@ -191,15 +195,51 @@ const init = (result, dark) => `
     await page.waitForTimeout(300)
     ok('合集：默认只选没下载过的（7 / 10），按钮写数量', /已选 7 \/ 10/.test(await page.locator('.dl').innerText()) && /下载所选 7 个/.test(await page.locator('.foot .el-button').innerText()))
     ok('已下载的标“已下载”', (await page.locator('.entry .pz-tag.ok').count()) === 3)
-    ok('“每个视频怎么下”显示默认设置', /按设置（最高清晰度）/.test(await page.locator('.fields').innerText()) && /偏好语言 · 单独文件/.test(await page.locator('.fields').innerText()))
-    ok('保存到合集名的文件夹', /D:\\下载\\清影\\B站\\Rust 合集/.test(await sum(page)), await sum(page))
+    ok('“每个视频怎么下”默认选“按设置”，显示设置里的值', /按设置 · 最高清晰度/.test(await page.locator('.opts').first().innerText()) && /按设置 · 偏好语言 · 单独文件/.test(await page.locator('.opts').first().innerText()))
+    await page.getByRole('radio', { name: '720p 省空间' }).click()
+    await page.getByRole('radio', { name: '内嵌到视频' }).click()
+    ok('清晰度和字幕的选项能点选', (await page.getByRole('radio', { name: '720p 省空间' }).getAttribute('aria-checked')) === 'true' && (await page.getByRole('radio', { name: '内嵌到视频' }).getAttribute('aria-checked')) === 'true')
+    ok('底部摘要跟着选择变', /720p 省空间/.test(await sum(page)) && /内嵌到视频/.test(await sum(page)), await sum(page))
+    await page.getByRole('radio', { name: '只要音频' }).click()
+    ok('选“只要音频”后清晰度和字幕收起，出现格式', (await page.getByRole('radio', { name: '720p 省空间' }).count()) === 0 && /只要音频 · MP3/.test(await sum(page)), await sum(page))
+    await page.getByRole('radio', { name: '视频（含声音）' }).click()
+    ok('保存到 平台 / 创作者 / 合集名 的文件夹', /D:\\下载\\清影\\B站\\编程老张\\Rust 合集/.test(await sum(page)), await sum(page))
     await page.locator('.foot .el-button').click()
     await page.waitForTimeout(200)
-    ok('下载所选：7 个条目', (await lastCall(page, 'enqueue_entries'))?.entryIds.length === 7)
+    const enq = await lastCall(page, 'enqueue_entries')
+    ok('下载所选：7 个条目，带上这批的选项', enq?.entryIds.length === 7 && enq.options.quality === '720' && enq.options.subtitle === 'embed' && enq.options.folder === true && enq.options.layout === 'platform_author_list' && enq.options.numbered === true, JSON.stringify(enq?.options))
     await page.getByRole('button', { name: '订阅更新' }).click()
     await page.waitForTimeout(200)
     const sub = await lastCall(page, 'subs_add')
     ok('订阅更新：用合集地址和默认设置订阅', sub && sub.url === 'https://bili.test/list' && sub.settings.intervalHours === 6, JSON.stringify(sub))
+    await page.close()
+  }
+
+  // 5. 创作者主页的“播放列表”栏：列表项能展开，勾选整个列表或只勾里面几个
+  {
+    const L = (i, n) => ({ id: 'PL' + i, index: i, title: i === 1 ? 'AI新聞' : '旅行 Vlog', url: 'https://yt.test/playlist?list=PL' + i, durationMs: null, thumbnail: null, isList: true, count: n })
+    const lists = { ...playlist, platform: 'youtube', platformName: 'YouTube', title: '彼德 - Playlists', author: '彼德', sourceUrl: 'https://www.youtube.com/@pd/playlists', entries: [L(1, 3), L(2, 2)] }
+    const V = (id, i) => ({ id, index: i, title: '视频 ' + id, url: 'https://yt.test/watch?v=' + id, durationMs: 90000, thumbnail: null, isList: false, count: null })
+    const kids = { [L(1, 3).url]: { ...lists, title: 'AI新聞', entries: [V('a', 1), V('b', 2), V('c', 3)] }, [L(2, 2).url]: { ...lists, title: '旅行 Vlog', entries: [V('d', 1), V('e', 2)] } }
+    const tabs = { active: 'playlists', tabs: [{ key: 'videos', label: '视频', url: 'https://www.youtube.com/@pd/videos', lists: false }, { key: 'shorts', label: 'Shorts', url: 'https://www.youtube.com/@pd/shorts', lists: false }, { key: 'playlists', label: '播放列表', url: 'https://www.youtube.com/@pd/playlists', lists: true }] }
+    const page = await open(lists, false, { tabs, kids })
+    await page.waitForTimeout(300)
+    ok('出现三个分栏，当前是“播放列表”', (await page.locator('.dl .tabs').getByRole('tab').allInnerTexts()).join('|') === '视频|Shorts|播放列表' && (await page.locator('.dl .tabs').getByRole('tab', { name: '播放列表' }).getAttribute('aria-selected')) === 'true')
+    await page.locator('.dl .tabs').getByRole('tab', { name: 'Shorts' }).click()
+    await page.waitForTimeout(200)
+    ok('点“Shorts”分栏：用这一栏的地址重新解析', (await lastCall(page, 'resolve_link'))?.text === 'https://www.youtube.com/@pd/shorts', JSON.stringify(await lastCall(page, 'resolve_link')))
+    ok('列表项标“列表 · N 个视频”，没有报嵌套错误', (await page.locator('.entry .pz-tag.acc').allInnerTexts()).join('|') === '列表 · 3 个视频|列表 · 2 个视频')
+    ok('底部：已选 2 个列表（共 5 个视频）', /已选 2 个列表（共 5 个视频）/.test(await sum(page)) && /下载所选 5 个/.test(await page.locator('.foot .el-button').innerText()), await sum(page))
+    await page.getByRole('button', { name: '展开 ▾' }).first().click()
+    await page.waitForTimeout(300)
+    ok('展开后显示里面的 3 个视频', (await page.locator('.entry.kid').count()) === 3)
+    await page.locator('.entry.kid').nth(0).locator('.el-checkbox').click()
+    await page.waitForTimeout(150)
+    ok('去掉一个后：列表半选，共 4 个视频', /共 4 个视频/.test(await sum(page)) && (await page.locator('.entry.list .el-checkbox__input.is-indeterminate').count()) === 1, await sum(page))
+    await page.locator('.foot .el-button').click()
+    await page.waitForTimeout(200)
+    const enq = await lastCall(page, 'enqueue_entries')
+    ok('下载：两个列表项，展开过的只带勾选的视频', enq.entryIds.join() === 'PL1,PL2' && enq.options.only.PL1.join() === 'b,c' && !enq.options.only.PL2, JSON.stringify(enq))
     await page.close()
   }
 

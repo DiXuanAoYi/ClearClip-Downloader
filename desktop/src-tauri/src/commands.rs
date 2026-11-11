@@ -13,7 +13,7 @@ use url::Url;
 use crate::cookies::{self, AccountSummary};
 use crate::db::{HistoryItem, LibraryFilter, LibraryItem};
 use crate::download::{self, EnqueueResult, OrphanPart, PostOptions, TaskSnapshot};
-use crate::model::{AppError, AppResult, ErrorKind, MediaInfo, MediaKind, PlaylistEntry, SeriesInfo};
+use crate::model::{AppError, AppResult, ErrorKind, MediaInfo, MediaKind, PlaylistEntry};
 use crate::providers::{self, DetectedLink};
 use crate::settings::Settings;
 use crate::{clipboard, diagnostics, live, phone, quality, subs, tools, tray, AppState};
@@ -282,51 +282,46 @@ pub struct BatchProgress {
     pub skipped: usize,
     pub failed: Vec<String>,
     pub finished: bool,
+    /// 展开了几个列表（一个列表一个文件夹）
+    pub lists: usize,
 }
 
-/// 把播放列表 / 合集中选中的条目逐个解析并加入队列（后台进行，进度通过事件通知）。
+/// 把播放列表 / 合集中选中的条目加入队列（后台进行，进度通过事件通知）。
+/// 选中的是列表（频道的播放列表、合集）时自动展开成里面的视频，每个列表放进自己的文件夹。
 #[tauri::command]
-pub async fn enqueue_entries(app: AppHandle, state: St<'_>, playlist: MediaInfo, entry_ids: Vec<String>) -> AppResult<usize> {
-    let entries: Vec<PlaylistEntry> = playlist.entries.iter().filter(|e| entry_ids.contains(&e.id)).cloned().collect();
-    if entries.is_empty() {
-        return Err(AppError::invalid("请至少选择一个条目。"));
-    }
-    let n = entries.len();
+pub async fn enqueue_entries(
+    app: AppHandle,
+    state: St<'_>,
+    playlist: MediaInfo,
+    entry_ids: Vec<String>,
+    options: Option<crate::listops::ListOptions>,
+) -> AppResult<usize> {
+    let picked: Vec<PlaylistEntry> = playlist.entries.iter().filter(|e| entry_ids.contains(&e.id)).cloned().collect();
+    crate::listops::check_picked(&picked)?;
+    let n = picked.len();
     if state.db.inbox_playlist_chosen(&playlist.platform, &playlist.id, n).unwrap_or(false) {
         crate::inbox::emit_changed(&app);
     }
     let st = state.inner().clone();
-    tauri::async_runtime::spawn(async move {
-        let settings = st.settings();
-        let mut p = BatchProgress { title: playlist.title.clone(), done: 0, total: n, queued: 0, skipped: 0, failed: vec![], finished: false };
-        let _ = app.emit(EVT_BATCH, p.clone());
-        for e in entries {
-            let ctx = st.parse_ctx(&settings);
-            match providers::resolve_url(&ctx, &e.url).await {
-                Ok(mut info) if info.kind != MediaKind::Playlist => {
-                    // 列表里的条目按“列表名 / 第 N 集”归档
-                    if info.series.is_none() {
-                        info.series = Some(SeriesInfo { name: playlist.title.clone(), season: None, episode: Some(e.index) });
-                    }
-                    let (ids, post) = quality::auto_selection(&info, &settings);
-                    match download::enqueue_with(&app, info, &ids, post) {
-                        Ok(r) => {
-                            p.queued += r.tasks.len();
-                            p.skipped += r.already_downloaded + r.already_queued;
-                        }
-                        Err(err) => p.failed.push(format!("{}：{err}", e.title)),
-                    }
-                }
-                Ok(_) => p.failed.push(format!("{}：嵌套的列表请单独打开", e.title)),
-                Err(err) => p.failed.push(format!("{}：{err}", e.title)),
-            }
-            p.done += 1;
-            let _ = app.emit(EVT_BATCH, p.clone());
-        }
-        p.finished = true;
-        let _ = app.emit(EVT_BATCH, p);
-    });
+    tauri::async_runtime::spawn(crate::listops::enqueue(app, st, playlist, picked, options.unwrap_or_default()));
     Ok(n)
+}
+
+/// 创作者主页有哪几栏（YouTube 的视频 / Shorts / 播放列表，B站的投稿 / 动态 / 合集和系列）。
+#[tauri::command]
+pub fn creator_tabs(url: String) -> crate::listops::CreatorTabs {
+    crate::listops::creator_tabs(&url)
+}
+
+/// 展开列表里的一项（播放列表、合集），返回里面的视频。
+#[tauri::command]
+pub async fn expand_list(app: AppHandle, state: St<'_>, url: String) -> AppResult<MediaInfo> {
+    let settings = state.settings();
+    let info = crate::listops::resolve_any(&app, &state, &settings, &url).await?;
+    if info.kind != MediaKind::Playlist {
+        return Err(AppError::invalid("这一项不是列表。"));
+    }
+    Ok(info)
 }
 
 // ---------- 手机发送 ----------

@@ -675,7 +675,9 @@ fn spawn_worker(app: &AppHandle, id: String) {
             let outcome = providers::resolve_url(&ctx, &next.url).await;
             let mut acc = BatchResult { id: id.clone(), name: rec.name.clone(), queued: 0, already_downloaded: 0, already_queued: 0, pending: 0 };
             let failure = match outcome {
-                Ok(info) if info.kind == MediaKind::Playlist => Some("嵌套的列表请单独添加".to_string()),
+                Ok(info) if info.kind == MediaKind::Playlist => {
+                    Some(format!("这个链接是个列表（{} 个视频），请在“解析”页单独打开，再选择要下载的视频", info.entries.len()))
+                }
                 Ok(info) => enqueue_media(&app, &rec, next.seq, info, &settings, &mut acc).err(),
                 Err(e) => Some(e.message),
             };

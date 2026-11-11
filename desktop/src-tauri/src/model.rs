@@ -114,6 +114,12 @@ pub struct PlaylistEntry {
     pub thumbnail: Option<String>,
     /// 在列表中的序号（从 1 开始）
     pub index: u32,
+    /// 这一项本身是个列表（播放列表、合集），要展开才能看到里面的视频
+    #[serde(default)]
+    pub is_list: bool,
+    /// 列表项里面大约有多少个视频（已知时）
+    #[serde(default)]
+    pub count: Option<u32>,
 }
 
 /// 剧集信息，用于 `{series}` `{episode}` 等命名变量。

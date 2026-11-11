@@ -272,6 +272,8 @@ pub fn to_media_info(feed: &Feed, source_url: &str, host: &str) -> MediaInfo {
                 duration_ms: e.duration_ms,
                 thumbnail: e.thumbnail.clone(),
                 index: i as u32 + 1,
+                is_list: false,
+                count: None,
             })
             .collect(),
         series: None,
