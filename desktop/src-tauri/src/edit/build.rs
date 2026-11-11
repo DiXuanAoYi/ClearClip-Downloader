@@ -974,7 +974,7 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
             plan.warnings.push("有 HDR 素材：导出时不做 HDR → SDR 转换，画面会发灰。在检查器里点“转成普通画面并替换”，或先用“视频规整”转成 SDR。".into());
         }
     }
-    for (n, o) in p.overlays.iter().enumerate() {
+    for (n, o) in p.overlays.iter().enumerate().filter(|(_, o)| !o.adjust) {
         let sr = src.get(&o.path).ok_or_else(|| AppError::invalid(format!("没有读取到第 {} 个叠加素材的信息。", n + 1)))?;
         if !sr.has_video || sr.width == 0 || sr.height == 0 {
             return Err(AppError::invalid(format!("第 {} 个叠加素材里没有画面。", n + 1)));
@@ -1039,10 +1039,13 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     if p.audio.iter().any(|a| a.duck) {
         need("sidechaincompress", "无法自动压低配乐")?;
     }
-    if !p.overlays.is_empty() {
+    if p.overlays.iter().any(|o| !o.adjust) {
         need("overlay", "无法使用叠加轨")?;
     }
-    if p.overlays.iter().any(|o| o.needs_tone() || (o.opacity < 0.999 && o.keys("opacity").is_none())) {
+    if p.overlays.iter().any(|o| o.adjust && o.needs_tone()) {
+        need("lutyuv", "无法使用调整图层")?;
+    }
+    if p.overlays.iter().any(|o| !o.adjust && (o.needs_tone() || (o.opacity < 0.999 && o.keys("opacity").is_none()))) {
         need("lutyuv", "无法调整叠加素材的颜色和透明度")?;
     }
     if p.overlays.iter().any(|o| o.keys("opacity").is_some()) {
@@ -1109,7 +1112,7 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     }
     // 叠加素材：起点在成片结束之后的不会出现，不放进输入
     let mut ovs: Vec<(usize, &Overlay)> = vec![];
-    for (n, o) in p.overlays.iter().enumerate() {
+    for (n, o) in p.overlays.iter().enumerate().filter(|(_, o)| !o.adjust) {
         if o.start_ms >= total {
             plan.warnings.push(format!("第 {} 个叠加素材的起点在成片结束之后，不会出现。", n + 1));
         } else {
@@ -1164,12 +1167,24 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
 
     // 叠加轨：从下到上依次盖到主轨画面上
     let mut ov_mix: Vec<String> = vec![];
-    if !ovs.is_empty() {
+    if !ovs.is_empty() || p.overlays.iter().any(|o| o.adjust) {
         let mut slot: HashMap<usize, usize> = HashMap::new();
         for (j, (n, _)) in ovs.iter().enumerate() {
             slot.insert(*n, j);
         }
         for n in overlay_order(&p.overlays) {
+            let o = &p.overlays[n];
+            if o.adjust {
+                // 调整图层：只在这段时间里把下面合成好的画面调色
+                if let Some(tone) = tone_expr(o.brightness, o.contrast, o.saturation) {
+                    if o.start_ms < total {
+                        let (a, b) = (o.start_ms, o.end_ms().min(total));
+                        stmts.push(format!("[{video}]{tone}:enable='between(t,{},{})'[adj{n}]", sec(a), sec(b)));
+                        video = format!("adj{n}");
+                    }
+                }
+                continue;
+            }
             let Some(&j) = slot.get(&n) else { continue };
             let o = &p.overlays[n];
             let sr = src.get(&o.path).expect("checked above");
@@ -1438,7 +1453,7 @@ mod tests {
         assert!(out_range(6000, 0, 5000, "audio").is_err());
         assert_eq!(out_range(9000, 0, 5000, "frame").unwrap().0, 4950, "一帧图片不超过最后一帧");
     }
-    use super::super::spec::{TextItem, Transition};
+    use super::super::spec::{TextItem, TrackMeta, Transition};
     use super::*;
     use crate::media_tools::Encoders;
 
@@ -1656,6 +1671,42 @@ mod tests {
         let plan = build(&p, &sources(&["/m/a.mp4"]), &caps(), &tmp, Mode::Export, None).unwrap();
         assert!(plan.warnings.iter().any(|w| w.contains("字体")), "{:?}", plan.warnings);
         let _ = std::fs::remove_dir_all(tmp);
+    }
+
+    #[test]
+    fn an_adjustment_layer_tones_everything_below_for_its_time_and_has_no_input() {
+        let mut p = Project { clips: vec![clip("/m/a.mp4", 0, 10_000)], ..Default::default() };
+        p.overlays = vec![Overlay { adjust: true, track: 2, start_ms: 2000, out_ms: 5000, brightness: 0.2, saturation: 1.5, ..Default::default() }];
+        let p = p.checked().unwrap();
+        assert!(p.overlays[0].path.is_empty() && p.media_paths() == vec!["/m/a.mp4".to_string()]);
+        let plan = build(&p, &sources(&["/m/a.mp4"]), &caps(), &tmp(), Mode::Export, None).unwrap();
+        let g = graph_of(&plan);
+        assert!(g.contains("lutyuv=") && g.contains("enable='between(t,2.000,7.000)'") && g.contains("[adj0]"), "{g}");
+        assert_eq!(plan.args.iter().filter(|a| *a == "-i").count(), 1, "调整图层不增加输入：{:?}", plan.args);
+    }
+
+    #[test]
+    fn a_hidden_track_is_left_out_and_a_muted_one_is_silent_in_the_export() {
+        let mut p = Project { clips: vec![clip("/m/a.mp4", 0, 10_000)], ..Default::default() };
+        p.overlays = vec![
+            Overlay { path: "/m/b.mp4".into(), track: 1, out_ms: 3000, ..Default::default() },
+            Overlay { path: "/m/c.mp4".into(), track: 2, out_ms: 3000, ..Default::default() },
+        ];
+        p.audio = vec![
+            AudioTrack { path: "/m/x.mp3".into(), track: 1, ..Default::default() },
+            AudioTrack { path: "/m/y.mp3".into(), track: 2, volume: 0.5, ..Default::default() },
+        ];
+        p.tracks = vec![
+            TrackMeta { kind: "video".into(), no: 1, hidden: true, ..Default::default() },
+            TrackMeta { kind: "audio".into(), no: 1, mute: true, ..Default::default() },
+            TrackMeta { kind: "audio".into(), no: 2, volume: 0.5, ..Default::default() },
+        ];
+        let e = p.checked().unwrap().effective();
+        assert_eq!(e.overlays.len(), 1);
+        assert_eq!(e.audio.len(), 1);
+        assert!((e.audio[0].volume - 0.25).abs() < 1e-9, "轨道音量和素材音量相乘");
+        let plan = build(&e, &sources(&["/m/a.mp4", "/m/c.mp4", "/m/y.mp3"]), &caps(), &tmp(), Mode::Export, None).unwrap();
+        assert!(!graph_of(&plan).contains("/m/b.mp4"));
     }
 
     #[test]
