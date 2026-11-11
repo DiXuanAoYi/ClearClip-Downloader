@@ -1,17 +1,18 @@
 <script setup lang="ts">
 // 时间线：标尺（标记、入点出点）、文字轨、视频轨（叠加轨 V2…、主轨 V1）、音频轨。每一类都可以有很多条轨道，
 // 每条轨道有自己的名字和开关；拖动调整顺序、位置和长度，素材可以拖到别的轨道，或者拖到轨道之间新建一条。
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { convertFileSrc } from '@tauri-apps/api/core'
+import { api } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { EditAudio, EditClip, EditMarker, EditOverlay, EditText, EditTrack, EditTrackKind, EditTrackRole } from '../../../types'
-import { beatSnapPoints, beatsOnTimeline, MIN_MS, audioSpan, clamp, editPoints, overlayDuration, overlayEnd, overlaySourceLimit, snap, tickStep } from '../../../utils/edit'
+import { beatSnapPoints, beatsOnTimeline, kfEval, MIN_MS, audioSpan, clamp, editPoints, overlayDuration, overlayEnd, overlaySourceLimit, snap, tickStep } from '../../../utils/edit'
 import { maxNo, nextNo, roomFor, shownNos, swapTracks, TRACK_ROLES, trackCode, trackOf, trackTitle } from '../../../utils/tracks'
 import TrackHead from './TrackHead.vue'
 import TrackMenu, { type MenuItem } from './TrackMenu.vue'
 
-const props = withDefaults(defineProps<{ ed: EditApi; pps: number; snapOn?: boolean }>(), { snapOn: true })
+const props = withDefaults(defineProps<{ ed: EditApi; pps: number; snapOn?: boolean; tool?: 'select' | 'blade' | 'slip' | 'roll'; showWave?: boolean; showVol?: boolean }>(), { snapOn: true, tool: 'select', showWave: true, showVol: true })
 const emit = defineEmits<{ zoom: [pps: number] }>()
 const ed = props.ed
 
@@ -193,6 +194,11 @@ function follow(clientY: number, kind: EditTrackKind): Hit | null {
   insY.value = h?.insert ? h.y : null
   return h
 }
+/** 刀片：点在哪就在哪切开。 */
+function blade(kind: 'clip' | 'overlay' | 'audio' | 'text', id: number, e: PointerEvent) {
+  const t = Math.round(timeAt(e.clientX))
+  if (!ed.bladeAt(kind, id, t)) ElMessage.info('这里切不开：离素材两端太近（至少 0.1 秒），或者是循环的配乐。')
+}
 function settleDrag(kind: 'overlay' | 'audio' | 'text', id: number, h: Hit | null, curTrack: number) {
   insY.value = null
   if (h?.insert) ed.moveToTrack(kind, id, h.no, true)
@@ -222,7 +228,9 @@ function dropX(idx: number, from: number): number {
 
 function clipDown(e: PointerEvent, i: number) {
   const c = ed.project.value.clips[i]
+  if (props.tool === 'blade' && !lockedNo('video', 0)) return blade('clip', c.id, e)
   ed.sel.value = { kind: 'clip', id: c.id }
+  if (props.tool === 'slip' && c.kind === 'video' && !c.freeze && !lockedNo('video', 0)) return slip(e, c)
   const t0 = timeAt(e.clientX)
   if (lockedNo('video', 0)) return drag(e, () => {}, (moved) => !moved && seek(t0))
   drag(
@@ -244,7 +252,41 @@ function clipDown(e: PointerEvent, i: number) {
   )
 }
 
+/** 滑移：拖的是素材的取景窗口——画面在片段里前后挪，片段在时间线上的位置和长度都不变。 */
+function slip(e: PointerEvent, c: EditClip) {
+  const o = { i: c.inMs, o: c.outMs }
+  const limit = ed.sources[c.path]?.durationMs ?? Infinity
+  drag(e, (dx) => {
+    const d = msOf(dx) * c.speed * (c.reverse ? 1 : -1)
+    const shift = clamp(d, -o.i, limit - o.o)
+    ed.patchClip(c.id, { inMs: Math.round(o.i + shift), outMs: Math.round(o.o + shift) }, `slip:${c.id}`)
+  })
+}
+
+/** 滚动：拖两个相邻片段之间的切点——前一个多一点，后一个就少一点，总长不变。 */
+function roll(e: PointerEvent, c: EditClip, side: 'l' | 'r') {
+  const list = ed.project.value.clips
+  const i = list.findIndex((x) => x.id === c.id)
+  const a = side === 'l' ? list[i - 1] : c
+  const b = side === 'l' ? c : list[i + 1]
+  if (!a || !b || a.kind !== 'video' || b.kind !== 'video' || a.freeze || b.freeze || a.reverse || b.reverse) return false
+  const o = { ao: a.outMs, bi: b.inMs }
+  const limitA = ed.sources[a.path]?.durationMs ?? Infinity
+  ed.sel.value = { kind: 'clip', id: c.id }
+  drag(e, (dx) => {
+    const d = msOf(dx)
+    // 切点往右（d > 0）：前一个的出点后移，后一个的入点后移
+    const lo = Math.max(-(a.outMs - a.inMs - MIN_MS * a.speed) / a.speed, -o.bi / b.speed)
+    const hi = Math.min((limitA - o.ao) / a.speed, (b.outMs - b.inMs - MIN_MS * b.speed) / b.speed)
+    const dd = clamp(d, lo, hi)
+    ed.patchClip(a.id, { outMs: Math.round(o.ao + dd * a.speed) }, `roll:${a.id}`)
+    ed.patchClip(b.id, { inMs: Math.round(o.bi + dd * b.speed) }, `roll:${a.id}`)
+  })
+  return true
+}
+
 function trimClip(e: PointerEvent, c: EditClip, side: 'l' | 'r') {
+  if (props.tool === 'roll' && roll(e, c, side)) return
   const o = { inMs: c.inMs, outMs: c.outMs }
   const limit = ed.sources[c.path]?.durationMs ?? Infinity
   const minSpan = Math.max(MIN_MS, MIN_MS * c.speed)
@@ -281,6 +323,7 @@ const isBroken = (path: string) => path in ed.broken
 // ---------- 叠加素材 ----------
 
 function overlayDown(e: PointerEvent, o: EditOverlay) {
+  if (props.tool === 'blade' && !lockedNo('video', o.track)) return blade('overlay', o.id, e)
   ed.sel.value = { kind: 'overlay', id: o.id }
   const t0 = timeAt(e.clientX)
   if (lockedNo('video', o.track)) return drag(e, () => {}, (moved) => !moved && seek(t0))
@@ -352,6 +395,7 @@ function cutW(o: EditOverlay): number {
 // ---------- 文字 ----------
 
 function textDown(e: PointerEvent, t: EditText) {
+  if (props.tool === 'blade' && !lockedNo('text', t.track)) return blade('text', t.id, e)
   ed.sel.value = { kind: 'text', id: t.id }
   const t0 = timeAt(e.clientX)
   if (lockedNo('text', t.track)) return drag(e, () => {}, (moved) => !moved && seek(t0))
@@ -396,6 +440,7 @@ function textTrim(e: PointerEvent, t: EditText, side: 'l' | 'r') {
 const aSpan = (a: EditAudio) => audioSpan(a, ed.sources[a.path], ed.total.value)
 
 function audioDown(e: PointerEvent, a: EditAudio) {
+  if (props.tool === 'blade' && !lockedNo('audio', a.track)) return blade('audio', a.id, e)
   ed.sel.value = { kind: 'audio', id: a.id }
   const t0 = timeAt(e.clientX)
   if (lockedNo('audio', a.track)) return drag(e, () => {}, (moved) => !moved && seek(t0))
@@ -436,6 +481,89 @@ function audioTrim(e: PointerEvent, a: EditAudio, side: 'l' | 'r') {
 }
 const audioName = (a: EditAudio) => ed.sources[a.path]?.name ?? a.path.split(/[\\/]/).pop() ?? a.path
 
+
+
+// ---------- 音频：波形和音量线 ----------
+
+const waves = reactive<Record<string, string>>({})
+const waving = new Set<string>()
+const WAVE_H = 60
+function waveUrl(a: EditAudio): string | undefined {
+  if (!props.showWave || a.looped || isBroken(a.path) || !ed.sources[a.path]) return undefined
+  const w = clamp(Math.round(px(aSpan(a)) / 100) * 100, 100, 4000)
+  const to = a.outMs ?? a.inMs + aSpan(a)
+  const key = `${a.path}|${a.inMs}|${to}|${w}`
+  if (waves[key]) return waves[key]
+  if (!waving.has(key)) {
+    waving.add(key)
+    api
+      .editWaveform(a.path, a.inMs, to, w, WAVE_H)
+      .then((f) => {
+        if (f) waves[key] = convertFileSrc(f)
+      })
+      .catch(() => undefined)
+  }
+  return undefined
+}
+const audioStyle = (a: EditAudio) => {
+  const u = waveUrl(a)
+  return { left: px(a.startMs) + 'px', width: Math.max(10, px(aSpan(a))) + 'px', backgroundImage: u ? `url("${u}")` : 'none' }
+}
+
+/** 音量线：0–200% 映射到轨道高度（100% 在正中）。有关键点就按关键点，没有就是一条横线。 */
+const VOL_MAX = 2
+const volY = (v: number, h: number) => (1 - clamp(v, 0, VOL_MAX) / VOL_MAX) * (h - 8) + 4
+function volPoints(a: EditAudio, h: number): string {
+  const w = Math.max(10, px(aSpan(a)))
+  const pts = a.keyframes.volume
+  if (!pts?.length) return `0,${volY(a.volume, h)} ${w},${volY(a.volume, h)}`
+  const span = aSpan(a)
+  const line = [`0,${volY(pts[0].value, h)}`, ...pts.map((k) => `${px(k.tMs)},${volY(k.value, h)}`)]
+  const lastT = pts[pts.length - 1].tMs
+  if (lastT < span) line.push(`${w},${volY(pts[pts.length - 1].value, h)}`)
+  return line.join(' ')
+}
+const volVisible = (r: Row) => props.showVol && r.meta.height !== 's'
+
+function volDown(e: PointerEvent, a: EditAudio, h: number) {
+  // 点在线上：在这个时间加一个点，并且可以接着拖
+  ed.sel.value = { kind: 'audio', id: a.id }
+  if (lockedNo('audio', a.track)) return
+  const box = (e.currentTarget as SVGElement).getBoundingClientRect()
+  const tAt = (cx: number) => Math.round(clamp(msOf(cx - box.left), 0, aSpan(a)))
+  const vAt = (cy: number) => clamp((1 - (cy - box.top - 4) / (h - 8)) * VOL_MAX, 0, VOL_MAX)
+  const t0 = tAt(e.clientX)
+  const cur = kfEval(a.keyframes.volume, t0) ?? a.volume
+  ed.setKey('audio', a.id, 'volume', t0, Math.round(cur * 100) / 100, undefined, `vol:${a.id}:${t0}`)
+  dragPoint(e, a, t0, tAt, vAt)
+}
+function dragPoint(e: PointerEvent, a: EditAudio, startT: number, tAt: (x: number) => number, vAt: (y: number) => number) {
+  let t = startT
+  drag(e, (_dx, ev) => {
+    const nt = tAt(ev.clientX)
+    const v = Math.round(vAt(ev.clientY) * 100) / 100
+    if (nt !== t) {
+      ed.deleteKey('audio', a.id, 'volume', t)
+      t = nt
+    }
+    ed.setKey('audio', a.id, 'volume', t, v, undefined, `vol:${a.id}`)
+  })
+}
+function volPointDown(e: PointerEvent, a: EditAudio, tMs: number, h: number) {
+  ed.sel.value = { kind: 'audio', id: a.id }
+  if (lockedNo('audio', a.track)) return
+  const box = (e.currentTarget as SVGElement).ownerSVGElement!.getBoundingClientRect()
+  dragPoint(
+    e,
+    a,
+    tMs,
+    (cx) => Math.round(clamp(msOf(cx - box.left), 0, aSpan(a))),
+    (cy) => clamp((1 - (cy - box.top - 4) / (h - 8)) * VOL_MAX, 0, VOL_MAX),
+  )
+}
+function volPointDelete(a: EditAudio, tMs: number) {
+  if (!lockedNo('audio', a.track)) ed.deleteKey('audio', a.id, 'volume', tMs)
+}
 
 // ---------- 轨道头：开关、菜单、类型 ----------
 
@@ -746,7 +874,7 @@ defineExpose({ reveal, targetAt, hover, fit })
       <button type="button" class="ab" title="把整条时间线缩到刚好放进窗口" @click="fit">适应</button>
     </div>
 
-    <div ref="scroller" class="tl" @pointerdown.capture="blurInput" @wheel="onWheel" @scroll.passive="onScroll">
+    <div ref="scroller" class="tl" :class="{ blade: tool === 'blade' }" @pointerdown.capture="blurInput" @wheel="onWheel" @scroll.passive="onScroll">
       <div ref="bodyEl" class="body" :style="{ width: LABEL_W + contentW + 'px' }">
         <!-- 标尺 -->
         <div class="row ruler-row">
@@ -859,14 +987,19 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="a in audioOn(r.no)"
               :key="a.id"
               class="blk aud"
-              :class="{ sel: isSel('audio', a.id), bad: isBroken(a.path) }"
-              :style="{ left: px(a.startMs) + 'px', width: Math.max(10, px(aSpan(a))) + 'px' }"
+              :class="{ sel: isSel('audio', a.id), bad: isBroken(a.path), wave: !!waveUrl(a) }"
+              :style="audioStyle(a)"
               :title="audioName(a)"
               @pointerdown.stop.prevent="audioDown($event, a)"
             >
               <i class="h l" @pointerdown.stop.prevent="audioTrim($event, a, 'l')" />
               <i v-for="b in beatsOnTimeline(a)" :key="b" class="bt" :style="{ left: px(b - a.startMs) + 'px' }" />
-              <span class="cap ellipsis">{{ audioName(a) }}</span>
+              <span class="cap ellipsis">{{ audioName(a) }}{{ a.duck || r.meta.duck ? ' · 自动避让' : '' }}</span>
+              <svg v-if="volVisible(r)" class="vol" :width="Math.max(10, px(aSpan(a)))" :height="rowH(r)" :viewBox="`0 0 ${Math.max(10, px(aSpan(a)))} ${rowH(r)}`">
+                <polyline class="vl" :points="volPoints(a, rowH(r))" />
+                <polyline class="vh" :points="volPoints(a, rowH(r))" @pointerdown.stop.prevent="volDown($event, a, rowH(r))" />
+                <circle v-for="k in a.keyframes.volume ?? []" :key="k.tMs" class="vp" :cx="px(k.tMs)" :cy="volY(k.value, rowH(r))" r="4" @pointerdown.stop.prevent="volPointDown($event, a, k.tMs, rowH(r))" @dblclick.stop.prevent="volPointDelete(a, k.tMs)" />
+              </svg>
               <i v-if="!a.looped" class="h r" @pointerdown.stop.prevent="audioTrim($event, a, 'r')" />
             </div>
           </div>
@@ -1214,4 +1347,11 @@ defineExpose({ reveal, targetAt, hover, fit })
 }
 .mi { position: absolute; height: 5px; border-radius: 2px; opacity: 0.9; pointer-events: none }
 .mv { position: absolute; top: 0; bottom: 0; border: 2px solid var(--cc-acc); background: color-mix(in srgb, var(--cc-acc) 14%, transparent); border-radius: 4px; box-sizing: border-box; pointer-events: none }
+
+.aud.wave { background-size: 100% 100%; background-repeat: no-repeat; background-color: #8a6422 }
+.vol { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none }
+.vl { fill: none; stroke: #ffd36b; stroke-width: 1.5; pointer-events: none }
+.vh { fill: none; stroke: transparent; stroke-width: 9; pointer-events: stroke; cursor: ns-resize }
+.vp { fill: #fff; stroke: #d9a21a; stroke-width: 2; pointer-events: all; cursor: grab }
+.tl.blade .blk { cursor: crosshair }
 </style>

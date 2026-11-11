@@ -10,7 +10,7 @@ import type { RegionApi } from '../../../composables/useRegions'
 import type { OverlayAnim } from '../../../types'
 import type { EditBackground, EditChroma, EditClip, EditOutput, EditOverlay, EditShapeMask } from '../../../types'
 import { EDIT_IMAGE_EXTS, type SpeedPoint } from '../../../utils/edit'
-import { MAX_OVERLAY_TRACKS, MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, CLIP_KEY_PROPS, OVERLAY_KEY_PROPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
+import { MAX_START_MS, MIN_MS, LOW_BEAT_CONFIDENCE, MIN_TRANSITION_MS, CLIP_KEY_PROPS, OVERLAY_KEY_PROPS, TEXT_KEY_PROPS, TRANSITIONS, clamp, clipDuration, defaultOverlayScale, isGif, msText, outputSize, overlayDuration, overlayFitScale, overlaySourceLimit, withKeys } from '../../../utils/edit'
 import EditField from './EditField.vue'
 import EditModels from './EditModels.vue'
 import EditKeyframes from './EditKeyframes.vue'
@@ -23,6 +23,7 @@ import EditSlider from './EditSlider.vue'
 import TimeInput from './TimeInput.vue'
 import { LOUDNESS_PRESETS } from '../../../utils/loudness'
 import { REVERBS, reverbId, reverbOf } from '../../../utils/reverb'
+import { shownNos, trackCode, trackOf, trackTitle } from '../../../utils/tracks'
 
 const props = defineProps<{ ed: EditApi; rg: RegionApi }>()
 const emit = defineEmits<{ goto: [ms: number] }>()
@@ -46,6 +47,26 @@ const src = computed(() => (clip.value ? ed.sources[clip.value.path] : overlay.v
 const index = computed(() => (clip.value ? ed.project.value.clips.findIndex((c) => c.id === clip.value?.id) : -1))
 const placed = computed(() => (index.value >= 0 ? ed.placed.value[index.value] : undefined))
 const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p
+
+// ---------- 所在轨道 ----------
+
+type MoveKind = 'overlay' | 'audio' | 'text'
+const NEW_TRACK = -1
+/** 这一类里能选的轨道：编号牌 + 名字 */
+function trackChoices(kind: MoveKind): { no: number; label: string }[] {
+  const tk = kind === 'overlay' ? 'video' : kind
+  return shownNos(ed.project.value, tk)
+    .filter((n) => !(tk === 'video' && n === 0))
+    .reverse()
+    .map((n) => ({ no: n, label: `${trackCode(tk, n)} ${trackTitle(trackOf(ed.project.value, tk, n))}` }))
+}
+function chooseTrack(kind: MoveKind, id: number, no: number) {
+  if (no === NEW_TRACK) {
+    if (ed.moveToNewTrack(kind, id) === null) ElMessage.warning('这一类的轨道已经满了，或者这条轨道被锁定了')
+    return
+  }
+  if (ed.moveToTrack(kind, id, no) === null) ElMessage.warning('这条轨道被锁定了')
+}
 
 // ---------- 修改 ----------
 
@@ -583,9 +604,32 @@ async function pickDir() {
     </div>
 
     <!-- 叠加素材 -->
+    <div v-else-if="tab === 'item' && overlay && overlay.adjust" class="sec">
+      <div class="title"><span class="chip">V{{ overlay.track + 1 }}</span><span>调整图层</span></div>
+      <div class="alert soft">这一段时间里，下面所有轨道的画面都会按这里的亮度、对比度、饱和度调色。</div>
+      <EditField label="所在轨道">
+        <el-select :model-value="overlay.track" size="small" style="width: 190px" @update:model-value="(v: number) => chooseTrack('overlay', overlay!.id, v)">
+          <el-option v-for="c in trackChoices('overlay')" :key="c.no" :value="c.no" :label="c.label" />
+          <el-option :value="NEW_TRACK" label="＋ 新建一条视频轨" />
+        </el-select>
+      </EditField>
+      <EditField label="开始于">
+        <TimeInput :model-value="overlay.startMs" :max="MAX_START_MS" @update:model-value="(v) => po({ startMs: v }, 'os')" />
+        <el-button size="small" link @click="po({ startMs: Math.round(ed.playhead.value) }, 'os')">取播放位置</el-button>
+      </EditField>
+      <EditField label="时长">
+        <TimeInput :model-value="overlay.outMs" :min="MIN_MS" @update:model-value="(v) => po({ outMs: v }, 'oout')" />
+      </EditField>
+      <EditSlider label="亮度" :model-value="overlay.brightness" :min="-1" :max="1" :step="0.01" :scale="100" :digits="0" @update:model-value="(v) => po({ brightness: v }, 'otone')" />
+      <EditSlider label="对比度" :model-value="overlay.contrast" :min="0" :max="3" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => po({ contrast: v }, 'otone')" />
+      <EditSlider label="饱和度" :model-value="overlay.saturation" :min="0" :max="3" :step="0.01" :scale="100" :digits="0" unit="%" @update:model-value="(v) => po({ saturation: v }, 'otone')" />
+      <EditField label="">
+        <el-button size="small" link type="primary" :disabled="!ovToned" @click="po({ brightness: 0, contrast: 1, saturation: 1 }, 'otone')">恢复原样</el-button>
+      </EditField>
+    </div>
     <div v-else-if="tab === 'item' && overlay" class="sec">
       <div class="title">
-        <span class="chip">叠加</span>
+        <span class="chip">V{{ overlay.track + 1 }}</span>
         <span class="ellipsis" :title="overlay.path">{{ baseName(overlay.path) }}</span>
       </div>
       <div v-if="overlay.path in ed.broken" class="alert">
@@ -599,9 +643,10 @@ async function pickDir() {
       </div>
       <div v-else-if="ovHint" class="alert soft">{{ ovHint }}</div>
 
-      <EditField label="叠加轨" hint="轨号越大，越在上面（盖住小的）">
-        <el-select :model-value="overlay.track" size="small" style="width: 150px" @update:model-value="(v: number) => po({ track: v }, 'otr')">
-          <el-option v-for="n in MAX_OVERLAY_TRACKS" :key="n" :value="n" :label="`叠加 ${n}`" />
+      <EditField label="所在轨道" hint="编号越大，越在上面（盖住小的）">
+        <el-select :model-value="overlay.track" size="small" style="width: 190px" @update:model-value="(v: number) => chooseTrack('overlay', overlay!.id, v)">
+          <el-option v-for="c in trackChoices('overlay')" :key="c.no" :value="c.no" :label="c.label" />
+          <el-option :value="NEW_TRACK" label="＋ 新建一条视频轨" />
         </el-select>
         <el-button size="small" link type="primary" @click="moveToMain">移到主轨</el-button>
       </EditField>
@@ -723,8 +768,14 @@ async function pickDir() {
 
     <!-- 文字 -->
     <div v-else-if="tab === 'item' && text" class="sec">
-      <div class="title"><span class="chip">文字</span></div>
+      <div class="title"><span class="chip">T{{ text.track }}</span><span>文字</span></div>
       <el-input :model-value="text.text" type="textarea" :rows="3" resize="none" placeholder="输入文字，可以多行" @update:model-value="(v: string) => pt({ text: v }, 'txt')" />
+      <EditField label="所在轨道" hint="编号越大，越在上面（盖住小的）">
+        <el-select :model-value="text.track" size="small" style="width: 190px" @update:model-value="(v: number) => chooseTrack('text', text!.id, v)">
+          <el-option v-for="c in trackChoices('text')" :key="c.no" :value="c.no" :label="c.label" />
+          <el-option :value="NEW_TRACK" label="＋ 新建一条文字轨" />
+        </el-select>
+      </EditField>
       <EditField label="出现于">
         <TimeInput :model-value="text.startMs" :max="text.endMs - MIN_MS" @update:model-value="(v) => pt({ startMs: v }, 'ts')" />
         <el-button size="small" link @click="stampStart">取播放位置</el-button>
@@ -771,13 +822,19 @@ async function pickDir() {
     <!-- 音频 -->
     <div v-else-if="tab === 'item' && audio" class="sec">
       <div class="title">
-        <span class="chip">配乐</span>
+        <span class="chip">A{{ audio.track }}</span>
         <span class="ellipsis" :title="audio.path">{{ baseName(audio.path) }}</span>
       </div>
       <div v-if="audio.path in ed.broken" class="alert">
         <span>{{ ed.broken[audio.path] }}</span>
         <el-button size="small" type="primary" @click="relink">重新指定文件…</el-button>
       </div>
+      <EditField label="所在轨道">
+        <el-select :model-value="audio.track" size="small" style="width: 190px" @update:model-value="(v: number) => chooseTrack('audio', audio!.id, v)">
+          <el-option v-for="c in trackChoices('audio')" :key="c.no" :value="c.no" :label="c.label" />
+          <el-option :value="NEW_TRACK" label="＋ 新建一条音频轨" />
+        </el-select>
+      </EditField>
       <EditField label="开始于">
         <TimeInput :model-value="audio.startMs" @update:model-value="(v) => pa({ startMs: v }, 'as')" />
         <el-button size="small" link @click="pa({ startMs: Math.round(ed.playhead.value) }, 'as')">取播放位置</el-button>

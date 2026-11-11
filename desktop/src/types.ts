@@ -1800,6 +1800,8 @@ export interface EditAudio {
   looped: boolean
   duck: boolean
   /** 混响；null = 不加 */
+  /** 关键帧：volume（音量线，时间相对开头）；有关键帧时不再用固定音量 */
+  keyframes: EditKeyframes
   reverb: ReverbSpec | null
   /** 节拍分析结果（`beatsMs` 是素材里的时间，不随配乐在时间线上的位置变）；没分析过是空。只存在工程里，导出用不到 */
   beats?: EditBeats | null

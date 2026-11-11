@@ -363,6 +363,8 @@ pub struct AudioTrack {
     pub duck: bool,
     /// 混响；没有 = 不加
     pub reverb: Option<ReverbSpec>,
+    /// 关键帧：`volume`（音量线，时间相对 `start_ms`）。有关键帧时不再用上面的固定音量
+    pub keyframes: KeyframeMap,
 }
 
 impl Default for AudioTrack {
@@ -380,6 +382,7 @@ impl Default for AudioTrack {
             looped: false,
             duck: false,
             reverb: None,
+            keyframes: KeyframeMap::new(),
         }
     }
 }
@@ -1066,6 +1069,7 @@ impl Project {
             }
             a.track = a.track.clamp(1, MAX_AUDIO_TRACKS);
             a.volume = clamp(a.volume, 0.0, 4.0, 1.0);
+            check_keys(&mut a.keyframes, &[("volume", 0.0, 4.0)]);
             a.reverb = a.reverb.as_ref().map(ReverbSpec::checked);
         }
         self.check_tracks();
@@ -1170,6 +1174,12 @@ impl Project {
             if let Some(m) = self.meta("audio", a.track) {
                 a.volume = (a.volume * m.volume).clamp(0.0, 4.0);
                 a.duck |= m.duck;
+                // 音量线上的每个点也乘上轨道音量
+                if let Some(pts) = a.keyframes.get_mut("volume") {
+                    for k in pts {
+                        k.value = (k.value * m.volume).clamp(0.0, 4.0);
+                    }
+                }
             }
         }
         p.texts.retain(|t| !self.meta("text", t.track).is_some_and(|m| m.hidden));

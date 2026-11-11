@@ -167,7 +167,7 @@ export function metaFor(p: EditProject, kind: EditTrackKind, no: number): EditTr
  * 文字按轨道从下到上排。`preview` 为真时再看独奏：有轨道独奏，就只听独奏的音频轨。和后端 `Project::effective` 一致。
  */
 export function effectiveProject(p: EditProject, preview = false): EditProject {
-  const q: EditProject = { ...p, clips: p.clips.map((c) => ({ ...c })), overlays: p.overlays.map((o) => ({ ...o })), texts: [...p.texts], audio: p.audio.map((a) => ({ ...a })) }
+  const q: EditProject = { ...p, clips: p.clips.map((c) => ({ ...c })), overlays: p.overlays.map((o) => ({ ...o })), texts: [...p.texts], audio: p.audio.map((a) => ({ ...a, keyframes: { ...a.keyframes } })) }
   const m = (k: EditTrackKind, n: number) => p.tracks.find((t) => t.kind === k && t.no === n)
   if (m('video', 0)?.mute) for (const c of q.clips) c.mute = true
   q.overlays = q.overlays.filter((o) => !m('video', o.track)?.hidden)
@@ -179,6 +179,8 @@ export function effectiveProject(p: EditProject, preview = false): EditProject {
     if (t) {
       a.volume = Math.min(4, Math.max(0, a.volume * t.volume))
       a.duck = a.duck || t.duck
+      // 音量线上的每个点也乘上轨道音量
+      if (a.keyframes.volume?.length) a.keyframes.volume = a.keyframes.volume.map((k) => ({ ...k, value: Math.min(4, Math.max(0, k.value * t.volume)) }))
     }
   }
   q.texts = q.texts.filter((t) => !m('text', t.track)?.hidden)

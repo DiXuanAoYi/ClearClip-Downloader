@@ -8,7 +8,7 @@ import { computed, nextTick, onBeforeUnmount, reactive, watch } from 'vue'
 import { errorText } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { EditClip, EditOverlay } from '../../../types'
-import { audioSpan, chromaMatrix, clamp, isGif, liveFrame, mainGain, overlayAnimPose, overlayBox, overlayEnd, overlayGain, transitionLook } from '../../../utils/edit'
+import { audioSpan, chromaMatrix, clamp, isGif, kfEval, liveFrame, mainGain, overlayAnimPose, overlayBox, overlayEnd, overlayGain, transitionLook } from '../../../utils/edit'
 import type { LiveMain, LiveOverlay, TransitionLook } from '../../../utils/edit'
 
 const props = defineProps<{
@@ -42,7 +42,7 @@ interface Item {
 }
 
 const srcDur = (path: string) => ed.sources[path]?.durationMs
-const frame = computed(() => liveFrame(ed.project.value, ed.placed.value, ed.playhead.value, srcDur))
+const frame = computed(() => liveFrame(ed.live.value, ed.placed.value, ed.playhead.value, srcDur))
 const mains = computed(() => new Map(frame.value.main.map((m) => ['m' + m.clip.id, m] as [string, LiveMain])))
 const ovs = computed(() => new Map(frame.value.overlays.map((l) => ['o' + l.overlay.id, l] as [string, LiveOverlay])))
 const look = computed<TransitionLook>(() => {
@@ -52,7 +52,7 @@ const look = computed<TransitionLook>(() => {
 
 /** 现在要放在舞台上的素材：看得见的，加上马上要用到的（按工程里的顺序排，元素不会因为别的素材出入而挪位置）。 */
 const items = computed<Item[]>(() => {
-  const p = ed.project.value
+  const p = ed.live.value
   const pl = ed.placed.value
   const t = ed.playhead.value
   const all: { it: Item; from: number; to: number }[] = []
@@ -63,7 +63,7 @@ const items = computed<Item[]>(() => {
     all.push({ it: { key: (main ? 'm' : 'o') + id, main, id, path, url: (kind === 'video' && ed.proxies[path]) || s.url, still: kind === 'image' || gif, gif, inMs, clip, overlay }, from, to })
   }
   p.clips.forEach((c, i) => pl[i] && add(true, c.id, c.path, c.kind, c.inMs, pl[i].startMs, pl[i].endMs, c))
-  for (const o of p.overlays) add(false, o.id, o.path, o.kind, o.inMs, o.startMs, overlayEnd(o), undefined, o)
+  for (const o of p.overlays) if (!o.adjust) add(false, o.id, o.path, o.kind, o.inMs, o.startMs, overlayEnd(o), undefined, o)
   const shown = new Set<string>([...mains.value.keys(), ...ovs.value.keys()])
   const near = all
     .filter((x) => !shown.has(x.it.key) && x.to > t - BEHIND && x.from < t + AHEAD)
@@ -123,7 +123,7 @@ async function makeProxies() {
 }
 
 /** 开了抠像的叠加素材（预览里用 SVG 滤镜近似） */
-const keyed = computed(() => ed.project.value.overlays.filter((o) => o.chroma.on))
+const keyed = computed(() => ed.live.value.overlays.filter((o) => o.chroma.on && !o.adjust))
 
 // ---------- 摆放 ----------
 
@@ -197,7 +197,7 @@ function mediaStyle(it: Item): Record<string, string> {
 // ---------- 播放 ----------
 
 function lookup(t: number) {
-  const fr = liveFrame(ed.project.value, ed.placed.value, t, srcDur)
+  const fr = liveFrame(ed.live.value, ed.placed.value, t, srcDur)
   return { m: new Map(fr.main.map((x) => ['m' + x.clip.id, x] as [string, LiveMain])), o: new Map(fr.overlays.map((x) => ['o' + x.overlay.id, x] as [string, LiveOverlay])) }
 }
 
@@ -266,7 +266,10 @@ function onMeta(it: Item) {
 
 function syncMusic(t: number, playing: boolean) {
   const end = ed.total.value
-  for (const a of ed.project.value.audio) {
+  // 被静音、不是独奏的轨道上的音频：停住
+  const heard = new Set(ed.live.value.audio.map((x) => x.id))
+  for (const a of ed.project.value.audio) if (!heard.has(a.id)) aEls.get(a.id)?.pause()
+  for (const a of ed.live.value.audio) {
     const el = aEls.get(a.id)
     const src = ed.sources[a.path]
     if (!el || !src) continue
@@ -282,7 +285,8 @@ function syncMusic(t: number, playing: boolean) {
     let f = 1
     if (a.fadeInMs > 0) f = Math.min(f, local / a.fadeInMs)
     if (a.fadeOutMs > 0) f = Math.min(f, (span - local) / a.fadeOutMs)
-    el.volume = clamp(a.volume * clamp(f, 0, 1), 0, 1)
+    const keyed = kfEval(a.keyframes.volume, local)
+    el.volume = clamp((keyed ?? a.volume) * clamp(f, 0, 1), 0, 1)
     if (Math.abs(el.currentTime - want) > DRIFT) el.currentTime = want
     if (el.paused) el.play().catch(() => undefined)
   }

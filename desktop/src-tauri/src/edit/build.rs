@@ -899,7 +899,9 @@ fn music_track(k: usize, idx: usize, a: &AudioTrack, src: &Source, total: u64, f
         f = vec![];
     }
     audio_fades(&mut f, len, a.fade_in_ms, a.fade_out_ms);
-    if (a.volume - 1.0).abs() > 1e-9 {
+    if let Some(k) = keyframes::track(&a.keyframes, "volume") {
+        f.push(format!("volume=volume='max(0,{})':eval=frame", keyframes::expr(&k, "t")));
+    } else if (a.volume - 1.0).abs() > 1e-9 {
         f.push(format!("volume={:.4}", a.volume));
     }
     if a.start_ms > 0 {
@@ -1740,6 +1742,19 @@ mod tests {
         assert!(g.contains("[m0][sc0]sidechaincompress=threshold=0.02"), "{g}");
         assert!(g.contains("[mm][d0][m1]amix=inputs=3:duration=first:dropout_transition=0:normalize=0[amx]"), "{g}");
         assert!(plan.args.windows(2).any(|w| w == ["-map", "[amx]"]));
+    }
+
+    #[test]
+    fn a_volume_line_on_music_becomes_a_frame_by_frame_volume_expression() {
+        let mut p = Project { clips: vec![clip("/m/a.mp4", 0, 10_000)], ..Default::default() };
+        let mut a = AudioTrack { path: "/m/bgm.mp3".into(), volume: 0.5, ..Default::default() };
+        a.keyframes.insert("volume".into(), vec![super::super::keyframes::Keyframe { t_ms: 0, value: 1.0, ease: "linear".into() }, super::super::keyframes::Keyframe { t_ms: 2000, value: 0.2, ease: "linear".into() }]);
+        p.audio = vec![a];
+        let p = p.checked().unwrap();
+        let plan = build(&p, &sources(&["/m/a.mp4", "/m/bgm.mp3"]), &caps(), &tmp(), Mode::Export, None).unwrap();
+        let g = graph_of(&plan);
+        assert!(g.contains("volume=volume='max(0,") && g.contains(":eval=frame"), "{g}");
+        assert!(!g.contains("volume=0.5000"), "有音量线就不再用固定音量：{g}");
     }
 
     #[test]

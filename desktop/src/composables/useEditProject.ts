@@ -26,6 +26,7 @@ import {
   detachedAudio,
   editPoints,
   kfDelete,
+  kfSplit,
   kfSet,
   emptyProject,
   layout,
@@ -385,22 +386,22 @@ export function useEditProject() {
     }, key)
   }
   /** 在 `tMs`（相对开头）给某个属性放一个关键点 / 改它的曲线 / 删掉 */
-  function setKey(kind: 'overlay' | 'text' | 'clip', id: number, prop: string, tMs: number, value: number, ease?: EditKeyframe['ease'], key = '') {
+  function setKey(kind: 'overlay' | 'text' | 'clip' | 'audio', id: number, prop: string, tMs: number, value: number, ease?: EditKeyframe['ease'], key = '') {
     mutate((p) => {
-      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : kind === 'audio' ? p.audio.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
       if (it) it.keyframes = kfSet(it.keyframes, prop, tMs, value, ease)
     }, key)
   }
-  function deleteKey(kind: 'overlay' | 'text' | 'clip', id: number, prop: string, tMs: number) {
+  function deleteKey(kind: 'overlay' | 'text' | 'clip' | 'audio', id: number, prop: string, tMs: number) {
     mutate((p) => {
-      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : kind === 'audio' ? p.audio.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
       if (it) it.keyframes = kfDelete(it.keyframes, prop, tMs)
     })
   }
   /** 把某个属性所有的关键点去掉，回到固定值（固定值设成 `keep`，比如当前这一刻的值） */
-  function clearKeys(kind: 'overlay' | 'text' | 'clip', id: number, prop: string, keep?: number) {
+  function clearKeys(kind: 'overlay' | 'text' | 'clip' | 'audio', id: number, prop: string, keep?: number) {
     mutate((p) => {
-      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
+      const it = kind === 'overlay' ? p.overlays.find((x) => x.id === id) : kind === 'clip' ? p.clips.find((x) => x.id === id) : kind === 'audio' ? p.audio.find((x) => x.id === id) : p.texts.find((x) => x.id === id)
       if (!it) return
       const rest = { ...it.keyframes }
       delete rest[prop]
@@ -596,6 +597,23 @@ export function useEditProject() {
         }
       }
     }
+  }
+
+  /** 把素材放到一条新建的轨道上（这一类已经满了返回 null）。 */
+  function moveToNewTrack(kind: 'overlay' | 'audio' | 'text', id: number): number | null {
+    const tk: EditTrackKind = kind === 'overlay' ? 'video' : kind
+    const it = find({ kind, id } as Sel) as { track: number } | undefined
+    if (!it || trackOf(project.value, tk, it.track).lock) return null
+    let made: number | null = null
+    mutate((p) => {
+      const n = nextNo(p, tk)
+      if (n === null) return
+      metaFor(p, tk, n)
+      const x = (kind === 'overlay' ? p.overlays : kind === 'audio' ? p.audio : p.texts).find((q) => q.id === id) as { track: number } | undefined
+      if (x) x.track = n
+      made = n
+    })
+    return made
   }
 
   // ---------- 标记 ----------
@@ -831,6 +849,51 @@ export function useEditProject() {
     })
     sel.value = { kind: 'clip', id: parts[1].id }
     return true
+  }
+
+
+  /** 刀片：在 `ms` 处把这个素材切成两段（片段、叠加素材、配乐、文字都行）。切不开（离两端太近、循环的配乐）返回 false。 */
+  function bladeAt(kind: 'clip' | 'overlay' | 'audio' | 'text', id: number, ms: number): boolean {
+    const t = Math.round(ms)
+    if (kind === 'clip' || kind === 'overlay') {
+      playhead.value = clamp(t, 0, Math.max(0, total.value))
+      sel.value = { kind, id }
+      return splitAtPlayhead()
+    }
+    let ok = false
+    mutate((p) => {
+      if (kind === 'audio') {
+        const a = p.audio.find((x) => x.id === id)
+        if (!a || a.looped) return
+        const span = durOf.audio(a)
+        if (t < a.startMs + MIN_MS || t > a.startMs + span - MIN_MS) return
+        const cut = t - a.startMs
+        const b: EditAudio = { ...a, keyframes: {}, beats: null, id: nextId(p), startMs: t, inMs: a.inMs + cut, fadeInMs: 0 }
+        a.outMs = a.inMs + cut
+        a.fadeOutMs = 0
+        // 音量线在切开处分成两半
+        const [k1, k2] = kfSplit(a.keyframes ?? {}, cut)
+        a.keyframes = k1
+        b.keyframes = k2
+        p.audio.splice(p.audio.indexOf(a) + 1, 0, b)
+        sel.value = { kind: 'audio', id: b.id }
+        ok = true
+      } else {
+        const x = p.texts.find((q) => q.id === id)
+        if (!x || t < x.startMs + MIN_MS || t > x.endMs - MIN_MS) return
+        const b: EditText = { ...x, keyframes: {}, id: nextId(p), startMs: t, words: [], highlight: '' }
+        x.endMs = t
+        x.words = []
+        x.highlight = ''
+        const [k1, k2] = kfSplit(x.keyframes ?? {}, t - x.startMs)
+        x.keyframes = k1
+        b.keyframes = k2
+        p.texts.splice(p.texts.indexOf(x) + 1, 0, b)
+        sel.value = { kind: 'text', id: b.id }
+        ok = true
+      }
+    })
+    return ok
   }
 
   function removeSelected() {
@@ -1154,6 +1217,7 @@ export function useEditProject() {
     addAdjust,
     crowded,
     moveToTrack,
+    moveToNewTrack,
     addMarker,
     patchMarker,
     removeMarker,
@@ -1194,6 +1258,7 @@ export function useEditProject() {
     proxying,
     makeProxy,
     splitAtPlayhead,
+    bladeAt,
     removeSelected,
     rippleDeleteSelected,
     trimAtPlayhead,

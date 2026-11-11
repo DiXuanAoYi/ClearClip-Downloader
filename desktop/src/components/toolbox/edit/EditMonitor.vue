@@ -5,7 +5,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import type { EditApi } from '../../../composables/useEditProject'
 import type { RegionApi } from '../../../composables/useRegions'
 import type { EditOverlay, EditRegion, EditText, NRect } from '../../../types'
-import { aspectInSource, boxFromCorners, clamp, clampBox, focusRect, focusWindow, grownBox, liveFrame, monitorGeom, outputSize, overlayBox, regionActiveAt, thin, trackAt, withKeys } from '../../../utils/edit'
+import { aspectInSource, boxFromCorners, clamp, clampBox, focusRect, focusWindow, grownBox, liveAdjust, liveFrame, monitorGeom, outputSize, overlayBox, regionActiveAt, thin, trackAt, withKeys } from '../../../utils/edit'
 import EditLive from './EditLive.vue'
 
 const props = defineProps<{ ed: EditApi; rg: RegionApi; mode: 'live' | 'preview'; previewUrl: string | null }>()
@@ -44,7 +44,12 @@ const pv = ref<HTMLVideoElement | null>(null)
 
 const total = computed(() => ed.total.value)
 const clips = computed(() => ed.project.value.clips)
-const frame = computed(() => liveFrame(ed.project.value, ed.placed.value, ed.playhead.value, (path) => ed.sources[path]?.durationMs))
+const frame = computed(() => liveFrame(ed.live.value, ed.placed.value, ed.playhead.value, (path) => ed.sources[path]?.durationMs))
+/** 调整图层在预览里的样子（CSS 滤镜近似） */
+const adjustFilter = computed(() => {
+  const a = liveAdjust(ed.live.value, ed.playhead.value)
+  return a ? `brightness(${Math.max(0, 1 + a.brightness).toFixed(3)}) contrast(${a.contrast.toFixed(3)}) saturate(${a.saturation.toFixed(3)})` : undefined
+})
 /** 主轨上“现在算哪一段”：转场中算进来的那一段 */
 const curMain = computed(() => frame.value.main[frame.value.main.length - 1])
 const curIdx = computed(() => curMain.value?.idx ?? -1)
@@ -161,7 +166,7 @@ const visibleTexts = computed(() => {
   if (props.mode !== 'live') return []
   const t = ed.playhead.value
   // 带关键帧的文字换成此刻的位置 / 不透明度
-  return ed.project.value.texts.filter((x) => t >= x.startMs && t < x.endMs).map((x) => withKeys(x, t - x.startMs))
+  return ed.live.value.texts.filter((x) => t >= x.startMs && t < x.endMs).map((x) => withKeys(x, t - x.startMs))
 })
 
 function rgba(hex: string, a: number) {
@@ -487,7 +492,7 @@ const empty = computed(() => !clips.value.length && !ed.project.value.overlays.l
   <div ref="wrap" class="mon">
     <div ref="stageEl" class="stage" :style="{ width: stage.w + 'px', height: stage.h + 'px' }">
       <template v-if="mode === 'live'">
-        <EditLive ref="live" :ed="ed" :stage="stage" :fit="ed.project.value.out.fit" :zoom="focusZoom">
+        <EditLive ref="live" :ed="ed" :stage="stage" :fit="ed.project.value.out.fit" :zoom="focusZoom" :style="adjustFilter ? { filter: adjustFilter } : undefined">
           <template #fx>
             <div v-if="fxList.length && geom" class="fxz" :style="{ transform: focusZoom?.css ?? 'none' }">
               <div class="fxl" :style="geoBox">
