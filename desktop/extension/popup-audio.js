@@ -22,21 +22,11 @@
   function build() {
     if (built) return
     built = true
-    for (const p of A.LOUD_PRESETS) {
-      const b = document.createElement('button')
-      b.dataset.id = p.id
-      b.append(p.name)
-      const s = document.createElement('small')
-      s.textContent = String(p.target)
-      b.append(s)
-      b.onclick = () => save(A.withPreset(cfg, p.id))
-      $('auPresets').append(b)
+    $('auSave').onclick = saveUser
+    $('auName').onkeydown = (e) => {
+      if (e.key === 'Enter') saveUser()
     }
-    const c = document.createElement('button')
-    c.dataset.id = 'custom'
-    c.textContent = '自定义'
-    c.onclick = () => save({ ...cfg, preset: 'custom' })
-    $('auPresets').append(c)
+    $('auDel').onclick = () => save(A.deleteUserPreset(cfg, cfg.preset))
     $('auRev').append(new Option('关', ''))
     for (const r of A.REVERBS) $('auRev').append(new Option(r.name, r.id))
     $('auEq').append(new Option('关', ''))
@@ -72,11 +62,64 @@
     }
   }
 
+  /** 预设按用途分组：内置的几组，再加“我的预设”和一个还没保存的“自定义”。 */
+  function renderPresets() {
+    const box = $('auPresets')
+    const groups = []
+    for (const p of A.allPresets(cfg)) {
+      let g = groups.find((x) => x.name === p.group)
+      if (!g) groups.push((g = { name: p.group, items: [] }))
+      g.items.push(p)
+    }
+    const mine = groups.find((x) => x.name === '我的预设')
+    if (!mine) groups.push({ name: '我的预设', items: [] })
+    const g2 = groups.find((x) => x.name === '我的预设')
+    g2.items.push({ id: 'custom', name: '自定义', target: null, custom: true })
+    box.replaceChildren()
+    for (const g of groups) {
+      const wrap = document.createElement('div')
+      wrap.className = 'auGroup'
+      const t = document.createElement('div')
+      t.className = 'mute'
+      t.textContent = g.name
+      const chips = document.createElement('div')
+      chips.className = 'chips'
+      for (const p of g.items) {
+        const b = document.createElement('button')
+        b.dataset.id = p.id
+        b.append(p.name)
+        if (p.target != null) {
+          const s = document.createElement('small')
+          s.textContent = String(p.target)
+          b.append(s)
+        }
+        b.setAttribute('aria-pressed', String(p.id === cfg.preset))
+        b.onclick = () => save(p.custom ? { ...cfg, preset: 'custom' } : A.withPreset(cfg, p.id))
+        chips.append(b)
+      }
+      wrap.append(t, chips)
+      box.append(wrap)
+    }
+  }
+
+  async function saveUser() {
+    const name = $('auName').value.trim()
+    const exists = cfg.userPresets.some((x) => x.name === name)
+    if (!exists && cfg.userPresets.length >= A.MAX_USER_PRESETS) {
+      $('auSaveMsg').textContent = `最多存 ${A.MAX_USER_PRESETS} 个，先删掉不用的`
+      return
+    }
+    await save(A.saveUserPreset(cfg, name))
+    $('auName').value = ''
+    $('auSaveMsg').textContent = exists ? `已更新“${name}”` : '已存为我的预设，可以随时选'
+  }
+
   function render() {
-    const p = A.LOUD_PRESETS.find((x) => x.id === cfg.preset)
+    const p = A.allPresets(cfg).find((x) => x.id === cfg.preset)
     $('auOn').checked = cfg.on
-    for (const b of $('auPresets').children) b.setAttribute('aria-pressed', String(b.dataset.id === cfg.preset))
-    $('auPresetNote').textContent = p ? p.note : '改了任意一项就算自定义。'
+    renderPresets()
+    $('auDel').classList.toggle('hidden', !p?.user)
+    $('auPresetNote').textContent = p ? (p.user ? `我的预设：目标 ${p.target} LUFS · 压缩 ${p.comp}% · 最大增益 +${p.maxGain} dB` : p.note) : '改了任意一项就算自定义，可以在下面起个名字存成预设。'
     $('auTarget').value = cfg.target
     $('auComp').value = cfg.comp
     $('auMax').value = cfg.maxGain

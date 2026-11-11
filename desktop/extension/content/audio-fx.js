@@ -371,7 +371,7 @@
   function renderPanel() {
     if (!panel) return
     const sw = h('button', { class: `sw${cfg.on ? ' on' : ''}`, role: 'switch', 'aria-checked': String(cfg.on), 'aria-label': '响度标准化', onclick: () => saveCfg({ ...cfg, on: !cfg.on }).then(renderPanel) })
-    const presets = h('div', { class: 'ch' }, ...A.LOUD_PRESETS.map((p) => BTN(p.name, `c${cfg.preset === p.id ? ' on' : ''}`, () => { saveCfg(A.withPreset(cfg, p.id)); renderPanel() })))
+    const presets = h('div', { class: 'ch' }, ...A.allPresets(cfg).map((p) => BTN(p.name, `c${cfg.preset === p.id ? ' on' : ''}`, () => { saveCfg(A.withPreset(cfg, p.id)); renderPanel() })))
     const rv = h('div', { class: 'ch' }, ...REV_QUICK.map(([id, name]) => {
       const on = id ? cfg.reverb.on && cfg.reverb.id === id : !cfg.reverb.on
       return BTN(name, `c${on ? ' on' : ''}`, () => { saveCfg({ ...cfg, reverb: { ...cfg.reverb, on: !!id, id: id || cfg.reverb.id } }); renderPanel() })

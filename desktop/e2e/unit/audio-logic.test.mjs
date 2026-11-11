@@ -15,8 +15,11 @@ const plain = (v) => JSON.parse(JSON.stringify(v))
 {
   const d = plain(A.normalizeCfg(undefined))
   assert.equal(d.on, true, '响度标准化默认开')
-  assert.equal(d.preset, 'mild')
-  assert.equal(d.target, -16)
+  assert.equal(d.preset, 'aoyi', '默认预设“奥懿”')
+  assert.equal(d.target, -11)
+  assert.equal(d.comp, 15)
+  assert.equal(d.maxGain, 24)
+  assert.deepEqual(plain(d.userPresets), [])
   assert.equal(d.limiter, true)
   assert.equal(d.reverb.on, false, '混响默认关')
   assert.equal(d.eq.on, false, '均衡器默认关')
@@ -33,20 +36,25 @@ const plain = (v) => JSON.parse(JSON.stringify(v))
   assert.equal(c.comp, 100)
   assert.equal(c.maxGain, 0)
   assert.equal(c.speed, 'mid')
-  assert.equal(A.normalizeCfg({ preset: 'custom', target: 'abc' }).target, -16)
+  assert.equal(A.normalizeCfg({ preset: 'custom', target: 'abc' }).target, -11)
   // 不认识的预设 / 混响 / 均衡器 → 默认
-  assert.equal(A.normalizeCfg({ preset: 'zzz' }).preset, 'mild')
+  assert.equal(A.normalizeCfg({ preset: 'zzz' }).preset, 'aoyi')
   assert.equal(A.normalizeCfg({ reverb: { on: true, id: 'nope' } }).reverb.id, 'room')
   assert.equal(A.normalizeCfg({ eq: { on: true, id: 'nope' } }).eq.id, 'voice')
   assert.equal(A.normalizeCfg({ reverb: { on: 'yes' } }).reverb.on, false, '只认布尔 true')
   assert.equal(A.normalizeCfg({ reverb: { mix: -99 } }).reverb.mix, -30)
 }
 
-// ---- 预设：五个，目标各不相同；选预设 / 改数值
+// ---- 预设：按行业和用途分组，目标各不相同；选预设 / 改数值
 {
-  assert.equal(A.LOUD_PRESETS.length, 5)
-  assert.deepEqual(plain(A.LOUD_PRESETS.map((p) => p.target)), [-16, -14, -18, -20, -23])
-  assert.equal(new Set(A.LOUD_PRESETS.map((p) => p.id)).size, 5)
+  assert.deepEqual(plain(A.LOUD_PRESETS.map((p) => p.id)), ['aoyi', 'standard', 'short', 'podcast', 'broadcast', 'cn-tv', 'atsc', 'mild', 'quiet', 'night'])
+  assert.equal(new Set(A.LOUD_PRESETS.map((p) => p.id)).size, A.LOUD_PRESETS.length)
+  const by = (id) => plain(A.LOUD_PRESETS.find((p) => p.id === id))
+  assert.deepEqual([by('aoyi').target, by('aoyi').comp, by('aoyi').maxGain], [-11, 15, 24])
+  assert.equal(by('broadcast').target, -23, '广播 EBU R128')
+  assert.equal(by('cn-tv').target, -24)
+  assert.equal(by('standard').target, -14)
+  assert.ok(A.LOUD_PRESETS.every((p) => p.group && p.name && p.note))
   const base = A.normalizeCfg()
   const std = plain(A.withPreset(base, 'standard'))
   assert.equal(std.target, -14)
@@ -56,6 +64,54 @@ const plain = (v) => JSON.parse(JSON.stringify(v))
   assert.equal(cu.target, -19)
   assert.equal(cu.comp, 40, '没改的项沿用当前预设的数值')
   assert.equal(plain(A.withCustom(cu, { comp: 10 })).target, -19)
+}
+
+// ---- 用户自己存的预设：可以存很多个，选中、更新、删除，存储里的坏数据被整理掉
+{
+  let c = A.normalizeCfg()
+  c = A.saveUserPreset(A.withCustom(c, { target: -13, comp: 25, maxGain: 10 }), '会议')
+  assert.equal(c.userPresets.length, 1)
+  assert.equal(c.preset, c.userPresets[0].id, '存完就选中它')
+  c = A.saveUserPreset(A.withCustom(c, { target: -18, comp: 60, maxGain: 6 }), '睡前')
+  assert.equal(c.userPresets.length, 2, '可以存多个，不是只有一个')
+  assert.deepEqual(plain(A.allPresets(c).slice(-2).map((p) => p.name)), ['会议', '睡前'])
+  // 选回第一个：数值跟着它走
+  const meeting = c.userPresets[0]
+  const back = plain(A.withPreset(c, meeting.id))
+  assert.deepEqual([back.preset, back.target, back.comp, back.maxGain], [meeting.id, -13, 25, 10])
+  // 同名就更新，不新增
+  const upd = A.saveUserPreset(A.withCustom(back, { target: -15 }), '会议')
+  assert.equal(upd.userPresets.length, 2)
+  assert.equal(upd.userPresets[0].target, -15)
+  assert.equal(upd.preset, meeting.id)
+  // 空名字自动起名
+  assert.match(A.saveUserPreset(A.normalizeCfg(), '  ').userPresets[0].name, /^自定义 1$/)
+  // 存取一轮后还在
+  const again = plain(A.normalizeCfg(JSON.parse(JSON.stringify(upd))))
+  assert.equal(again.preset, meeting.id)
+  assert.equal(again.target, -15)
+  assert.equal(again.userPresets.length, 2)
+  // 删掉正在用的：变成自定义，数值不变；删别的：选择不变
+  const del = plain(A.deleteUserPreset(upd, meeting.id))
+  assert.equal(del.preset, 'custom')
+  assert.equal(del.target, -15)
+  assert.equal(del.userPresets.length, 1)
+  assert.equal(plain(A.deleteUserPreset(upd, c.userPresets[1].id)).preset, meeting.id)
+  // 改了数值就离开预设（变成自定义），预设本身不动
+  const edit = plain(A.withCustom(back, { comp: 5 }))
+  assert.equal(edit.preset, 'custom')
+  assert.equal(edit.userPresets[0].comp, 25)
+  // 数量上限；满了新名字存不进去
+  let full = A.normalizeCfg()
+  for (let i = 0; i < A.MAX_USER_PRESETS + 3; i++) full = A.saveUserPreset(full, `p${i}`)
+  assert.equal(full.userPresets.length, A.MAX_USER_PRESETS)
+  // 坏数据：id 不合法、没名字、重复 id、数值越界
+  const dirty = plain(A.normalizeCfg({ preset: 'u-a', userPresets: [{ id: 'u-a', name: ' 好 ', target: -99, comp: 500, maxGain: 'x' }, { id: 'u-a', name: '重复' }, { id: 'bad', name: '坏 id' }, { id: 'u-b', name: '' }, null, 3] }))
+  assert.equal(dirty.userPresets.length, 1)
+  assert.deepEqual([dirty.userPresets[0].name, dirty.userPresets[0].target, dirty.userPresets[0].comp, dirty.userPresets[0].maxGain], ['好', -30, 100, 24])
+  assert.equal(dirty.preset, 'u-a')
+  // 选的预设已经不存在 → 回到默认
+  assert.equal(A.normalizeCfg({ preset: 'u-gone', userPresets: [] }).preset, 'aoyi')
 }
 
 // ---- 响度公式
@@ -102,7 +158,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v))
 
 // ---- 增益控制
 {
-  const cfg = A.normalizeCfg() // -16，最大 +12，中速
+  const cfg = A.normalizeCfg({ preset: 'mild' }) // -16，最大 +12，中速
   // 太小声：往上拉，时间常数 = 1.5 秒
   let g = plain(A.nextGain({ cur: 0, lufs: -26, cfg }))
   assert.equal(g.target, 10)
