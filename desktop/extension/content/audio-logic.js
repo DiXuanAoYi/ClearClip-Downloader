@@ -7,14 +7,26 @@
 
   // ---------- 预设 ----------
 
-  /** 响度预设：目标响度（LUFS）、压缩强度（0–100）、最大增益（dB）。night 另外压低低频。 */
+  /**
+   * 响度预设：目标响度（LUFS）、压缩强度（0–100）、最大增益（dB），按用途分组。night 另外压低低频。
+   * 行业数值只是够用的起点（电视 -23 / -24 LUFS 是广播规范，流媒体 -14 左右是各平台常见的目标），平台规则会变。
+   * 默认“奥懿”：更响更满，适合手机外放和音量普遍偏小的视频。
+   */
   const LOUD_PRESETS = [
-    { id: 'mild', name: '温和', target: -16, comp: 30, maxGain: 12, note: '短视频、网课，保留一点动态' },
-    { id: 'standard', name: '标准', target: -14, comp: 40, maxGain: 12, note: '接近 YouTube 和音乐平台，更响更满' },
-    { id: 'quiet', name: '安静', target: -18, comp: 35, maxGain: 10, note: '办公室、图书馆' },
-    { id: 'night', name: '夜间', target: -20, comp: 70, maxGain: 12, lowCut: true, note: '压低爆炸声、抬高对白，同时压低低频' },
-    { id: 'broadcast', name: '广播', target: -23, comp: 20, maxGain: 8, note: '电视、播客的 EBU R128 标准' },
+    { id: 'aoyi', group: '常用', name: '奥懿', target: -11, comp: 15, maxGain: 24, note: '默认：响亮饱满，音量很小的视频也能拉起来；压缩轻，保留动态' },
+    { id: 'standard', group: '常用', name: '标准', target: -14, comp: 40, maxGain: 12, note: '接近 YouTube 和音乐平台的目标响度，更响更满' },
+    { id: 'short', group: '平台与内容', name: '短视频', target: -12, comp: 35, maxGain: 18, note: '抖音、快手等短视频的响亮风格，手机外放清楚' },
+    { id: 'podcast', group: '平台与内容', name: '播客', target: -16, comp: 50, maxGain: 12, note: '播客、有声书、网课：对白清楚，轻声和大声差得少' },
+    { id: 'broadcast', group: '电视广播', name: '广播', target: -23, comp: 20, maxGain: 8, note: '电视、播客的 EBU R128 标准（欧洲广播）' },
+    { id: 'cn-tv', group: '电视广播', name: '电视（中国）', target: -24, comp: 20, maxGain: 8, note: '国内电视播出的节目响度要求，约 -24 LUFS' },
+    { id: 'atsc', group: '电视广播', name: '电视（美国）', target: -24, comp: 20, maxGain: 8, note: '美国电视广播 ATSC A/85，目标 -24 LKFS' },
+    { id: 'mild', group: '环境', name: '温和', target: -16, comp: 30, maxGain: 12, note: '短视频、网课，保留一点动态' },
+    { id: 'quiet', group: '环境', name: '安静', target: -18, comp: 35, maxGain: 10, note: '办公室、图书馆' },
+    { id: 'night', group: '环境', name: '夜间', target: -20, comp: 70, maxGain: 12, lowCut: true, note: '压低爆炸声、抬高对白，同时压低低频' },
   ]
+
+  /** 用户自己存的预设最多这么多个。 */
+  const MAX_USER_PRESETS = 20
 
   /** 混响预设，参数和工具箱“音效 / 混响”（audiofx.rs）一致：混合 dB、混响时间 ms、高频保留、预延迟 ms。 */
   const REVERBS = [
@@ -40,10 +52,11 @@
 
   const DEFAULT_CFG = {
     on: true, // 响度标准化
-    preset: 'mild', // LOUD_PRESETS 的 id，或 custom
-    target: -16,
-    comp: 30,
-    maxGain: 12,
+    preset: 'aoyi', // LOUD_PRESETS 的 id、用户预设的 id（u-…），或 custom（还没存成预设的自定义）
+    target: -11,
+    comp: 15,
+    maxGain: 24,
+    userPresets: [], // 用户存的预设：{ id, name, target, comp, maxGain }
     speed: 'mid',
     limiter: true,
     reverb: { on: false, id: 'room', mix: null }, // mix 为 null 时用预设值
@@ -53,11 +66,31 @@
     pillHover: true, // 显示时只在鼠标移到视频上才出现
   }
 
-  /** 把存储里的原始值整理成完整设置：缺的补默认，越界的夹回范围，不认识的预设退回自定义。 */
+  /** 整理用户预设：id、名字、三个数值都夹回范围，重复的 id 只留第一个，最多 MAX_USER_PRESETS 个。 */
+  function cleanUserPresets(raw) {
+    const out = []
+    const seen = new Set()
+    for (const x of Array.isArray(raw) ? raw : []) {
+      if (!x || typeof x !== 'object') continue
+      const id = typeof x.id === 'string' && /^u-[a-z0-9]{1,16}$/.test(x.id) ? x.id : ''
+      const name = typeof x.name === 'string' ? x.name.trim().slice(0, 12) : ''
+      if (!id || !name || seen.has(id)) continue
+      seen.add(id)
+      out.push({ id, name, target: clamp(x.target, -30, -8, DEFAULT_CFG.target), comp: clamp(x.comp, 0, 100, DEFAULT_CFG.comp), maxGain: clamp(x.maxGain, 0, 24, DEFAULT_CFG.maxGain) })
+      if (out.length >= MAX_USER_PRESETS) break
+    }
+    return out
+  }
+
+  /** 内置预设 + 这份设置里用户存的预设。 */
+  const allPresets = (cfg) => [...LOUD_PRESETS, ...((cfg && cfg.userPresets) || []).map((p) => ({ ...p, user: true, group: '我的预设' }))]
+
+  /** 把存储里的原始值整理成完整设置：缺的补默认，越界的夹回范围，不认识的预设退回默认。 */
   function normalizeCfg(raw) {
     const r = raw && typeof raw === 'object' ? raw : {}
     const d = DEFAULT_CFG
-    const p = LOUD_PRESETS.find((x) => x.id === r.preset)
+    const userPresets = cleanUserPresets(r.userPresets)
+    const p = LOUD_PRESETS.find((x) => x.id === r.preset) || userPresets.find((x) => x.id === r.preset)
     const preset = p ? p.id : r.preset === 'custom' ? 'custom' : d.preset
     const base = p || (preset === 'custom' ? d : LOUD_PRESETS[0])
     const num = (k, lo, hi) => clamp(r[k], lo, hi, base[k])
@@ -66,6 +99,7 @@
     return {
       on: typeof r.on === 'boolean' ? r.on : d.on,
       preset,
+      userPresets,
       // 选了预设就以预设为准（除非是自定义），避免旧数值和预设对不上
       target: preset === 'custom' ? num('target', -30, -8) : base.target,
       comp: preset === 'custom' ? num('comp', 0, 100) : base.comp,
@@ -84,11 +118,29 @@
     }
   }
 
-  /** 选一个预设。custom 保留当前数值。 */
+  /** 选一个预设（内置或用户存的）。不认识的 id 当自定义，保留当前数值。 */
   function withPreset(cfg, id) {
-    const p = LOUD_PRESETS.find((x) => x.id === id)
+    const p = allPresets(cfg).find((x) => x.id === id)
     if (!p) return normalizeCfg({ ...cfg, preset: 'custom' })
     return normalizeCfg({ ...cfg, preset: id })
+  }
+
+  /** 把当前的目标 / 压缩 / 最大增益存成一个用户预设并选中它；同名的就更新那一个。满了（20 个）且是新名字时原样返回。 */
+  function saveUserPreset(cfg, name) {
+    const list = cfg.userPresets || []
+    const nm = String(name || '').trim().slice(0, 12) || `自定义 ${list.length + 1}`
+    const vals = { target: cfg.target, comp: cfg.comp, maxGain: cfg.maxGain }
+    const same = list.find((x) => x.name === nm)
+    if (!same && list.length >= MAX_USER_PRESETS) return cfg
+    const id = same ? same.id : `u-${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`
+    const next = same ? list.map((x) => (x.id === id ? { ...x, ...vals } : x)) : [...list, { id, name: nm, ...vals }]
+    return normalizeCfg({ ...cfg, userPresets: next, preset: id })
+  }
+
+  /** 删掉一个用户预设；正在用它就变成自定义，数值不变。 */
+  function deleteUserPreset(cfg, id) {
+    const list = (cfg.userPresets || []).filter((x) => x.id !== id)
+    return normalizeCfg({ ...cfg, userPresets: list, preset: cfg.preset === id ? 'custom' : cfg.preset })
   }
 
   /** 改了目标 / 压缩 / 最大增益中的任一项，就变成自定义；数值恰好等于某个预设时仍算自定义（用户自己调的）。 */
@@ -289,7 +341,7 @@
   const fmtDb = (v) => (v == null || !Number.isFinite(v) ? '--' : `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB`)
 
   globalThis.ccAudio = {
-    LOUD_PRESETS, REVERBS, EQS, SPEEDS, DEFAULT_CFG, K_SHELF, K_HP, LIMITER,
+    LOUD_PRESETS, MAX_USER_PRESETS, allPresets, saveUserPreset, deleteUserPreset, REVERBS, EQS, SPEEDS, DEFAULT_CFG, K_SHELF, K_HP, LIMITER,
     normalizeCfg, withPreset, withCustom, meanSquare, toLufs, ShortTerm, nextGain, compParams, compressorMakeup, dbToGain,
     makeImpulse, reverbSpec, unprocessable, statusText, fmtLufs, fmtDb,
   }

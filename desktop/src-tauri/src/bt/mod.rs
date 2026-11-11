@@ -261,6 +261,8 @@ pub async fn resolve(client: &reqwest::Client, settings: &crate::settings::Setti
             duration_ms: None,
             thumbnail: None,
             index: n as u32 + 1,
+            is_list: false,
+            count: None,
         })
         .collect();
     Ok(media)

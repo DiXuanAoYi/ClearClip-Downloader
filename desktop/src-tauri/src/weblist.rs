@@ -226,6 +226,8 @@ pub fn to_media_info(spec: &Spec, c: Collected) -> MediaInfo {
             duration_ms: None,
             thumbnail: None,
             index: i as u32 + 1,
+            is_list: false,
+            count: None,
         })
         .collect();
     MediaInfo {

@@ -361,6 +361,10 @@ mod win {
             let _ = w.set_position(PhysicalPosition::new(pos.0, pos.1));
             return;
         }
+        // 窗口组件断开时，每隔几秒就试一次只会刷日志，隔几分钟再试
+        if !crate::webhealth::should_try() {
+            return;
+        }
         let built = WebviewWindowBuilder::new(app, BADGE, WebviewUrl::App("index.html#wbadge".into()))
             .title("清影写作浮标")
             .inner_size(f64::from(BADGE_SIZE), f64::from(BADGE_SIZE))
@@ -375,12 +379,17 @@ mod win {
             .build();
         match built {
             Ok(w) => {
+                crate::webhealth::note_ok();
                 crate::winframe::guard(&w);
                 let _ = w.set_size(PhysicalSize::new(BADGE_SIZE as u32, BADGE_SIZE as u32));
                 let _ = w.set_position(PhysicalPosition::new(pos.0, pos.1));
                 crate::winframe::show_no_activate(&w);
             }
-            Err(e) => log::warn!("创建写作浮标失败：{e}"),
+            Err(e) => {
+                if !crate::webhealth::note_failure(app, "写作浮标", &e) {
+                    log::warn!("创建写作浮标失败：{e}");
+                }
+            }
         }
     }
 

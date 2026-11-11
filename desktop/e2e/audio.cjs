@@ -44,7 +44,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 <video id="v" src="${src}" width="640" height="360" loop ${extra}></video></body>`
 
 ;(async () => {
-  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] })
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--autoplay-policy=no-user-gesture-required'] })
   const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } })
   const quiet = wav(-26)
   const loud = wav(-6)
@@ -148,7 +148,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 
   // ---- 1. 安静的视频被拉到目标响度（-16 LUFS，输入 -26 dBFS 峰值 ≈ -25.3 LUFS → 约 +9 dB）
   {
-    const { page, errors } = await open('https://site.test/', { store: { audioCfg: { pillShow: true } } })
+    const { page, errors } = await open('https://site.test/', { store: { audioCfg: { preset: 'mild', pillShow: true } } })
     await play(page)
     await sleep(7000)
     const s = await stat(page)
@@ -162,12 +162,12 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
     ok('没有脚本错误', errors.length === 0, errors.join('|'))
 
     // 关闭响度标准化 → 增益回到 0，输出回到原声（峰值约 -26）
-    await page.evaluate(() => window.__setStore({ audioCfg: { on: false } }))
+    await page.evaluate(() => window.__setStore({ audioCfg: { preset: 'mild', on: false } }))
     await sleep(2500)
     const off = await peak(page)
     ok('关掉后输出还原为原声（约 -26 dBFS）', off > -28.5 && off < -23.5, String(off))
     // 再打开 → 又被拉起来
-    await page.evaluate(() => window.__setStore({ audioCfg: { on: true } }))
+    await page.evaluate(() => window.__setStore({ audioCfg: { preset: 'mild', on: true } }))
     await sleep(4500)
     const back = await peak(page)
     ok('再打开又回到目标附近', back > -21 && back < -14, String(back))
@@ -187,7 +187,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 
   // ---- 2. 很响的视频被压下来，限幅器防爆音
   {
-    const { page } = await open('https://site.test/?src=/l.wav')
+    const { page } = await open('https://site.test/?src=/l.wav', { store: { audioCfg: { preset: 'mild' } } })
     await play(page)
     await sleep(6500)
     const s = await stat(page)
@@ -204,7 +204,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 
   // ---- 3. 混响：暂停后还有尾巴
   {
-    const { page } = await open('https://site.test/', { store: { audioCfg: { on: true, reverb: { on: true, id: 'church' } } } })
+    const { page } = await open('https://site.test/', { store: { audioCfg: { preset: 'mild', on: true, reverb: { on: true, id: 'church' } } } })
     await play(page)
     await sleep(5000)
     await page.evaluate(() => document.getElementById('v').pause())
@@ -212,7 +212,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
     const tail = await page.evaluate(() => window.__peakMax(120))
     ok('开了混响（教堂）：暂停后仍有混响尾巴（> -60 dBFS）', tail > -60, String(tail))
     await page.close()
-    const b = await open('https://site.test/')
+    const b = await open('https://site.test/', { store: { audioCfg: { preset: 'mild' } } })
     await play(b.page)
     await sleep(3000)
     await b.page.evaluate(() => document.getElementById('v').pause())
@@ -224,7 +224,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 
   // ---- 4. 跨域直链：跳过并提示，声音不受影响
   {
-    const { page } = await open('https://site.test/?src=https://cdn.test/q.wav', { store: { audioCfg: { pillShow: true } } })
+    const { page } = await open('https://site.test/?src=https://cdn.test/q.wav', { store: { audioCfg: { preset: 'mild', pillShow: true } } })
     await play(page)
     await sleep(2500)
     const s = await stat(page)
@@ -250,7 +250,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 
   // ---- 5b. “不再提示”：设了就不弹
   {
-    const { page } = await open('https://site.test/?src=https://cdn.test/q.wav', { store: { audioCfg: { notifyOff: true, pillShow: true } } })
+    const { page } = await open('https://site.test/?src=https://cdn.test/q.wav', { store: { audioCfg: { preset: 'mild', notifyOff: true, pillShow: true } } })
     await play(page)
     await sleep(1500)
     const hasToast = await page.evaluate(() => (window.__roots || []).some((r) => /无法统一音量/.test(r.textContent || '')))
@@ -268,7 +268,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
     const p = await peak(page)
     ok('本站关闭：声音保持原样', p === -Infinity || (p > -28.5 && p < -23.5), String(p))
     await page.close()
-    const t = await open('https://site.test/')
+    const t = await open('https://site.test/', { store: { audioCfg: { preset: 'mild' } } })
     await play(t.page)
     await sleep(6000)
     const r = await t.page.evaluate(() => window.__cmd({ type: 'cc-audio', action: 'tmp', off: true }))
@@ -291,7 +291,7 @@ const PAGE = (src, extra = '') => `<!doctype html><title>Player</title><body sty
 
   // ---- 7. 快捷面板：切预设、开混响、本站关闭
   {
-    const { page } = await open('https://site.test/', { store: { audioCfg: { pillShow: true } } })
+    const { page } = await open('https://site.test/', { store: { audioCfg: { preset: 'mild', pillShow: true } } })
     await play(page)
     await sleep(1500)
     await hover(page)

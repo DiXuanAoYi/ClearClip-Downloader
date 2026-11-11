@@ -36,6 +36,10 @@ export interface PlaylistEntry {
   durationMs: number | null
   thumbnail: string | null
   index: number
+  /** 这一项本身是个列表（播放列表、合集），要展开才有视频 */
+  isList?: boolean
+  /** 列表项里大约有多少个视频 */
+  count?: number | null
 }
 
 export interface SeriesInfo {
@@ -1375,6 +1379,35 @@ export interface BatchProgress {
   skipped: number
   failed: string[]
   finished: boolean
+  /** 展开了几个列表（一个列表一个文件夹） */
+  lists: number
+}
+
+export interface CreatorTab {
+  key: string
+  label: string
+  url: string
+  /** 这一栏里每一项是个列表，可展开 */
+  lists: boolean
+}
+
+export interface CreatorTabs {
+  tabs: CreatorTab[]
+  active: string
+}
+
+/** 一批列表下载的选项；字段缺省 = 按设置里的 */
+export interface ListOptions {
+  quality?: 'best' | '1080' | '720' | 'audio'
+  subtitle?: 'off' | 'file' | 'embed' | 'burn'
+  audioFormat?: 'mp3' | 'm4a' | 'opus' | 'flac'
+  folder?: boolean
+  layout?: 'platform_author_list' | 'author_list' | 'list'
+  numbered?: boolean
+  template?: string
+  limit?: number
+  /** 展开的列表里只下载其中几个：列表项 id → 视频 id */
+  only?: Record<string, string[]>
 }
 
 export interface SaveSettingsResult {

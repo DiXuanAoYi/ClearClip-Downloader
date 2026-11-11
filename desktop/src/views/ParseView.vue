@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../api'
 import { useAppStore, useParseStore } from '../stores/app'
-import type { Asset, BatchProgress, Clip, DetectedLink, HistoryItem, MediaInfo } from '../types'
+import type { Asset, BatchProgress, Settings, Clip, CreatorTabs, DetectedLink, HistoryItem, ListOptions, MediaInfo } from '../types'
 import { formatBytes, formatDate, formatDuration } from '../utils/format'
 import { formatClock } from '../utils/time'
 import { SUB_DEFAULTS } from '../utils/subs'
@@ -48,6 +48,76 @@ async function makeSlideshow() {
   }
 }
 const entrySel = ref<Set<string>>(new Set())
+/** 展开过、只勾了一部分的列表 */
+const entryOnly = ref<Record<string, string[]>>({})
+const entryTotal = ref({ videos: 0, lists: 0, approx: false })
+
+// ---------- 创作者主页的分栏 ----------
+const creatorTabs = ref<CreatorTabs | null>(null)
+async function loadTabs(r: MediaInfo | null) {
+  creatorTabs.value = null
+  if (!r || r.kind !== 'playlist') return
+  try {
+    const t = await api.creatorTabs(r.sourceUrl)
+    if (result.value === r && t.tabs.length) creatorTabs.value = t
+  } catch {
+    /* 没有分栏就按普通列表显示 */
+  }
+}
+const tabLoading = ref('')
+async function openTab(t: { key: string; url: string }) {
+  if (t.key === creatorTabs.value?.active || parse.loading) return
+  tabLoading.value = t.key
+  const keep = creatorTabs.value
+  await parse.parse(t.url)
+  tabLoading.value = ''
+  // 这一栏读不出来：保留分栏，错误提示显示在下面，可以切回去
+  if (!parse.result) creatorTabs.value = keep
+}
+
+// ---------- 每个视频怎么下（只用于这一次；也可以存成默认） ----------
+type Pick<T> = T | 'settings'
+type VideoQuality = Exclude<NonNullable<ListOptions['quality']>, 'audio'>
+const optQuality = ref<Pick<VideoQuality>>('settings')
+const optSubtitle = ref<Pick<NonNullable<ListOptions['subtitle']>>>('settings')
+const optSound = ref<'video' | 'audio'>('video')
+const optAudioFmt = ref<NonNullable<ListOptions['audioFormat']>>('mp3')
+const optSaveDefault = ref(false)
+const optFolder = ref(true)
+const optLayout = ref<NonNullable<ListOptions['layout']>>('platform_author_list')
+const optNumbered = ref(true)
+const QUALITY_CHOICES: { v: Pick<VideoQuality>; t: string }[] = [
+  { v: 'settings', t: '按设置' },
+  { v: 'best', t: '最高' },
+  { v: '1080', t: '不超过 1080p' },
+  { v: '720', t: '720p 省空间' },
+]
+const SUB_CHOICES: { v: Pick<NonNullable<ListOptions['subtitle']>>; t: string }[] = [
+  { v: 'settings', t: '按设置' },
+  { v: 'off', t: '不要字幕' },
+  { v: 'file', t: '单独文件' },
+  { v: 'embed', t: '内嵌到视频' },
+  { v: 'burn', t: '烧录进画面' },
+]
+const LAYOUTS: { v: NonNullable<ListOptions['layout']>; t: string; p: string }[] = [
+  { v: 'platform_author_list', t: '平台 / 创作者 / 列表', p: 'YouTube/彼德/AI新聞/' },
+  { v: 'author_list', t: '创作者 / 列表', p: '彼德/AI新聞/' },
+  { v: 'list', t: '只用列表名', p: 'AI新聞/' },
+]
+function buildListOptions(): ListOptions {
+  const o: ListOptions = { folder: optFolder.value, layout: optLayout.value, numbered: optNumbered.value, only: entryOnly.value }
+  if (optSound.value === 'audio') {
+    o.quality = 'audio'
+    o.audioFormat = optAudioFmt.value
+  } else if (optQuality.value !== 'settings') o.quality = optQuality.value
+  if (optSubtitle.value !== 'settings') o.subtitle = optSubtitle.value
+  return o
+}
+const effQualityText = computed(() => {
+  if (optSound.value === 'audio') return `只要音频 · ${optAudioFmt.value.toUpperCase()}`
+  return optQuality.value === 'settings' ? presetText.value : (QUALITY_CHOICES.find((c) => c.v === optQuality.value)?.t ?? '')
+})
+const effSubText = computed(() => (optSubtitle.value === 'settings' ? subPolicyText.value : (SUB_CHOICES.find((c) => c.v === optSubtitle.value)?.t ?? '')))
 const downloadedEntries = ref<Set<string>>(new Set())
 const subMode = ref<SubMode>('file')
 const preferredSubs = ref<string[]>([])
@@ -213,6 +283,7 @@ watch(
       loadPlaylistState(r)
       loadPreferredSubs(r)
     }
+    loadTabs(r)
     audioOnly.value = false
     prevVideo = null
     showAllFormats.value = false
@@ -296,6 +367,7 @@ function pickSubs(ids: string[]) {
   selected.value = next
 }
 
+const MANY = 500
 async function downloadEntries() {
   if (!result.value) return
   const ids = entries.value.filter((e) => entrySel.value.has(e.id)).map((e) => e.id)
@@ -303,10 +375,26 @@ async function downloadEntries() {
     ElMessage.warning('请至少选择一个条目。')
     return
   }
+  if (entryTotal.value.videos > MANY) {
+    try {
+      await ElMessageBox.confirm(`确认加入 ${entryTotal.value.videos} 个视频？一次加这么多会占满下载队列，可以先少选一些。`, '加入很多视频', { type: 'warning', confirmButtonText: '确认加入', cancelButtonText: '再看看' })
+    } catch {
+      return
+    }
+  }
   enqueuing.value = true
   try {
-    const n = await api.enqueueEntries(result.value, ids)
-    ElMessage.success(`正在逐条解析 ${n} 个条目并加入队列…`)
+    if (optSaveDefault.value) {
+      const patch: Partial<Settings> = {}
+      if (optSound.value === 'audio') {
+        patch.qualityPreset = 'audio'
+        patch.audioFormat = optAudioFmt.value
+      } else if (optQuality.value !== 'settings') patch.qualityPreset = ({ best: 'best', '1080': 'max1080', '720': 'small' } as const)[optQuality.value]
+      if (optSubtitle.value !== 'settings') patch.subtitleMode = optSubtitle.value
+      if (Object.keys(patch).length) await app.patch(patch)
+    }
+    const n = await api.enqueueEntries(result.value, ids, buildListOptions())
+    ElMessage.success(`正在加入队列（${n} 项${entryTotal.value.lists ? '，列表会自动展开' : ''}）…`)
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -319,9 +407,10 @@ onMounted(async () => {
     batchInfo.value = p
     if (p.finished) {
       const skipped = p.skipped ? `，${p.skipped} 项之前已下载或已在队列中` : ''
-      if (p.failed.length) ElMessage.warning({ message: `“${p.title}”：已加入 ${p.queued} 项${skipped}，${p.failed.length} 条失败。${p.failed.slice(0, 3).join('；')}`, duration: 8000 })
-      else if (p.skipped) ElMessage.success(`“${p.title}”：已加入 ${p.queued} 项${skipped}`)
-      else ElMessage.success(`“${p.title}”：${p.total} 条已全部加入下载队列`)
+      const from = p.lists ? `（来自 ${p.lists} 个列表，各放进自己的文件夹）` : ''
+      if (p.failed.length) ElMessage.warning({ message: `“${p.title}”：已加入 ${p.queued} 个视频${from}${skipped}，${p.failed.length} 项没成功：${p.failed.slice(0, 3).join('；')}${p.failed.length > 3 ? ' …' : ''}`, duration: 10000, showClose: true })
+      else if (p.skipped) ElMessage.success(`“${p.title}”：已加入 ${p.queued} 个视频${from}${skipped}`)
+      else ElMessage.success(`“${p.title}”：已加入 ${p.queued} 个视频${from}`)
       window.setTimeout(() => (batchInfo.value = null), 1500)
     }
   })
@@ -472,6 +561,15 @@ const saveDir = computed(() => {
   if (!s || !r) return ''
   const sep = s.downloadDir.includes('\\') ? '\\' : '/'
   const parts = [s.downloadDir.replace(/[\\/]+$/, '')]
+  if (r.kind === 'playlist' && optFolder.value) {
+    // 和后端 folder_parts 一致：平台 / 创作者 / 列表名（列表名里已有作者名就不重复）
+    const list = entryTotal.value.lists && entries.value.every((e) => e.isList) ? '〈各列表名〉' : r.title
+    const author = r.author && !list.includes(r.author) ? r.author : ''
+    if (optLayout.value === 'platform_author_list' && r.platformName) parts.push(r.platformName)
+    if (optLayout.value !== 'list' && author) parts.push(author)
+    parts.push(list)
+    return parts.filter(Boolean).join(sep)
+  }
   if (s.subfolderByPlatform && r.platformName) parts.push(r.platformName)
   if (r.kind === 'playlist') parts.push(r.title)
   return parts.filter(Boolean).join(sep)
@@ -738,18 +836,73 @@ function recentKind(r: HistoryItem) {
         </div>
 
         <template v-if="isPlaylist">
+          <div v-if="creatorTabs" class="tabs" role="tablist" aria-label="创作者主页分栏">
+            <button
+              v-for="t in creatorTabs.tabs"
+              :key="t.key"
+              type="button"
+              role="tab"
+              class="tab"
+              :class="{ on: t.key === creatorTabs.active }"
+              :aria-selected="t.key === creatorTabs.active"
+              :disabled="parse.loading && t.key !== creatorTabs.active"
+              @click="openTab(t)"
+            >
+              {{ t.label }}<span v-if="tabLoading === t.key" class="pz-note"> 读取中…</span>
+            </button>
+          </div>
           <div class="sec">
-            <PlaylistPicker v-model:selected="entrySel" :entries="entries" :downloaded="downloadedEntries" />
+            <PlaylistPicker v-model:selected="entrySel" v-model:only="entryOnly" v-model:total="entryTotal" :entries="entries" :downloaded="downloadedEntries" />
           </div>
           <div class="sec">
             <div class="pz-sh">
               <span class="pz-st">每个视频怎么下</span>
               <span class="pz-sa"><button type="button" class="pz-link" @click="app.goSettings('download')">改默认设置</button></span>
             </div>
-            <div class="fields">
-              <div class="fld"><span>清晰度</span><b>按设置（{{ presetText }}）</b></div>
-              <div class="fld"><span>字幕</span><b>{{ subPolicyText }}</b></div>
-              <div class="fld"><span>声音</span><b>{{ app.settings?.qualityPreset === 'audio' ? `只要音频 · ${audioFmt}` : '视频（含声音）' }}</b></div>
+            <div class="opts">
+              <div class="opt">
+                <span class="olabel" id="o-sound">声音</span>
+                <div class="chips" role="radiogroup" aria-labelledby="o-sound">
+                  <button type="button" role="radio" class="chip" :class="{ on: optSound === 'video' }" :aria-checked="optSound === 'video'" @click="optSound = 'video'">视频（含声音）</button>
+                  <button type="button" role="radio" class="chip" :class="{ on: optSound === 'audio' }" :aria-checked="optSound === 'audio'" @click="optSound = 'audio'">只要音频</button>
+                  <el-select v-if="optSound === 'audio'" v-model="optAudioFmt" size="small" class="fmt" aria-label="音频格式">
+                    <el-option v-for="f in ['mp3', 'm4a', 'opus', 'flac']" :key="f" :label="f.toUpperCase()" :value="f" />
+                  </el-select>
+                </div>
+              </div>
+              <div v-if="optSound === 'video'" class="opt">
+                <span class="olabel" id="o-q">清晰度</span>
+                <div class="chips" role="radiogroup" aria-labelledby="o-q">
+                  <button v-for="c in QUALITY_CHOICES" :key="c.v" type="button" role="radio" class="chip" :class="{ on: optQuality === c.v }" :aria-checked="optQuality === c.v" @click="optQuality = c.v">
+                    {{ c.t }}<small v-if="c.v === 'settings'"> · {{ presetText }}</small>
+                  </button>
+                </div>
+              </div>
+              <div v-if="optSound === 'video'" class="opt">
+                <span class="olabel" id="o-s">字幕</span>
+                <div class="chips" role="radiogroup" aria-labelledby="o-s">
+                  <button v-for="c in SUB_CHOICES" :key="c.v" type="button" role="radio" class="chip" :class="{ on: optSubtitle === c.v }" :aria-checked="optSubtitle === c.v" @click="optSubtitle = c.v">
+                    {{ c.t }}<small v-if="c.v === 'settings'"> · {{ subPolicyText }}</small>
+                  </button>
+                </div>
+                <span class="pz-note">字幕语言按设置里的偏好语言。</span>
+              </div>
+              <label class="chk"><el-checkbox v-model="optSaveDefault" />同时存成默认设置（以后按这个来）</label>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="pz-sh"><span class="pz-st">保存到哪里</span></div>
+            <div class="opts">
+              <label class="chk"><el-switch v-model="optFolder" size="small" />按列表放进各自的文件夹</label>
+              <template v-if="optFolder">
+                <div class="chips col" role="radiogroup" aria-label="文件夹怎么排">
+                  <button v-for="l in LAYOUTS" :key="l.v" type="button" role="radio" class="chip lay" :class="{ on: optLayout === l.v }" :aria-checked="optLayout === l.v" @click="optLayout = l.v">
+                    <b>{{ l.t }}</b><span class="mono">{{ l.p }}</span>
+                  </button>
+                </div>
+                <label class="chk"><el-checkbox v-model="optNumbered" />文件名带列表里的序号（01、02…）</label>
+                <span class="pz-note">文件夹名里不能用的字符会自动替换；同名文件夹已有就接着放进去，重名文件自动加（1）。</span>
+              </template>
             </div>
           </div>
         </template>
@@ -935,7 +1088,7 @@ function recentKind(r: HistoryItem) {
         <!-- 底部操作栏 -->
         <div class="foot">
           <div class="sum">
-            <span v-if="isPlaylist"><b>{{ entrySel.size }} 个视频</b> · {{ presetText }} · {{ subPolicyText }}</span>
+            <span v-if="isPlaylist"><b>{{ entryTotal.lists ? `已选 ${entryTotal.lists} 个列表（共 ${entryTotal.approx ? '约 ' : ''}${entryTotal.videos} 个视频）` : `${entrySel.size} 个视频` }}</b> · {{ effQualityText }}<template v-if="optSound === 'video'"> · {{ effSubText }}</template></span>
             <span v-else-if="summary"><b>{{ summaryHead }}</b>{{ summaryRest }}</span>
             <span v-else class="pz-note">还没有选要下载的内容</span>
             <span class="pz-note where">
@@ -944,7 +1097,7 @@ function recentKind(r: HistoryItem) {
             </span>
           </div>
           <el-button v-if="isPlaylist" type="primary" class="pz-strong big" :loading="enqueuing" :disabled="(!!batchInfo && !batchInfo.finished) || !entrySel.size" @click="downloadEntries">
-            {{ batchInfo && !batchInfo.finished ? `解析中 ${batchInfo.done}/${batchInfo.total}` : `下载所选 ${entrySel.size} 个` }}
+            {{ batchInfo && !batchInfo.finished ? `解析中 ${batchInfo.done}/${batchInfo.total}` : entryTotal.lists ? `下载所选 ${entryTotal.videos} 个` : `下载所选 ${entrySel.size} 个` }}
           </el-button>
           <el-button v-else type="primary" class="pz-strong big" :loading="enqueuing" :disabled="nothingPicked" @click="download">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11" /><path d="M7 10l5 5 5-5" /><path d="M5 20h14" /></svg>
@@ -1445,6 +1598,92 @@ function recentKind(r: HistoryItem) {
 }
 .push {
   margin-left: auto;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--cc-line-soft);
+  margin-bottom: 12px;
+}
+.tab {
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--cc-fg2);
+  font: inherit;
+  cursor: pointer;
+}
+.tab.on {
+  color: var(--cc-accent, #2457e6);
+  border-bottom-color: var(--cc-accent, #2457e6);
+  font-weight: 600;
+}
+.tab:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.opts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.opt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.olabel {
+  font-size: 12px;
+  color: var(--cc-fg2);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.chips.col {
+  flex-direction: column;
+  align-items: stretch;
+}
+.chip {
+  padding: 5px 12px;
+  border: 1px solid var(--cc-line);
+  border-radius: 8px;
+  background: var(--cc-fill);
+  color: var(--cc-fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.chip small {
+  color: var(--cc-mute);
+}
+.chip.on {
+  border-color: var(--cc-accent, #2457e6);
+  background: var(--cc-accent-soft, rgba(36, 87, 230, 0.1));
+  font-weight: 600;
+}
+.chip.lay {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-align: left;
+}
+.chip.lay .mono {
+  font-size: 12px;
+  color: var(--cc-mute);
+}
+.chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.fmt {
+  width: 90px;
 }
 .fields {
   display: grid;

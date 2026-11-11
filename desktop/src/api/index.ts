@@ -80,6 +80,8 @@ import type {
   MiniState,
   BackupInfo,
   BatchProgress,
+  CreatorTabs,
+  ListOptions,
   BatchOpts,
   BatchItem,
   BatchResult,
@@ -183,7 +185,9 @@ export const api = {
   batchUpdate: (id: string, opts: BatchOpts) => invoke<void>('batch_update', { id, opts }),
   batchExportFailed: (id: string) => invoke<string>('batch_export_failed', { id }),
   batchSaveText: (path: string, text: string) => invoke<void>('batch_save_text', { path, text }),
-  enqueueEntries: (playlist: MediaInfo, entryIds: string[]) => invoke<number>('enqueue_entries', { playlist, entryIds }),
+  enqueueEntries: (playlist: MediaInfo, entryIds: string[], options?: ListOptions) => invoke<number>('enqueue_entries', { playlist, entryIds, options: options ?? null }),
+  creatorTabs: (url: string) => invoke<CreatorTabs>('creator_tabs', { url }),
+  expandList: (url: string) => invoke<MediaInfo>('expand_list', { url }),
 
   toolsStatus: () => invoke<ToolStatus[]>('tools_status'),
   installTool: (tool: string) => invoke<ToolStatus>('install_tool', { tool }),
@@ -582,6 +586,15 @@ export const events = {
   onBatchChanged: (cb: () => void): Promise<UnlistenFn> => listen('batch://changed', () => cb()),
   onToolProgress: (cb: (p: ToolProgress) => void): Promise<UnlistenFn> => listen<ToolProgress>('tools://progress', (e) => cb(e.payload)),
   onBatch: (cb: (p: BatchProgress) => void): Promise<UnlistenFn> => listen<BatchProgress>('batch://progress', (e) => cb(e.payload)),
+  /** 后台功能（取景窗口、截图翻译等）失败时发来的提示：可能是文字，也可能是带 message 的错误 */
+  onToastError: (cb: (msg: string) => void): Promise<UnlistenFn> =>
+    listen<unknown>('toast://error', (e) => {
+      const p = e.payload as { message?: string } | string | null
+      const msg = typeof p === 'string' ? p : (p?.message ?? '')
+      if (msg) cb(msg)
+    }),
+  /** 窗口组件（WebView2）断开：新窗口打不开，需要重启清影 */
+  onWebviewBroken: (cb: (msg: string) => void): Promise<UnlistenFn> => listen<string>('webview://broken', (e) => cb(e.payload)),
   onPairRequest: (cb: (p: PairRequest) => void): Promise<UnlistenFn> => listen<PairRequest>('phone://pair-request', (e) => cb(e.payload)),
   onTransferChanged: (cb: () => void): Promise<UnlistenFn> => listen('transfer://changed', () => cb()),
   onTransferProgress: (cb: (p: TransferProgress) => void): Promise<UnlistenFn> => listen<TransferProgress>('transfer://progress', (e) => cb(e.payload)),

@@ -60,6 +60,8 @@ a.lnk { color: var(--accd); cursor: pointer; text-decoration: underline; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .chips button { width: auto; margin: 0; padding: 3px 11px; border-radius: 14px; background: var(--card); color: var(--fg); border: 1px solid var(--line); font-weight: 400; font-size: 12px; }
 .chips button[aria-pressed="true"] { border-color: var(--acc); color: var(--accd); background: color-mix(in srgb, var(--acc) 14%, var(--card)); font-weight: 600; }
+.auGroup { margin-top: 6px; }
+.auGroup > .mute { font-size: 11px; }
 .chips button small { color: var(--mute); margin-left: 4px; font-size: 10.5px; }
 .meterRow { display: grid; grid-template-columns: 34px 1fr 64px; align-items: center; gap: 8px; font-size: 12px; }
 .meterRow b { text-align: right; font-weight: 600; }

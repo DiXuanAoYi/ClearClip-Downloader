@@ -32,6 +32,8 @@ pub enum Target {
     Fav { id: String },
     /// 创作者的所有公开收藏夹
     FavFolders { mid: String },
+    /// 创作者的动态（只取其中的视频）
+    Dynamic { mid: String },
     /// 稍后再看（要登录）
     WatchLater,
 }
@@ -59,6 +61,7 @@ pub fn classify(url: &str) -> Option<Target> {
                 }
             }
             ["lists"] => Target::SpaceLists { mid },
+            ["dynamic"] => Target::Dynamic { mid },
             ["channel", "collectiondetail"] => Target::Season { id: query(&u, "sid")?, mid },
             ["channel", "seriesdetail"] => Target::Series { id: query(&u, "sid")?, mid },
             ["channel", ..] => Target::SpaceLists { mid },
@@ -104,6 +107,8 @@ fn entry(bvid: &str, title: &str, pic: Option<&str>, secs: Option<u64>, index: u
         duration_ms: secs.map(|s| s * 1000),
         thumbnail: pic.map(|p| p.replace("http://", "https://")),
         index: index as u32,
+        is_list: false,
+        count: None,
     }
 }
 
@@ -164,8 +169,42 @@ pub fn parse_fav(data: &Value, base: usize) -> Page {
     Page { entries, more: data.get("has_more").and_then(Value::as_bool).unwrap_or(false) }
 }
 
-/// “合集和列表”总览里的每个合集 / 系列：`(是合集, id, 名字)`。
-pub fn parse_season_series(data: &Value) -> (Vec<(bool, String, String)>, bool) {
+/// “合集和列表”总览里的一个合集 / 系列。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListRef {
+    pub season: bool,
+    pub id: String,
+    pub name: String,
+    pub count: Option<u32>,
+    pub cover: Option<String>,
+}
+
+impl ListRef {
+    pub fn url(&self, mid: &str) -> String {
+        format!("https://space.bilibili.com/{mid}/lists/{}?type={}", self.id, if self.season { "season" } else { "series" })
+    }
+}
+
+/// 把合集 / 系列总览变成“列表的列表”：每一项是一个可展开的列表。
+pub fn list_entries(mid: &str, lists: &[ListRef]) -> Vec<PlaylistEntry> {
+    lists
+        .iter()
+        .enumerate()
+        .map(|(i, l)| PlaylistEntry {
+            id: format!("{}-{}", if l.season { "season" } else { "series" }, l.id),
+            title: if l.name.is_empty() { format!("{} {}", if l.season { "合集" } else { "视频列表" }, l.id) } else { l.name.clone() },
+            url: l.url(mid),
+            duration_ms: None,
+            thumbnail: l.cover.as_ref().map(|c| c.replace("http://", "https://")),
+            index: i as u32 + 1,
+            is_list: true,
+            count: l.count,
+        })
+        .collect()
+}
+
+/// “合集和列表”总览里的每个合集 / 系列。
+pub fn parse_season_series(data: &Value) -> (Vec<ListRef>, bool) {
     let items = data.get("items_lists");
     let mut out = Vec::new();
     for (key, season) in [("seasons_list", true), ("series_list", false)] {
@@ -173,7 +212,13 @@ pub fn parse_season_series(data: &Value) -> (Vec<(bool, String, String)>, bool) 
             let meta = it.get("meta");
             let id = meta.and_then(|m| u64_at(m, if season { "/season_id" } else { "/series_id" }));
             if let Some(id) = id {
-                out.push((season, id.to_string(), meta.and_then(|m| str_at(m, "/name")).unwrap_or("").to_string()));
+                out.push(ListRef {
+                    season,
+                    id: id.to_string(),
+                    name: meta.and_then(|m| str_at(m, "/name")).unwrap_or("").to_string(),
+                    count: meta.and_then(|m| u64_at(m, "/total")).map(|n| n as u32),
+                    cover: meta.and_then(|m| str_at(m, "/cover")).map(String::from),
+                });
             }
         }
     }
@@ -190,6 +235,53 @@ async fn api(ctx: &Ctx<'_>, url: &str) -> AppResult<Value> {
     let cookie = ctx.cookie("https://api.bilibili.com/");
     let v = get_json(ctx, url, cookie.as_deref()).await?;
     api_data(&v).cloned()
+}
+
+/// 动态一页里的视频：`(作者, 条目, 跳过的没有视频的动态数, 下一页的 offset, 还有没有下一页)`。
+pub fn parse_dynamics(data: &Value, base: usize) -> (String, Vec<PlaylistEntry>, usize, String, bool) {
+    let items = data.get("items").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut author = String::new();
+    let mut skipped = 0;
+    let mut out: Vec<PlaylistEntry> = Vec::new();
+    for it in &items {
+        if author.is_empty() {
+            author = str_at(it, "/modules/module_author/name").unwrap_or("").to_string();
+        }
+        let arc = it.pointer("/modules/module_dynamic/major/archive");
+        match arc.and_then(|a| Some((str_at(a, "/bvid")?, a))) {
+            Some((bvid, a)) => {
+                let mut e = entry(bvid, str_at(a, "/title").unwrap_or(bvid), str_at(a, "/cover"), str_at(a, "/duration_text").and_then(mmss), 0);
+                e.index = (base + out.len() + 1) as u32;
+                out.push(e);
+            }
+            None => skipped += 1,
+        }
+    }
+    let offset = data.get("offset").map(|o| o.as_str().map(String::from).unwrap_or_else(|| o.to_string())).unwrap_or_default();
+    let more = data.get("has_more").and_then(Value::as_bool).unwrap_or(false) && !items.is_empty();
+    (author, out, skipped, offset, more)
+}
+
+async fn dynamics(ctx: &Ctx<'_>, mid: &str) -> AppResult<(String, Vec<PlaylistEntry>, usize)> {
+    let mut all: Vec<PlaylistEntry> = Vec::new();
+    let (mut author, mut skipped, mut offset) = (String::new(), 0, String::new());
+    for _ in 0..40 {
+        let url = format!("https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?host_mid={mid}&offset={offset}&features=itemOpusStyle");
+        let data = api(ctx, &url).await?;
+        let (a, e, sk, next, more) = parse_dynamics(&data, all.len());
+        if author.is_empty() {
+            author = a;
+        }
+        all.extend(e);
+        skipped += sk;
+        if !more || all.len() >= MAX_ENTRIES {
+            break;
+        }
+        offset = next;
+        pause().await;
+    }
+    all.truncate(MAX_ENTRIES);
+    Ok((author, all, skipped))
 }
 
 async fn uploads(ctx: &Ctx<'_>, mid: &str) -> AppResult<(String, Vec<PlaylistEntry>)> {
@@ -295,7 +387,7 @@ async fn fav(ctx: &Ctx<'_>, id: &str) -> AppResult<(String, String, Vec<Playlist
     Ok((title, owner, all))
 }
 
-async fn space_lists(ctx: &Ctx<'_>, mid: &str) -> AppResult<Vec<(bool, String, String)>> {
+async fn space_lists(ctx: &Ctx<'_>, mid: &str) -> AppResult<Vec<ListRef>> {
     let mut out = Vec::new();
     let mut pn = 1;
     loop {
@@ -337,28 +429,6 @@ fn playlist(id: &str, title: String, author: String, source: &str, entries: Vec<
     })
 }
 
-/// 把多个子列表的条目拼到一起，标题前加上子列表的名字，序号重排，同一个稿件只留一条。
-fn merge(groups: Vec<(String, Vec<PlaylistEntry>)>) -> Vec<PlaylistEntry> {
-    let mut seen = std::collections::HashSet::new();
-    let mut out: Vec<PlaylistEntry> = Vec::new();
-    for (name, list) in groups {
-        for mut e in list {
-            if !seen.insert(e.id.clone()) {
-                continue;
-            }
-            if !name.is_empty() {
-                e.title = format!("【{name}】{}", e.title);
-            }
-            e.index = out.len() as u32 + 1;
-            out.push(e);
-            if out.len() >= MAX_ENTRIES {
-                return out;
-            }
-        }
-    }
-    out
-}
-
 pub async fn resolve(ctx: &Ctx<'_>, target: &Target, source: &str) -> AppResult<MediaInfo> {
     match target {
         Target::Uploads { mid } => {
@@ -380,31 +450,40 @@ pub async fn resolve(ctx: &Ctx<'_>, target: &Target, source: &str) -> AppResult<
         }
         Target::FavFolders { mid } => {
             let data = api(ctx, &format!("https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid={mid}")).await?;
-            let folders: Vec<(String, String)> = data
+            let entries: Vec<PlaylistEntry> = data
                 .get("list")
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
-                .filter_map(|f| Some((u64_at(f, "/id")?.to_string(), str_at(f, "/title").unwrap_or("").to_string())))
+                .enumerate()
+                .filter_map(|(i, f)| {
+                    let id = u64_at(f, "/id")?.to_string();
+                    Some(PlaylistEntry {
+                        title: str_at(f, "/title").filter(|t| !t.is_empty()).map(String::from).unwrap_or_else(|| format!("收藏夹 {id}")),
+                        url: format!("https://space.bilibili.com/{mid}/favlist?fid={id}"),
+                        id: format!("fav-{id}"),
+                        duration_ms: None,
+                        thumbnail: None,
+                        index: i as u32 + 1,
+                        is_list: true,
+                        count: u64_at(f, "/media_count").map(|n| n as u32),
+                    })
+                })
                 .collect();
-            let mut groups = Vec::new();
-            for (id, name) in folders {
-                if let Ok((_, _, e)) = fav(ctx, &id).await {
-                    groups.push((name, e));
-                }
-            }
-            playlist(&format!("favs-{mid}"), format!("UP 主 {mid} 的收藏夹"), String::new(), source, merge(groups))
+            playlist(&format!("favs-{mid}"), format!("UP 主 {mid} 的收藏夹"), String::new(), source, entries)
         }
         Target::SpaceLists { mid } => {
             let lists = space_lists(ctx, mid).await?;
-            let mut groups = Vec::new();
-            for (is_season, id, name) in lists {
-                let r = if is_season { season(ctx, mid, &id).await } else { series(ctx, mid, &id).await };
-                if let Ok((n, e)) = r {
-                    groups.push((if name.is_empty() { n } else { name }, e));
-                }
+            playlist(&format!("lists-{mid}"), format!("UP 主 {mid} 的合集和系列"), String::new(), source, list_entries(mid, &lists))
+        }
+        Target::Dynamic { mid } => {
+            let (author, entries, skipped) = dynamics(ctx, mid).await?;
+            let who = if author.is_empty() { format!("UP 主 {mid}") } else { author.clone() };
+            let mut info = playlist(&format!("dynamic-{mid}"), format!("{who} 的动态"), author, source, entries)?;
+            if skipped > 0 {
+                info.title = format!("{}（已略过 {skipped} 条没有视频的动态）", info.title);
             }
-            playlist(&format!("lists-{mid}"), format!("UP 主 {mid} 的合集和列表"), String::new(), source, merge(groups))
+            Ok(info)
         }
         Target::WatchLater => {
             let data = api(ctx, "https://api.bilibili.com/x/v2/history/toview").await?;
@@ -492,23 +571,31 @@ mod tests {
     }
 
     #[test]
+    fn dynamics_keep_videos_only() {
+        let data = json!({"has_more": true, "offset": "123", "items": [
+            {"modules": {"module_author": {"name": "老王"}, "module_dynamic": {"major": {"type": "MAJOR_TYPE_ARCHIVE", "archive": {"bvid": "BV1x", "title": "视频一", "cover": "http://a/c.jpg", "duration_text": "03:20"}}}}},
+            {"modules": {"module_dynamic": {"major": {"type": "MAJOR_TYPE_OPUS"}}}},
+            {"modules": {"module_dynamic": {"major": {"type": "MAJOR_TYPE_ARCHIVE", "archive": {"bvid": "BV1y", "title": "视频二"}}}}}]});
+        let (author, entries, skipped, offset, more) = parse_dynamics(&data, 10);
+        assert_eq!(author, "老王");
+        assert_eq!(entries.iter().map(|e| (e.id.as_str(), e.index)).collect::<Vec<_>>(), vec![("BV1x", 11), ("BV1y", 12)]);
+        assert_eq!(entries[0].duration_ms, Some(200_000));
+        assert_eq!((skipped, offset.as_str(), more), (1, "123", true));
+    }
+
+    #[test]
     fn season_series_overview() {
         let data = json!({"items_lists": {
             "seasons_list": [{"meta": {"season_id": 11, "name": "合集甲"}}],
             "series_list": [{"meta": {"series_id": 22, "name": "列表乙"}}]},
             "page": {"page_num": 1, "page_size": 20, "total": 45}});
         let (items, more) = parse_season_series(&data);
-        assert_eq!(items, vec![(true, "11".into(), "合集甲".into()), (false, "22".into(), "列表乙".into())]);
+        assert_eq!(items.iter().map(|l| (l.season, l.id.as_str(), l.name.as_str())).collect::<Vec<_>>(), vec![(true, "11", "合集甲"), (false, "22", "列表乙")]);
+        let e = list_entries("9", &items);
+        assert!(e.iter().all(|x| x.is_list));
+        assert_eq!(e[0].url, "https://space.bilibili.com/9/lists/11?type=season");
+        assert_eq!(e[1].url, "https://space.bilibili.com/9/lists/22?type=series");
+        assert_eq!(e[1].index, 2);
         assert!(more);
-    }
-
-    #[test]
-    fn merge_dedups_and_prefixes() {
-        let a = vec![entry("BV1a", "一", None, None, 1), entry("BV1b", "二", None, None, 2)];
-        let b = vec![entry("BV1b", "二", None, None, 1), entry("BV1c", "三", None, None, 2)];
-        let m = merge(vec![("甲".into(), a), ("乙".into(), b)]);
-        assert_eq!(m.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["BV1a", "BV1b", "BV1c"]);
-        assert_eq!(m[2].title, "【乙】三");
-        assert_eq!(m[2].index, 3);
     }
 }

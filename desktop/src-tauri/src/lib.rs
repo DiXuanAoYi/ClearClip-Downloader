@@ -41,6 +41,7 @@ pub mod library;
 pub mod library_cmds;
 pub mod library_media;
 pub mod links;
+pub mod listops;
 pub mod live;
 pub mod liveaudio;
 pub mod livecore;
@@ -100,6 +101,7 @@ pub mod videocache;
 pub mod vidnorm;
 pub mod vocab;
 pub mod vsum;
+pub mod webhealth;
 pub mod weblist;
 mod winframe;
 pub mod writeassist;
@@ -553,6 +555,8 @@ pub fn run() {
             commands::resolve_and_enqueue,
             commands::enqueue,
             commands::enqueue_entries,
+            commands::creator_tabs,
+            commands::expand_list,
             commands::tools_status,
             commands::install_tool,
             commands::rollback_tool,

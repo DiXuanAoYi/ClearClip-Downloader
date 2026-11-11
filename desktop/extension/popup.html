@@ -79,8 +79,14 @@
         <div class="mute">单位 LUFS（短时响度）；竖线是目标响度。</div>
       </div>
       <label>预设</label>
-      <div id="auPresets" class="chips"></div>
+      <div id="auPresets"></div>
       <div id="auPresetNote" class="mute"></div>
+      <div class="row" id="auSaveRow" style="margin-top:8px;gap:6px">
+        <input id="auName" type="text" maxlength="12" placeholder="给当前这组数值起个名字" style="flex:1;min-width:0" />
+        <button id="auSave" class="small">存为我的预设</button>
+        <button id="auDel" class="small sec hidden">删除此预设</button>
+      </div>
+      <div id="auSaveMsg" class="mute"></div>
       <div id="auCustom">
         <label>目标响度：<b id="auTargetV"></b></label><input id="auTarget" type="range" min="-30" max="-8" step="1" />
         <label>压缩强度：<b id="auCompV"></b></label><input id="auComp" type="range" min="0" max="100" step="5" />
