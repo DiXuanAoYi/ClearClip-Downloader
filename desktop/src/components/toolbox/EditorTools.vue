@@ -96,9 +96,9 @@ async function addOverlays(paths: string[], at?: { track?: number; startMs?: num
   }
   report(await ed.addOverlays(paths, at))
 }
-async function addMusic(paths: string[], startMs?: number) {
+async function addMusic(paths: string[], startMs?: number, track?: number) {
   if (!paths.length) return
-  report(await ed.addMusic(paths, startMs))
+  report(await ed.addMusic(paths, startMs, true, track))
 }
 watch(pickedClips, (v) => {
   if (!v.length) return
@@ -533,8 +533,8 @@ function dropText(t: { lane: string; track?: number; ms: number } | null): strin
   if (!t) return '松开，添加到主轨末尾'
   const at = msText(t.ms).replace(/\.\d+$/, (m) => m.slice(0, 2))
   if (t.lane === 'main') return '松开，插入到主轨这里'
-  if (t.lane === 'audio') return `松开，作为配乐，从 ${at} 开始`
-  return `松开，放到叠加 ${t.lane === 'overlay' ? t.track : 1}，从 ${at} 开始`
+  if (t.lane === 'audio') return `松开，放到 A${t.track ?? 1}，从 ${at} 开始`
+  return `松开，放到 V${(t.track ?? 1) + 1}，从 ${at} 开始`
 }
 
 async function dropPaths(paths: string[], x: number, y: number) {
@@ -559,7 +559,7 @@ async function dropPaths(paths: string[], x: number, y: number) {
   if (t.lane === 'audio') {
     const audio = media.filter((p) => editMediaKind(p) !== 'image')
     if (audio.length < media.length) ElMessage.warning('图片不能当配乐，已忽略。')
-    return addMusic(audio, t.ms)
+    return addMusic(audio, t.ms, t.track)
   }
   return addOverlays(media, { track: t.lane === 'overlay' ? t.track : 1, startMs: t.ms })
 }
