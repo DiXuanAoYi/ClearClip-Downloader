@@ -599,6 +599,23 @@ export function useEditProject() {
     }
   }
 
+  /**
+   * 套用轨道模板：模板里的轨道按编号建好、设置覆盖进去；已经有素材的轨道只改设置，素材不动。
+   * 返回新建（或改了设置）的轨道数。
+   */
+  function applyTrackTemplate(list: EditTrack[]): number {
+    let n = 0
+    mutate((p) => {
+      for (const t of list) {
+        if (t.no > maxNo(t.kind) || t.no < minNo(t.kind)) continue
+        const m = metaFor(p, t.kind, t.no)
+        Object.assign(m, { ...t, kind: t.kind, no: t.no })
+        n++
+      }
+    })
+    return n
+  }
+
   /** 把素材放到一条新建的轨道上（这一类已经满了返回 null）。 */
   function moveToNewTrack(kind: 'overlay' | 'audio' | 'text', id: number): number | null {
     const tk: EditTrackKind = kind === 'overlay' ? 'video' : kind
@@ -1218,6 +1235,7 @@ export function useEditProject() {
     crowded,
     moveToTrack,
     moveToNewTrack,
+    applyTrackTemplate,
     addMarker,
     patchMarker,
     removeMarker,

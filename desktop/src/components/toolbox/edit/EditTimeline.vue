@@ -9,6 +9,7 @@ import type { EditApi } from '../../../composables/useEditProject'
 import type { EditAudio, EditClip, EditMarker, EditOverlay, EditText, EditTrack, EditTrackKind, EditTrackRole } from '../../../types'
 import { beatSnapPoints, beatsOnTimeline, kfEval, MIN_MS, audioSpan, clamp, editPoints, overlayDuration, overlayEnd, overlaySourceLimit, snap, tickStep } from '../../../utils/edit'
 import { maxNo, nextNo, roomFor, shownNos, swapTracks, TRACK_ROLES, trackCode, trackOf, trackTitle } from '../../../utils/tracks'
+import { BUILTIN_TEMPLATES, loadTemplates, saveTemplates, templateFrom } from '../../../utils/trackTemplates'
 import TrackHead from './TrackHead.vue'
 import TrackMenu, { type MenuItem } from './TrackMenu.vue'
 
@@ -685,6 +686,47 @@ function addPlain(kind: EditTrackKind) {
 }
 const canAdd = (kind: EditTrackKind) => nextNo(P.value, kind) !== null
 
+
+// ---------- 混音器 ----------
+
+const mixerOpen = ref(false)
+const audioTracks = computed(() => shownNos(P.value, 'audio').map((no) => ({ no, meta: metaOf('audio', no), n: audioOn(no).length })))
+const hasSolo = computed(() => P.value.tracks.some((t) => t.kind === 'audio' && t.solo))
+const dB = (v: number) => (v < 0.001 ? '−∞' : `${(20 * Math.log10(v)).toFixed(1)} dB`)
+
+// ---------- 轨道模板 ----------
+
+const templates = ref(loadTemplates())
+function templateMenu(e: MouseEvent) {
+  const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const apply = (tracks: EditTrack[], name: string) => () => {
+    const n = ed.applyTrackTemplate(tracks)
+    ElMessage.success(`已套用“${name}”：${n} 条轨道`)
+  }
+  const items: MenuItem[] = [
+    ...BUILTIN_TEMPLATES.map((x) => ({ label: x.name, desc: x.desc, run: apply(x.tracks, x.name) })),
+    ...(templates.value.length ? [{ divider: true, label: '' } as MenuItem, ...templates.value.map((x) => ({ label: x.name, desc: x.desc, run: apply(x.tracks, x.name) }))] : []),
+    { divider: true, label: '' },
+    { label: '把当前轨道设置存成模板…', run: () => void saveTemplate() },
+    ...templates.value.map((x) => ({ label: `删除模板“${x.name}”`, danger: true, run: () => removeTemplate(x.id) })),
+  ]
+  menu.value = { x: b.left, y: b.bottom + 4, title: '轨道模板', items }
+}
+async function saveTemplate() {
+  try {
+    const { value } = await ElMessageBox.prompt('给这套轨道设置起个名字（素材不会存进模板）', '存成模板', { inputValue: '我的模板', confirmButtonText: '保存', cancelButtonText: '取消' })
+    templates.value = [...templates.value, templateFrom(value, P.value.tracks)]
+    saveTemplates(templates.value)
+    ElMessage.success('已存成模板')
+  } catch {
+    /* 取消 */
+  }
+}
+function removeTemplate(id: string) {
+  templates.value = templates.value.filter((x) => x.id !== id)
+  saveTemplates(templates.value)
+}
+
 // ---------- 标记、入点出点 ----------
 
 const MARK_COLOR: Record<EditMarker['color'], string> = { red: '#e5484d', orange: '#d9762b', yellow: '#d9a21a', green: '#2f8a57', blue: '#2457e6', purple: '#7c4dcc' }
@@ -869,11 +911,28 @@ defineExpose({ reveal, targetAt, hover, fit })
       <button type="button" class="ab" :disabled="!canAdd('video')" @click="addMenu">＋ 视频轨 ▾</button>
       <button type="button" class="ab" :disabled="!canAdd('audio')" @click="addPlain('audio')">＋ 音频轨</button>
       <button type="button" class="ab" :disabled="!canAdd('text')" @click="addPlain('text')">＋ 文字轨</button>
+      <button type="button" class="ab" :class="{ on: mixerOpen }" :aria-pressed="mixerOpen" title="每条音频轨的音量、左右声道、静音、独奏、自动避让" @click="mixerOpen = !mixerOpen">混音器</button>
+      <button type="button" class="ab" title="套用或保存一套轨道设置" @click="templateMenu">轨道模板 ▾</button>
       <span class="sp" />
       <span v-if="rangeOn" class="rng">入点 {{ tickLabel(ed.project.value.out.fromMs, 1000) }} · 出点 {{ ed.project.value.out.toMs ? tickLabel(ed.project.value.out.toMs, 1000) : '结尾' }}<button type="button" class="lk" @click="ed.clearRange()">清除</button></span>
       <button type="button" class="ab" title="把整条时间线缩到刚好放进窗口" @click="fit">适应</button>
     </div>
 
+
+    <div v-if="mixerOpen" class="mixer" role="group" aria-label="混音器">
+      <div v-for="t in audioTracks" :key="t.no" class="ch" :class="{ off: t.meta.mute || (hasSolo && !t.meta.solo) }">
+        <div class="cn"><b>{{ trackCode('audio', t.no) }}</b><span class="ellipsis">{{ trackTitle(t.meta) }}</span></div>
+        <div class="cb">
+          <button type="button" class="b" :class="{ on: t.meta.mute }" :aria-pressed="t.meta.mute" title="静音" @click="ed.patchTrack('audio', t.no, { mute: !t.meta.mute })">M</button>
+          <button type="button" class="b solo" :class="{ on: t.meta.solo }" :aria-pressed="t.meta.solo" title="独奏（只影响预览）" @click="ed.patchTrack('audio', t.no, { solo: !t.meta.solo })">S</button>
+        </div>
+        <label class="sl"><span>音量</span><el-slider :model-value="t.meta.volume" :min="0" :max="2" :step="0.01" :show-tooltip="false" size="small" @update:model-value="(v: number | number[]) => ed.patchTrack('audio', t.no, { volume: v as number }, `mx:${t.no}`)" /><em>{{ dB(t.meta.volume) }}</em></label>
+        <label class="sl"><span>声道</span><el-slider :model-value="t.meta.pan" :min="-1" :max="1" :step="0.01" :show-tooltip="false" size="small" @update:model-value="(v: number | number[]) => ed.patchTrack('audio', t.no, { pan: v as number }, `mp:${t.no}`)" /><em>{{ t.meta.pan === 0 ? '居中' : t.meta.pan < 0 ? `左 ${Math.round(-t.meta.pan * 100)}` : `右 ${Math.round(t.meta.pan * 100)}` }}</em></label>
+        <el-checkbox :model-value="t.meta.duck" size="small" title="主轨有声音（人声）时，自动压低这条轨上的所有音频" @update:model-value="(v: unknown) => ed.patchTrack('audio', t.no, { duck: !!v })">自动避让</el-checkbox>
+        <span class="cc">{{ t.n }} 段</span>
+      </div>
+      <p class="mnote">独奏只影响预览，导出不受影响；静音的轨道预览和导出都没有声音。整体响度在“输出”页的“响度标准化”里设。</p>
+    </div>
     <div ref="scroller" class="tl" :class="{ blade: tool === 'blade' }" @pointerdown.capture="blurInput" @wheel="onWheel" @scroll.passive="onScroll">
       <div ref="bodyEl" class="body" :style="{ width: LABEL_W + contentW + 'px' }">
         <!-- 标尺 -->
@@ -1354,4 +1413,20 @@ defineExpose({ reveal, targetAt, hover, fit })
 .vh { fill: none; stroke: transparent; stroke-width: 9; pointer-events: stroke; cursor: ns-resize }
 .vp { fill: #fff; stroke: #d9a21a; stroke-width: 2; pointer-events: all; cursor: grab }
 .tl.blade .blk { cursor: crosshair }
+
+.ab.on { border-color: var(--cc-acc); color: var(--cc-acc); background: color-mix(in srgb, var(--cc-acc) 10%, var(--cc-card)) }
+.mixer { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; border: 1px solid var(--cc-line); border-radius: 8px; background: var(--cc-card) }
+.mixer .ch { display: flex; flex-direction: column; gap: 4px; width: 210px; padding: 6px 8px; border: 1px solid var(--cc-line); border-radius: 8px; font-size: 12px }
+.mixer .ch.off { opacity: 0.55 }
+.mixer .cn { display: flex; gap: 6px; align-items: center }
+.mixer .cn b { color: #b9812d }
+.mixer .cb { display: flex; gap: 4px }
+.mixer .b { width: 22px; height: 20px; padding: 0; border: 1px solid var(--cc-line); border-radius: 4px; background: var(--cc-card); color: var(--cc-mute); font: 700 10px/1 system-ui, sans-serif; cursor: pointer }
+.mixer .b.on { background: color-mix(in srgb, var(--cc-acc) 18%, var(--cc-card)); color: var(--cc-acc); border-color: var(--cc-acc) }
+.mixer .b.solo.on { background: #e0a21a; color: #fff; border-color: #e0a21a }
+.mixer .sl { display: grid; grid-template-columns: 30px 1fr 52px; align-items: center; gap: 6px }
+.mixer .sl span { color: var(--cc-mute) }
+.mixer .sl em { font-style: normal; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums }
+.mixer .cc { color: var(--cc-mute); font-size: 11px }
+.mixer .mnote { flex-basis: 100%; margin: 0; font-size: 11.5px; color: var(--cc-mute) }
 </style>

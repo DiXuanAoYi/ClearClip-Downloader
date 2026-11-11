@@ -120,3 +120,19 @@ test('packTracks：贪心分配，超过上限的挤进最后一条', () => {
   const m = packTracks(items, 3)
   assert.deepEqual([...m.values()].sort(), [1, 2, 3, 3])
 })
+
+import { BUILTIN_TEMPLATES, templateFrom } from '../../src/utils/trackTemplates.ts'
+
+test('轨道模板：内置的编号合法，存模板时不带锁定 / 独奏 / 隐藏，也不带主轨', () => {
+  for (const t of BUILTIN_TEMPLATES) {
+    assert.ok(t.tracks.length > 0)
+    for (const k of t.tracks) assert.ok((k.kind === 'video' ? k.no >= 1 && k.no <= 11 : k.kind === 'audio' ? k.no >= 1 && k.no <= 12 : k.no >= 1 && k.no <= 8), `${t.id} ${k.kind}${k.no}`)
+  }
+  const tpl = templateFrom(' 我的 ', [
+    { kind: 'video', no: 0, name: '主', role: '', mute: false, solo: false, lock: false, hidden: false, magnet: true, volume: 1, pan: 0, duck: false, color: '', height: 'm' },
+    { kind: 'audio', no: 1, name: '人声', role: '', mute: false, solo: true, lock: true, hidden: true, magnet: false, volume: 1, pan: 0, duck: true, color: '', height: 'm' },
+  ])
+  assert.equal(tpl.name, '我的')
+  assert.equal(tpl.tracks.length, 1)
+  assert.deepEqual([tpl.tracks[0].solo, tpl.tracks[0].lock, tpl.tracks[0].hidden, tpl.tracks[0].duck], [false, false, false, true])
+})

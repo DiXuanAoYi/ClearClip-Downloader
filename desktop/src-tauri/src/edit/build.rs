@@ -904,6 +904,11 @@ fn music_track(k: usize, idx: usize, a: &AudioTrack, src: &Source, total: u64, f
     } else if (a.volume - 1.0).abs() > 1e-9 {
         f.push(format!("volume={:.4}", a.volume));
     }
+    if a.pan.abs() > 1e-6 {
+        // 左右声道：往一边推，另一边按比例变小（中间不变）
+        let (l, r) = ((1.0 - a.pan.max(0.0)).clamp(0.0, 1.0), (1.0 + a.pan.min(0.0)).clamp(0.0, 1.0));
+        f.push(format!("pan=stereo|c0={l:.3}*c0|c1={r:.3}*c1"));
+    }
     if a.start_ms > 0 {
         f.push(format!("adelay={0}|{0}", a.start_ms));
     }
@@ -1748,13 +1753,29 @@ mod tests {
     fn a_volume_line_on_music_becomes_a_frame_by_frame_volume_expression() {
         let mut p = Project { clips: vec![clip("/m/a.mp4", 0, 10_000)], ..Default::default() };
         let mut a = AudioTrack { path: "/m/bgm.mp3".into(), volume: 0.5, ..Default::default() };
-        a.keyframes.insert("volume".into(), vec![super::super::keyframes::Keyframe { t_ms: 0, value: 1.0, ease: "linear".into() }, super::super::keyframes::Keyframe { t_ms: 2000, value: 0.2, ease: "linear".into() }]);
+        a.keyframes.insert(
+            "volume".into(),
+            vec![
+                super::super::keyframes::Keyframe { t_ms: 0, value: 1.0, ease: "linear".into() },
+                super::super::keyframes::Keyframe { t_ms: 2000, value: 0.2, ease: "linear".into() },
+            ],
+        );
         p.audio = vec![a];
         let p = p.checked().unwrap();
         let plan = build(&p, &sources(&["/m/a.mp4", "/m/bgm.mp3"]), &caps(), &tmp(), Mode::Export, None).unwrap();
         let g = graph_of(&plan);
         assert!(g.contains("volume=volume='max(0,") && g.contains(":eval=frame"), "{g}");
         assert!(!g.contains("volume=0.5000"), "有音量线就不再用固定音量：{g}");
+    }
+
+    #[test]
+    fn a_track_pan_pushes_the_sound_to_one_side() {
+        let mut p = Project { clips: vec![clip("/m/a.mp4", 0, 10_000)], ..Default::default() };
+        p.audio = vec![AudioTrack { path: "/m/bgm.mp3".into(), track: 2, ..Default::default() }];
+        p.tracks = vec![TrackMeta { kind: "audio".into(), no: 2, pan: 0.5, ..Default::default() }];
+        let e = p.checked().unwrap().effective();
+        let plan = build(&e, &sources(&["/m/a.mp4", "/m/bgm.mp3"]), &caps(), &tmp(), Mode::Export, None).unwrap();
+        assert!(graph_of(&plan).contains("pan=stereo|c0=0.500*c0|c1=1.000*c1"), "{}", graph_of(&plan));
     }
 
     #[test]
