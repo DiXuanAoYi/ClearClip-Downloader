@@ -2,7 +2,9 @@
 
 import { computed, reactive, ref, watch } from 'vue'
 import { api, errorText } from '../api'
-import type { EditAudio, EditClip, EditKeyframe, EditOverlay, EditProject, EditRegion, EditSource, EditText, TimeSpan } from '../types'
+import type { EditAudio, EditClip, EditKeyframe, EditMarker, EditOverlay, EditProject, EditRegion, EditSource, EditText, EditTrack, EditTrackKind, EditTrackRole, TimeSpan } from '../types'
+import { audioSpan, overlayFitScale, blankChroma } from '../utils/edit'
+import { dropTrack, effectiveProject, freeTrack, maxNo, metaFor, minNo, nextNo, shiftUp, swapTracks, trackOf } from '../utils/tracks'
 import {
   MAX_AUDIO,
   MAX_CLIPS,
@@ -131,6 +133,8 @@ export function useEditProject() {
   }
 
   const placed = computed(() => layout(project.value.clips))
+  /** 监视器和试听用的工程：隐藏的轨道去掉、静音的不出声、独奏只听独奏的 */
+  const live = computed(() => effectiveProject(project.value, true))
   const total = computed(() => totalMs(project.value.clips))
   /** 叠加素材在各自轨道里的行号（同一轨道上时间重叠的错开显示） */
   const overlayLane = computed(() => overlayLanes(project.value.overlays))
@@ -330,6 +334,7 @@ export function useEditProject() {
       let next = nextId(p)
       const list = make(() => next++).slice(0, Math.max(0, MAX_TEXTS - p.texts.length))
       p.texts.push(...list)
+      settleNew(p, 'text', list.map((t) => t.id))
       added = list.length
     })
     return added
@@ -416,6 +421,229 @@ export function useEditProject() {
     }, key)
   }
 
+
+  // ---------- 轨道 ----------
+
+  const durOf = {
+    overlay: (o: EditOverlay) => overlayDuration(o),
+    audio: (a: EditAudio) => audioSpan(a, sources[a.path], total.value),
+  }
+
+  function patchTrack(kind: EditTrackKind, no: number, patch: Partial<EditTrack>, key = '') {
+    mutate((p) => Object.assign(metaFor(p, kind, no), patch), key)
+  }
+
+  /** 新建一条轨道（放在这一类的最上面 / 最后）。成功返回编号，已经满了返回 null。 */
+  function addTrack(kind: EditTrackKind, role: EditTrackRole = ''): number | null {
+    let made: number | null = null
+    mutate((p) => {
+      const no = nextNo(p, kind)
+      if (no === null) return
+      const t = metaFor(p, kind, no)
+      if (kind === 'video') t.role = role
+      made = no
+    })
+    return made
+  }
+
+  /** 在 `no` 的位置插入一条空轨道，原来 `no` 和更高的轨道往上挪一位。 */
+  function insertTrack(kind: EditTrackKind, no: number, role: EditTrackRole = ''): number | null {
+    let made: number | null = null
+    mutate((p) => {
+      const at = Math.max(minNo(kind) + (kind === 'video' ? 1 : 0), no)
+      if (at > maxNo(kind) || nextNo(p, kind) === null) return
+      shiftUp(p, kind, at)
+      const t = metaFor(p, kind, at)
+      if (kind === 'video') t.role = role
+      made = at
+    })
+    return made
+  }
+
+  /** 删掉一条轨道和上面的素材；返回被删的素材数。 */
+  function removeTrack(kind: EditTrackKind, no: number): number {
+    let n = 0
+    mutate((p) => {
+      n = dropTrack(p, kind, no)
+    })
+    sel.value = sel.value && find(sel.value) ? sel.value : null
+    return n
+  }
+
+  /** 轨道上移（dir = 1，编号 +1）或下移（-1）一格。 */
+  function moveTrack(kind: EditTrackKind, no: number, dir: 1 | -1): boolean {
+    const to = no + dir
+    if (to < minNo(kind) + (kind === 'video' ? 1 : 0) || to > maxNo(kind) || no < minNo(kind) + (kind === 'video' ? 1 : 0)) return false
+    mutate((p) => swapTracks(p, kind, no, to))
+    return true
+  }
+
+  /** 视频轨改类型：画中画缩小、全屏铺满、绿幕默认抠像；调整图层只能给空轨道（有素材的要先清掉）。 */
+  function setTrackRole(no: number, role: EditTrackRole): boolean {
+    const here = project.value.overlays.filter((o) => o.track === no)
+    if (role === 'adjust' && here.some((o) => !o.adjust)) return false
+    mutate((p) => {
+      metaFor(p, 'video', no).role = role
+      const frame = outputSize(p, sources)
+      for (const o of p.overlays.filter((x) => x.track === no && !x.adjust)) {
+        if (role === 'pip') {
+          if (o.scale > 0.9) o.scale = 0.4
+        } else if (role === 'full') {
+          const sr = sources[o.path]
+          o.scale = overlayFitScale(o, sr && { w: sr.width, h: sr.height }, frame, 'contain')
+          o.x = 0.5
+          o.y = 0.5
+        } else if (role === 'chroma') {
+          o.chroma = { ...blankChroma(), ...o.chroma, on: true }
+        }
+      }
+    })
+    return true
+  }
+
+  /** 清掉一条视频轨上的素材，好把它改成调整图层。 */
+  function clearVideoTrack(no: number): number {
+    let n = 0
+    mutate((p) => {
+      n = p.overlays.filter((o) => o.track === no).length
+      p.overlays = p.overlays.filter((o) => o.track !== no)
+    })
+    return n
+  }
+
+  /** 在调整图层轨上加一段（默认 5 秒，从播放位置开始）。 */
+  function addAdjust(no: number, startMs?: number, durMs = 5000): number | null {
+    if (project.value.overlays.length >= MAX_OVERLAYS) return null
+    let id: number | null = null
+    mutate((p) => {
+      const o = overlayFromSource({ path: '', name: '调整图层', kind: 'image', width: 0, height: 0, durationMs: null, hasAudio: false } as unknown as EditSource, nextId(p), startMs ?? Math.round(playhead.value), no, { w: 16, h: 9 })
+      o.adjust = true
+      o.path = ''
+      o.kind = 'image'
+      o.outMs = durMs
+      o.scale = 1
+      o.x = 0.5
+      o.y = 0.5
+      o.track = freeTrack(p, 'video', no, o.startMs, o.startMs + durMs, durOf) ?? no
+      metaFor(p, 'video', o.track).role = 'adjust'
+      p.overlays.push(o)
+      id = o.id
+      sel.value = { kind: 'overlay', id: o.id }
+    })
+    return id
+  }
+
+  /** 这个素材的轨道上，同一时间有没有别的素材（重叠）。 */
+  function crowded(kind: 'overlay' | 'audio' | 'text', id: number): boolean {
+    const p = project.value
+    const k: EditTrackKind = kind === 'overlay' ? 'video' : kind
+    const it = find({ kind, id } as Sel) as EditOverlay | EditAudio | EditText | undefined
+    if (!it) return false
+    const [s, e] = kind === 'overlay' ? [(it as EditOverlay).startMs, overlayEnd(it as EditOverlay)] : kind === 'audio' ? [(it as EditAudio).startMs, (it as EditAudio).startMs + durOf.audio(it as EditAudio)] : [(it as EditText).startMs, (it as EditText).endMs]
+    const spans = k === 'video' ? p.overlays.filter((o) => o.track === (it as EditOverlay).track && o.id !== id).map((o) => ({ start: o.startMs, end: overlayEnd(o) })) : k === 'audio' ? p.audio.filter((a) => a.track === (it as EditAudio).track && a.id !== id).map((a) => ({ start: a.startMs, end: a.startMs + durOf.audio(a) })) : p.texts.filter((t) => t.track === (it as EditText).track && t.id !== id).map((t) => ({ start: t.startMs, end: t.endMs }))
+    return spans.some((x) => x.start < e && x.end > s)
+  }
+
+  /**
+   * 把一个素材放到 `no` 号轨道（`insert` 为真：先在这个位置插入一条新轨道）。
+   * 目标轨道这段时间被占了，就找最近的空轨道，没有就新建一条。锁定的轨道放不进去。返回最终放在了哪条，放不了返回 null。
+   */
+  function moveToTrack(kind: 'overlay' | 'audio' | 'text', id: number, no: number, insert = false, key = ''): number | null {
+    const tk: EditTrackKind = kind === 'overlay' ? 'video' : kind
+    const it = find({ kind, id } as Sel) as EditOverlay | EditAudio | EditText | undefined
+    if (!it) return null
+    if (trackOf(project.value, tk, (it as { track: number }).track).lock) return null
+    let result: number | null = null
+    mutate((p) => {
+      let target = clamp(no, tk === 'video' ? 1 : 1, maxNo(tk))
+      if (insert) {
+        if (nextNo(p, tk) === null) return
+        shiftUp(p, tk, target)
+        metaFor(p, tk, target)
+      }
+      const x = (kind === 'overlay' ? p.overlays : kind === 'audio' ? p.audio : p.texts).find((q) => q.id === id) as EditOverlay & EditAudio & EditText
+      const [s, e] = kind === 'overlay' ? [x.startMs, overlayEnd(x)] : kind === 'audio' ? [x.startMs, x.startMs + durOf.audio(x)] : [x.startMs, x.endMs]
+      const free = freeTrack(p, tk, target, s, e, durOf, id)
+      if (free !== null && (free === target || !insert)) target = free
+      else if (free === null) {
+        const n = nextNo(p, tk)
+        if (n === null) return
+        metaFor(p, tk, n)
+        target = n
+      }
+      x.track = target
+      result = target
+    }, key)
+    return result
+  }
+
+
+  /** 新加进来的素材如果和同一条轨道上的别的素材时间重叠，挪到最近的空轨道（没有就新建一条）。 */
+  function settleNew(p: EditProject, kind: EditTrackKind, ids: number[]) {
+    const list = (kind === 'audio' ? p.audio : p.texts) as (EditAudio & EditText)[]
+    const span = (x: EditAudio & EditText): [number, number] => (kind === 'audio' ? [x.startMs, x.startMs + durOf.audio(x)] : [x.startMs, x.endMs])
+    for (const x of list.filter((q) => ids.includes(q.id))) {
+      const [a, b] = span(x)
+      const spans = list.filter((q) => q.track === x.track && q.id !== x.id && !(ids.includes(q.id) && q.id > x.id)).map(span)
+      if (!spans.some(([s2, e2]) => s2 < b && e2 > a)) continue
+      const free = freeTrack(p, kind, x.track, a, b, durOf, x.id)
+      if (free !== null) x.track = free
+      else {
+        const n = nextNo(p, kind)
+        if (n !== null) {
+          metaFor(p, kind, n)
+          x.track = n
+        }
+      }
+    }
+  }
+
+  // ---------- 标记 ----------
+
+  function addMarker(ms?: number, name = '', color: EditMarker['color'] = 'orange'): number {
+    let id = 0
+    mutate((p) => {
+      id = p.markers.reduce((m, x) => Math.max(m, x.id), 0) + 1
+      p.markers.push({ id, ms: Math.max(0, Math.round(ms ?? playhead.value)), name, color })
+      p.markers.sort((a, b) => a.ms - b.ms)
+    })
+    return id
+  }
+  function patchMarker(id: number, patch: Partial<EditMarker>) {
+    mutate((p) => {
+      const m = p.markers.find((x) => x.id === id)
+      if (m) Object.assign(m, patch)
+      p.markers.sort((a, b) => a.ms - b.ms)
+    })
+  }
+  function removeMarker(id: number) {
+    mutate((p) => {
+      p.markers = p.markers.filter((x) => x.id !== id)
+    })
+  }
+
+  // ---------- 入点 / 出点（只导出、只预览这一段） ----------
+
+  function setIn(ms?: number) {
+    mutate((p) => {
+      const t = Math.max(0, Math.round(ms ?? playhead.value))
+      p.out.fromMs = t
+      if (p.out.toMs && p.out.toMs <= t + MIN_MS) p.out.toMs = 0
+    })
+  }
+  function setOut(ms?: number) {
+    mutate((p) => {
+      const t = Math.max(0, Math.round(ms ?? playhead.value))
+      if (t > p.out.fromMs + MIN_MS) p.out.toMs = t
+    })
+  }
+  function clearRange() {
+    mutate((p) => {
+      p.out.fromMs = 0
+      p.out.toMs = 0
+    })
+  }
+
   // ---------- 素材 ----------
 
   async function probe(path: string): Promise<EditSource> {
@@ -469,6 +697,7 @@ export function useEditProject() {
             if (p.audio.length >= MAX_AUDIO) return report.errors.push(`音频轨最多 ${MAX_AUDIO} 条，${info.name} 没有加入。`)
             const a = audioFromSource(info, nextId(p), 0)
             p.audio.push(a)
+            settleNew(p, 'audio', [a.id])
             report.added++
             return
           }
@@ -520,7 +749,7 @@ export function useEditProject() {
   }
 
   /** 添加配乐（音频文件，或者想用它声音的视频）。从 `startMs`（默认播放位置）开始。 */
-  async function addMusic(paths: string[], startMs?: number, select = true): Promise<AddReport> {
+  async function addMusic(paths: string[], startMs?: number, select = true, track?: number): Promise<AddReport> {
     const report: AddReport = { added: 0, errors: [] }
     busy.value = true
     try {
@@ -531,7 +760,9 @@ export function useEditProject() {
           if (!info.hasAudio) return report.errors.push(`${info.name}：这个文件里没有声音。`)
           if (p.audio.length >= MAX_AUDIO) return report.errors.push(`音频轨最多 ${MAX_AUDIO} 条，${info.name} 没有加入。`)
           const a = audioFromSource(info, nextId(p), Math.round(Math.max(0, startMs ?? playhead.value)))
+          a.track = clamp(track ?? 1, 1, 12)
           p.audio.push(a)
+          settleNew(p, 'audio', [a.id])
           if (select) sel.value = { kind: 'audio', id: a.id }
           report.added++
         })
@@ -542,11 +773,13 @@ export function useEditProject() {
     return report
   }
 
-  function addText(): boolean {
+  function addText(track?: number): boolean {
     if (project.value.texts.length >= MAX_TEXTS) return false
     mutate((p) => {
       const t = textAt(nextId(p), Math.round(playhead.value))
+      t.track = clamp(track ?? 1, 1, 8)
       p.texts.push(t)
+      settleNew(p, 'text', [t.id])
       sel.value = { kind: 'text', id: t.id }
     })
     return true
@@ -559,7 +792,13 @@ export function useEditProject() {
     const take = cues.slice(0, room)
     if (take.length) {
       mutate((p) => {
-        for (const c of take) p.texts.push(textFromCue(nextId(p), c, offsetMs))
+        const ids: number[] = []
+        for (const c of take) {
+          const t = textFromCue(nextId(p), c, offsetMs)
+          p.texts.push(t)
+          ids.push(t.id)
+        }
+        settleNew(p, 'text', ids)
         sel.value = null
       })
     }
@@ -904,6 +1143,23 @@ export function useEditProject() {
     selectedText,
     selectedAudio,
     mutate,
+    live,
+    patchTrack,
+    addTrack,
+    insertTrack,
+    removeTrack,
+    moveTrack,
+    setTrackRole,
+    clearVideoTrack,
+    addAdjust,
+    crowded,
+    moveToTrack,
+    addMarker,
+    patchMarker,
+    removeMarker,
+    setIn,
+    setOut,
+    clearRange,
     undo,
     redo,
     clipOf,
