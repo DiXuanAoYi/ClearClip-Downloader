@@ -127,10 +127,34 @@ onBeforeUnmount(() => {
   ACTIVITY.forEach((t) => window.removeEventListener(t, touch))
 })
 
+let restartAsked = false
+/** 窗口组件（WebView2）断开：屏幕翻译取景、写作浮标这类要新开窗口的功能都会失效，只有重启清影才恢复。 */
+async function askRestart(msg: string) {
+  if (restartAsked) return
+  restartAsked = true
+  try {
+    await ElMessageBox.confirm(`${msg}\n\n现在重启清影吗？进行中的下载会暂停，重启后可以继续。`, '窗口组件断开了', {
+      type: 'warning',
+      confirmButtonText: '现在重启',
+      cancelButtonText: '稍后',
+      distinguishCancelAndClose: true,
+    })
+    await api.restartApp()
+  } catch {
+    /* 选了“稍后”：之后再失败时还会再提醒 */
+  } finally {
+    // 十分钟内不重复弹（后端也限频），免得一直打断
+    window.setTimeout(() => (restartAsked = false), 600_000)
+  }
+}
+
 onMounted(async () => {
   // 先确定有没有锁住，再显示任何内容
   await app.refreshLock()
   await events.onLock(() => app.refreshLock())
+  // 取景窗口、截图翻译等后台功能失败时，原来只写日志，界面上什么都看不到
+  await events.onToastError((msg) => ElMessage.error({ message: msg, duration: 8000, showClose: true }))
+  await events.onWebviewBroken(askRestart)
   ACTIVITY.forEach((t) => window.addEventListener(t, touch, { passive: true }))
   idleTimer = window.setInterval(checkIdle, 10_000)
   try {

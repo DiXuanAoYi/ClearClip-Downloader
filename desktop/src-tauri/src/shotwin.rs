@@ -3,7 +3,7 @@
 use crate::AppState;
 use base64::Engine;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 const LABEL: &str = "shot";
 
@@ -53,13 +53,20 @@ fn show(app: &AppHandle) {
         .build();
     match built {
         Ok(win) => {
+            crate::webhealth::note_ok();
             crate::winframe::guard(&win);
             let _ = win.set_position(PhysicalPosition::new(x, y));
             let _ = win.set_size(PhysicalSize::new(w, h));
             let _ = win.show();
             let _ = win.set_focus();
         }
-        Err(e) => log::warn!("创建截图翻译窗口失败：{e}"),
+        Err(e) => {
+            if crate::webhealth::note_failure(app, "截图翻译窗口", &e) {
+                let _ = app.emit("toast://error", crate::model::AppError::msg(crate::webhealth::HINT));
+            } else {
+                log::warn!("创建截图翻译窗口失败：{e}");
+            }
+        }
     }
 }
 

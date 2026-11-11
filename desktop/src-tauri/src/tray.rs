@@ -272,11 +272,17 @@ fn ensure_small_window(app: &AppHandle, spec: &'static SmallWindow) {
     }
     let app = app.clone();
     // 创建窗口要等界面线程响应，放到单独的线程里做，调用方（可能就在界面线程上）不会被卡住
+    let app_for_log = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let result = build_small_window(&app, spec);
         CREATING.lock().unwrap_or_else(|e| e.into_inner()).retain(|l| *l != spec.label);
-        if let Err(e) = result {
-            log::warn!("创建{}失败：{e}", spec.title);
+        match result {
+            Ok(()) => crate::webhealth::note_ok(),
+            Err(e) => {
+                if !crate::webhealth::note_failure(&app_for_log, spec.title, &e) {
+                    log::warn!("创建{}失败：{e}", spec.title);
+                }
+            }
         }
     });
 }

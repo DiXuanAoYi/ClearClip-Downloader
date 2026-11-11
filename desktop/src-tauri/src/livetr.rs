@@ -321,11 +321,15 @@ fn small_window(app: &AppHandle, label: &str, hash: &str, title: &str, protected
         .build();
     match built {
         Ok(w) => {
+            crate::webhealth::note_ok();
             crate::winframe::guard(&w);
             Some(w)
         }
         Err(e) => {
-            log::warn!("创建{title}失败：{e}");
+            // 窗口组件断开：限频写日志并通知界面，不再每次都刷一条
+            if !crate::webhealth::note_failure(app, title, &e) {
+                log::warn!("创建{title}失败：{e}");
+            }
             None
         }
     }
@@ -1007,6 +1011,15 @@ pub fn start(app: &AppHandle, st: &Arc<AppState>, mut target: Target, mode: Opti
         stop(app);
         std::thread::sleep(Duration::from_millis(120));
     }
+    // 之前新开窗口失败过（窗口组件断开）：先试着开一个，开不出来就明说，不要开始了却什么都看不到
+    if crate::webhealth::is_broken() {
+        match small_window(app, OV, "liveov", "清影屏幕翻译", true) {
+            Some(w) => {
+                let _ = w.destroy();
+            }
+            None => return Err(AppError::msg(crate::webhealth::HINT)),
+        }
+    }
     if target.kind == "window" {
         let (x, y, w, h) = livewin::window_bounds(target.hwnd).ok_or_else(|| AppError::msg("这个窗口找不到了（可能已最小化或关闭）。"))?;
         target.rect = [x, y, w, h];
@@ -1192,6 +1205,8 @@ pub fn open_picker(app: &AppHandle) {
                     place(&win, [x, y, w as i32, h as i32]);
                     let _ = win.show();
                     let _ = win.set_focus();
+                } else if crate::webhealth::is_broken() {
+                    let _ = app.emit("toast://error", AppError::msg(crate::webhealth::HINT));
                 }
             }
             Err(e) => {
