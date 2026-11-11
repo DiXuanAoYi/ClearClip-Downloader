@@ -20,9 +20,9 @@
 
 ## 发布一个新版本
 
-1. 修改版本号（`desktop/src-tauri/tauri.conf.json`、`desktop/src-tauri/Cargo.toml`、`desktop/package.json` 三处保持一致），合并到 `main`。
+1. 在 `desktop/CHANGELOG.md` 最上面写好这一版的内容，在 `desktop/` 下运行 `npm run release:version -- <版本> [--ext <扩展版本>]`：一次改齐 7 处版本号（程序、锁文件、Rust、商店文案、扩展），并把更新记录的标题改成正式的。合并到 `main`。
 2. 打开 GitHub 的 **Actions → desktop-release → Run workflow**，分支选 `main`。
-3. 等四个平台都构建完成（约 15 分钟）。Release 会自动创建，包含各平台安装包、Windows 便携版、浏览器扩展 zip；配置了更新签名时还会有 `latest.json`。
+3. 等四个平台都构建完成（最近几次约 25–30 分钟）。Release 会自动创建，最上面是这一版的更新记录，包含各平台安装包、Windows 便携版、浏览器扩展 zip；配置了更新签名时还会有 `latest.json`。最后的 `verify` 任务会核对安装包是否齐全，缺了会标红。
 
 ## 官方文档
 

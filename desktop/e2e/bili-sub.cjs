@@ -15,7 +15,7 @@ const ok = (name, cond, extra = '') => {
 const json = (route, body, headers = {}) => route.fulfill({ contentType: 'application/json; charset=utf-8', headers: { 'access-control-allow-origin': 'https://www.bilibili.com', 'access-control-allow-credentials': 'true', ...headers }, body: JSON.stringify(body) })
 
 ;(async () => {
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })
   for (const mode of ['wildcard', 'blocked']) {
     const ctx = await browser.newContext()
     await ctx.route('https://www.bilibili.com/**', (r) => r.fulfill({ contentType: 'text/html; charset=utf-8', body: '<!doctype html><title>t</title><body><video></video></body>' }))

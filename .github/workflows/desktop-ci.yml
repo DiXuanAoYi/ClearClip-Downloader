@@ -5,9 +5,19 @@ on:
     paths: ['desktop/**', '.github/workflows/desktop-*.yml']
   pull_request:
     paths: ['desktop/**', '.github/workflows/desktop-*.yml']
+  # 手动运行：Actions → desktop-ci → Run workflow，可以选任意分支
+  workflow_dispatch:
 
+# 同一个分支有新提交时，取消还在跑的旧检查（main 上的不取消，每个合并都要有结果）
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# 下面两个任务的 if：本仓库分支开的 PR，推送时已经检查过同一个提交（PR 页面会显示那次的结果），
+# PR 事件就不再重复跑一遍（显示为“已跳过”）；只有从别人 fork 来的 PR 才在 PR 事件里检查。
 jobs:
   check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-22.04
     defaults:
       run:
@@ -35,6 +45,10 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
 
       - run: npm ci
+
+      # 版本号散在 7 个文件里，漏改一处发版时才会发现（scripts/version.mjs）
+      - name: Version numbers are consistent
+        run: npm run release:check
 
       - name: Frontend typecheck and build
         run: npm run build
@@ -76,6 +90,7 @@ jobs:
   # 另外两个发布目标：macOS 通用二进制（两个架构）和 Windows ARM64。只做编译检查（不链接、不打包），
   # 提前发现这两个目标上才会出现的编译问题，免得打标签发布时才失败。
   cross-check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
       matrix:

@@ -9,6 +9,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "i18n": "node scripts/i18n.mjs",
+    "release:version": "node scripts/version.mjs",
+    "release:check": "node scripts/version.mjs --check",
     "tauri": "tauri",
     "test:unit": "node --experimental-strip-types --no-warnings --test \"e2e/unit/*.test.mjs\"",
     "test:e2e": "node e2e/run.mjs",

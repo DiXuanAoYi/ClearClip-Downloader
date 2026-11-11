@@ -106,6 +106,18 @@ jobs:
             fi
           done
 
+      # 这一版的更新记录，放在 Release 页面最上面（取自 desktop/CHANGELOG.md，见 desktop/scripts/version.mjs --notes）
+      - name: Release notes
+        id: notes
+        shell: bash
+        run: |
+          version=$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")
+          {
+            echo 'body<<__CLEARCLIP_NOTES__'
+            node desktop/scripts/version.mjs --notes "$version" || echo "（更新记录里没有 $version 这一版的内容）"
+            echo '__CLEARCLIP_NOTES__'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -114,6 +126,12 @@ jobs:
           tagName: desktop-v__VERSION__
           releaseName: 清影 ClearClip v__VERSION__
           releaseBody: |
+            ## 这一版的更新
+
+            ${{ steps.notes.outputs.body }}
+
+            ---
+
             清影 ClearClip 桌面版，下载后直接安装使用，不需要编译环境。
 
             | 系统 | 下载哪个文件 |
@@ -129,7 +147,7 @@ jobs:
             - macOS：安装包未经 Apple 公证。首次打开如果被拦截，到“系统设置 → 隐私与安全性”，在页面下方点“仍要打开”；如果提示“已损坏，无法打开”，在终端执行 `xattr -cr /Applications/ClearClip.app` 后再打开。
             - YouTube 等网站需要的 yt-dlp、ffmpeg 组件在“设置 → 组件”中一键安装，国内网络可填写 GitHub 镜像。
 
-            本版本的新增内容见 [更新记录](https://github.com/DiXuanAoYi/ClearClip-Downloader/blob/main/desktop/CHANGELOG.md)。
+            以前各版本的改动见 [更新记录](https://github.com/DiXuanAoYi/ClearClip-Downloader/blob/main/desktop/CHANGELOG.md)。
 
             仅用于下载你有权保存的内容。
           releaseDraft: false
@@ -180,3 +198,50 @@ jobs:
           ext=$(jq -r .version desktop/extension/manifest.json)
           (cd desktop/extension && zip -r -X "$GITHUB_WORKSPACE/ClearClip-extension-$ext.zip" . -x README.md)
           gh release upload "desktop-v$version" "ClearClip-extension-$ext.zip" --clobber
+
+  # 所有平台都构建完以后，核对 Release 里的安装包是否齐全（以前靠手工核对）。
+  # Windows ARM64 是实验性的，缺了只警告；没有 latest.json 说明没配更新签名密钥，也只警告。
+  verify:
+    needs: build
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(jq -r .version desktop/src-tauri/tauri.conf.json)
+          ext=$(jq -r .version desktop/extension/manifest.json)
+          tag="desktop-v$version"
+          if ! names=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name'); then
+            echo "::error title=找不到 Release::$tag"
+            exit 1
+          fi
+          {
+            echo "## $tag 的安装包"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          missing=0
+          for f in "ClearClip_${version}_x64-setup.exe" "ClearClip_${version}_x64_en-US.msi" "ClearClip-${version}-portable-windows-x64.zip" \
+                   "ClearClip_${version}_universal.dmg" "ClearClip_${version}_amd64.AppImage" "ClearClip_${version}_amd64.deb" \
+                   "ClearClip-${version}-1.x86_64.rpm" "ClearClip-extension-${ext}.zip"; do
+            if grep -qxF "$f" <<<"$names"; then
+              echo "- ✅ $f" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- ❌ $f" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error title=Release 缺少安装包::$f"
+              missing=1
+            fi
+          done
+          for f in "ClearClip_${version}_arm64-setup.exe" "ClearClip-${version}-portable-windows-arm64.zip" "latest.json"; do
+            if grep -qxF "$f" <<<"$names"; then
+              echo "- ✅ $f" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- ⚠️ $f（可选）" >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning title=Release 里没有::$f（Windows ARM64 是实验性的；latest.json 要配好更新签名密钥才会有）"
+            fi
+          done
+          exit $missing
