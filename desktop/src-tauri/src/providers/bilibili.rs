@@ -68,13 +68,21 @@ impl Provider for Bilibili {
 
     async fn resolve(&self, ctx: &Ctx<'_>, url: &str) -> AppResult<MediaInfo> {
         let cookie = ctx.cookie("https://api.bilibili.com/");
+        // 创作者首页、合集、视频列表、收藏夹、稍后再看：解析成播放列表
+        if let Some(t) = super::bilibili_list::classify(url) {
+            return super::bilibili_list::resolve(ctx, &t, url).await;
+        }
         let (vid, page) = match video_id_from_url(url) {
             Some(v) => (v, page_from_url(url)),
             None => {
                 // b23.tv 短链
                 let resp = ctx.get(url).header("User-Agent", DESKTOP_UA).send().await?;
                 let final_url = resp.url().to_string();
-                // 番剧、课程、空间列表等交给 yt-dlp（解析器错误会触发 yt-dlp 兜底）
+                // 短链指向列表类页面（分享出来的合集、收藏夹）
+                if let Some(t) = super::bilibili_list::classify(&final_url) {
+                    return super::bilibili_list::resolve(ctx, &t, &final_url).await;
+                }
+                // 番剧、课程等交给 yt-dlp（解析器错误会触发 yt-dlp 兜底）
                 let v = video_id_from_url(&final_url).ok_or_else(|| AppError::parser("没能从链接里识别出 B站视频号（BV/av），内置解析器只支持视频稿件。"))?;
                 (v, page_from_url(&final_url))
             }

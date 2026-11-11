@@ -2,16 +2,17 @@
 // 排布规则和后端 `src-tauri/src/edit/spec.rs` 的 `layout` 保持一致，改那边时要一起改这里。
 // 这个文件不要引入别的运行时模块（用 node 直接跑 scripts 里的检查时需要）。
 
+import { blankTrack, MAX_AUDIO_TRACKS, MAX_TEXT_TRACKS, packTracks } from './tracks.ts'
 import type { EditShapeMask, EditBackground, EditAudio, EditBeats, EditChroma, EditClip, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
 
 export const MIN_MS = 100
 export const MIN_TRANSITION_MS = 100
 export const MAX_CLIPS = 300
 export const MAX_TEXTS = 500
-export const MAX_AUDIO = 20
+export const MAX_AUDIO = 60
 /** 叠加素材最多几个、几条轨道、最晚从哪里开始（和后端 `MAX_OVERLAYS` / `MAX_OVERLAY_TRACKS` / `MAX_START_MS` 一致） */
 export const MAX_OVERLAYS = 100
-export const MAX_OVERLAY_TRACKS = 8
+export const MAX_OVERLAY_TRACKS = 11
 export const MAX_START_MS = 36_000_000
 /** 一个片段最多几个区域（和后端 `MAX_REGIONS` 一致） */
 export const MAX_REGIONS = 8
@@ -67,7 +68,7 @@ export function defaultOutput(): EditOutput {
 }
 
 export function emptyProject(): EditProject {
-  return { title: '', clips: [], overlays: [], texts: [], audio: [], out: defaultOutput() }
+  return { title: '', clips: [], overlays: [], texts: [], audio: [], tracks: [], markers: [], out: defaultOutput() }
 }
 
 /** 补全旧版本或手改过的工程文件里缺的字段。 */
@@ -79,7 +80,20 @@ export function normalizeProject(raw: Partial<EditProject> | null | undefined): 
   p.clips = (r.clips ?? []).map((c, i) => ({ ...blankClip(), ...c, id: c.id ?? i + 1, regions: (c.regions ?? []).map((g, j) => ({ ...blankRegion(), ...g, id: g.id ?? j + 1 })), keyframes: kfClean(c.keyframes), bg: { ...blankBackground(), ...(c.bg ?? {}), chroma: { ...blankChroma(), ...(c.bg?.chroma ?? {}) } } }))
   p.overlays = (r.overlays ?? []).map((o, i) => ({ ...blankOverlay(), ...o, id: o.id ?? i + 1, keyframes: kfClean(o.keyframes), chroma: { ...blankChroma(), ...(o.chroma ?? {}) }, mask: { ...blankShapeMask(), ...(o.mask ?? {}) } }))
   p.texts = (r.texts ?? []).map((t, i) => ({ ...blankText(), ...t, id: t.id ?? i + 1, keyframes: kfClean(t.keyframes) }))
-  p.audio = (r.audio ?? []).map((a, i) => ({ ...blankAudio(), ...a, id: a.id ?? i + 1, beats: cleanBeats(a.beats) }))
+  p.audio = (r.audio ?? []).map((a, i) => ({ ...blankAudio(), ...a, id: a.id ?? i + 1, keyframes: kfClean(a.keyframes), beats: cleanBeats(a.beats) }))
+  p.tracks = (r.tracks ?? []).map((t) => ({ ...blankTrack(t.kind, t.no), ...t }))
+  p.markers = (r.markers ?? []).map((m, i) => ({ id: m.id ?? i + 1, ms: Math.max(0, Math.round(m.ms ?? 0)), name: m.name ?? '', color: m.color ?? 'orange' }))
+  // 旧工程里的配乐、文字没有轨道编号：按时间重叠与否分到不同的轨道，看上去和以前错开的行一样
+  const rawAudio = r.audio ?? []
+  if (rawAudio.length && rawAudio.every((a) => a.track === undefined)) {
+    const by = packTracks(p.audio.map((a) => ({ id: a.id, start: a.startMs, end: a.startMs + (a.outMs !== null ? Math.max(MIN_MS, a.outMs - a.inMs) : 30_000) })), MAX_AUDIO_TRACKS)
+    for (const a of p.audio) a.track = by.get(a.id) ?? 1
+  }
+  const rawTexts = r.texts ?? []
+  if (rawTexts.length && rawTexts.every((t) => t.track === undefined)) {
+    const by = packTracks(p.texts.map((t) => ({ id: t.id, start: t.startMs, end: t.endMs })), MAX_TEXT_TRACKS)
+    for (const t of p.texts) t.track = by.get(t.id) ?? 1
+  }
   return p
 }
 
@@ -119,6 +133,7 @@ function blankClip(): EditClip {
 
 export function blankOverlay(): EditOverlay {
   return {
+    adjust: false,
     id: 0,
     path: '',
     kind: 'video',
@@ -165,6 +180,7 @@ export function blankChroma(): EditChroma {
 
 function blankText(): EditText {
   return {
+    track: 1,
     id: 0,
     text: '',
     startMs: 0,
@@ -188,7 +204,7 @@ function blankText(): EditText {
 }
 
 function blankAudio(): EditAudio {
-  return { id: 0, path: '', startMs: 0, inMs: 0, outMs: null, volume: 1, fadeInMs: 0, fadeOutMs: 0, looped: false, duck: false, reverb: null, beats: null }
+  return { id: 0, track: 1, path: '', startMs: 0, inMs: 0, outMs: null, volume: 1, fadeInMs: 0, fadeOutMs: 0, looped: false, duck: false, reverb: null, keyframes: {}, beats: null }
 }
 
 export function nextId(p: EditProject): number {
@@ -1162,6 +1178,7 @@ export function liveFrame(p: EditProject, pl: Placed[], t: number, srcDur: (path
   const order = overlayOrder(p.overlays)
   order.forEach((idx, rank) => {
     const o = p.overlays[idx]
+    if (o.adjust) return
     const dur = overlayDuration(o)
     const local = t - o.startMs
     if (local < 0 || local >= dur) return
@@ -1171,6 +1188,23 @@ export function liveFrame(p: EditProject, pl: Placed[], t: number, srcDur: (path
     overlays.push({ overlay: withKeys(o, local), srcMs: overlaySourceMs(o, local, srcDur(o.path)), fade: clamp(f, 0, 1), rank, local })
   })
   return { main, overlays }
+}
+
+/** 此刻生效的调整图层合起来的调色（预览用 CSS 滤镜近似）；没有返回 null。 */
+export function liveAdjust(p: EditProject, t: number): { brightness: number; contrast: number; saturation: number } | null {
+  let b = 0
+  let c = 1
+  let s = 1
+  let any = false
+  for (const idx of overlayOrder(p.overlays)) {
+    const o = p.overlays[idx]
+    if (!o.adjust || t < o.startMs || t >= o.startMs + overlayDuration(o)) continue
+    any = true
+    b += o.brightness
+    c *= o.contrast
+    s *= o.saturation
+  }
+  return any ? { brightness: b, contrast: c, saturation: s } : null
 }
 
 /** 主轨一层此刻的音量系数（0–1，已含片段音量、淡入淡出和转场里的声音交叉淡化；浏览器里音量最大 1）。 */

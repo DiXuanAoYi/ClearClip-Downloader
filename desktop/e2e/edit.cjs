@@ -63,7 +63,7 @@ const close = (a, b, tol) => Math.abs(a - b) <= tol
   console.log('# 空白状态')
   ok('监视器提示可见', await page.locator('.stage .hint').isVisible())
   ok('导出按钮不可用', await page.getByRole('button', { name: '导出视频' }).isDisabled())
-  ok('主轨提示可见', await page.locator('.main-row .empty').isVisible())
+  ok('主轨提示可见', await page.locator('.row.main .empty').isVisible())
 
   // ---- 2 添加片段 ----
   console.log('# 添加片段')

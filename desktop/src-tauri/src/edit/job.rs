@@ -83,7 +83,8 @@ async fn read_sources(ffmpeg: &Path, p: &Project, ctx: &JobCtx) -> AppResult<Has
     let mut src: HashMap<String, Source> = HashMap::new();
     let paths: Vec<&String> = p.clips.iter().map(|c| &c.path).chain(p.overlays.iter().map(|o| &o.path)).chain(p.audio.iter().map(|a| &a.path)).collect();
     for path in paths {
-        if src.contains_key(path) {
+        // 调整图层没有素材文件
+        if path.is_empty() || src.contains_key(path) {
             continue;
         }
         if !Path::new(path).is_file() {
@@ -121,7 +122,7 @@ async fn prepare(ctx: &JobCtx, project: &Project, mode: Mode) -> AppResult<Prepa
     let st = &ctx.st;
     let ffmpeg = find_ffmpeg(st).ok_or_else(crate::postprocess::ffmpeg_missing)?;
     let caps = st.vcaps.get(&ffmpeg).await;
-    let mut project = project.clone().checked().map_err(AppError::invalid)?;
+    let mut project = project.clone().checked().map_err(AppError::invalid)?.effective();
     ctx.note("正在检查素材…");
     let sources = read_sources(&ffmpeg, &project, ctx).await?;
     let notes = fit_to_sources(&mut project, &sources)?;

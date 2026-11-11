@@ -14,10 +14,13 @@ pub const MAX_CLIPS: usize = 300;
 /// 叠加素材的入场 / 出场动画
 pub const ANIMS: [&str; 6] = ["none", "slide-left", "slide-right", "slide-up", "slide-down", "zoom"];
 pub const MAX_TEXTS: usize = 500;
-pub const MAX_AUDIO: usize = 20;
+pub const MAX_AUDIO: usize = 60;
 /// 叠加轨上最多的素材数、最多的轨道数
 pub const MAX_OVERLAYS: usize = 100;
-pub const MAX_OVERLAY_TRACKS: u32 = 8;
+pub const MAX_OVERLAY_TRACKS: u32 = 11;
+/// 音频轨、文字轨的条数上限（视频轨 = 主轨 + 叠加轨，一共 12 条）
+pub const MAX_AUDIO_TRACKS: u32 = 12;
+pub const MAX_TEXT_TRACKS: u32 = 8;
 /// 一个片段上最多的区域数
 pub const MAX_REGIONS: usize = 8;
 /// 一条区域轨迹最多的点数（追踪结果经过精简，正常远少于这个数）
@@ -264,6 +267,8 @@ impl Clip {
 pub struct TextItem {
     pub id: u32,
     pub text: String,
+    /// 所在的文字轨编号 1–`MAX_TEXT_TRACKS`；编号大的画在上面
+    pub track: u32,
     /// 时间线上的出现和消失时间
     pub start_ms: u64,
     pub end_ms: u64,
@@ -314,6 +319,7 @@ impl Default for TextItem {
         TextItem {
             id: 0,
             text: String::new(),
+            track: 1,
             start_ms: 0,
             end_ms: 3000,
             x: 0.5,
@@ -340,6 +346,8 @@ impl Default for TextItem {
 #[serde(rename_all = "camelCase", default)]
 pub struct AudioTrack {
     pub id: u32,
+    /// 所在的音频轨编号 1–`MAX_AUDIO_TRACKS`
+    pub track: u32,
     pub path: String,
     /// 在时间线上从哪里开始
     pub start_ms: u64,
@@ -355,12 +363,17 @@ pub struct AudioTrack {
     pub duck: bool,
     /// 混响；没有 = 不加
     pub reverb: Option<ReverbSpec>,
+    /// 关键帧：`volume`（音量线，时间相对 `start_ms`）。有关键帧时不再用上面的固定音量
+    pub keyframes: KeyframeMap,
+    /// 左右声道：-1 全在左边 … 0 居中 … 1 全在右边（来自音频轨的设置，不用单独存）
+    pub pan: f64,
 }
 
 impl Default for AudioTrack {
     fn default() -> Self {
         AudioTrack {
             id: 0,
+            track: 1,
             path: String::new(),
             start_ms: 0,
             in_ms: 0,
@@ -371,6 +384,8 @@ impl Default for AudioTrack {
             looped: false,
             duck: false,
             reverb: None,
+            keyframes: KeyframeMap::new(),
+            pan: 0.0,
         }
     }
 }
@@ -484,6 +499,8 @@ impl Background {
 #[serde(rename_all = "camelCase", default)]
 pub struct Overlay {
     pub id: u32,
+    /// 调整图层：不放画面（没有素材文件），只把下面所有轨道在这段时间里的画面调色（亮度、对比度、饱和度）
+    pub adjust: bool,
     pub path: String,
     pub kind: ClipKind,
     /// 叠加轨编号 1–`MAX_OVERLAY_TRACKS`
@@ -534,6 +551,7 @@ impl Default for Overlay {
     fn default() -> Self {
         Overlay {
             id: 0,
+            adjust: false,
             path: String::new(),
             kind: ClipKind::Video,
             track: 1,
@@ -665,8 +683,74 @@ pub struct Project {
     pub overlays: Vec<Overlay>,
     pub texts: Vec<TextItem>,
     pub audio: Vec<AudioTrack>,
+    /// 轨道的名字和开关；没有列出的轨道按默认值处理
+    pub tracks: Vec<TrackMeta>,
+    /// 时间线上的标记
+    pub markers: Vec<Marker>,
     pub out: OutputSpec,
 }
+
+/// 时间线上的一个标记。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Marker {
+    pub id: u32,
+    pub ms: u64,
+    pub name: String,
+    /// 颜色名：red / orange / yellow / green / blue / purple
+    pub color: String,
+}
+
+/// 一条轨道的名字和开关。`kind`：video / audio / text。
+/// 视频轨的 `no`：0 = 主轨（V1），k = 叠加轨 k（V(k+1)）；音频轨、文字轨的 `no` 就是轨道编号。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TrackMeta {
+    pub kind: String,
+    pub no: u32,
+    pub name: String,
+    /// 视频轨的类型：pip 画中画 / full 全屏 / adjust 调整图层 / chroma 绿幕；其他轨留空
+    pub role: String,
+    pub mute: bool,
+    /// 独奏只影响预览，导出不看它
+    pub solo: bool,
+    pub lock: bool,
+    pub hidden: bool,
+    /// 磁吸：素材首尾相接，删除、插入时后面的跟着动（主轨一直是开的）
+    pub magnet: bool,
+    /// 音频轨的音量（倍数）和左右声道（-1 左 … 1 右）
+    pub volume: f64,
+    pub pan: f64,
+    /// 音频轨：人声（主轨声音）出现时自动压低这条轨上的所有音频
+    pub duck: bool,
+    /// 轨道颜色（`#RRGGBB`），留空用默认
+    pub color: String,
+    /// 轨道高度：s / m / l
+    pub height: String,
+}
+
+impl Default for TrackMeta {
+    fn default() -> Self {
+        TrackMeta {
+            kind: "video".into(),
+            no: 0,
+            name: String::new(),
+            role: String::new(),
+            mute: false,
+            solo: false,
+            lock: false,
+            hidden: false,
+            magnet: false,
+            volume: 1.0,
+            pan: 0.0,
+            duck: false,
+            color: String::new(),
+            height: "m".into(),
+        }
+    }
+}
+
+pub const TRACK_ROLES: &[&str] = &["", "pip", "full", "adjust", "chroma"];
 
 /// 一个片段在时间线上的位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -891,7 +975,13 @@ impl Project {
         }
         for (i, o) in self.overlays.iter_mut().enumerate() {
             let n = i + 1;
-            if o.path.trim().is_empty() {
+            if o.adjust {
+                // 调整图层没有素材，只有一段时间：当作图片，时长就是 out_ms
+                o.path.clear();
+                o.kind = ClipKind::Image;
+                o.mask = ShapeMask::default();
+                o.chroma = Chroma::default();
+            } else if o.path.trim().is_empty() {
                 return Err(format!("第 {n} 个叠加素材没有素材文件。"));
             }
             match o.kind {
@@ -946,6 +1036,7 @@ impl Project {
         }
         self.texts.retain(|t| !t.text.trim().is_empty());
         for t in &mut self.texts {
+            t.track = t.track.clamp(1, MAX_TEXT_TRACKS);
             if t.end_ms < t.start_ms + MIN_MS {
                 t.end_ms = t.start_ms + MIN_MS;
             }
@@ -979,9 +1070,13 @@ impl Project {
                     return Err(format!("第 {} 条音频轨的结束时间要比开始时间晚。", i + 1));
                 }
             }
+            a.track = a.track.clamp(1, MAX_AUDIO_TRACKS);
             a.volume = clamp(a.volume, 0.0, 4.0, 1.0);
+            a.pan = clamp(a.pan, -1.0, 1.0, 0.0);
+            check_keys(&mut a.keyframes, &[("volume", 0.0, 4.0)]);
             a.reverb = a.reverb.as_ref().map(ReverbSpec::checked);
         }
+        self.check_tracks();
         let o = &mut self.out;
         if (o.width != 0 && !(16..=7680).contains(&o.width)) || (o.height != 0 && !(16..=7680).contains(&o.height)) || (o.width == 0) != (o.height == 0) {
             return Err("输出尺寸不对：宽和高都要在 16–7680 之间（或者都留空，跟随第一个片段）。".into());
@@ -1013,6 +1108,90 @@ impl Project {
         Ok(self)
     }
 
+    /// 整理轨道信息：去掉重复和越界的，数值收紧。
+    fn check_tracks(&mut self) {
+        let mut seen: Vec<(String, u32)> = vec![];
+        let mut out: Vec<TrackMeta> = vec![];
+        for mut t in std::mem::take(&mut self.tracks) {
+            let max = match t.kind.as_str() {
+                "video" => MAX_OVERLAY_TRACKS,
+                "audio" => MAX_AUDIO_TRACKS,
+                "text" => MAX_TEXT_TRACKS,
+                _ => continue,
+            };
+            let min = if t.kind == "video" { 0 } else { 1 };
+            if t.no < min || t.no > max || seen.contains(&(t.kind.clone(), t.no)) {
+                continue;
+            }
+            seen.push((t.kind.clone(), t.no));
+            t.name = t.name.trim().chars().take(40).collect();
+            if !TRACK_ROLES.contains(&t.role.as_str()) || t.kind != "video" || t.no == 0 {
+                t.role = String::new();
+            }
+            if t.no == 0 {
+                // 主轨一直是磁吸的，也不能隐藏
+                t.magnet = true;
+                t.hidden = false;
+            }
+            t.volume = clamp(t.volume, 0.0, 4.0, 1.0);
+            t.pan = clamp(t.pan, -1.0, 1.0, 0.0);
+            t.color = if t.color.trim().is_empty() { String::new() } else { hex_color(&t.color, "") };
+            if !matches!(t.height.as_str(), "s" | "m" | "l") {
+                t.height = "m".into();
+            }
+            out.push(t);
+        }
+        self.tracks = out;
+        self.markers.truncate(500);
+        for m in &mut self.markers {
+            m.ms = m.ms.min(MAX_START_MS);
+            m.name = m.name.trim().chars().take(60).collect();
+            if !matches!(m.color.as_str(), "red" | "orange" | "yellow" | "green" | "blue" | "purple") {
+                m.color = "orange".into();
+            }
+        }
+    }
+
+    fn meta(&self, kind: &str, no: u32) -> Option<&TrackMeta> {
+        self.tracks.iter().find(|t| t.kind == kind && t.no == no)
+    }
+
+    /// 按轨道的开关整理出真正要导出 / 预览的工程：隐藏的视频轨、文字轨上的素材不要，静音的轨不出声，
+    /// 音频轨的音量和自动避让落到每条音频上，文字按轨道从下到上排（编号大的画在上面）。独奏不影响导出。
+    pub fn effective(&self) -> Project {
+        let mut p = self.clone();
+        if let Some(m) = self.meta("video", 0) {
+            if m.mute {
+                for c in &mut p.clips {
+                    c.mute = true;
+                }
+            }
+        }
+        p.overlays.retain(|o| !self.meta("video", o.track).is_some_and(|m| m.hidden));
+        for o in &mut p.overlays {
+            if self.meta("video", o.track).is_some_and(|m| m.mute) {
+                o.mute = true;
+            }
+        }
+        p.audio.retain(|a| !self.meta("audio", a.track).is_some_and(|m| m.mute));
+        for a in &mut p.audio {
+            if let Some(m) = self.meta("audio", a.track) {
+                a.volume = (a.volume * m.volume).clamp(0.0, 4.0);
+                a.duck |= m.duck;
+                a.pan = m.pan;
+                // 音量线上的每个点也乘上轨道音量
+                if let Some(pts) = a.keyframes.get_mut("volume") {
+                    for k in pts {
+                        k.value = (k.value * m.volume).clamp(0.0, 4.0);
+                    }
+                }
+            }
+        }
+        p.texts.retain(|t| !self.meta("text", t.track).is_some_and(|m| m.hidden));
+        p.texts.sort_by_key(|t| t.track);
+        p
+    }
+
     /// 所有用到的素材文件（去重，保持顺序）。
     pub fn media_paths(&self) -> Vec<String> {
         let mut out: Vec<String> = vec![];
@@ -1025,7 +1204,7 @@ impl Project {
             .chain(self.texts.iter().filter_map(|t| t.font.as_ref()))
             .chain(self.clips.iter().map(|c| &c.lut).filter(|l| !l.is_empty()));
         for p in paths {
-            if !out.contains(p) {
+            if !p.is_empty() && !out.contains(p) {
                 out.push(p.clone());
             }
         }
@@ -1044,6 +1223,51 @@ mod tests {
     fn with_t(mut c: Clip, ms: u64) -> Clip {
         c.transition = Some(Transition { kind: "fade".into(), duration_ms: ms });
         c
+    }
+
+    #[test]
+    fn tracks_are_cleaned_up_and_items_stay_inside_the_limits() {
+        let mut p = Project { clips: vec![clip(1, 4000)], ..Default::default() };
+        p.tracks = vec![
+            TrackMeta { kind: "audio".into(), no: 1, name: "  配乐  ".into(), volume: 9.0, pan: -3.0, ..Default::default() },
+            TrackMeta { kind: "audio".into(), no: 1, name: "重复".into(), ..Default::default() },
+            TrackMeta { kind: "audio".into(), no: 99, ..Default::default() },
+            TrackMeta { kind: "video".into(), no: 0, hidden: true, role: "adjust".into(), ..Default::default() },
+            TrackMeta { kind: "video".into(), no: 3, role: "乱写的".into(), ..Default::default() },
+            TrackMeta { kind: "other".into(), no: 1, ..Default::default() },
+        ];
+        p.audio = vec![AudioTrack { path: "/m/a.mp3".into(), track: 50, ..Default::default() }];
+        p.texts = vec![TextItem { text: "hi".into(), track: 0, ..Default::default() }];
+        p.markers = vec![Marker { ms: 5, name: "x".into(), color: "pink".into(), ..Default::default() }];
+        let c = p.checked().unwrap();
+        assert_eq!(c.tracks.len(), 3);
+        assert_eq!((c.tracks[0].name.as_str(), c.tracks[0].volume, c.tracks[0].pan), ("配乐", 4.0, -1.0));
+        let main = c.tracks.iter().find(|t| t.kind == "video" && t.no == 0).unwrap();
+        assert!(main.magnet && !main.hidden && main.role.is_empty(), "主轨一直磁吸、不能隐藏、没有类型");
+        assert_eq!(c.tracks.iter().find(|t| t.no == 3).unwrap().role, "");
+        assert_eq!((c.audio[0].track, c.texts[0].track), (MAX_AUDIO_TRACKS, 1));
+        assert_eq!(c.markers[0].color, "orange");
+    }
+
+    #[test]
+    fn effective_applies_track_switches_without_touching_the_original() {
+        let mut p = Project { clips: vec![clip(1, 4000)], ..Default::default() };
+        p.texts = vec![
+            TextItem { text: "上".into(), track: 2, ..Default::default() },
+            TextItem { text: "下".into(), track: 1, ..Default::default() },
+            TextItem { text: "藏".into(), track: 3, ..Default::default() },
+        ];
+        p.tracks = vec![
+            TrackMeta { kind: "text".into(), no: 3, hidden: true, ..Default::default() },
+            TrackMeta { kind: "video".into(), no: 0, mute: true, ..Default::default() },
+            TrackMeta { kind: "audio".into(), no: 1, duck: true, ..Default::default() },
+        ];
+        p.audio = vec![AudioTrack { path: "/m/a.mp3".into(), track: 1, ..Default::default() }];
+        let c = p.checked().unwrap();
+        let e = c.effective();
+        assert_eq!(e.texts.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), vec!["下", "上"], "隐藏的去掉，编号小的先画");
+        assert!(e.clips[0].mute && !c.clips[0].mute);
+        assert!(e.audio[0].duck && !c.audio[0].duck);
     }
 
     #[test]

@@ -1732,6 +1732,8 @@ export type EditKeyframes = Record<string, EditKeyframe[]>
 
 export interface EditText {
   id: number
+  /** 所在的文字轨编号 1–8；编号大的画在上面 */
+  track: number
   text: string
   startMs: number
   endMs: number
@@ -1786,6 +1788,8 @@ export interface SttStatus {
 
 export interface EditAudio {
   id: number
+  /** 所在的音频轨编号 1–12 */
+  track: number
   path: string
   startMs: number
   inMs: number
@@ -1796,6 +1800,8 @@ export interface EditAudio {
   looped: boolean
   duck: boolean
   /** 混响；null = 不加 */
+  /** 关键帧：volume（音量线，时间相对开头）；有关键帧时不再用固定音量 */
+  keyframes: EditKeyframes
   reverb: ReverbSpec | null
   /** 节拍分析结果（`beatsMs` 是素材里的时间，不随配乐在时间线上的位置变）；没分析过是空。只存在工程里，导出用不到 */
   beats?: EditBeats | null
@@ -1837,9 +1843,11 @@ export type OverlayAnim = 'none' | 'slide-left' | 'slide-right' | 'slide-up' | '
 
 export interface EditOverlay {
   id: number
+  /** 调整图层：不放画面，只把下面所有轨道在这段时间里调色 */
+  adjust: boolean
   path: string
   kind: 'video' | 'image'
-  /** 叠加轨编号 1–8 */
+  /** 叠加轨编号 1–11（视频轨 V2 起；V1 是主轨） */
   track: number
   /** 在时间线上从哪里开始（毫秒） */
   startMs: number
@@ -1946,7 +1954,39 @@ export interface EditProject {
   overlays: EditOverlay[]
   texts: EditText[]
   audio: EditAudio[]
+  /** 轨道的名字和开关；没有列出的轨道按默认值 */
+  tracks: EditTrack[]
+  /** 时间线上的标记 */
+  markers: EditMarker[]
   out: EditOutput
+}
+
+export type EditTrackKind = 'video' | 'audio' | 'text'
+export type EditTrackRole = '' | 'pip' | 'full' | 'adjust' | 'chroma'
+
+/** 一条轨道。视频轨的 `no`：0 = 主轨（V1），k = 叠加轨 k（V(k+1)）；音频轨、文字轨的 `no` 就是编号。 */
+export interface EditTrack {
+  kind: EditTrackKind
+  no: number
+  name: string
+  role: EditTrackRole
+  mute: boolean
+  solo: boolean
+  lock: boolean
+  hidden: boolean
+  magnet: boolean
+  volume: number
+  pan: number
+  duck: boolean
+  color: string
+  height: 's' | 'm' | 'l'
+}
+
+export interface EditMarker {
+  id: number
+  ms: number
+  name: string
+  color: 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple'
 }
 
 /** 素材文件的信息（`edit_probe`） */

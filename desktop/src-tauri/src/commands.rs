@@ -219,7 +219,16 @@ pub fn detect_links(text: String) -> Vec<DetectedLink> {
 #[tauri::command]
 pub async fn resolve_link(app: AppHandle, state: St<'_>, text: String) -> AppResult<MediaInfo> {
     let settings = state.settings();
-    let info = match providers::resolve_text(&state.parse_ctx(&settings), &text).await {
+    // 抖音 / 快手 / 小红书 / 微博的主页和合集：用隐藏窗口读出作品，做成一个列表
+    let web_list = match providers::extract_urls(&text).into_iter().find_map(|u| crate::weblist::classify(&u)) {
+        Some(spec) => Some(crate::weblist::collect(&app, &spec, crate::weblist::MAX_ENTRIES).await.map(|c| crate::weblist::to_media_info(&spec, c))),
+        None => None,
+    };
+    let resolved = match web_list {
+        Some(r) => r,
+        None => providers::resolve_text(&state.parse_ctx(&settings), &text).await,
+    };
+    let info = match resolved {
         Ok(info) => info,
         Err(e) => {
             log::info!("resolve failed ({:?}): {e}", e.kind);

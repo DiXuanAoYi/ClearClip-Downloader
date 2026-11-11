@@ -134,7 +134,7 @@ fn parse_length(s: &str) -> Option<u64> {
 }
 
 // 部分接口在缺少这些浏览器指纹参数时直接触发风控（-352）
-const DM_PARAMS: [(&str, &str); 3] = [
+pub(super) const DM_PARAMS: [(&str, &str); 3] = [
     ("dm_img_list", "[]"),
     ("dm_img_str", "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ"),
     (

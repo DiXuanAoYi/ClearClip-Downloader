@@ -591,10 +591,18 @@ mod tests {
                             _ => send("200 OK", String::new(), data),
                         },
                     };
+                    // 计数要在最后一块数据发出去之前就减掉：客户端一收到全部数据就可能马上发下一次下载，
+                    // 如果等到发完才减，下一次下载的连接会被当成“还有旧连接没断”而误判成超限（慢机器上偶发 429）。
+                    let mut released = false;
                     if slow {
-                        for chunk in resp.chunks(64 * 1024) {
+                        let chunks: Vec<&[u8]> = resp.chunks(64 * 1024).collect();
+                        for (i, chunk) in chunks.iter().enumerate() {
+                            if busy && !released && i + 1 == chunks.len() {
+                                active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                                released = true;
+                            }
                             if sock.write_all(chunk).await.is_err() {
-                                if busy {
+                                if busy && !released {
                                     active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                                 }
                                 return;
@@ -602,10 +610,14 @@ mod tests {
                             tokio::time::sleep(Duration::from_millis(20)).await;
                         }
                     } else {
+                        if busy {
+                            active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            released = true;
+                        }
                         let _ = sock.write_all(&resp).await;
                     }
                     let _ = sock.shutdown().await;
-                    if busy {
+                    if busy && !released {
                         active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
                     }
                 });

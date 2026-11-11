@@ -33,6 +33,16 @@ const outDir = ref('')
 const monitorMode = ref<'live' | 'preview'>('live')
 
 const SNAP_KEY = 'clearclip.edit.snap'
+type Tool = 'select' | 'blade' | 'slip' | 'roll'
+const TOOLS: { id: Tool; name: string; key: string; tip: string }[] = [
+  { id: 'select', name: '选择', key: 'A', tip: '点选、拖动、拖边缘裁剪' },
+  { id: 'blade', name: '刀片', key: 'B', tip: '点哪，就在哪把素材切开' },
+  { id: 'slip', name: '滑移', key: 'Y', tip: '在主轨片段上拖：画面在片段里前后挪，位置和长度不变' },
+  { id: 'roll', name: '滚动', key: 'N', tip: '拖主轨两个相邻片段之间的边缘：一个多一点，另一个少一点，总长不变' },
+]
+const tool = ref<Tool>('select')
+const showWave = ref(true)
+const showVol = ref(true)
 const snapOn = ref(true)
 try {
   snapOn.value = localStorage.getItem(SNAP_KEY) !== '0'
@@ -96,9 +106,9 @@ async function addOverlays(paths: string[], at?: { track?: number; startMs?: num
   }
   report(await ed.addOverlays(paths, at))
 }
-async function addMusic(paths: string[], startMs?: number) {
+async function addMusic(paths: string[], startMs?: number, track?: number) {
   if (!paths.length) return
-  report(await ed.addMusic(paths, startMs))
+  report(await ed.addMusic(paths, startMs, true, track))
 }
 watch(pickedClips, (v) => {
   if (!v.length) return
@@ -417,6 +427,9 @@ async function exportNow(frame = false) {
 const SHORTCUTS: [string, string][] = [
   ['空格', '播放 / 暂停'],
   ['S', '在播放位置分割'],
+  ['A / B / Y / N', '工具：选择 / 刀片 / 滑移 / 滚动'],
+  ['M', '在播放位置打标记'],
+  ['I / O', '设入点 / 出点（只导出这一段）'],
   ['Q / W', '向左 / 向右裁剪到播放位置'],
   ['Delete', '删除选中的'],
   ['Shift+Delete', '波纹删除（后面的叠加素材、文字、配乐一起前移）'],
@@ -465,6 +478,20 @@ function onKey(e: KeyboardEvent) {
   } else if (e.key === ' ' && t?.tagName !== 'BUTTON') {
     e.preventDefault()
     togglePlay()
+  } else if (key === 'a') {
+    tool.value = 'select'
+  } else if (key === 'b') {
+    tool.value = tool.value === 'blade' ? 'select' : 'blade'
+  } else if (key === 'y') {
+    tool.value = tool.value === 'slip' ? 'select' : 'slip'
+  } else if (key === 'n') {
+    tool.value = tool.value === 'roll' ? 'select' : 'roll'
+  } else if (key === 'm') {
+    ed.addMarker()
+  } else if (key === 'i') {
+    ed.setIn()
+  } else if (key === 'o') {
+    ed.setOut()
   } else if (key === 's') {
     split()
   } else if (key === 'q') {
@@ -533,8 +560,8 @@ function dropText(t: { lane: string; track?: number; ms: number } | null): strin
   if (!t) return '松开，添加到主轨末尾'
   const at = msText(t.ms).replace(/\.\d+$/, (m) => m.slice(0, 2))
   if (t.lane === 'main') return '松开，插入到主轨这里'
-  if (t.lane === 'audio') return `松开，作为配乐，从 ${at} 开始`
-  return `松开，放到叠加 ${t.lane === 'overlay' ? t.track : 1}，从 ${at} 开始`
+  if (t.lane === 'audio') return `松开，放到 A${t.track ?? 1}，从 ${at} 开始`
+  return `松开，放到 V${(t.track ?? 1) + 1}，从 ${at} 开始`
 }
 
 async function dropPaths(paths: string[], x: number, y: number) {
@@ -559,7 +586,7 @@ async function dropPaths(paths: string[], x: number, y: number) {
   if (t.lane === 'audio') {
     const audio = media.filter((p) => editMediaKind(p) !== 'image')
     if (audio.length < media.length) ElMessage.warning('图片不能当配乐，已忽略。')
-    return addMusic(audio, t.ms)
+    return addMusic(audio, t.ms, t.track)
   }
   return addOverlays(media, { track: t.lane === 'overlay' ? t.track : 1, startMs: t.ms })
 }
@@ -693,6 +720,9 @@ onBeforeUnmount(() => releaseDrop?.())
     <!-- 时间线 -->
     <div ref="tlBox" class="tlbox" tabindex="-1">
       <div class="tlbar">
+        <el-radio-group v-model="tool" size="small" class="tools">
+          <el-radio-button v-for="t in TOOLS" :key="t.id" :value="t.id" :title="`${t.tip}（${t.key}）`">{{ t.name }}</el-radio-button>
+        </el-radio-group>
         <el-button size="small" :disabled="!hasClips" title="在播放位置分割（S）" @click="split">分割</el-button>
         <el-button size="small" :disabled="!hasClips" title="去掉播放位置左边的部分（Q）" @click="trimHere('in')">向左裁剪</el-button>
         <el-button size="small" :disabled="!hasClips" title="去掉播放位置右边的部分（W）" @click="trimHere('out')">向右裁剪</el-button>
@@ -700,7 +730,12 @@ onBeforeUnmount(() => releaseDrop?.())
         <el-button size="small" :disabled="!ed.sel.value" title="（Ctrl+D）" @click="duplicate">复制{{ selectedLabel }}</el-button>
         <el-button size="small" :disabled="!ed.sel.value" title="（Delete）" @click="ed.removeSelected">删除{{ selectedLabel }}</el-button>
         <el-button v-if="ed.sel.value?.kind === 'clip'" size="small" title="删除片段，并把它后面才开始的叠加素材、文字、配乐一起前移（Shift+Delete）" @click="rippleDelete">波纹删除</el-button>
+        <el-button size="small" :disabled="!hasClips" title="在播放位置打一个标记（M）" @click="ed.addMarker()">标记</el-button>
+        <el-button size="small" :disabled="!hasClips" title="把播放位置设为入点（I）：只导出、预览入点到出点这一段" @click="ed.setIn()">入点</el-button>
+        <el-button size="small" :disabled="!hasClips" title="把播放位置设为出点（O）" @click="ed.setOut()">出点</el-button>
         <span class="sp" />
+        <el-checkbox v-model="showWave" size="small" title="在音频素材上画出声音的波形">波形</el-checkbox>
+        <el-checkbox v-model="showVol" size="small" title="在音频素材上显示音量线：拖线上下调音量，点线加点，双击点删除">音量线</el-checkbox>
         <el-checkbox v-model="snapOn" size="small" title="拖动叠加素材、文字、配乐时，自动靠到附近的片段边界和播放位置上">吸附</el-checkbox>
         <span class="mute small">缩放</span>
         <el-slider v-model="pps" :min="5" :max="400" :show-tooltip="false" size="small" class="zoom" />
@@ -717,7 +752,7 @@ onBeforeUnmount(() => releaseDrop?.())
           </div>
         </el-popover>
       </div>
-      <EditTimeline ref="timeline" :ed="ed" :pps="pps" :snap-on="snapOn" @zoom="setZoom" />
+      <EditTimeline ref="timeline" :ed="ed" :pps="pps" :snap-on="snapOn" :tool="tool" :show-wave="showWave" :show-vol="showVol" @zoom="setZoom" />
     </div>
 
     <!-- 导出 -->
