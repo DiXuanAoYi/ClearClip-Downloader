@@ -74,6 +74,85 @@ fn is_cjk_char(c: char) -> bool {
     is_wide(c) && !matches!(c as u32, 0xFF00..=0xFFEF | 0x3000..=0x303F)
 }
 
+/// 一个块里相邻两行怎么连：`Sentence` 行尾是句号（. 。 ! ？ 等）就保留换行、其余接成一段；
+/// `All` 每一行都保留换行；`Merge` 全部接成一段（旧行为）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LineMode {
+    #[default]
+    Sentence,
+    All,
+    Merge,
+}
+
+impl LineMode {
+    pub fn parse(s: &str) -> LineMode {
+        match s {
+            "all" => LineMode::All,
+            "merge" => LineMode::Merge,
+            _ => LineMode::Sentence,
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LineMode::Sentence => "sentence",
+            LineMode::All => "all",
+            LineMode::Merge => "merge",
+        }
+    }
+}
+
+/// 这一行的结尾是不是真的“一句话到此为止”：以 . 。 ! ！ ? ？ 结尾，
+/// 但 Dr. / e.g. / Fig. / 编号 3. / 首字母缩写 J. 这类不算。
+pub fn ends_with_stop(line: &str) -> bool {
+    let t = line.trim_end();
+    let Some(last) = t.chars().last() else { return false };
+    if matches!(last, '。' | '！' | '？' | '!' | '?') {
+        return true;
+    }
+    if last != '.' {
+        return false;
+    }
+    // 省略号不算句末
+    if t.ends_with("..") {
+        return false;
+    }
+    let word: String = t[..t.len() - 1].chars().rev().take_while(|c| c.is_alphanumeric() || *c == '.').collect::<Vec<_>>().into_iter().rev().collect();
+    let w = word.to_lowercase();
+    const ABBR: [&str; 24] = [
+        "e.g", "i.e", "etc", "vs", "fig", "figs", "no", "nos", "dr", "mr", "mrs", "ms", "prof", "inc", "ltd", "co", "al", "cf", "approx", "sec", "eq", "st",
+        "jr", "sr",
+    ];
+    if ABBR.contains(&w.as_str()) {
+        return false;
+    }
+    // 单独的编号（3. / 12.）和单个字母（J.）
+    if !w.is_empty() && w.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    if w.chars().count() == 1 && word.chars().next().is_some_and(|c| c.is_alphabetic()) {
+        return false;
+    }
+    true
+}
+
+fn join_lines_mode(a: &str, b: &str, mode: LineMode) -> String {
+    let (ta, tb) = (a.trim_end(), b.trim_start());
+    if ta.is_empty() || tb.is_empty() {
+        return join_lines(a, b);
+    }
+    let brk = match mode {
+        LineMode::Merge => false,
+        LineMode::All => true,
+        // 只看“最后一行”的结尾：块里前面的换行已经在 a 里了
+        LineMode::Sentence => ends_with_stop(ta.rsplit('\n').next().unwrap_or(ta)),
+    };
+    if brk {
+        format!("{ta}\n{tb}")
+    } else {
+        join_lines(a, b)
+    }
+}
+
 /// 两行文字接在一起时的连接方式：中文直接连，英文加空格，行尾连字符且下一行小写开头则去掉连字符。
 fn join_lines(a: &str, b: &str) -> String {
     let (a, b) = (a.trim_end(), b.trim_start());
@@ -173,6 +252,10 @@ pub fn worth(text: &str) -> bool {
 
 /// 把一页的文字对象聚成段落块，按阅读顺序（先上后下、同高先左后右）返回。
 pub fn group_blocks(runs: &[Run]) -> Vec<Block> {
+    group_blocks_with(runs, LineMode::Sentence)
+}
+
+pub fn group_blocks_with(runs: &[Run], mode: LineMode) -> Vec<Block> {
     let mut lines = make_lines(runs);
     lines.sort_by(|a, b| b.t.total_cmp(&a.t).then(a.l.total_cmp(&b.l)));
     let mut blocks: Vec<(Block, f32, bool)> = vec![]; // (块, 最后一行的右边界, 最后一行是否以句号结尾且偏短)
@@ -187,7 +270,7 @@ pub fn group_blocks(runs: &[Run]) -> Vec<Block> {
         });
         match hit {
             Some((b, last_r, closed)) => {
-                b.text = join_lines(&b.text, &ln.text);
+                b.text = join_lines_mode(&b.text, &ln.text, mode);
                 b.runs.extend(ln.runs);
                 b.l = b.l.min(ln.l);
                 b.r = b.r.max(ln.r);
@@ -396,6 +479,66 @@ pub fn sample_bg(rgba: &[u8], w: usize, h: usize, bx: (usize, usize, usize, usiz
     [med(0), med(1), med(2)]
 }
 
+/// 取一块文字的背景色：看框里（外扩 2 像素）“不是文字颜色”的像素，取出现最多的那种颜色。
+///
+/// 以前只取框外一圈像素的中位数，旁边有色块、描边或别的元素时会取错。这里先去掉和文字色接近的像素
+/// （文字本身和它的抗锯齿边），剩下的里面数哪种颜色最多；剩得太少（几乎全是文字）才退回框外一圈。
+pub fn sample_bg_smart(rgba: &[u8], w: usize, h: usize, bx: (usize, usize, usize, usize), text: [u8; 3]) -> [u8; 3] {
+    if w == 0 || h == 0 || rgba.len() < w * h * 4 {
+        return [255, 255, 255];
+    }
+    let (x0, y0, x1, y1) = (bx.0.saturating_sub(2), bx.1.saturating_sub(2), (bx.2 + 2).min(w - 1), (bx.3 + 2).min(h - 1));
+    if x1 <= x0 || y1 <= y0 {
+        return sample_bg(rgba, w, h, bx);
+    }
+    let dist = |p: [u8; 3], q: [u8; 3]| p.iter().zip(&q).map(|(a, b)| (i32::from(*a) - i32::from(*b)).unsigned_abs()).sum::<u32>();
+    // 间隔取点，最多看 6000 个像素
+    let step = (((x1 - x0 + 1) * (y1 - y0 + 1)) as f32 / 6000.0).sqrt().ceil().max(1.0) as usize;
+    let mut bins: std::collections::HashMap<u16, (u32, [u32; 3])> = std::collections::HashMap::new();
+    let mut total = 0u32;
+    let mut y = y0;
+    while y <= y1 {
+        let mut x = x0;
+        while x <= x1 {
+            let i = (y * w + x) * 4;
+            let px = [rgba[i], rgba[i + 1], rgba[i + 2]];
+            total += 1;
+            // 文字本身和它的抗锯齿边：离文字色近的像素不算背景
+            if dist(px, text) > 96 {
+                let key = (u16::from(px[0] >> 4) << 8) | (u16::from(px[1] >> 4) << 4) | u16::from(px[2] >> 4);
+                let e = bins.entry(key).or_insert((0, [0; 3]));
+                e.0 += 1;
+                for (acc, v) in e.1.iter_mut().zip(px) {
+                    *acc += u32::from(v);
+                }
+            }
+            x += step;
+        }
+        y += step;
+    }
+    let kept: u32 = bins.values().map(|e| e.0).sum();
+    if total == 0 || kept * 8 < total {
+        return sample_bg(rgba, w, h, bx);
+    }
+    // 最多的那一格，再把相邻格（颜色差一级）合进来，取平均，渐变和轻微噪点才不会让结果乱跳
+    let best = *bins.iter().max_by_key(|(k, e)| (e.0, **k)).map(|(k, _)| k).unwrap_or(&0);
+    let (br, bgc, bb) = (i32::from(best >> 8), i32::from((best >> 4) & 15), i32::from(best & 15));
+    let (mut n, mut sum) = (0u32, [0u32; 3]);
+    for (k, e) in &bins {
+        let (r, g, b) = (i32::from(*k >> 8), i32::from((*k >> 4) & 15), i32::from(*k & 15));
+        if (r - br).abs() <= 1 && (g - bgc).abs() <= 1 && (b - bb).abs() <= 1 {
+            n += e.0;
+            for (acc, v) in sum.iter_mut().zip(e.1) {
+                *acc += v;
+            }
+        }
+    }
+    if n == 0 {
+        return sample_bg(rgba, w, h, bx);
+    }
+    [(sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8]
+}
+
 /// 深色背景用浅色字，浅色背景用深色字。
 pub fn contrast(bg: [u8; 3]) -> [u8; 3] {
     let lum = 0.299 * f32::from(bg[0]) + 0.587 * f32::from(bg[1]) + 0.114 * f32::from(bg[2]);
@@ -514,8 +657,13 @@ pub struct PageInfo {
     pub has_text: bool,
 }
 
-/// 读出每一页的段落块。
+/// 读出每一页的段落块（行尾是句号的行保留换行）。
 pub fn extract(lib: &Path, pdf: &Path) -> AppResult<Vec<PageInfo>> {
+    extract_with(lib, pdf, LineMode::Sentence)
+}
+
+/// 读出每一页的段落块；`mode` 决定块里相邻两行怎么连。
+pub fn extract_with(lib: &Path, pdf: &Path, mode: LineMode) -> AppResult<Vec<PageInfo>> {
     let pdfium = bind(lib)?;
     let doc = pdfium.load_pdf_from_file(pdf, None).map_err(|e| match e {
         PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError) => AppError::invalid("这个 PDF 有密码，先用阅读器去掉密码再翻译。"),
@@ -543,9 +691,21 @@ pub fn extract(lib: &Path, pdf: &Path) -> AppResult<Vec<PageInfo>> {
                 rgb,
             });
         }
-        out.push(PageInfo { w, h, blocks: group_blocks(&runs), has_text: any });
+        out.push(PageInfo { w, h, blocks: group_blocks_with(&runs, mode), has_text: any });
     }
     Ok(out)
+}
+
+/// 渲染出来的位图 → RGBA 像素（不透明）。
+///
+/// `PdfRenderConfig::new()` 默认会让 PDFium 颠倒字节序（`FPDF_REVERSE_BYTE_ORDER`），拿到的已经是 R、G、B 的顺序；
+/// `as_rgba_bytes()` 会按“有没有颠倒过”换算，不能再自己对调 R 和 B（之前对调了一次，页面里红蓝是反的）。
+fn rgba_of(bmp: &PdfBitmap) -> Vec<u8> {
+    let mut v = bmp.as_rgba_bytes();
+    for px in v.chunks_exact_mut(4) {
+        px[3] = 255;
+    }
+    v
 }
 
 /// 渲染一页成 RGBA 像素（扫描页识字用）。返回 (宽, 高, RGBA)。
@@ -555,12 +715,7 @@ pub fn render_page(lib: &Path, pdf: &Path, index: usize, target_w: i32) -> AppRe
     let page = doc.pages().get(index as PdfPageIndex).map_err(perr)?;
     let bmp = page.render_with_config(&PdfRenderConfig::new().set_target_width(target_w)).map_err(perr)?;
     let (w, h) = (bmp.width() as usize, bmp.height() as usize);
-    let raw = bmp.as_raw_bytes(); // BGRA
-    let mut rgba = Vec::with_capacity(raw.len());
-    for px in raw.chunks_exact(4) {
-        rgba.extend_from_slice(&[px[2], px[1], px[0], 255]);
-    }
-    Ok((w, h, rgba))
+    Ok((w, h, rgba_of(&bmp)))
 }
 
 /// RGBA → PNG。
@@ -585,6 +740,149 @@ pub struct Item {
     pub rgb: [u8; 3],
     pub bg: Option<[u8; 3]>,
     pub text: String,
+    /// 背景是用户手动指定的（不要再用页面取样覆盖）
+    pub bg_user: bool,
+    pub bg_mode: BgMode,
+    /// 渐变的色标（至少两个，等距排列）；空 = 用 `bg` 单色
+    pub bg_stops: Vec<[u8; 3]>,
+    pub align: Align,
+    /// 遮盖和文字区域向外扩多少（点）；None = 字号的 18%，至少 2 点
+    pub pad: Option<f32>,
+    /// 这一块往下最多能占多高（点，从上边算起）；None = 只用原来的框高
+    pub room: Option<f32>,
+}
+
+impl Default for Item {
+    fn default() -> Self {
+        Item {
+            remove: vec![],
+            rect: (0.0, 0.0, 0.0, 0.0),
+            size: 10.0,
+            rgb: [0, 0, 0],
+            bg: None,
+            text: String::new(),
+            bg_user: false,
+            bg_mode: BgMode::Solid,
+            bg_stops: vec![],
+            align: Align::Left,
+            pad: None,
+            room: None,
+        }
+    }
+}
+
+/// 译文底下的遮盖：纯色 / 横向渐变 / 竖向渐变 / 不遮盖。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BgMode {
+    #[default]
+    Solid,
+    HGrad,
+    VGrad,
+    None,
+}
+
+impl BgMode {
+    pub fn parse(s: &str) -> BgMode {
+        match s {
+            "hgrad" => BgMode::HGrad,
+            "vgrad" => BgMode::VGrad,
+            "none" => BgMode::None,
+            _ => BgMode::Solid,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Align {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+impl Align {
+    pub fn parse(s: &str) -> Align {
+        match s {
+            "center" => Align::Center,
+            "right" => Align::Right,
+            _ => Align::Left,
+        }
+    }
+}
+
+/// 遮盖 / 文字区域默认向外扩的量：字号的 18%，至少 2 点。
+pub fn default_pad(size: f32) -> f32 {
+    (size * 0.18).max(2.0)
+}
+
+/// 两个色标之间按位置取色（`stops` 等距排列，`t` 在 0..=1）。
+pub fn gradient_at(stops: &[[u8; 3]], t: f32) -> [u8; 3] {
+    match stops.len() {
+        0 => [255, 255, 255],
+        1 => stops[0],
+        n => {
+            let x = t.clamp(0.0, 1.0) * (n - 1) as f32;
+            let i = (x.floor() as usize).min(n - 2);
+            let f = x - i as f32;
+            let (a, b) = (stops[i], stops[i + 1]);
+            [0, 1, 2].map(|k| (f32::from(a[k]) + (f32::from(b[k]) - f32::from(a[k])) * f).round() as u8)
+        }
+    }
+}
+
+/// 给一页里的每块算“往下还能占多高”：下面有别的块（水平方向有重叠）就到它的上边为止，没有就到页面下边距。
+/// 译文变长时框往下长，不用缩小字号；碰到别的块才缩。
+pub fn assign_room(items: &mut [Item], page_h: f32) {
+    let rects: Vec<(f32, f32, f32, f32)> = items.iter().map(|it| it.rect).collect();
+    for (i, it) in items.iter_mut().enumerate() {
+        let (l, b, r, t) = it.rect;
+        let w = (r - l).max(1.0);
+        let mut floor = 8.0_f32.min(b); // 页面下边距
+        for (j, o) in rects.iter().enumerate() {
+            if j == i {
+                continue;
+            }
+            let overlap = r.min(o.2) - l.max(o.0);
+            // 在这一块下面（它的上边不高于这一块的下边附近）、水平方向有明显重叠
+            if overlap > w * 0.2 && o.3 <= b + it.size * 0.5 && o.3 < t {
+                floor = floor.max(o.3 + 2.0);
+            }
+        }
+        it.room = Some((t - floor).clamp(t - b, page_h.max(t - b)));
+    }
+}
+
+/// 在宽 `w` 里排版，高度上限 `room`：先保持原字号；放不下才缩，先缩到原字号的 85%，
+/// 再不行才继续缩到 `min`（和以前一样，最后仍放不下就向下多出一点）。
+pub fn fit_keep(text: &str, w: f32, room: f32, size0: f32, min: f32) -> Fit {
+    let size0 = size0.max(min);
+    let try_at = |size: f32| {
+        let leading = size * 1.28;
+        let lines = wrap(text, w, size);
+        let need = lines.len() as f32 * leading;
+        (need <= room * 1.02, Fit { size, lines, leading })
+    };
+    let (ok, f) = try_at(size0);
+    if ok {
+        return f;
+    }
+    let mut size = size0;
+    let soft = (size0 * 0.85).max(min);
+    while size > soft + 0.01 {
+        size = (size * 0.96).max(soft);
+        let (ok, f) = try_at(size);
+        if ok {
+            return f;
+        }
+    }
+    let mut size = soft;
+    loop {
+        let (ok, f) = try_at(size);
+        if ok || size <= min + 0.01 {
+            return f;
+        }
+        size = (size * 0.94).max(min);
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -621,19 +919,58 @@ fn edit_page(page: &mut PdfPage, font: PdfFontToken, plan: &PagePlan) {
     }
     for it in &plan.items {
         let (l, b, r, t) = it.rect;
-        if let Some(bg) = it.bg {
-            let rect = PdfRect::new(PdfPoints::new(b - 1.5), PdfPoints::new(l - 1.5), PdfPoints::new(t + 1.5), PdfPoints::new(r + 1.5));
-            let _ = page.objects_mut().create_path_object_rect(rect, None, None, Some(PdfColor::new(bg[0], bg[1], bg[2], 255)));
-        }
-        let f = fit(&it.text, (r - l).max(it.size * 2.0), t - b, it.size, 6.0);
+        let pad = it.pad.unwrap_or_else(|| default_pad(it.size)).max(0.0);
+        let width = (r - l).max(it.size * 2.0);
+        let room = it.room.unwrap_or(t - b).max(t - b);
+        let f = fit_keep(&it.text, width, room, it.size, 6.0);
+        let need = f.lines.len() as f32 * f.leading;
+        // 单行：在原来的框里上下居中；多行：从上往下排，框往下长
+        let top = if f.lines.len() == 1 && t - b > f.leading { t - ((t - b) - f.leading) / 2.0 } else { t };
+        // 遮盖：原来的框外扩 pad，译文比原框高时往下一起长
+        let cover = (l - pad, (b.min(top - need)) - pad, r + pad, t + pad);
+        draw_cover(page, it, cover);
         let color = PdfColor::new(it.rgb[0], it.rgb[1], it.rgb[2], 255);
         for (n, line) in f.lines.iter().enumerate() {
             if line.is_empty() {
                 continue;
             }
-            let y = t - f.size * 0.95 - n as f32 * f.leading;
-            if let Ok(mut o) = page.objects_mut().create_text_object(PdfPoints::new(l), PdfPoints::new(y), line, font, PdfPoints::new(f.size)) {
+            let y = top - f.size * 0.95 - n as f32 * f.leading;
+            let x = match it.align {
+                Align::Left => l,
+                Align::Center => l + (width - text_w(line, f.size)).max(0.0) / 2.0,
+                Align::Right => l + (width - text_w(line, f.size)).max(0.0),
+            };
+            if let Ok(mut o) = page.objects_mut().create_text_object(PdfPoints::new(x), PdfPoints::new(y), line, font, PdfPoints::new(f.size)) {
                 let _ = o.set_fill_color(color);
+            }
+        }
+    }
+}
+
+/// 画译文底下的遮盖。`cover` 是 (左, 下, 右, 上)。
+fn draw_cover(page: &mut PdfPage, it: &Item, cover: (f32, f32, f32, f32)) {
+    let (l, b, r, t) = cover;
+    let fill = |page: &mut PdfPage, l: f32, b: f32, r: f32, t: f32, c: [u8; 3]| {
+        let rect = PdfRect::new(PdfPoints::new(b), PdfPoints::new(l), PdfPoints::new(t), PdfPoints::new(r));
+        let _ = page.objects_mut().create_path_object_rect(rect, None, None, Some(PdfColor::new(c[0], c[1], c[2], 255)));
+    };
+    let Some(bg) = it.bg else { return };
+    match it.bg_mode {
+        BgMode::None => {}
+        BgMode::Solid => fill(page, l, b, r, t, bg),
+        BgMode::HGrad | BgMode::VGrad => {
+            let stops = if it.bg_stops.len() >= 2 { it.bg_stops.clone() } else { vec![bg, bg] };
+            const N: usize = 24;
+            for i in 0..N {
+                let c = gradient_at(&stops, (i as f32 + 0.5) / N as f32);
+                // 相邻两条多叠 0.3 点，避免缝
+                if it.bg_mode == BgMode::HGrad {
+                    let w = (r - l) / N as f32;
+                    fill(page, l + w * i as f32, b, l + w * (i as f32 + 1.0) + 0.3, t, c);
+                } else {
+                    let h = (t - b) / N as f32;
+                    fill(page, l, t - h * (i as f32 + 1.0) - 0.3, r, t - h * i as f32, c);
+                }
             }
         }
     }
@@ -648,11 +985,7 @@ pub fn render_translated(lib: &Path, font_bytes: &[u8], input: &Path, index: usi
     edit_page(&mut page, font, plan);
     let bmp = page.render_with_config(&PdfRenderConfig::new().set_target_width(target_w)).map_err(perr)?;
     let (w, h) = (bmp.width() as usize, bmp.height() as usize);
-    let mut rgba = Vec::with_capacity(w * h * 4);
-    for px in bmp.as_raw_bytes().chunks_exact(4) {
-        rgba.extend_from_slice(&[px[2], px[1], px[0], 255]);
-    }
-    Ok((w, h, rgba))
+    Ok((w, h, rgba_of(&bmp)))
 }
 
 /// 按计划改写 PDF 并存到 `out`。`plans` 和页一一对应（可以比页数少）。

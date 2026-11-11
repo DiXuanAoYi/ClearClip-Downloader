@@ -8,6 +8,7 @@ import type { LutAdjust, LutLook, LutRecipe, LutSaved } from '../../types'
 import { formatBytes } from '../../utils/format'
 import { formatClock, parseClock } from '../../utils/time'
 import FileInput from './FileInput.vue'
+import { pickKinds } from '../../utils/toolbox'
 
 const props = defineProps<{ preset?: string[] }>()
 const app = useAppStore()
@@ -369,7 +370,8 @@ onBeforeUnmount(() => window.clearTimeout(timer))
 watch(
   () => props.preset,
   (p) => {
-    if (p?.length) sampleFiles.value = [p[0]]
+    const f = pickKinds(p ?? [], ['image', 'video'])[0]
+    if (f) sampleFiles.value = [f]
   },
 )
 </script>
@@ -381,7 +383,7 @@ watch(
       <p class="mute desc">
         用一张示例图片（或视频里的一帧）边看边调，调好后生成 .cube 文件，可以用在视频规整里，也可以导入剪映、DaVinci Resolve、Premiere、OBS 等支持 3D LUT 的软件。可以在别人的 LUT 上继续调整，也可以让示例图片的色调向一张参考图靠拢。
       </p>
-      <FileInput v-model="sampleFiles" :kinds="['image', 'video']" :extensions="[...IMAGE_EXTS, ...VIDEO_EXTS]" label="示例图片或视频" />
+      <FileInput v-model="sampleFiles" main :kinds="['image', 'video']" :extensions="[...IMAGE_EXTS, ...VIDEO_EXTS]" label="示例图片或视频" />
       <div v-if="isVideo" class="pv">
         <span class="mute small">取视频里这个时间点的画面</span>
         <el-input v-model="sampleClock" size="small" class="t" @keyup.enter="setClock" @blur="setClock" />

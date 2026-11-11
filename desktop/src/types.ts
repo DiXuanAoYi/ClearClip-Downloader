@@ -488,6 +488,27 @@ export interface VideoPreview {
   changed: boolean
 }
 
+/** 工具箱预览：取哪一帧、做什么变换 */
+export type FrameOp = { kind: 'none' } | { kind: 'rotate'; mode: string } | { kind: 'landscape'; width: number; height: number; mode: string }
+
+export interface FramePreview {
+  before: string
+  after: string
+  changed: boolean
+}
+
+/** “试一小段”的结果 */
+export interface ToolTrial {
+  before: string
+  after: string
+  afterIsImage: boolean
+  beforeBytes: number
+  afterBytes: number
+  secs: number
+  totalSecs: number | null
+  note: string | null
+}
+
 export interface CapsSummary {
   version: string
   edition: 'full' | 'lite'
@@ -2400,6 +2421,8 @@ export interface FtOpts {
   skipRefs: boolean
   /** 有文字层的 PDF 里夹着扫描页时自动识字并一起翻译 */
   scanAuto: boolean
+  /** 换行：sentence = 句号处保留换行（默认）；all = 每个原行单独翻；merge = 全部并成段 */
+  lineBreaks: 'sentence' | 'all' | 'merge'
 }
 
 /** 开始前的估算 */
@@ -2482,6 +2505,49 @@ export interface ProbeResult {
   vision: boolean | null
 }
 
+export type RGB3 = [number, number, number]
+export type BgMode = 'solid' | 'hgrad' | 'vgrad' | 'none'
+export type TextAlign = 'left' | 'center' | 'right'
+
+/** 版面里的一块：rgb / bg 是生效值（手动改过的就是改后的），orig* 是原文本来的 */
+export interface PdfBlock {
+  index: number
+  rect: [number, number, number, number]
+  size: number
+  rgb: RGB3
+  bg: RGB3
+  origRgb: RGB3
+  origSize: number
+  origBg: RGB3
+  bgMode: BgMode
+  bgStops: RGB3[]
+  align: TextAlign
+  /** 手动设的外扩（点）；null = 自动 */
+  pad: number | null
+  src: string
+  trans: string
+  skipped: boolean
+  adjusted: boolean
+  styled: boolean
+}
+
+/** 一次样式改动：写进去的项 + 要还原成自动的项（rect size fg bg bgMode bgStops align pad） */
+export interface StylePatch {
+  rect?: [number, number, number, number]
+  size?: number
+  fg?: RGB3
+  bg?: RGB3
+  bgMode?: BgMode
+  bgStops?: RGB3[]
+  align?: TextAlign
+  pad?: number
+  clear?: string[]
+}
+export interface BlockEdit {
+  index: number
+  patch: StylePatch
+}
+
 /** PDF 版面画布：一页的原页图和每块的位置、背景色、原文、译文 */
 export interface PdfLayout {
   pages: number
@@ -2489,7 +2555,7 @@ export interface PdfLayout {
   w: number
   h: number
   image: string
-  blocks: { index: number; rect: [number, number, number, number]; size: number; rgb: [number, number, number]; bg: [number, number, number]; src: string; trans: string; skipped: boolean; adjusted: boolean }[]
+  blocks: PdfBlock[]
   /** 这一页处理过了（译完或失败） */
   done: boolean
   /** 要告诉用户的情况（没译、重新匹配过、扫描页没识字…），没有就是空 */

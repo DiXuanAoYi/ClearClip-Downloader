@@ -314,8 +314,32 @@ pub fn filetr_edit(state: St<'_>, path: String, target: String, page: usize, ind
 #[tauri::command]
 pub fn filetr_block_adjust(state: St<'_>, path: String, target: String, page: usize, index: usize, rect: Option<[f32; 4]>, size: Option<f32>) -> AppResult<()> {
     let p = existing_file(&path)?;
-    let adj = (rect.is_some() || size.is_some()).then_some(crate::filetr::BlockAdj { rect, size });
+    let adj = (rect.is_some() || size.is_some()).then_some(crate::filetr::BlockAdj { rect, size, ..Default::default() });
     crate::filetr::adjust_block(&state.data_dir, &p, target.trim(), page, index, adj)
+}
+
+/// 文件翻译：多选后批量改样式（文字色、背景、对齐、外扩、字号、位置）。每一块一份改动，全部通过才写回。
+#[tauri::command]
+pub fn filetr_block_style(state: St<'_>, path: String, target: String, page: usize, edits: Vec<crate::filetr::BlockEdit>) -> AppResult<()> {
+    let p = existing_file(&path)?;
+    crate::filetr::style_blocks(&state.data_dir, &p, target.trim(), page, &edits)
+}
+
+/// 文件翻译：把文字颜色 `from` 换成 `to`；`page` 不给 = 整份文件。`dry_run` 只数有几处。返回改（或会改）了几块。
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn filetr_replace_color(
+    state: St<'_>,
+    path: String,
+    target: String,
+    page: Option<usize>,
+    from: [u8; 3],
+    to: [u8; 3],
+    tolerance: Option<u32>,
+    dry_run: bool,
+) -> AppResult<usize> {
+    let p = existing_file(&path)?;
+    crate::filetr::replace_text_color(&state, &p, target.trim(), page, from, to, tolerance.unwrap_or(24).min(120), dry_run).await
 }
 
 /// 文件翻译：把阅读器里的一段原文重新翻一遍，返回新译文。

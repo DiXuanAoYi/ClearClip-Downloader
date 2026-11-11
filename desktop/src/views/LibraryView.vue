@@ -122,8 +122,8 @@ function bulkNormalize() {
 async function bulkSafebox() {
   const st = await api.safeboxStatus().catch(() => null)
   if (!st?.unlocked) {
-    ElMessage.info(st?.exists ? '请先到“保险箱”页面输入密码解锁。' : '还没有创建保险箱，请先到“保险箱”页面创建。')
-    app.view = 'safebox'
+    ElMessage.info(st?.exists ? '请先到“设置 → 安全与隐私 → 加密保险箱”输入密码解锁。' : '还没有创建保险箱，请先到“设置 → 安全与隐私 → 加密保险箱”创建。')
+    app.goSettings('security')
     return
   }
   try {
@@ -137,7 +137,7 @@ async function bulkSafebox() {
   }
   try {
     await api.safeboxAddLibrary(selectedIds.value)
-    ElMessage.success('已开始加密，进度在“保险箱”页面查看')
+    ElMessage.success('已开始加密，进度在“设置 → 安全与隐私 → 加密保险箱”里查看')
     stopSelecting()
   } catch (e) {
     ElMessage.error(errorText(e))

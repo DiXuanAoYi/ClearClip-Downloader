@@ -29,7 +29,6 @@ const VIEWS: [ViewName, string, string][] = [
   ['filetr', '文件翻译', 'filetr wenjian fanyi file translate pdf epub'],
   ['vocab', '生词本', 'vocab shengciben words review fuxi'],
   ['tools', '工具箱', 'tools toolbox gongjuxiang'],
-  ['safebox', '保险箱', 'safebox vault baoxianxiang'],
   ['settings', '设置', 'settings shezhi'],
 ]
 const TABS: [SettingsTab, string][] = [
@@ -59,6 +58,7 @@ const commands = computed<Cmd[]>(() => {
   const s = app.settings
   const list: Cmd[] = [
     ...VIEWS.map<Cmd>(([id, t, k]) => ({ id: `go-${id}`, title: `前往：${t}`, group: '页面', keywords: k, run: () => void (app.view = id) })),
+    { id: 'go-safebox', title: '前往：加密保险箱', group: '页面', keywords: 'safebox vault baoxianxiang', run: () => app.goSettings('security') },
     ...TABS.map<Cmd>(([id, t]) => ({ id: `tab-${id}`, title: `设置：${t}`, group: '设置', keywords: `settings ${id}`, run: () => app.goSettings(id) })),
     { id: 'pause', title: '暂停全部下载', group: '操作', keywords: 'pause zanting', run: () => api.pauseAll() },
     { id: 'resume', title: '继续全部下载', group: '操作', keywords: 'resume jixu', run: () => api.resumeAll() },

@@ -8,6 +8,7 @@ import type { SafeEntry, SafeStatus } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import JobList from '../components/toolbox/JobList.vue'
 
+withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const status = ref<SafeStatus | null>(null)
 const entries = ref<SafeEntry[]>([])
 const selected = ref<SafeEntry[]>([])
@@ -115,9 +116,9 @@ onBeforeUnmount(() => un.forEach((f) => f()))
 </script>
 
 <template>
-  <div class="page">
+  <div class="page" :class="{ embedded }">
     <div class="head">
-      <h2>加密保险箱</h2>
+      <h2 v-if="!embedded">加密保险箱</h2>
       <span v-if="status?.unlocked" class="mute">{{ status.count }} 个文件 · {{ formatBytes(status.totalBytes) }}</span>
       <div class="sp" />
       <template v-if="status?.unlocked">
@@ -203,6 +204,10 @@ onBeforeUnmount(() => un.forEach((f) => f()))
 </template>
 
 <style scoped>
+.page.embedded {
+  padding: 0;
+  max-width: none;
+}
 .page {
   padding: 20px 24px;
   max-width: 1040px;

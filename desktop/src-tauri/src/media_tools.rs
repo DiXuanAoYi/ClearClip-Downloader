@@ -382,6 +382,27 @@ pub fn atempo_chain(mut f: f64) -> String {
     parts.join(",")
 }
 
+/// 旋转 / 翻转的滤镜；不认识的方式返回 None。
+pub(crate) fn rotate_filter(mode: &str) -> Option<&'static str> {
+    Some(match mode {
+        "cw" => "transpose=1",
+        "ccw" => "transpose=2",
+        "flip180" => "transpose=1,transpose=1",
+        "hflip" => "hflip",
+        "vflip" => "vflip",
+        _ => return None,
+    })
+}
+
+/// 竖屏转横屏的滤镜图（输入 `[0:v]`，输出 `[v]`）。`mode`：black 黑边，其他为模糊背景（`blur` 是模糊滤镜）。
+pub(crate) fn landscape_graph(w: u32, h: u32, mode: &str, blur: &str) -> String {
+    if mode == "black" {
+        format!("[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v]")
+    } else {
+        format!("[0:v]split[a][b];[a]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},{blur}[bg];[b]scale=-2:{h}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[v]")
+    }
+}
+
 fn require_video(i: &Input) -> AppResult<()> {
     if !i.probe.has_video {
         return Err(AppError::invalid(format!("“{}”里没有视频画面，这个工具只适用于视频文件。", stem_of(&i.path))));
@@ -439,13 +460,7 @@ pub fn plan_with(job: &ToolJob, inputs: &[Input], enc: &Encoders, blur: &str) ->
             let (w, h) = ((*width).clamp(320, 3840) & !1, (*height).clamp(240, 2160) & !1);
             let vc = video_codec(enc, "high", "mp4");
             p.output = out_path(&first.path, dir, "横屏", vc.ext);
-            let graph = if mode == "black" {
-                format!("[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v]")
-            } else {
-                format!(
-                    "[0:v]split[a][b];[a]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},{blur}[bg];[b]scale=-2:{h}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[v]"
-                )
-            };
+            let graph = landscape_graph(w, h, mode, blur);
             p.args = s(&["-i", &inp, "-filter_complex", &graph, "-map", "[v]", "-map", "0:a:0?"]);
             p.args.extend(vc.args);
             p.args.extend(s(&["-c:a", "copy"]));
@@ -505,14 +520,7 @@ pub fn plan_with(job: &ToolJob, inputs: &[Input], enc: &Encoders, blur: &str) ->
         }
         ToolOp::Rotate { mode } => {
             require_video(first)?;
-            let vf = match mode.as_str() {
-                "cw" => "transpose=1",
-                "ccw" => "transpose=2",
-                "flip180" => "transpose=1,transpose=1",
-                "hflip" => "hflip",
-                "vflip" => "vflip",
-                _ => return Err(AppError::invalid("不支持的旋转方式。")),
-            };
+            let vf = rotate_filter(mode).ok_or_else(|| AppError::invalid("不支持的旋转方式。"))?;
             let vc = video_codec(enc, "high", "mp4");
             p.output = out_path(&first.path, dir, "旋转", vc.ext);
             p.args = s(&["-i", &inp, "-map", "0:v:0", "-map", "0:a:0?", "-vf", vf]);

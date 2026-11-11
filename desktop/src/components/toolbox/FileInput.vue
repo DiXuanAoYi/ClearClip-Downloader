@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { inject, ref } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../../api'
@@ -21,7 +21,10 @@ const props = defineProps<{
   libraryText?: string
   /** 两个按钮都用普通样式（页面上已经有更主要的操作时） */
   plain?: boolean
+  /** 这是工具的主输入：在工具箱里由“文件篮”代替，这里不再显示 */
+  main?: boolean
 }>()
+const inBasket = inject<boolean>('toolBasket', false)
 const emit = defineEmits<{ 'update:modelValue': [paths: string[]] }>()
 
 const picking = ref(false)
@@ -93,7 +96,7 @@ function move(i: number, d: number) {
 </script>
 
 <template>
-  <div class="fi">
+  <div v-if="!(main && inBasket)" class="fi">
     <div class="bar">
       <el-button size="small" :type="plain ? undefined : 'primary'" @click="browse">{{ browseText ?? `选择${multiple ? '多个' : ''}文件…` }}</el-button>
       <el-button size="small" @click="openPicker">{{ libraryText ?? '从媒体库选择…' }}</el-button>

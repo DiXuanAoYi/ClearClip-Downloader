@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, reactive, ref, watch, watchEffect, type ShallowRef } from 'vue'
 import { ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
 import { convertFileSrc } from '@tauri-apps/api/core'
@@ -11,8 +11,9 @@ import FileInput from './FileInput.vue'
 import { REVERBS } from '../../utils/reverb'
 import LoudnessPicker from './LoudnessPicker.vue'
 import { useAppStore } from '../../stores/app'
+import { PREVIEW_KEY, pickKinds, type FileKind, type PreviewSpec } from '../../utils/toolbox'
 
-const props = defineProps<{ preset?: string[]; tool?: string }>()
+const props = defineProps<{ preset?: string[]; tool?: string; bare?: boolean }>()
 const emit = defineEmits<{ started: [] }>()
 
 type Tool = { id: string; name: string; desc: string; multi?: boolean; audioOk?: boolean }
@@ -35,7 +36,7 @@ const TOOLS: Tool[] = [
  * 剪辑里也能做的几样（裁剪、拼接、倍速、旋转翻转、去除音轨、竖屏转横屏）合成一个“快速处理”：
  * 不用开时间线、处理一个文件很快（裁剪、拼接、去除音轨可以不重新编码）；要精细调整就“在剪辑里打开”。
  */
-const QUICK = ['trim', 'concat', 'speed', 'rotate', 'mute', 'landscape']
+const QUICK = ['trim', 'concat', 'speed', 'rotate', 'mute']
 const NAV = [TOOLS[0], { id: 'quick', name: '快速处理', desc: '' }, ...TOOLS.slice(1).filter((t) => !QUICK.includes(t.id))]
 const isQuick = computed(() => QUICK.includes(tool.value))
 let lastQuick = 'trim'
@@ -51,15 +52,16 @@ function openInEditor() {
 
 const tool = ref(props.tool && TOOLS.some((t) => t.id === props.tool) ? props.tool : 'compress')
 watch(tool, (t) => QUICK.includes(t) && (lastQuick = t))
-const files = ref<string[]>(props.preset ? [...props.preset] : [])
+const files = ref<string[]>(props.preset ? pickKinds(props.preset, ['video', 'audio']) : [])
 const info = ref<MediaInfoLite | null>(null)
 const outDir = ref('')
 const busy = ref(false)
 const cur = computed(() => TOOLS.find((t) => t.id === tool.value)!)
 
+// 文件篮里的文件：只留下这个工具能处理的类型
 watch(
-  () => props.preset,
-  (p) => p && (files.value = [...p]),
+  [() => props.preset, () => tool.value],
+  () => props.preset && (files.value = pickKinds(props.preset, kinds.value as FileKind[])),
 )
 watch(
   () => props.tool,
@@ -228,6 +230,39 @@ function build(): ToolOp | null {
   return null
 }
 
+/** 在工具箱里时，把当前参数交给右边的预览区 */
+const previewSpec = inject<ShallowRef<PreviewSpec | null> | null>(PREVIEW_KEY, null)
+function specNow(): PreviewSpec | null {
+  switch (tool.value) {
+    case 'rotate':
+      return { kind: 'frame', op: { kind: 'rotate', mode: p.rotate } }
+    case 'landscape':
+      return { kind: 'frame', op: { kind: 'landscape', width: p.landW, height: p.landH, mode: p.landMode } }
+    case 'frame':
+      return p.frameEvery ? null : { kind: 'still', atMs: parseClock(p.frameAt) ?? 0 }
+    case 'trim':
+      return { kind: 'trim', startMs: parseClock(p.trimStart) ?? 0, endMs: p.trimEnd.trim() ? parseClock(p.trimEnd) : null }
+    case 'compress':
+      return { kind: 'trial', op: { op: 'compress', quality: p.quality, maxHeight: p.maxHeight || null } }
+    case 'speed':
+      return { kind: 'trial', op: { op: 'speed', factor: p.speed } }
+    case 'gif': {
+      const start = parseClock(p.gifStart) ?? 0
+      const len = parseClock(p.gifLen) ?? 3000
+      return { kind: 'trial', op: { op: 'gif', startMs: start, durationMs: len, width: p.gifWidth, fps: p.gifFps }, startMs: start, durMs: Math.min(len, 10_000) }
+    }
+    case 'loudness':
+      return { kind: 'loudness', target: p.lufs, tp: p.tp, lra: p.lra }
+  }
+  return null
+}
+watchEffect(() => {
+  if (previewSpec) previewSpec.value = specNow()
+})
+onBeforeUnmount(() => {
+  if (previewSpec) previewSpec.value = null
+})
+
 async function pickDir() {
   const d = await open({ directory: true, multiple: false })
   if (typeof d === 'string') outDir.value = d
@@ -239,8 +274,10 @@ async function start() {
   if (!op) return
   busy.value = true
   try {
-    await api.mediaJobStart({ ...op, inputs: files.value, outputDir: outDir.value || null } as ToolJob)
-    ElMessage.success('已开始处理，可以在下方查看进度。')
+    // 拼接把所有文件合成一个；其他工具每个文件各出一个新文件
+    const groups = cur.value.multi ? [files.value] : files.value.map((f) => [f])
+    for (const inputs of groups) await api.mediaJobStart({ ...op, inputs, outputDir: outDir.value || null } as ToolJob)
+    ElMessage.success(groups.length > 1 ? `已开始处理 ${groups.length} 个文件，可以在下方查看进度。` : '已开始处理，可以在下方查看进度。')
     emit('started')
   } catch (e) {
     ElMessage.error(errorText(e))
@@ -251,8 +288,8 @@ async function start() {
 </script>
 
 <template>
-  <div class="vt">
-    <nav class="tools" aria-label="工具">
+  <div class="vt" :class="{ bare }">
+    <nav v-if="!bare" class="tools" aria-label="工具">
       <button v-for="t in NAV" :key="t.id" type="button" class="tool" :class="{ on: t.id === 'quick' ? isQuick : tool === t.id }" @click="pickNav(t.id)">{{ t.name }}</button>
     </nav>
     <div class="panel card">
@@ -268,7 +305,7 @@ async function start() {
         <h3>{{ cur.name }}</h3>
         <p class="mute desc">{{ cur.desc }}</p>
       </template>
-      <FileInput v-model="files" :multiple="cur.multi" :kinds="kinds" :extensions="exts" :label="cur.multi ? '要拼接的文件（按顺序）' : '文件'" />
+      <FileInput v-model="files" main :multiple="cur.multi" :kinds="kinds" :extensions="exts" :label="cur.multi ? '要拼接的文件（按顺序）' : '文件'" />
       <div v-if="info" class="mute meta mono">
         <template v-if="info.width">{{ info.width }}×{{ info.height }} · </template>
         <template v-if="info.durationMs">{{ formatDuration(info.durationMs) }}</template>
@@ -445,6 +482,9 @@ async function start() {
   grid-template-columns: 150px 1fr;
   gap: 14px;
   align-items: start;
+}
+.vt.bare {
+  grid-template-columns: minmax(0, 1fr);
 }
 .tools {
   display: flex;

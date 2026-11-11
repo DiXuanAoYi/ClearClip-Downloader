@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect, type ShallowRef } from 'vue'
 import { ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
 import { convertFileSrc } from '@tauri-apps/api/core'
@@ -8,13 +8,16 @@ import { useAppStore } from '../../stores/app'
 import type { CapsSummary, ColorFlaggedShot, ColorReport, NormPreset, NormSpec, SkipSpan, ToneAdjust, VideoFactsInfo, VideoPreview, VideoReport } from '../../types'
 import { formatClock, parseClock } from '../../utils/time'
 import FileInput from './FileInput.vue'
+import { PREVIEW_KEY, pickKinds, type PreviewSpec } from '../../utils/toolbox'
 import ToneSliders from './ToneSliders.vue'
 
-const props = defineProps<{ preset?: string[]; hint?: string; lut?: string }>()
+const props = defineProps<{ preset?: string[]; hint?: string; lut?: string; section?: 'normalize' | 'stabilize' }>()
+/** 在工具箱里时，预览由右边的预览区负责；这里把当前设置交给它 */
+const previewSpec = inject<ShallowRef<PreviewSpec | null> | null>(PREVIEW_KEY, null)
 const emit = defineEmits<{ started: [] }>()
 const app = useAppStore()
 
-const files = ref<string[]>(props.preset ? [...props.preset] : [])
+const files = ref<string[]>(props.preset ? pickKinds(props.preset, ['video']) : [])
 const caps = ref<CapsSummary | null>(null)
 const presets = ref<NormPreset[]>([])
 const presetId = ref('compat')
@@ -196,7 +199,7 @@ const segPercent = (a: number, b: number) => `${Math.max(0.4, ((b - a) / Math.ma
 
 watch(
   () => props.preset,
-  (p) => p && (files.value = [...p]),
+  (p) => p && (files.value = pickKinds(p, ['video'])),
 )
 
 // 从 LUT 工作室带过来的 LUT
@@ -225,6 +228,15 @@ function applyPreset(p: NormPreset) {
     matchSkip: spec.matchSkip,
   })
 }
+
+// 把当前设置交给预览区（深拷贝一份，里面任何一项变了都会重画）
+watchEffect(() => {
+  if (!previewSpec) return
+  previewSpec.value = props.section === 'stabilize' ? null : { kind: 'normalize', spec: JSON.parse(JSON.stringify(spec)) }
+})
+onBeforeUnmount(() => {
+  if (previewSpec) previewSpec.value = null
+})
 
 onMounted(async () => {
   presets.value = await api.videoPresets().catch(() => [])
@@ -398,10 +410,10 @@ const imgSrc = (p: string) => convertFileSrc(p)
 
 <template>
   <div class="nt">
-    <div class="card box">
+    <div v-if="section !== 'stabilize'" class="card box">
       <h3>视频规整</h3>
       <p class="mute desc">把手机录屏、直播录制、平台下载的成片统一成同一种规格：画面尺寸、固定帧率、色彩（HDR 转 SDR、LUT、自动色阶）、黑边、声音响度。不会修改原文件，处理结果会生成新文件。</p>
-      <FileInput v-model="files" multiple :kinds="['video']" :extensions="['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'ts', 'm4v']" label="视频" />
+      <FileInput v-model="files" main multiple :kinds="['video']" :extensions="['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'ts', 'm4v']" label="视频" />
 
       <div v-if="files.length" class="found">
         <div v-for="f in files" :key="f" class="file">
@@ -489,7 +501,7 @@ const imgSrc = (p: string) => convertFileSrc(p)
             <el-option value="best" label="高质量（最慢）" />
           </el-select>
           <small class="mute">
-            {{ DENOISE_NOTES[spec.denoise] || '去掉暗光、高 ISO、压缩过度画面里的噪点颗粒。先到下面的“预览对比”里看效果：降噪越强，细节被抹掉得越多。' }}
+            {{ DENOISE_NOTES[spec.denoise] || '去掉暗光、高 ISO、压缩过度画面里的噪点颗粒。先到预览里看效果：降噪越强，细节被抹掉得越多。' }}
           </small>
         </label>
 
@@ -682,6 +694,7 @@ const imgSrc = (p: string) => convertFileSrc(p)
         </label>
       </div>
 
+      <template v-if="!previewSpec">
       <h4>预览对比</h4>
       <div class="pv">
         <el-input v-model="previewAt" size="small" class="t mono" placeholder="0:02" />
@@ -702,6 +715,7 @@ const imgSrc = (p: string) => convertFileSrc(p)
           <div v-for="w in preview.warnings" :key="w" class="warn">注意：{{ w }}</div>
         </div>
       </div>
+      </template>
 
       <label class="dir">
         <span>保存到</span>
@@ -715,7 +729,7 @@ const imgSrc = (p: string) => convertFileSrc(p)
       </div>
     </div>
 
-    <div class="card box">
+    <div v-if="section === 'stabilize'" class="card box">
       <h3>防抖</h3>
       <p class="mute desc">稳定手持拍摄的抖动画面，会略微放大裁掉边缘。声音不动。</p>
       <div class="pv">
@@ -724,7 +738,7 @@ const imgSrc = (p: string) => convertFileSrc(p)
           <el-radio-button value="normal">标准</el-radio-button>
           <el-radio-button value="strong">强力</el-radio-button>
         </el-radio-group>
-        <el-button size="small" type="primary" :loading="stabBusy" :disabled="!files.length || caps?.stabilize === 'none'" @click="stabilize">对上面选中的文件防抖</el-button>
+        <el-button size="small" type="primary" :loading="stabBusy" :disabled="!files.length || caps?.stabilize === 'none'" @click="stabilize">对文件篮里的视频防抖</el-button>
       </div>
       <small class="mute">{{ stabNote }}</small>
     </div>

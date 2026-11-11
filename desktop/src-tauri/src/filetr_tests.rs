@@ -488,14 +488,14 @@ fn old_caches_are_marked_done_on_load_and_failed_pages_are_listed() {
 
 #[test]
 fn manual_block_adjustments_override_the_automatic_layout_and_survive_the_cache_format() {
-    let a = BlockAdj { rect: Some([10.0, 20.0, 110.0, 60.0]), size: Some(9.5) };
+    let a = BlockAdj { rect: Some([10.0, 20.0, 110.0, 60.0]), size: Some(9.5), ..Default::default() };
     assert_eq!(a.apply((0.0, 0.0, 50.0, 50.0), 12.0), ((10.0, 20.0, 110.0, 60.0), 9.5));
     // 只改了字号：位置沿用；字号小于 3 当作没写
-    assert_eq!(BlockAdj { rect: None, size: Some(14.0) }.apply((1.0, 2.0, 3.0, 4.0), 8.0), ((1.0, 2.0, 3.0, 4.0), 14.0));
-    assert_eq!(BlockAdj { rect: None, size: Some(1.0) }.apply((1.0, 2.0, 3.0, 4.0), 8.0).1, 8.0);
+    assert_eq!(BlockAdj { size: Some(14.0), ..Default::default() }.apply((1.0, 2.0, 3.0, 4.0), 8.0), ((1.0, 2.0, 3.0, 4.0), 14.0));
+    assert_eq!(BlockAdj { size: Some(1.0), ..Default::default() }.apply((1.0, 2.0, 3.0, 4.0), 8.0).1, 8.0);
     // 缓存里按“序号 → 调整”存，读回来一样；没有这个字段的旧缓存照常读
     let mut p = ViewPage::default();
-    p.adj.insert(3, a);
+    p.adj.insert(3, a.clone());
     let back: ViewPage = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
     assert_eq!(back.adj.get(&3), Some(&a));
     let old: ViewPage = serde_json::from_str(r#"{"src":["x"],"trans":[null]}"#).unwrap();
@@ -518,4 +518,93 @@ fn mixed_pdf_scan_pages_are_the_ones_without_any_text() {
     assert!(Opts::default().scan_auto, "默认自动识别");
     let o: Opts = serde_json::from_str(r#"{"scanAuto":false}"#).unwrap();
     assert!(!o.scan_auto && o.bilingual, "旧请求没有这个字段也能读");
+}
+
+#[test]
+fn style_patches_merge_validate_and_reach_the_drawn_item() {
+    let mut a = BlockAdj::default();
+    assert!(a.is_empty());
+    a.patch(&StylePatch {
+        fg: Some([1, 2, 3]),
+        bg: Some([9, 9, 9]),
+        bg_mode: Some("vgrad".into()),
+        bg_stops: Some(vec![[0, 0, 0], [255, 255, 255]]),
+        align: Some("center".into()),
+        pad: Some(5.0),
+        ..Default::default()
+    });
+    assert!(a.check().is_ok());
+    let mut it = crate::pdfx::Item { rgb: [10, 10, 10], ..Default::default() };
+    a.style_item(&mut it);
+    assert_eq!((it.rgb, it.bg, it.bg_user, it.pad), ([1, 2, 3], Some([9, 9, 9]), true, Some(5.0)));
+    assert_eq!((it.bg_mode, it.align, it.bg_stops.len()), (crate::pdfx::BgMode::VGrad, crate::pdfx::Align::Center, 2));
+    // 只改文字色，其余不动；清除“背景”连渐变色标一起清
+    a.patch(&StylePatch { fg: Some([7, 7, 7]), clear: vec!["bg".into()], ..Default::default() });
+    assert_eq!((a.fg, a.bg, a.bg_stops.clone(), a.bg_mode.clone()), (Some([7, 7, 7]), None, None, Some("vgrad".into())));
+    // 不合法的写不进去
+    assert!(BlockAdj { pad: Some(99.0), ..Default::default() }.check().is_err());
+    assert!(BlockAdj { bg_mode: Some("wavy".into()), ..Default::default() }.check().is_err());
+    assert!(BlockAdj { bg_stops: Some(vec![[0, 0, 0]]), ..Default::default() }.check().is_err());
+    // 老缓存里只有 rect / size 的调整照常读出来
+    let old: BlockAdj = serde_json::from_str(r#"{"rect":[1,2,30,40],"size":9}"#).unwrap();
+    assert_eq!((old.rect, old.size, old.fg), (Some([1.0, 2.0, 30.0, 40.0]), Some(9.0), None));
+}
+
+#[test]
+fn styling_blocks_is_all_or_nothing_and_resetting_position_keeps_the_colors() {
+    let dir = std::env::temp_dir().join(format!(
+        "cc-style-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let input = dir.join("a.pdf");
+    std::fs::write(&input, b"x").unwrap();
+    let cp = cache_path(&dir, &input, "中文");
+    let mut v = View { input: input.to_string_lossy().into_owned(), target: "中文".into(), ..Default::default() };
+    v.pages.push(ViewPage { src: vec!["a".into(), "b".into()], trans: vec![Some("甲".into()), Some("乙".into())], ..Default::default() });
+    save_cache(&cp, &v);
+    let edit = |i: usize, patch: StylePatch| BlockEdit { index: i, patch };
+    style_blocks(
+        &dir,
+        &input,
+        "中文",
+        0,
+        &[edit(0, StylePatch { fg: Some([1, 1, 1]), ..Default::default() }), edit(1, StylePatch { bg: Some([2, 2, 2]), ..Default::default() })],
+    )
+    .unwrap();
+    let got = load_cache(&cp).unwrap();
+    assert_eq!(got.pages[0].adj[&0].fg, Some([1, 1, 1]));
+    assert_eq!(got.pages[0].adj[&1].bg, Some([2, 2, 2]));
+    // 第二块不合法：第一块的改动也不写
+    let bad = style_blocks(
+        &dir,
+        &input,
+        "中文",
+        0,
+        &[edit(0, StylePatch { fg: Some([9, 9, 9]), ..Default::default() }), edit(1, StylePatch { pad: Some(500.0), ..Default::default() })],
+    );
+    assert!(bad.is_err());
+    assert_eq!(load_cache(&cp).unwrap().pages[0].adj[&0].fg, Some([1, 1, 1]), "整批没通过就都不写");
+    // 调位置、字号，再“还原位置和大小”：颜色背景留着
+    adjust_block(&dir, &input, "中文", 0, 0, Some(BlockAdj { rect: Some([0.0, 0.0, 50.0, 20.0]), size: Some(12.0), ..Default::default() })).unwrap();
+    let a = &load_cache(&cp).unwrap().pages[0].adj[&0];
+    assert_eq!((a.rect.is_some(), a.size, a.fg), (true, Some(12.0), Some([1, 1, 1])));
+    adjust_block(&dir, &input, "中文", 0, 0, None).unwrap();
+    let a = &load_cache(&cp).unwrap().pages[0].adj[&0];
+    assert_eq!((a.rect, a.size, a.fg), (None, None, Some([1, 1, 1])));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn translations_keep_the_number_of_lines_the_source_has() {
+    // 行数对得上：原样
+    assert_eq!(fix_line_count("One.\nTwo.", "一。\n二。"), "一。\n二。");
+    // 模型把两行并成一行：按句子拆回两行
+    assert_eq!(fix_line_count("This is a.\nThat is b.", "这是甲。那是乙。"), "这是甲。\n那是乙。");
+    assert_eq!(fix_line_count("A line.\nAnother line.", "A line. Another line."), "A line.\nAnother line.");
+    // 句子数和行数对不上：不乱拆
+    assert_eq!(fix_line_count("One.\nTwo.", "只有一句话没有标点"), "只有一句话没有标点");
+    // 单行原文不动
+    assert_eq!(fix_line_count("Just one line.", "就一行。第二句。"), "就一行。第二句。");
 }

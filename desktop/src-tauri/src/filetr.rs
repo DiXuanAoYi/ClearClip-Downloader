@@ -519,6 +519,8 @@ pub struct Opts {
     pub skip_refs: bool,
     /// 有文字层的 PDF 里夹着扫描页时，自动给这些页识字并一起翻译（只对 PDF 版面翻译有效）
     pub scan_auto: bool,
+    /// PDF 里同一块相邻两行怎么连：`sentence` 行尾是句号就保留换行（默认）/ `all` 每行都保留 / `merge` 接成一段
+    pub line_breaks: String,
 }
 
 impl Default for Opts {
@@ -534,6 +536,7 @@ impl Default for Opts {
             skip_code: true,
             skip_refs: false,
             scan_auto: true,
+            line_breaks: "sentence".into(),
         }
     }
 }
@@ -569,6 +572,9 @@ pub struct View {
     /// 文件一共几页（PDF 的页数；其他格式等于 `pages.len()`）
     #[serde(default)]
     pub total_pages: usize,
+    /// 切块时相邻两行的连法（见 `Opts::line_breaks`）；空 = 句号处保留换行
+    #[serde(default)]
+    pub line_breaks: String,
 }
 
 pub(crate) const VIEW_V: u32 = 2;
@@ -596,13 +602,163 @@ pub struct ViewPage {
 }
 
 /// 手动调整：`rect` 是 (左, 下, 右, 上)（PDF 点），`size` 是字号（点）；没写的沿用自动算出来的。
-#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockAdj {
     #[serde(default)]
     pub rect: Option<[f32; 4]>,
     #[serde(default)]
     pub size: Option<f32>,
+    /// 文字颜色（手动指定；没有 = 用原文颜色）
+    #[serde(default)]
+    pub fg: Option<[u8; 3]>,
+    /// 背景颜色（手动指定；没有 = 从页面里取样）
+    #[serde(default)]
+    pub bg: Option<[u8; 3]>,
+    /// 背景模式：solid 纯色 / hgrad 横向渐变 / vgrad 竖向渐变 / none 不遮盖
+    #[serde(default)]
+    pub bg_mode: Option<String>,
+    /// 渐变色标（至少两个，等距）
+    #[serde(default)]
+    pub bg_stops: Option<Vec<[u8; 3]>>,
+    /// 对齐：left / center / right
+    #[serde(default)]
+    pub align: Option<String>,
+    /// 遮盖和文字区域外扩（点）；没有 = 字号的 18%，至少 2 点
+    #[serde(default)]
+    pub pad: Option<f32>,
+}
+
+/// 一次改动：`Some` 的项写进去；`clear` 里列出的项还原成自动（`fg` `bg` `bgMode` `bgStops` `align` `pad` `size` `rect`）。
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StylePatch {
+    #[serde(default)]
+    pub rect: Option<[f32; 4]>,
+    #[serde(default)]
+    pub size: Option<f32>,
+    #[serde(default)]
+    pub fg: Option<[u8; 3]>,
+    #[serde(default)]
+    pub bg: Option<[u8; 3]>,
+    #[serde(default)]
+    pub bg_mode: Option<String>,
+    #[serde(default)]
+    pub bg_stops: Option<Vec<[u8; 3]>>,
+    #[serde(default)]
+    pub align: Option<String>,
+    #[serde(default)]
+    pub pad: Option<f32>,
+    #[serde(default)]
+    pub clear: Vec<String>,
+}
+
+/// 多选批量改：每一块一份改动。
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockEdit {
+    pub index: usize,
+    pub patch: StylePatch,
+}
+
+impl BlockAdj {
+    /// 没有任何手动改动。
+    pub fn is_empty(&self) -> bool {
+        *self == BlockAdj::default()
+    }
+
+    pub fn check(&self) -> AppResult<()> {
+        if let Some(r) = self.rect {
+            if !r.iter().all(|x| x.is_finite()) || r[2] - r[0] < 4.0 || r[3] - r[1] < 4.0 {
+                return Err(AppError::invalid("这个框太小或位置不对。"));
+            }
+        }
+        if self.size.is_some_and(|s| !s.is_finite() || !(3.0..=200.0).contains(&s)) {
+            return Err(AppError::invalid("字号要在 3 到 200 之间。"));
+        }
+        if self.pad.is_some_and(|p| !p.is_finite() || !(0.0..=60.0).contains(&p)) {
+            return Err(AppError::invalid("外扩要在 0 到 60 之间。"));
+        }
+        if self.bg_stops.as_ref().is_some_and(|v| v.len() < 2 || v.len() > 12) {
+            return Err(AppError::invalid("渐变需要 2 到 12 个色标。"));
+        }
+        if self.bg_mode.as_deref().is_some_and(|m| !matches!(m, "solid" | "hgrad" | "vgrad" | "none")) {
+            return Err(AppError::invalid("不认识的背景模式。"));
+        }
+        if self.align.as_deref().is_some_and(|m| !matches!(m, "left" | "center" | "right")) {
+            return Err(AppError::invalid("不认识的对齐方式。"));
+        }
+        Ok(())
+    }
+
+    pub fn patch(&mut self, p: &StylePatch) {
+        for k in &p.clear {
+            match k.as_str() {
+                "rect" => self.rect = None,
+                "size" => self.size = None,
+                "fg" => self.fg = None,
+                "bg" => {
+                    self.bg = None;
+                    self.bg_stops = None;
+                }
+                "bgMode" => self.bg_mode = None,
+                "bgStops" => self.bg_stops = None,
+                "align" => self.align = None,
+                "pad" => self.pad = None,
+                _ => {}
+            }
+        }
+        if p.rect.is_some() {
+            self.rect = p.rect;
+        }
+        if p.size.is_some() {
+            self.size = p.size;
+        }
+        if p.fg.is_some() {
+            self.fg = p.fg;
+        }
+        if p.bg.is_some() {
+            self.bg = p.bg;
+        }
+        if p.bg_mode.is_some() {
+            self.bg_mode = p.bg_mode.clone();
+        }
+        if p.bg_stops.is_some() {
+            self.bg_stops = p.bg_stops.clone();
+        }
+        if p.align.is_some() {
+            self.align = p.align.clone();
+        }
+        if p.pad.is_some() {
+            self.pad = p.pad;
+        }
+    }
+
+    /// 把颜色、背景、对齐、外扩这些手动设置写到要画的一项上。
+    pub fn style_item(&self, it: &mut crate::pdfx::Item) {
+        use crate::pdfx::{Align, BgMode};
+        if let Some(c) = self.fg {
+            it.rgb = c;
+        }
+        if let Some(c) = self.bg {
+            it.bg = Some(c);
+            it.bg_user = true;
+        }
+        if let Some(m) = &self.bg_mode {
+            it.bg_mode = BgMode::parse(m);
+        }
+        if let Some(st) = &self.bg_stops {
+            it.bg_stops = st.clone();
+            // 渐变默认横向；纯色模式下色标不起作用
+            if self.bg_mode.is_none() && st.len() >= 2 {
+                it.bg_mode = BgMode::HGrad;
+            }
+        }
+        if let Some(a) = &self.align {
+            it.align = Align::parse(a);
+        }
+        it.pad = self.pad;
+    }
 }
 
 impl BlockAdj {
@@ -883,8 +1039,13 @@ async fn write_pdf_layout(
     for (pi, p) in pages.iter().enumerate() {
         for b in &p.blocks {
             if let Some(Some(t)) = trans.get(at) {
-                let (rect, size) = adj.get(at).copied().flatten().map_or(((b.l, b.b, b.r, b.t), b.size), |a| a.apply((b.l, b.b, b.r, b.t), b.size));
-                plans[pi].items.push(Item { remove: b.runs.clone(), rect, size, rgb: b.rgb, bg: None, text: t.clone() });
+                let a = adj.get(at).cloned().flatten();
+                let (rect, size) = a.as_ref().map_or(((b.l, b.b, b.r, b.t), b.size), |a| a.apply((b.l, b.b, b.r, b.t), b.size));
+                let mut it = Item { remove: b.runs.clone(), rect, size, rgb: b.rgb, text: t.clone(), ..Item::default() };
+                if let Some(a) = &a {
+                    a.style_item(&mut it);
+                }
+                plans[pi].items.push(it);
             }
             at += 1;
         }
@@ -894,7 +1055,7 @@ async fn write_pdf_layout(
         for b in blocks {
             let Some(rect) = b.rect else { continue };
             if !b.trans.trim().is_empty() {
-                plans[pi].items.push(Item { remove: vec![], rect, size: b.size, rgb: b.rgb, bg: b.bg, text: b.trans.clone() });
+                plans[pi].items.push(Item { rect, size: b.size, rgb: b.rgb, bg: b.bg, text: b.trans.clone(), ..Item::default() });
             }
         }
     }
@@ -910,8 +1071,11 @@ async fn write_pdf_layout(
                 }
                 if let Ok((w, h, rgba)) = crate::pdfx::render_page(&lib2, &inp, pi, 900) {
                     for it in &mut plan.items {
-                        it.bg = Some(sample_rect_bg(&rgba, w, h, sizes[pi], it.rect));
+                        if !it.bg_user {
+                            it.bg = Some(sample_rect_bg_smart(&rgba, w, h, sizes[pi], it.rect, it.rgb));
+                        }
                     }
+                    crate::pdfx::assign_room(&mut plan.items, sizes[pi].1);
                 }
             }
             taken
@@ -1174,6 +1338,7 @@ async fn run_pdf_scanned(
                 v: VIEW_V,
                 layout: false,
                 total_pages: pages.len(),
+                line_breaks: String::new(),
             };
             save_cache(&vp, &view);
             if let Ok(b) = serde_json::to_vec(&out) {
@@ -1196,8 +1361,13 @@ async fn run_pdf_scanned(
     for (pi, page) in scan.iter().enumerate().take(plans.len()) {
         for (k, b) in page.iter().enumerate() {
             let (Some(rect), false) = (b.rect, b.trans.trim().is_empty()) else { continue };
-            let (rect, size) = cached_view.as_ref().and_then(|v| v.pages.get(pi)).and_then(|p| p.adj.get(&k)).map_or((rect, b.size), |a| a.apply(rect, b.size));
-            plans[pi].items.push(Item { remove: vec![], rect, size, rgb: b.rgb, bg: b.bg, text: b.trans.clone() });
+            let a = cached_view.as_ref().and_then(|v| v.pages.get(pi)).and_then(|p| p.adj.get(&k));
+            let (rect, size) = a.map_or((rect, b.size), |a| a.apply(rect, b.size));
+            let mut it = Item { rect, size, rgb: b.rgb, bg: b.bg, text: b.trans.clone(), ..Item::default() };
+            if let Some(a) = a {
+                a.style_item(&mut it);
+            }
+            plans[pi].items.push(it);
             any += 1;
         }
     }
@@ -1246,9 +1416,61 @@ async fn translate_texts(
     texts: &[String],
     check: &(dyn Fn(usize, usize) -> AppResult<()> + Sync),
 ) -> AppResult<ai::Translated> {
-    let (system, terms) = trans_setup(st, settings, target, crate::tm::Profile::Document);
+    let (mut system, terms) = trans_setup(st, settings, target, crate::tm::Profile::Document);
+    // 原文里有换行（PDF 里“行尾是句号的行”不合并）：要求译文行数不变
+    if texts.iter().any(|t| t.contains('\n')) {
+        system.push_str(LINE_BREAKS_HINT);
+    }
     let work: Vec<Cue> = texts.iter().enumerate().map(|(k, t)| Cue { start: k as u64, end: k as u64 + 1, lines: vec![t.clone()] }).collect();
-    ai::map_cues_g(ep, &settings.ai.model, &system, &work, settings.ai.batch_size.clamp(8, 30), &terms, check).await
+    let mut out = ai::map_cues_g(ep, &settings.ai.model, &system, &work, settings.ai.batch_size.clamp(8, 30), &terms, check).await?;
+    for (src, t) in texts.iter().zip(out.texts.iter_mut()) {
+        if let Some(tr) = t {
+            *tr = fix_line_count(src, tr);
+        }
+    }
+    Ok(out)
+}
+
+const LINE_BREAKS_HINT: &str = "\n\nSome strings contain line breaks (\\n). Each line is a separate sentence or line of the layout: translate line by line and keep EXACTLY the same number of lines, joined with \\n, in the same order. Never merge lines or move text between lines.";
+
+/// 原文有 n 行、译文行数对不上时，按句子把译文重新分成 n 行（句子数正好是 n 才动，否则原样返回）。
+pub(crate) fn fix_line_count(src: &str, trans: &str) -> String {
+    let n = src.split('\n').filter(|l| !l.trim().is_empty()).count();
+    if n <= 1 || trans.split('\n').filter(|l| !l.trim().is_empty()).count() == n {
+        return trans.to_string();
+    }
+    // 把译文拆成句子（句末标点跟着前一句）
+    let mut sentences: Vec<String> = vec![];
+    let mut cur = String::new();
+    let chars: Vec<char> = trans.replace('\n', " ").chars().collect();
+    for (i, c) in chars.iter().enumerate() {
+        cur.push(*c);
+        let stop = match c {
+            '。' | '！' | '？' | '!' | '?' => true,
+            // 英文句点：后面是空格或结尾才算
+            '.' => match chars.get(i + 1) {
+                None => true,
+                Some(n) => n.is_whitespace(),
+            },
+            _ => false,
+        };
+        if stop {
+            let t = cur.trim().to_string();
+            if !t.is_empty() {
+                sentences.push(t);
+            }
+            cur.clear();
+        }
+    }
+    let rest = cur.trim();
+    if !rest.is_empty() {
+        sentences.push(rest.to_string());
+    }
+    if sentences.len() == n {
+        sentences.join("\n")
+    } else {
+        trans.to_string()
+    }
 }
 
 /// 版面里的一块：原文、译文和它在页面上的位置（PDF 点，左 / 下 / 右 / 上）。
@@ -1266,6 +1488,10 @@ struct LBlock {
     skipped: bool,
     /// 位置 / 字号是手动调过的
     adjusted: bool,
+    /// 手动设置（颜色、背景、对齐、外扩……）
+    adj: Option<BlockAdj>,
+    /// 自动排版算出来的字号（没手动调过的字号）
+    orig_size: f32,
 }
 
 struct Collected {
@@ -1367,12 +1593,14 @@ pub(crate) fn match_cached_page(view: &mut Option<View>, pages: &[crate::pdfx::P
 async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &str, page: usize) -> AppResult<Collected> {
     let lib = crate::pdfx::find_lib(&st.data_dir).ok_or_else(|| AppError::invalid("版面预览需要 PDF 排版组件：在“文件翻译”页点“安装 PDF 排版组件”。"))?;
     let (l2, in2) = (lib.clone(), input.to_path_buf());
-    let pages = tokio::task::spawn_blocking(move || crate::pdfx::extract(&l2, &in2)).await.map_err(|e| AppError::msg(e.to_string()))??;
+    let cp = cache_path(&st.data_dir, input, target);
+    let mut view = load_cache(&cp);
+    // 和翻译时用同样的连行方式切块，否则块和缓存里的译文对不上
+    let lmode = crate::pdfx::LineMode::parse(view.as_ref().map(|v| v.line_breaks.as_str()).unwrap_or(""));
+    let pages = tokio::task::spawn_blocking(move || crate::pdfx::extract_with(&l2, &in2, lmode)).await.map_err(|e| AppError::msg(e.to_string()))??;
     if page >= pages.len() {
         return Err(AppError::invalid("没有这一页。"));
     }
-    let cp = cache_path(&st.data_dir, input, target);
-    let mut view = load_cache(&cp);
     let size = (pages[page].w, pages[page].h);
     let mut blocks = vec![];
     let mut view_page = page;
@@ -1404,6 +1632,8 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
                 trans: trans[k].clone().unwrap_or_default(),
                 skipped: skip.contains(&k),
                 adjusted: a.is_some(),
+                adj: a.cloned(),
+                orig_size: b.size,
             });
         }
     } else {
@@ -1434,6 +1664,8 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
                             trans,
                             skipped: false,
                             adjusted: a.is_some(),
+                            adj: a.cloned(),
+                            orig_size: b.size,
                         });
                     }
                     done = true;
@@ -1445,10 +1677,18 @@ async fn collect_page(st: &crate::AppState, input: &Path, target: &str, ocr: &st
 }
 
 /// 在渲染好的整页图上取一块文字的背景色（PDF 点 → 像素；PDF 的 y 轴朝上）。
+#[cfg(test)]
 pub(crate) fn sample_rect_bg(rgba: &[u8], w: usize, h: usize, page: (f32, f32), rect: (f32, f32, f32, f32)) -> [u8; 3] {
     let (sx, sy) = (w as f32 / page.0.max(1.0), h as f32 / page.1.max(1.0));
     let px = |v: f32, max: usize| (v.max(0.0) as usize).min(max.saturating_sub(1));
     crate::pdfx::sample_bg(rgba, w, h, (px(rect.0 * sx, w), px((page.1 - rect.3) * sy, h), px(rect.2 * sx, w), px((page.1 - rect.1) * sy, h)))
+}
+
+/// 同 `sample_rect_bg`，但按“不是文字颜色的像素里最多的那种”取（见 `pdfx::sample_bg_smart`）。
+pub(crate) fn sample_rect_bg_smart(rgba: &[u8], w: usize, h: usize, page: (f32, f32), rect: (f32, f32, f32, f32), text: [u8; 3]) -> [u8; 3] {
+    let (sx, sy) = (w as f32 / page.0.max(1.0), h as f32 / page.1.max(1.0));
+    let px = |v: f32, max: usize| (v.max(0.0) as usize).min(max.saturating_sub(1));
+    crate::pdfx::sample_bg_smart(rgba, w, h, (px(rect.0 * sx, w), px((page.1 - rect.3) * sy, h), px(rect.2 * sx, w), px((page.1 - rect.1) * sy, h)), text)
 }
 
 /// 版面预览 / 画布用的一页数据：原页图 + 每块的位置、背景色、原文和译文。
@@ -1459,14 +1699,29 @@ pub struct LayoutBlock {
     /// 左、下、右、上（PDF 点）
     pub rect: [f32; 4],
     pub size: f32,
+    /// 文字颜色（手动改过的就是改后的）
     pub rgb: [u8; 3],
+    /// 背景颜色（手动改过的就是改后的）
     pub bg: [u8; 3],
+    /// 原文颜色 / 原来的字号 / 页面里取样得到的背景色：检查器里显示“和原文一致”、一键还原用
+    pub orig_rgb: [u8; 3],
+    pub orig_size: f32,
+    pub orig_bg: [u8; 3],
+    /// solid / hgrad / vgrad / none
+    pub bg_mode: String,
+    pub bg_stops: Vec<[u8; 3]>,
+    /// left / center / right
+    pub align: String,
+    /// 手动设的外扩（点）；没有 = 自动
+    pub pad: Option<f32>,
     pub src: String,
     pub trans: String,
     /// 按设置不翻译（页眉页脚、公式代码、参考文献）：保留原文，不算“未译”
     pub skipped: bool,
     /// 位置 / 字号是手动调过的
     pub adjusted: bool,
+    /// 颜色、背景、对齐、外扩有手动设置
+    pub styled: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1496,7 +1751,8 @@ pub async fn page_layout(st: &crate::AppState, input: &Path, target: &str, ocr: 
     let (img, blocks) = tokio::task::spawn_blocking(move || -> AppResult<(Vec<u8>, Vec<LBlock>)> {
         let (w, h, rgba) = crate::pdfx::render_page(&lib, &inp, page, 1400)?;
         for b in &mut blocks {
-            b.bg.get_or_insert_with(|| sample_rect_bg(&rgba, w, h, size, b.rect));
+            let text = b.rgb;
+            b.bg.get_or_insert_with(|| sample_rect_bg_smart(&rgba, w, h, size, b.rect, text));
         }
         Ok((crate::pdfx::png_of_rgba(w, h, &rgba)?, blocks))
     })
@@ -1505,16 +1761,30 @@ pub async fn page_layout(st: &crate::AppState, input: &Path, target: &str, ocr: 
     let image = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&img));
     let blocks = blocks
         .into_iter()
-        .map(|b| LayoutBlock {
-            index: b.index,
-            rect: [b.rect.0, b.rect.1, b.rect.2, b.rect.3],
-            size: b.size,
-            rgb: b.rgb,
-            bg: b.bg.unwrap_or([255, 255, 255]),
-            src: b.src,
-            trans: b.trans,
-            skipped: b.skipped,
-            adjusted: b.adjusted,
+        .map(|b| {
+            let sampled = b.bg.unwrap_or([255, 255, 255]);
+            let a = b.adj.clone().unwrap_or_default();
+            // 手动改了字号 / 位置以外的（颜色、背景、对齐、外扩）
+            let styled = a.fg.is_some() || a.bg.is_some() || a.bg_mode.is_some() || a.bg_stops.is_some() || a.align.is_some() || a.pad.is_some();
+            LayoutBlock {
+                index: b.index,
+                rect: [b.rect.0, b.rect.1, b.rect.2, b.rect.3],
+                size: b.size,
+                rgb: a.fg.unwrap_or(b.rgb),
+                bg: a.bg.unwrap_or(sampled),
+                orig_rgb: b.rgb,
+                orig_size: b.orig_size,
+                orig_bg: sampled,
+                bg_mode: a.bg_mode.clone().unwrap_or_else(|| if a.bg_stops.as_ref().is_some_and(|s| s.len() >= 2) { "hgrad".into() } else { "solid".into() }),
+                bg_stops: a.bg_stops.clone().unwrap_or_default(),
+                align: a.align.clone().unwrap_or_else(|| "left".into()),
+                pad: a.pad,
+                src: b.src,
+                trans: b.trans,
+                skipped: b.skipped,
+                adjusted: b.adjusted,
+                styled,
+            }
         })
         .collect();
     Ok(PageLayout { pages, view_page, w: size.0, h: size.1, image, blocks, done, note })
@@ -1541,9 +1811,14 @@ pub async fn page_preview(st: &crate::AppState, input: &Path, target: &str, ocr:
         let (w, h, rgba) = crate::pdfx::render_page(&lib, &inp, page, 900)?;
         let mut plan = PagePlan::default();
         for b in blocks.iter().filter(|b| !b.trans.trim().is_empty()) {
-            let bg = b.bg.unwrap_or_else(|| sample_rect_bg(&rgba, w, h, size, b.rect));
-            plan.items.push(Item { remove: b.remove.clone(), rect: b.rect, size: b.size, rgb: b.rgb, bg: Some(bg), text: b.trans.clone() });
+            let bg = b.bg.unwrap_or_else(|| sample_rect_bg_smart(&rgba, w, h, size, b.rect, b.rgb));
+            let mut it = Item { remove: b.remove.clone(), rect: b.rect, size: b.size, rgb: b.rgb, bg: Some(bg), text: b.trans.clone(), ..Item::default() };
+            if let Some(a) = &b.adj {
+                a.style_item(&mut it);
+            }
+            plan.items.push(it);
         }
+        crate::pdfx::assign_room(&mut plan.items, size.1);
         let n = plan.items.len();
         let orig = crate::pdfx::png_of_rgba(w, h, &rgba)?;
         let (tw, th, trgba) = crate::pdfx::render_translated(&lib, &font, &inp, page, &plan, 900)?;
@@ -1581,21 +1856,106 @@ pub fn adjust_block(data_dir: &Path, input: &Path, target: &str, page: usize, in
     let cp = cache_path(data_dir, input, target);
     let mut v = load_cache(&cp).ok_or_else(|| AppError::not_found("这个文件还没有译文，先翻译。"))?;
     let p = v.pages.get_mut(page).ok_or_else(|| AppError::not_found("找不到这一页。"))?;
-    if let Some(a) = adj {
-        if let Some(r) = a.rect {
-            if !r.iter().all(|x| x.is_finite()) || r[2] - r[0] < 4.0 || r[3] - r[1] < 4.0 {
-                return Err(AppError::invalid("这个框太小或位置不对。"));
+    match adj {
+        Some(a) => {
+            a.check()?;
+            // 位置 / 字号以外的设置（颜色、背景……）保留，只换位置和字号
+            let mut merged = p.adj.get(&index).cloned().unwrap_or_default();
+            merged.rect = a.rect;
+            merged.size = a.size;
+            if merged.is_empty() {
+                p.adj.remove(&index);
+            } else {
+                p.adj.insert(index, merged);
             }
         }
-        if a.size.is_some_and(|s| !s.is_finite() || !(3.0..=200.0).contains(&s)) {
-            return Err(AppError::invalid("字号要在 3 到 200 之间。"));
+        None => {
+            // 还原位置 / 字号；颜色背景等样式不动
+            if let Some(m) = p.adj.get_mut(&index) {
+                m.rect = None;
+                m.size = None;
+                if m.is_empty() {
+                    p.adj.remove(&index);
+                }
+            }
         }
-        p.adj.insert(index, a);
-    } else {
-        p.adj.remove(&index);
     }
     save_cache(&cp, &v);
     Ok(())
+}
+
+/// 一次改好几块的样式（多选批量）：每一块一份改动，写回缓存。
+pub fn style_blocks(data_dir: &Path, input: &Path, target: &str, page: usize, edits: &[BlockEdit]) -> AppResult<()> {
+    let cp = cache_path(data_dir, input, target);
+    let mut v = load_cache(&cp).ok_or_else(|| AppError::not_found("这个文件还没有译文，先翻译。"))?;
+    let p = v.pages.get_mut(page).ok_or_else(|| AppError::not_found("找不到这一页。"))?;
+    // 先在副本上改并校验，全部通过才写回，不会改一半
+    let mut next = p.adj.clone();
+    for e in edits {
+        let mut a = next.get(&e.index).cloned().unwrap_or_default();
+        a.patch(&e.patch);
+        a.check()?;
+        if a.is_empty() {
+            next.remove(&e.index);
+        } else {
+            next.insert(e.index, a);
+        }
+    }
+    p.adj = next;
+    save_cache(&cp, &v);
+    Ok(())
+}
+
+/// 把文字颜色 `from` 换成 `to`（颜色差在 `tol` 以内都算）。`page` 为 None = 整份文件，否则只换这一页（从 0 起）。
+/// `dry_run` 时只数有几处，不改。返回改（或会改）了几块。只换文字颜色；背景色按页取样，在版面里选中块再改。
+#[allow(clippy::too_many_arguments)]
+pub async fn replace_text_color(
+    st: &crate::AppState,
+    input: &Path,
+    target: &str,
+    page: Option<usize>,
+    from: [u8; 3],
+    to: [u8; 3],
+    tol: u32,
+    dry_run: bool,
+) -> AppResult<usize> {
+    let lib = crate::pdfx::find_lib(&st.data_dir).ok_or_else(|| AppError::invalid("需要 PDF 排版组件。"))?;
+    let cp = cache_path(&st.data_dir, input, target);
+    let mut view = load_cache(&cp);
+    if view.is_none() {
+        return Err(AppError::not_found("这个文件还没有译文，先翻译。"));
+    }
+    let lmode = crate::pdfx::LineMode::parse(view.as_ref().map(|v| v.line_breaks.as_str()).unwrap_or(""));
+    let (l2, in2) = (lib, input.to_path_buf());
+    let pages = tokio::task::spawn_blocking(move || crate::pdfx::extract_with(&l2, &in2, lmode)).await.map_err(|e| AppError::msg(e.to_string()))??;
+    let dist = |p: [u8; 3], q: [u8; 3]| p.iter().zip(&q).map(|(a, b)| (i32::from(*a) - i32::from(*b)).unsigned_abs()).sum::<u32>();
+    let mut count = 0usize;
+    let mut dirty = false;
+    for (pi, pg) in pages.iter().enumerate() {
+        if page.is_some_and(|p| p != pi) || pg.blocks.is_empty() {
+            continue;
+        }
+        let m = match_cached_page(&mut view, &pages, pi);
+        let Some(vp) = view.as_mut().and_then(|v| v.pages.get_mut(m.view_page)) else { continue };
+        for (k, b) in pg.blocks.iter().enumerate() {
+            let cur = vp.adj.get(&k).and_then(|a| a.fg).unwrap_or(b.rgb);
+            if dist(cur, from) <= tol {
+                count += 1;
+                if !dry_run {
+                    let mut a = vp.adj.get(&k).cloned().unwrap_or_default();
+                    a.fg = Some(to);
+                    vp.adj.insert(k, a);
+                    dirty = true;
+                }
+            }
+        }
+    }
+    if dirty {
+        if let Some(v) = &view {
+            save_cache(&cp, v);
+        }
+    }
+    Ok(count)
 }
 
 /// 一页的译后检查：片段序号 → 问题。不翻译的片段和没有译文的不查。
@@ -1652,7 +2012,9 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
         if let Some(lib) = &layout_lib {
             let (lib2, inp) = (lib.clone(), input.to_path_buf());
             ctx.note("正在读取 PDF 的版面…");
-            let pages = tokio::task::spawn_blocking(move || crate::pdfx::extract(&lib2, &inp)).await.map_err(|e| AppError::msg(e.to_string()))??;
+            let lmode = crate::pdfx::LineMode::parse(&opts.line_breaks);
+            let pages =
+                tokio::task::spawn_blocking(move || crate::pdfx::extract_with(&lib2, &inp, lmode)).await.map_err(|e| AppError::msg(e.to_string()))??;
             if pages.iter().any(|p| !p.blocks.is_empty()) {
                 parts = pages
                     .iter()
@@ -1735,6 +2097,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
         failed: 0,
         v: VIEW_V,
         layout: layout_pages.is_some(),
+        line_breaks: opts.line_breaks.clone(),
         total_pages: layout_pages.as_ref().map_or(sizes.len(), |p| p.len()),
     };
     {
@@ -1815,7 +2178,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
 
     // 3. 写回
     let out = if let (Some(pages), Some(lib)) = (&layout_pages, &layout_lib) {
-        let adj: Vec<Option<BlockAdj>> = view.pages.iter().flat_map(|p| (0..p.src.len()).map(|k| p.adj.get(&k).copied())).collect();
+        let adj: Vec<Option<BlockAdj>> = view.pages.iter().flat_map(|p| (0..p.src.len()).map(|k| p.adj.get(&k).cloned())).collect();
         write_pdf_layout(ctx, input, lib, pages, &t.texts, &adj, scan_extra.as_deref(), crate::pdfx::Mode::parse(&opts.pdf_mode), &base).await?
     } else if kind == Kind::Sub {
         let d = if opts.bilingual { Display::OrigTop } else { Display::Trans };

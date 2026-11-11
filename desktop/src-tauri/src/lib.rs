@@ -87,6 +87,7 @@ pub mod subtitle_io;
 pub mod subtitle_tools;
 pub mod supadata;
 pub mod tm;
+mod tool_preview;
 pub mod tools;
 pub mod track;
 pub mod transfer;
@@ -712,6 +713,8 @@ pub fn run() {
             ai_cmds::filetr_page_layout,
             ai_cmds::filetr_edit,
             ai_cmds::filetr_block_adjust,
+            ai_cmds::filetr_block_style,
+            ai_cmds::filetr_replace_color,
             ai_cmds::filetr_retranslate,
             ai_cmds::filetr_plan,
             ai_cmds::filetr_recent,
@@ -738,6 +741,8 @@ pub fn run() {
             media_cmds::video_color,
             media_cmds::video_preview,
             media_cmds::audio_fx_preview,
+            tool_preview::tool_frame_preview,
+            tool_preview::tool_trial,
             edit::cmds::edit_probe,
             edit::cmds::edit_thumb,
             edit::cmds::edit_preview_url,

@@ -1,13 +1,21 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { api, errorKind, errorText, events } from '../api'
 import { clone } from '../utils/merge3'
 import type { AppInfo, BatchRequest, ErrorKind, HistoryItem, LockStatus, MediaInfo, Settings, TaskSnapshot } from '../types'
 
-export type ViewName = 'parse' | 'queue' | 'subs' | 'live' | 'screen' | 'filetr' | 'library' | 'vocab' | 'tools' | 'safebox' | 'settings'
+export type ViewName = 'parse' | 'queue' | 'subs' | 'live' | 'screen' | 'filetr' | 'library' | 'vocab' | 'tools' | 'settings'
 export type LibraryTab = 'files' | 'inbox' | 'transfer' | 'history'
 export type ToolboxTab = 'video' | 'normalize' | 'edit' | 'lut' | 'subtitle' | 'tags' | 'ai'
 export type SettingsTab = 'download' | 'parse' | 'network' | 'accounts' | 'phone' | 'ai' | 'automation' | 'security' | 'components' | 'diagnostics' | 'general'
+
+function readNavOpen(): boolean {
+  try {
+    return localStorage.getItem('clearclip.toolbox.nav') === '1'
+  } catch {
+    return false
+  }
+}
 
 /** 设置、主题与当前页面。 */
 export const useAppStore = defineStore('app', () => {
@@ -31,6 +39,26 @@ export const useAppStore = defineStore('app', () => {
   const pendingParse = ref<string | null>(null)
   /** 请求工具箱打开并预选文件（媒体库里的“用工具箱处理”）；处理后清空 */
   const toolboxRequest = ref<{ paths: string[]; tool?: string; tab?: ToolboxTab; aiMode?: 'transcribe' | 'summarize' | 'correct'; hint?: string; lut?: string } | null>(null)
+
+  /** 工具箱的文件篮：所有工具共用，换工具文件不丢 */
+  const toolFiles = ref<string[]>([])
+  /** 进工具箱之前所在的页面（工具箱的返回按钮回到这里） */
+  const toolsFrom = ref<ViewName>('parse')
+  watch(view, (n, o) => {
+    if (n === 'tools' && o !== 'tools') toolsFrom.value = o
+  })
+  /** 文件翻译正在版面里调整：主导航和左栏都收起来，给页面让地方 */
+  const layoutWork = ref(false)
+  /** 工具箱里主导航是否展开（默认收成图标条），记住选择 */
+  const navOpen = ref(readNavOpen())
+  function setNavOpen(v: boolean) {
+    navOpen.value = v
+    try {
+      localStorage.setItem('clearclip.toolbox.nav', v ? '1' : '0')
+    } catch {
+      /* 存不了就只在这次有效 */
+    }
+  }
 
   /** 请求文件翻译页翻译这些文件（媒体库里字幕的“翻译字幕”）；处理后清空 */
   const filetrRequest = ref<string[] | null>(null)
@@ -141,7 +169,7 @@ export const useAppStore = defineStore('app', () => {
   }
   media.addEventListener('change', applyTheme)
 
-  return { homeMode, filetrRequest, goFiletr, settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, queueBatch, goQueueBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme, settingsRev }
+  return { homeMode, filetrRequest, goFiletr, settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, queueBatch, goQueueBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, toolFiles, toolsFrom, navOpen, layoutWork, setNavOpen, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme, settingsRev }
 })
 
 /** 下载队列，监听后端事件保持同步。 */
