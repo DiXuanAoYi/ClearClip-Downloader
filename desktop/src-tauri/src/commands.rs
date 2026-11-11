@@ -553,6 +553,10 @@ pub async fn subs_add(app: AppHandle, url: String, title: Option<String>, settin
 pub fn subs_update(app: AppHandle, state: St<'_>, id: i64, title: String, settings: subs::SubSettings) -> AppResult<()> {
     let mut settings = settings;
     settings.normalize();
+    // 取法是程序自己记的，界面不管它：保留原来的，免得改一次设置就被当成“取法变了”
+    if let Some(old) = state.db.sub_get(id)? {
+        settings.list_route = old.settings.list_route;
+    }
     state.db.sub_update(id, title.trim(), &settings)?;
     let _ = app.emit(subs::EVT_SUBS, ());
     Ok(())
@@ -1238,8 +1242,10 @@ pub async fn test_route(state: St<'_>, url: String) -> AppResult<crate::net::Rou
 // ---------- 诊断 ----------
 
 /// 生成诊断信息（已隐去 Cookie 和令牌），用户可以复制后反馈问题。
+/// `summary` 为 true 时日志只保留警告和错误（“复制摘要”）。连续重复的日志行合成一行。
 #[tauri::command]
-pub async fn get_diagnostics(app: AppHandle, state: St<'_>) -> AppResult<String> {
+pub async fn get_diagnostics(app: AppHandle, state: St<'_>, summary: Option<bool>) -> AppResult<String> {
+    let summary = summary.unwrap_or(false);
     let s = state.settings();
     let tasks = state.downloads.snapshots();
     let count = |st: download::TaskStatus| tasks.iter().filter(|t| t.status == st).count();
@@ -1247,7 +1253,30 @@ pub async fn get_diagnostics(app: AppHandle, state: St<'_>) -> AppResult<String>
     let mut out = String::new();
     out.push_str(&format!("清影 ClearClip {}\n", app.package_info().version));
     out.push_str(&format!("系统：{} {}\n", std::env::consts::OS, std::env::consts::ARCH));
-    out.push_str(&format!("时间：{}\n\n", chrono::Utc::now().to_rfc3339()));
+    out.push_str(&format!("时间：{}\n", chrono::Utc::now().to_rfc3339()));
+    // 网页组件（Windows 上是 WebView2）：屏幕翻译、写作浮标等新窗口打不开时，先看它的版本和状态
+    let webview = tauri::webview_version().unwrap_or_else(|e| format!("读不到（{e}）"));
+    let broken = if crate::webhealth::is_broken() { "，新窗口打不开（已断开，重启清影可恢复）" } else { "" };
+    out.push_str(&format!("网页组件：{webview}{broken}\n"));
+    let mut comps = Vec::new();
+    for t in tools::Tool::all() {
+        let ts = tools::status(&state, t).await;
+        let v = match &ts.version {
+            Some(v) => format!("{v}{}", ts.edition.map(|e| format!("（{e}）")).unwrap_or_default()),
+            None => "未安装".to_string(),
+        };
+        comps.push(format!("{} {v}", ts.id));
+    }
+    out.push_str(&format!("组件：{}\n", comps.join("，")));
+    let phone = &s.phone;
+    let now = chrono::Utc::now().timestamp();
+    let last = phone.devices.iter().map(|d| d.last_seen).max();
+    out.push_str(&format!(
+        "本机服务（手机 / 扩展）：{}，已配对 {} 台设备{}\n\n",
+        if phone.enabled { "开启" } else { "关闭" },
+        phone.devices.len(),
+        last.map(|t| format!("，最近一次连接在 {} 分钟前", (now - t).max(0) / 60)).unwrap_or_default()
+    ));
     out.push_str(&format!(
         "设置：解析模式 {:?}，远程 API {}，并发 {}，重试 {} 次，自动继续 {}，剪贴板监听 {}，录制样本 {}\n",
         s.parse_mode,
@@ -1271,8 +1300,12 @@ pub async fn get_diagnostics(app: AppHandle, state: St<'_>) -> AppResult<String>
     for t in tasks.iter().filter(|t| t.status == download::TaskStatus::Failed).take(10) {
         out.push_str(&format!("  失败：[{}] {:?} {}\n", t.platform, t.error_kind, t.error.as_deref().unwrap_or("")));
     }
-    out.push_str("\n最近日志：\n");
-    out.push_str(&diagnostics::log_tail(&state.log_dir, 200));
+    out.push_str(if summary {
+        "\n最近的警告和错误（连续重复的合成一行）：\n"
+    } else {
+        "\n最近日志（连续重复的合成一行）：\n"
+    });
+    out.push_str(&diagnostics::log_tail(&state.log_dir, if summary { 80 } else { 300 }, summary));
     Ok(diagnostics::redact(&out))
 }
 

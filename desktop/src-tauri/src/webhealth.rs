@@ -9,10 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// 界面上看到的说明（也用作屏幕翻译等功能开始失败时的报错）。
-pub const HINT: &str = "清影的窗口组件（WebView2）已经断开，新窗口打不开，所以屏幕翻译、写作浮标这类要新开窗口的功能暂时用不了。最常见的原因是系统刚更新了 WebView2 运行时。完全退出清影（托盘图标右键 → 退出）再重新打开就能恢复；也可以点设置里的“重启清影”。";
+pub const HINT: &str = "清影的窗口组件（WebView2）已经断开，新窗口打不开，所以屏幕翻译、写作浮标这类要新开窗口的功能暂时用不了。最常见的原因是系统刚更新了 WebView2 运行时。重启清影就能恢复（托盘图标右键 → 重启清影）。";
 
 /// 事件名：主窗口收到后弹出“重启清影”的提示。
 pub const EVT_BROKEN: &str = "webview://broken";
@@ -49,11 +49,33 @@ pub fn note_failure(app: &AppHandle, what: &str, err: &dyn std::fmt::Display) ->
     if last.map_or(true, |t| now.duration_since(t) >= QUIET) {
         *last = Some(now);
         log::warn!("窗口组件（WebView2）已断开，{what}打不开：{err}。需要重启清影才能恢复");
-        let _ = app.emit(EVT_BROKEN, HINT);
+        // 主窗口开着：在主窗口里弹提示；主窗口收在托盘里（看不到）：用系统自己的对话框，不需要网页组件
+        let main_visible = app.get_webview_window("main").and_then(|w| w.is_visible().ok()).unwrap_or(false);
+        if main_visible {
+            let _ = app.emit(EVT_BROKEN, HINT);
+        } else {
+            ask_restart_native(app);
+        }
     } else {
         log::debug!("窗口组件仍然断开，{what}打不开");
     }
     true
+}
+
+/// 用系统对话框问要不要重启（不依赖网页组件，组件断开时也能弹出来）。
+pub fn ask_restart_native(app: &AppHandle) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let app2 = app.clone();
+    app.dialog()
+        .message(HINT)
+        .title("清影：窗口组件断开了")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom("重启清影".into(), "稍后".into()))
+        .show(move |restart| {
+            if restart {
+                app2.restart();
+            }
+        });
 }
 
 /// 窗口开成功了：说明组件是好的。
