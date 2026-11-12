@@ -25,7 +25,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const check = process.argv.includes('--check')
   const before = snapshot()
   fs.rmSync(dir, { recursive: true, force: true })
-  execFileSync('cargo', ['test', '--lib', 'export_bindings', '--quiet'], { cwd: path.join(root, 'src-tauri'), stdio: 'inherit' })
+  // 单线程：多个类型都会顺带导出它们依赖的类型，并行时会同时写同一个文件
+  execFileSync('cargo', ['test', '--lib', 'export_bindings', '--quiet', '--', '--test-threads=1'], { cwd: path.join(root, 'src-tauri'), stdio: 'inherit' })
   for (const f of Object.keys(snapshot())) {
     const p = path.join(dir, f)
     fs.writeFileSync(p, normalize(fs.readFileSync(p, 'utf8')))
