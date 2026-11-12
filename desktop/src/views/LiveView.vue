@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -144,55 +144,69 @@ async function openRecs(r: LiveRoom) {
   recs.value = await api.liveRecordings(r.id).catch(() => [])
 }
 
+const recordingCount = computed(() => rooms.value.filter((x) => x.state === 'recording').length)
 const REC_STATUS: Record<string, string> = { recording: '录制中', done: '已完成', error: '异常结束', interrupted: '程序退出时中断' }
 </script>
 
 <template>
-  <div class="page">
-    <div class="head">
-      <h2>直播</h2>
-      <span class="mute small">开播自动录制，下播自动结束</span>
-      <span class="spacer" />
-      <span class="mute small">自动删除</span>
-      <el-input-number :model-value="app.settings?.liveCleanupDays ?? 0" :min="0" :max="3650" size="small" @change="(v: number | undefined) => app.patch({ liveCleanupDays: v ?? 0 })" />
-      <span class="mute small">天前的录像（0 不删）</span>
-      <span class="mute small">同时录制上限</span>
-      <el-input-number :model-value="app.settings?.liveMaxRecordings ?? 3" :min="1" :max="10" size="small" @change="setMax" />
-      <el-button type="primary" size="small" @click="openAdd">添加直播间</el-button>
+  <div class="dpage page">
+    <div class="dtop">
+      <h1>直播</h1>
+      <span class="dspacer" />
+      <span v-if="recordingCount" class="chip acc"><i class="ddot red" />{{ recordingCount }} 路录制中</span>
     </div>
 
-    <div v-if="!rooms.length" class="empty mute">
-      还没有直播间。点“添加直播间”，粘贴直播间链接（B站、抖音、快手、虎牙原生支持；斗鱼、YouTube、Twitch 等通过 yt-dlp；也可以直接填 .flv / .m3u8 直播流地址）。
-    </div>
-
-    <div class="grid">
-      <div v-for="r in rooms" :key="r.id" class="room card" :class="r.state">
-        <div class="cover">
-          <img v-if="r.cover" :src="r.cover" referrerpolicy="no-referrer" alt="" />
-          <span class="badge" :class="r.state">{{ STATE[r.state] ?? r.state }}<template v-if="r.state === 'recording'"> {{ elapsed(r) }}</template></span>
-          <span v-if="!r.monitoring" class="badge paused">监控已暂停</span>
-        </div>
-        <div class="body">
-          <div class="who">
-            <img v-if="r.avatar" :src="r.avatar" class="avatar" referrerpolicy="no-referrer" alt="" />
-            <b class="ellipsis">{{ r.streamer }}</b>
-            <span class="chip">{{ r.platformName }}</span>
-          </div>
-          <div class="title ellipsis" :title="r.title">{{ r.title || '—' }}</div>
-          <small v-if="r.state === 'recording'" class="mono mute">已录 {{ formatBytes(r.recBytes) }} · 第 {{ r.recSegments }} 段</small>
-          <small v-else class="mute">{{ r.lastCheck ? `上次检测 ${formatDateTime(r.lastCheck)}` : '等待检测' }} · 每 {{ r.settings.checkIntervalS }} 秒<template v-if="!r.settings.autoRecord"> · 只提醒不录制</template></small>
-          <small v-if="r.error" class="err ellipsis" :title="r.error">{{ r.error }}</small>
-          <div class="actions">
-            <el-button v-if="r.state === 'recording'" size="small" type="danger" plain @click="run(api.liveStop, r.id)">停止录制</el-button>
-            <el-button v-else size="small" type="primary" plain :disabled="r.state === 'offline' && !!r.lastCheck" @click="run(api.liveStart, r.id)">立即录制</el-button>
-            <el-button v-if="r.recFile" size="small" link @click="run(api.revealFile, r.recFile!)">文件夹</el-button>
-            <el-button size="small" link @click="run(api.liveSetMonitoring, r.id, !r.monitoring)">{{ r.monitoring ? '暂停监控' : '继续监控' }}</el-button>
-            <el-button size="small" link @click="openRecs(r)">录像</el-button>
-            <el-button size="small" link @click="openEdit(r)">编辑</el-button>
-            <el-button size="small" link @click="remove(r)">删除</el-button>
-          </div>
-        </div>
+    <section class="dpanel">
+      <div class="dtoolbar">
+        <el-button type="primary" @click="openAdd">添加直播间</el-button>
+        <span class="dnote">开播自动录制，下播自动结束。</span>
       </div>
+    </section>
+
+    <div class="dsplit">
+      <section class="dpanel">
+        <div class="dpanel-h"><h2>直播间</h2><span class="eyebrow">{{ rooms.length }} 个 · 录制中 {{ recordingCount }}</span></div>
+        <div v-if="!rooms.length" class="empty mute">
+          还没有直播间。点“添加直播间”，粘贴直播间链接（B站、抖音、快手、虎牙原生支持；斗鱼、YouTube、Twitch 等通过 yt-dlp；也可以直接填 .flv / .m3u8 直播流地址）。
+        </div>
+        <div class="dlist">
+          <div v-for="r in rooms" :key="r.id" class="room ditem" :class="r.state">
+            <div class="cover dthumb">
+              <img v-if="r.cover" :src="r.cover" referrerpolicy="no-referrer" alt="" />
+            </div>
+            <div class="body grow">
+              <div class="who">
+                <img v-if="r.avatar" :src="r.avatar" class="avatar" referrerpolicy="no-referrer" alt="" />
+                <b class="ellipsis">{{ r.streamer }}</b>
+                <span class="chip">{{ r.platformName }}</span>
+                <span v-if="!r.monitoring" class="chip acc">监控已暂停</span>
+              </div>
+              <div class="title ellipsis" :title="r.title">{{ r.title || '—' }}</div>
+              <small v-if="r.state === 'recording'" class="mono mute">已录 {{ formatBytes(r.recBytes) }} · 第 {{ r.recSegments }} 段 · {{ elapsed(r) }}</small>
+              <small v-else class="mute">{{ r.lastCheck ? `上次检测 ${formatDateTime(r.lastCheck)}` : '等待检测' }} · 每 {{ r.settings.checkIntervalS }} 秒<template v-if="!r.settings.autoRecord"> · 只提醒不录制</template></small>
+              <small v-if="r.error" class="err ellipsis" :title="r.error">{{ r.error }}</small>
+              <div class="actions">
+                <el-button v-if="r.state === 'recording'" size="small" type="danger" plain @click="run(api.liveStop, r.id)">停止录制</el-button>
+                <el-button v-else size="small" type="primary" plain :disabled="r.state === 'offline' && !!r.lastCheck" @click="run(api.liveStart, r.id)">立即录制</el-button>
+                <el-button v-if="r.recFile" size="small" link @click="run(api.revealFile, r.recFile!)">文件夹</el-button>
+                <el-button size="small" link @click="run(api.liveSetMonitoring, r.id, !r.monitoring)">{{ r.monitoring ? '暂停监控' : '继续监控' }}</el-button>
+                <el-button size="small" link @click="openRecs(r)">录像</el-button>
+                <el-button size="small" link @click="openEdit(r)">编辑</el-button>
+                <el-button size="small" link @click="remove(r)">删除</el-button>
+              </div>
+            </div>
+            <span class="chip st" :class="r.state === 'recording' ? 'acc' : r.state === 'live' ? 'cyan' : ''"><i v-if="r.state === 'recording'" class="ddot red" />{{ STATE[r.state] ?? r.state }}</span>
+          </div>
+        </div>
+      </section>
+      <aside class="side dsticky">
+        <section class="dpanel">
+          <div class="dpanel-h"><h2>录制设置</h2></div>
+          <div class="drow"><div class="t"><b>同时录制上限</b><small>超出的排队等待</small></div><div class="ctl"><el-input-number :model-value="app.settings?.liveMaxRecordings ?? 3" :min="1" :max="10" size="small" @change="setMax" /></div></div>
+          <div class="drow"><div class="t"><b>自动删除</b><small>天前的录像（0 不删）</small></div><div class="ctl"><el-input-number :model-value="app.settings?.liveCleanupDays ?? 0" :min="0" :max="3650" size="small" @change="(v: number | undefined) => app.patch({ liveCleanupDays: v ?? 0 })" /></div></div>
+          <p class="dnote">录制格式为 FLV / TS：程序意外退出或断电时，已录部分仍可播放。每个直播间的画质、分段、预约时段和保存位置在“编辑”里设置。</p>
+        </section>
+      </aside>
     </div>
 
     <el-dialog :model-value="!!editing" :title="editing?.id === null ? '添加直播间' : '编辑直播间'" width="560px" append-to-body @close="editing = null">
@@ -288,27 +302,10 @@ const REC_STATUS: Record<string, string> = { recording: '录制中', done: '已�
 </template>
 
 <style scoped>
-.page {
-  padding: 20px 24px;
+.side {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 1080px;
-}
-.head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.head :deep(.el-button) {
-  margin-left: 0;
-}
-h2 {
-  margin: 0;
-  font-size: 16px;
-}
-.spacer {
-  flex: 1;
+  gap: 18px;
 }
 .small {
   font-size: 12px;
@@ -318,52 +315,21 @@ h2 {
   text-align: center;
   line-height: 1.8;
 }
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
-}
 .room {
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  align-items: flex-start;
 }
 .cover {
-  position: relative;
-  height: 140px;
-  background: var(--cc-line);
+  width: 130px;
 }
 .cover img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.badge {
-  position: absolute;
-  left: 8px;
-  top: 8px;
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-family: var(--cc-mono);
-}
-.badge.recording {
-  background: #d83b3b;
-}
-.badge.live {
-  background: var(--cc-ok);
-}
-.badge.error {
-  background: #b26a00;
-}
-.badge.paused {
-  left: auto;
-  right: 8px;
+.st {
+  flex: none;
 }
 .body {
-  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -382,6 +348,7 @@ h2 {
 }
 .title {
   font-size: 12.5px;
+  color: var(--cc-fg2);
 }
 .body small {
   font-size: 11px;

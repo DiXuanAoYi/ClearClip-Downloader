@@ -15,6 +15,16 @@ import type { ErrorKind } from '../types'
 
 const app = useAppStore()
 const subs = ref<Subscription[]>([])
+const selId = ref<number | null>(null)
+const selected = computed(() => subs.value.find((x) => x.id === selId.value) ?? subs.value[0] ?? null)
+const recent = computed(() =>
+  subs.value
+    .filter((x) => x.lastCheck)
+    .sort((a, b) => (b.lastCheck ?? 0) - (a.lastCheck ?? 0))
+    .slice(0, 5)
+    .map((x) => ({ id: x.id, cls: x.status === 'error' ? 'red' : x.status === 'paused' ? 'amber' : '', text: x.status === 'error' ? `${x.title} · ${x.lastError ?? '检查失败'}` : x.newCount ? `${x.title} · 新内容 ${x.newCount} 个` : `${x.title} · 已检查，没有新内容`, when: relative(x.lastCheck) })),
+)
+const QUALITY_TEXT: Record<string, string> = { best: '最高画质', max1080: '不超过 1080P', small: '省空间（≤720P）', audio: '只要音频' }
 let unlisten: UnlistenFn | undefined
 
 const DEFAULTS: SubSettings = SUB_DEFAULTS
@@ -230,16 +240,15 @@ const ITEM_STATUS: Record<string, string> = { seen: '订阅前已发布', pendin
 </script>
 
 <template>
-  <div class="page">
-    <div class="head">
-      <h2>订阅</h2>
-      <span class="mute small">关注频道、UP 主、画师、合集，有新内容自动下载</span>
-      <span class="spacer" />
-      <el-button v-if="app.settings?.subscriptionsEnabled" type="primary" size="small" @click="openAdd">添加订阅</el-button>
+  <div class="dpage page">
+    <div class="dtop">
+      <h1>订阅</h1>
+      <span class="dspacer" />
+      <span v-if="app.settings?.subscriptionsEnabled" class="chip cyan"><i class="ddot" />开启订阅 · 托盘运行</span>
     </div>
 
-    <section v-if="!app.settings?.subscriptionsEnabled" class="card intro">
-      <h3>订阅与追更</h3>
+    <section v-if="!app.settings?.subscriptionsEnabled" class="dpanel intro">
+      <div class="dpanel-h"><h2>订阅与追更</h2></div>
       <p>添加 YouTube 频道 / 播放列表、B站 UP 主空间、Pixiv 画师、抖音用户主页，或任何 yt-dlp 能列出条目的列表页，清影会定期检查，有新内容时自动下载。</p>
       <ul class="mute">
         <li>每个订阅单独设置检查间隔（默认 6 小时）、过滤条件、清晰度和保存位置</li>
@@ -250,33 +259,61 @@ const ITEM_STATUS: Record<string, string> = { seen: '订阅前已发布', pendin
     </section>
 
     <template v-else>
-      <div v-if="!subs.length" class="empty mute">还没有订阅。点“添加订阅”，粘贴频道、UP 主空间或播放列表的链接。</div>
-      <div class="list">
-        <div v-for="s in subs" :key="s.id" class="sub card" :class="s.status">
-          <img v-if="s.avatar" :src="s.avatar" class="avatar" referrerpolicy="no-referrer" alt="" />
-          <div v-else class="avatar initial">{{ s.title.slice(0, 1) }}</div>
-          <div class="info">
-            <div class="title">
-              <span class="ellipsis" :title="s.title">{{ s.title }}</span>
-              <span class="chip">{{ s.platformName }}</span>
-              <span v-if="s.newCount" class="chip acc">{{ s.newCount }} 个新内容</span>
-            </div>
-            <small class="mute">
-              <span :class="{ err: s.status === 'error', ok: s.status === 'active' && !s.checking }">{{ statusText(s) }}</span>
-              · 上次检查 {{ relative(s.lastCheck) }}<template v-if="s.status === 'active'"> · 下次 {{ relative(s.nextCheck) }}</template>
-              · 每 {{ s.settings.intervalHours }} 小时 · 已下载 {{ s.downloaded }}<template v-if="s.pending"> · 待确认 {{ s.pending }}</template>
-            </small>
-            <small v-if="s.lastError" class="err ellipsis" :title="s.lastError">{{ s.lastError }}</small>
-          </div>
-          <div class="actions">
-            <el-button link size="small" type="primary" :loading="s.checking" @click="checkNow(s)">立即检查</el-button>
-            <el-button link size="small" @click="openDetail(s)">内容</el-button>
-            <el-button v-if="s.status === 'active'" link size="small" @click="run(api.subsSetPaused, s.id, true)">暂停</el-button>
-            <el-button v-else link size="small" type="primary" @click="run(api.subsSetPaused, s.id, false)">{{ s.status === 'error' ? '恢复' : '继续' }}</el-button>
-            <el-button link size="small" @click="openEdit(s)">编辑</el-button>
-            <el-button link size="small" @click="remove(s)">删除</el-button>
-          </div>
+      <section class="dpanel">
+        <div class="dtoolbar">
+          <el-button type="primary" @click="openAdd">添加订阅</el-button>
+          <span class="dnote">关注频道、UP 主、画师、合集，有新内容自动下载。每个订阅单独设置检查间隔、过滤条件、清晰度和保存位置。</span>
         </div>
+      </section>
+      <div class="dsplit">
+        <section class="dpanel">
+          <div class="dpanel-h"><h2>订阅与追更</h2><span class="eyebrow">{{ subs.length }} 个订阅</span></div>
+          <div v-if="!subs.length" class="empty mute">还没有订阅。点“添加订阅”，粘贴频道、UP 主空间或播放列表的链接。</div>
+          <div class="list dlist">
+            <div v-for="s in subs" :key="s.id" class="sub ditem" :class="[s.status, { sel: selected?.id === s.id }]" @click="selId = s.id">
+              <img v-if="s.avatar" :src="s.avatar" class="avatar" referrerpolicy="no-referrer" alt="" />
+              <div v-else class="avatar initial">{{ s.title.slice(0, 1) }}</div>
+              <div class="info grow">
+                <div class="title">
+                  <span class="ellipsis" :title="s.title">{{ s.title }}</span>
+                  <span class="chip">{{ s.platformName }}</span>
+                  <span v-if="s.newCount" class="chip acc">新 {{ s.newCount }}</span>
+                </div>
+                <small class="mute">
+                  <span :class="{ err: s.status === 'error', ok: s.status === 'active' && !s.checking }">{{ statusText(s) }}</span>
+                  · 上次检查 {{ relative(s.lastCheck) }}<template v-if="s.status === 'active'"> · 下次 {{ relative(s.nextCheck) }}</template>
+                  · 每 {{ s.settings.intervalHours }} 小时 · 已下载 {{ s.downloaded }}<template v-if="s.pending"> · 待确认 {{ s.pending }}</template>
+                </small>
+                <small v-if="s.lastError" class="err ellipsis" :title="s.lastError">{{ s.lastError }}</small>
+              </div>
+              <div class="actions" @click.stop>
+                <el-button link size="small" type="primary" :loading="s.checking" @click="checkNow(s)">立即检查</el-button>
+                <el-button link size="small" @click="openDetail(s)">内容</el-button>
+                <el-button v-if="s.status === 'active'" link size="small" @click="run(api.subsSetPaused, s.id, true)">暂停</el-button>
+                <el-button v-else link size="small" type="primary" @click="run(api.subsSetPaused, s.id, false)">{{ s.status === 'error' ? '恢复' : '继续' }}</el-button>
+                <el-button link size="small" @click="openEdit(s)">编辑</el-button>
+                <el-button link size="small" @click="remove(s)">删除</el-button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <aside class="side dsticky">
+          <section v-if="selected" class="dpanel">
+            <div class="dpanel-h"><h2>{{ selected.title }}</h2><span class="dspacer" /><el-button size="small" @click="openEdit(selected)">编辑</el-button></div>
+            <div class="drow"><div class="t"><b>检查间隔</b><small>每次检查会随机提前或推迟几分钟</small></div><div class="ctl mono">{{ selected.settings.intervalHours }} 小时</div></div>
+            <div class="drow"><div class="t"><b>清晰度</b><small>留空时跟随全局设置</small></div><div class="ctl">{{ QUALITY_TEXT[selected.settings.quality ?? ''] ?? '跟随全局' }}</div></div>
+            <div class="drow"><div class="t"><b>保存位置</b><small class="mono selectable">{{ selected.settings.dir || '下载目录 / 订阅名称' }}</small></div></div>
+            <div class="drow"><div class="t"><b>有新内容时通知</b></div><div class="ctl"><span class="chip" :class="{ cyan: selected.settings.notify }">{{ selected.settings.notify ? '已开启' : '已关闭' }}</span></div></div>
+            <p class="dnote">已下载、已忽略的条目不会重复下载；连续失败会自动暂停并通知。</p>
+          </section>
+          <section class="dpanel">
+            <div class="dpanel-h"><h2>最近动态</h2></div>
+            <div v-if="!recent.length" class="dnote">还没有动态。</div>
+            <div class="dlist">
+              <div v-for="r in recent" :key="r.id" class="ditem"><i class="ddot" :class="r.cls" /><span class="grow ellipsis" :title="r.text">{{ r.text }}</span><span class="mono dnote">{{ r.when }}</span></div>
+            </div>
+          </section>
+        </aside>
       </div>
     </template>
 
@@ -380,30 +417,22 @@ const ITEM_STATUS: Record<string, string> = { seen: '订阅前已发布', pendin
 </template>
 
 <style scoped>
-.page {
-  padding: 20px 24px;
+.side {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 980px;
+  gap: 18px;
 }
-.head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
+.sub {
+  cursor: pointer;
 }
-h2 {
-  margin: 0;
-  font-size: 16px;
+.sub.sel {
+  border-color: var(--cc-amber-line);
 }
 .spacer {
   flex: 1;
 }
 .small {
   font-size: 12px;
-}
-.intro {
-  padding: 18px 20px;
 }
 .intro h3 {
   margin: 0 0 8px;
@@ -423,18 +452,7 @@ h2 {
   padding: 40px 0;
   text-align: center;
 }
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.sub {
-  display: grid;
-  grid-template-columns: 44px 1fr auto;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 12px;
-}
+
 .sub.paused,
 .sub.error {
   opacity: 0.85;

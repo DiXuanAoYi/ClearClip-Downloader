@@ -719,3 +719,43 @@ html:not(.dark) .el-button.pz-strong:not(.is-disabled) {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+/* 进度条（自己画的）：青色；.amber 暂停 / 排队；.red 失败 */
+.dprog {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--cc-inset);
+  overflow: hidden;
+}
+.dprog i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--cc-cyan);
+  box-shadow: 0 0 10px var(--cc-cyan);
+  transition: width 0.25s;
+}
+.dprog.amber i {
+  background: var(--cc-amber);
+  box-shadow: 0 0 10px var(--cc-amber);
+}
+.dprog.red i {
+  background: var(--cc-err);
+  box-shadow: 0 0 10px var(--cc-err);
+}
+.dprog.mute i {
+  background: var(--cc-dot);
+  box-shadow: none;
+}
+/* 缩略图（16:9） */
+.dthumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid var(--cc-line-strong);
+  background: linear-gradient(160deg, #10224a, #2c4f8f 55%, #e58a3c);
+  flex: none;
+  object-fit: cover;
+  display: block;
+}
