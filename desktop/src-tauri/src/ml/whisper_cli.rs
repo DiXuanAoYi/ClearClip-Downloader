@@ -96,7 +96,8 @@ pub fn extract_flat(zip_path: &Path, dest: &Path) -> AppResult<PathBuf> {
             continue;
         }
         // 只取文件名，丢掉目录部分：既摊平了 Release/，也挡住 ../ 之类的路径
-        let Some(name) = f.name().rsplit(['/', '\\']).next().map(str::to_string).filter(|n| !n.is_empty() && n != "..") else { continue };
+        let full = f.name().map(|n| n.into_owned()).unwrap_or_default();
+        let Some(name) = full.rsplit(['/', '\\']).next().map(str::to_string).filter(|n| !n.is_empty() && n != "..") else { continue };
         let lower = name.to_ascii_lowercase();
         if !(lower.ends_with(".exe") || lower.ends_with(".dll") || lower.ends_with(".txt") || lower == "whisper-cli") {
             continue;
