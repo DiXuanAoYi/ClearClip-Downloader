@@ -37,6 +37,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const diff = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((f) => before[f] !== after[f])
     if (diff.length) {
       console.error('生成的类型和已提交的不一致，请运行 npm run gen:types 后提交：' + diff.join('、'))
+      for (const f of diff) {
+        const a = (before[f] ?? '').split('\n')
+        const b = (after[f] ?? '').split('\n')
+        const i = a.findIndex((line, k) => line !== b[k])
+        console.error(`--- ${f} 第 ${i + 1} 行\n  已提交：${JSON.stringify(a[i])}\n  生成的：${JSON.stringify(b[i])}`)
+      }
       process.exit(1)
     }
   }
