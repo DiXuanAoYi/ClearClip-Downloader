@@ -1,0 +1,29 @@
+name: desktop-audit
+
+# 每周查一次依赖里已公开的安全问题（npm 和 Rust）。不挡任何合并；发现问题时这个工作流会变红，GitHub 会通知仓库所有者。
+on:
+  schedule:
+    - cron: '41 20 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm audit
+        working-directory: desktop
+        run: npm audit --audit-level=high
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo audit
+        working-directory: desktop/src-tauri
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit

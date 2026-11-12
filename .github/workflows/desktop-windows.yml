@@ -1,0 +1,47 @@
+name: desktop-windows
+
+# Windows（x64）上跑 Rust 测试。desktop-ci 在 Linux 上跑测试，Windows 专有的代码（写作浮标、屏幕翻译、
+# 窗口组件）在那里不编译；cross-check 只编译 Windows ARM64，最常用的 x64 要到发版时才第一次编译。
+# 这里在 main 上每次合并后、每天一次、以及手动运行时检查；不拦 PR（Windows 的 runner 慢，约 10 分钟以上）。
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop-windows.yml']
+  schedule:
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+          key: windows-x64-test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      # tauri::generate_context! 需要前端产物存在
+      - run: npm run build
+
+      - name: Rust tests (Windows x64)
+        working-directory: desktop/src-tauri
+        run: cargo test --locked --lib

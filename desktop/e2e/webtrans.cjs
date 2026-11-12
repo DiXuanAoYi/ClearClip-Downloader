@@ -29,7 +29,7 @@ const PAGE = `<!doctype html><title>News</title><body style="margin:0">
 </body>`
 
 ;(async () => {
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })
   const ctx = await browser.newContext({ viewport: { width: 1000, height: 700 } })
   await ctx.route('https://news.test/**', (route) => route.fulfill({ contentType: 'text/html; charset=utf-8', body: PAGE }))
   await ctx.route('https://zh.test/**', (route) => route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<!doctype html><title>中文</title><body><p>这是一个完全由中文写成的页面，里面没有任何英文内容。</p><p>第二段也是中文，应该被自动翻译跳过。</p></body>' }))

@@ -177,4 +177,28 @@ mod tests {
         assert!(text.contains("token=***") && !text.contains("sign=s"));
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    /// tests/fixtures/real/ 里的真实响应样本：不能带 Cookie、令牌、手机号、邮箱，JSON 样本要能解析。
+    #[test]
+    fn real_fixtures_are_clean() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/real");
+        let phone = Regex::new(r"(?:^|[^0-9])1[3-9][0-9]{9}(?:$|[^0-9])").unwrap();
+        let email = Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}").unwrap();
+        for e in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = e.path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let ext = path.extension().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
+            if !matches!(ext.as_str(), "json" | "html") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert_eq!(redact(&text), text, "{name} 里还有 Cookie 或令牌");
+            assert!(!phone.is_match(&text), "{name} 里有手机号");
+            let found: Vec<_> = email.find_iter(&text).map(|m| m.as_str()).filter(|m| *m != "user@example.com").collect();
+            assert!(found.is_empty(), "{name} 里有邮箱 {found:?}");
+            if ext == "json" && !name.ends_with(".meta.json") {
+                serde_json::from_str::<serde_json::Value>(&text).unwrap_or_else(|e| panic!("{name} 不是合法的 JSON：{e}"));
+            }
+        }
+    }
 }

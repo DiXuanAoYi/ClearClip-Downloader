@@ -115,7 +115,7 @@ cargo test                                      # 解析器、下载器、数据
 
 ## 发布
 
-在 GitHub 的 Actions 页面手动运行 `desktop-release`（选 `main` 分支），或推送 `desktop-v*` 标签（例如 `desktop-v0.2.0`），`.github/workflows/desktop-release.yml` 会构建 Windows x64（msi / nsis、便携版 zip）、Windows ARM64（nsis、便携版 zip，实验性：失败不影响其它平台）、macOS（Apple 芯片和 Intel 通用的一个 dmg）、Linux（AppImage / deb / rpm）和浏览器扩展 zip，并发布 Release。`desktop-ci` 会在每次提交时对 macOS 两个架构和 Windows ARM64 做编译检查。发布前先把 `tauri.conf.json`、`Cargo.toml`、`package.json` 的版本号改成一致，并在 `CHANGELOG.md` 里补上这一版的内容。
+在 GitHub 的 Actions 页面手动运行 `desktop-release`（选 `main` 分支），或推送 `desktop-v*` 标签（例如 `desktop-v0.2.0`），`.github/workflows/desktop-release.yml` 会构建 Windows x64（msi / nsis、便携版 zip）、Windows ARM64（nsis、便携版 zip，实验性：失败不影响其它平台）、macOS（Apple 芯片和 Intel 通用的一个 dmg）、Linux（AppImage / deb / rpm）和浏览器扩展 zip，并发布 Release。`desktop-ci` 会在每次提交时对 macOS 两个架构和 Windows ARM64 做编译检查。发布前先在 `CHANGELOG.md` 最上面写好这一版的内容（标题 `## x.y.z（开发中，未发版）`），再运行 `npm run release:version -- x.y.z [--ext <扩展版本>]` 改齐各处版本号（共 7 处，`npm run release:check` 检查，CI 也会检查）。Release 页面最上面会放这一版的更新记录，流水线最后的 `verify` 任务核对各平台安装包是否齐全。
 
 更新签名密钥、macOS / Windows 代码签名和扩展上架的完整步骤见 [docs/release-guide/](../docs/release-guide/README.md)。
 
