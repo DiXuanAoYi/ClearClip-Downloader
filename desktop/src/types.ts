@@ -29,24 +29,10 @@ export interface Asset {
   extra: Record<string, unknown> | null
 }
 
-export interface PlaylistEntry {
-  id: string
-  title: string
-  url: string
-  durationMs: number | null
-  thumbnail: string | null
-  index: number
-  /** 这一项本身是个列表（播放列表、合集），要展开才有视频 */
-  isList?: boolean
-  /** 列表项里大约有多少个视频 */
-  count?: number | null
-}
-
-export interface SeriesInfo {
-  name: string
-  season: number | null
-  episode: number | null
-}
+// 这两个类型由 Rust 生成（npm run gen:types），不要手改；见 docs/types-generation.md
+import type { PlaylistEntry } from './generated/PlaylistEntry'
+import type { SeriesInfo } from './generated/SeriesInfo'
+export type { PlaylistEntry, SeriesInfo }
 
 export interface MediaInfo {
   platform: string

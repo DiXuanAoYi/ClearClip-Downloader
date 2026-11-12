@@ -104,8 +104,9 @@ pub struct Asset {
 }
 
 /// 合集 / 播放列表里的一个条目。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct PlaylistEntry {
     pub id: String,
     pub title: String,
@@ -123,8 +124,9 @@ pub struct PlaylistEntry {
 }
 
 /// 剧集信息，用于 `{series}` `{episode}` 等命名变量。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct SeriesInfo {
     pub name: String,
     pub season: Option<u32>,
