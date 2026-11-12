@@ -236,7 +236,8 @@ mod tests {
         };
         let (path, notes) = apply_local(&st, &dir, &it, &rule);
         assert_eq!(notes.len(), 3, "{notes:?}");
-        assert!(path.ends_with("学习/码农老张/a.mp4"), "{path}");
+        // 用路径的组成部分比较：Windows 上分隔符是反斜杠，字符串比较会失败
+        assert!(Path::new(&path).ends_with(Path::new("学习/码农老张/a.mp4")), "{path}");
         assert!(Path::new(&path).is_file() && !file.exists(), "the file really moved");
         let after = st.library_item(id).unwrap().unwrap();
         assert_eq!(after.path, path, "the library follows the move");
