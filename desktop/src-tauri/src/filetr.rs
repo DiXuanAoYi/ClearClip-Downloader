@@ -418,7 +418,7 @@ pub fn load(path: &Path, kind: Kind) -> AppResult<Vec<Part>> {
         Kind::Epub => {
             let mut z = zip::ZipArchive::new(std::fs::File::open(path)?).map_err(|_| AppError::invalid("这不是有效的 epub 文件。"))?;
             let names: Vec<String> = (0..z.len())
-                .filter_map(|i| z.by_index(i).ok().map(|f| f.name().to_string()))
+                .filter_map(|i| z.by_index(i).ok().and_then(|f| f.name().ok().map(|n| n.into_owned())))
                 .filter(|n| {
                     let l = n.to_lowercase();
                     l.ends_with(".xhtml") || l.ends_with(".html") || l.ends_with(".htm")
@@ -446,7 +446,8 @@ pub fn load(path: &Path, kind: Kind) -> AppResult<Vec<Part>> {
 
 /// 压缩包里满足条件的条目名（按名字里的数字自然排序：slide2 在 slide10 前面）。
 fn zip_names(z: &mut zip::ZipArchive<std::fs::File>, keep: impl Fn(&str) -> bool) -> Vec<String> {
-    let mut names: Vec<String> = (0..z.len()).filter_map(|i| z.by_index(i).ok().map(|f| f.name().to_string())).filter(|n| keep(n)).collect();
+    let mut names: Vec<String> =
+        (0..z.len()).filter_map(|i| z.by_index(i).ok().and_then(|f| f.name().ok().map(|n| n.into_owned()))).filter(|n| keep(n)).collect();
     let num = |s: &str| -> (String, u64) {
         let digits: String = s.chars().filter(|c| c.is_ascii_digit()).collect();
         (s.trim_end_matches(".xml").trim_end_matches(|c: char| c.is_ascii_digit()).to_string(), digits.parse().unwrap_or(0))
@@ -475,7 +476,7 @@ fn write_zip(src: &Path, dst: &Path, replaced: &std::collections::HashMap<String
     let mut w = zip::ZipWriter::new(std::fs::File::create(dst)?);
     for i in 0..z.len() {
         let mut f = z.by_index(i).map_err(|e| AppError::msg(e.to_string()))?;
-        let name = f.name().to_string();
+        let name = f.name().map(|n| n.into_owned()).unwrap_or_default();
         let method = if name == "mimetype" { zip::CompressionMethod::Stored } else { zip::CompressionMethod::Deflated };
         let opts = zip::write::SimpleFileOptions::default().compression_method(method);
         if f.is_dir() {

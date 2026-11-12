@@ -125,7 +125,7 @@ pub fn stage_import(src: &Path, data_dir: &Path) -> AppResult<BackupInfo> {
             std::io::copy(&mut db_entry, &mut out)?;
         }
         // 用户数据（1.8 起的备份才有）：只认数据清单里登记过的名字
-        let names: Vec<String> = zip.file_names().map(str::to_string).collect();
+        let names: Vec<String> = zip.file_names().filter_map(|n| n.ok()).map(|n| n.into_owned()).collect();
         for name in names {
             let Some(rel) = name.strip_prefix(crate::datareg::BACKUP_PREFIX) else { continue };
             if !crate::datareg::restorable(rel) {
