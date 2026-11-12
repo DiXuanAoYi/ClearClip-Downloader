@@ -1283,6 +1283,8 @@ export interface SubSettings {
   notify: boolean
   keepLatest: number
   keepDays: number
+  /** 程序自己记的取列表方式，界面不用改 */
+  listRoute?: string
 }
 
 export interface Subscription {

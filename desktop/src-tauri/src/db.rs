@@ -212,6 +212,26 @@ impl Db {
             .optional()?)
     }
 
+    /// 每个平台最近一次成功解析的列表链接（播放列表、创作者主页、合集）：`(平台 id, 平台名, 链接)`，最近的在前。
+    /// 发版体检用它测列表页，不用写死示例链接（内置示例过期了会一直报红）。
+    pub fn latest_list_urls(&self) -> AppResult<Vec<(String, String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT platform, COALESCE(json_extract(info_json, '$.platformName'), platform), source_url FROM history
+             WHERE kind='playlist' AND source_url<>'' ORDER BY created_at DESC, id DESC",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))?;
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for r in rows {
+            let (p, n, u) = r?;
+            if seen.insert(p.clone()) {
+                out.push((p, n, u));
+            }
+        }
+        Ok(out)
+    }
+
     pub fn upsert_history(&self, info: &MediaInfo) -> AppResult<()> {
         let kind = match info.kind {
             MediaKind::Video => "video",
@@ -653,6 +673,42 @@ mod tests {
             assets: vec![Asset::video("https://x/v.mp4".into(), None, None)],
             ..placeholder_info()
         }
+    }
+
+    #[test]
+    fn latest_list_urls_one_per_platform_newest_first() {
+        let db = Db::open_in_memory().unwrap();
+        let mut a = sample("l1", "旧列表");
+        a.kind = MediaKind::Playlist;
+        a.platform = "youtube".into();
+        a.platform_name = "YouTube".into();
+        a.source_url = "https://www.youtube.com/playlist?list=OLD".into();
+        db.upsert_history(&a).unwrap();
+        let mut b = sample("l2", "新列表");
+        b.kind = MediaKind::Playlist;
+        b.platform = "youtube".into();
+        b.platform_name = "YouTube".into();
+        b.source_url = "https://www.youtube.com/@x/playlists".into();
+        db.upsert_history(&b).unwrap();
+        let mut c = sample("l3", "合集");
+        c.kind = MediaKind::Playlist;
+        c.platform = "bilibili".into();
+        c.platform_name = "B站".into();
+        c.source_url = "https://space.bilibili.com/9/lists/1?type=season".into();
+        db.upsert_history(&c).unwrap();
+        // 单个视频和没有链接的不算
+        let mut v = sample("v1", "视频");
+        v.source_url = "https://www.douyin.com/video/1".into();
+        db.upsert_history(&v).unwrap();
+        let mut empty = sample("l4", "没链接");
+        empty.kind = MediaKind::Playlist;
+        empty.platform = "weibo".into();
+        db.upsert_history(&empty).unwrap();
+        let got = db.latest_list_urls().unwrap();
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert_eq!(got[0].0, "bilibili", "最近的在前");
+        assert_eq!(got[0].1, "B站");
+        assert_eq!(got[1], ("youtube".to_string(), "YouTube".to_string(), "https://www.youtube.com/@x/playlists".to_string()));
     }
 
     #[test]

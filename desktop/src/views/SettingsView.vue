@@ -20,7 +20,7 @@ import SecurityPanel from '../components/SecurityPanel.vue'
 import WritingPanel from '../components/WritingPanel.vue'
 import ProtocolsPanel from '../components/ProtocolsPanel.vue'
 import type { HealthResult } from '../types'
-import { copyDiagnostics } from '../composables/diagnostics'
+import { copyDiagnostics, copyDiagnosticsSummary } from '../composables/diagnostics'
 import { LANGUAGES } from '../i18n'
 
 const app = useAppStore()
@@ -67,6 +67,23 @@ function saveDomains() {
     .map((d) => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^\*?\./, ''))
     .filter((d) => d.includes('.'))
   domainsText.value = form.value.clipboardDomains.join('\n')
+}
+
+/** 体检结果整理成文字复制出去：每行一个平台，带上链接和用时。示例链接去掉了查询参数（里面常有签名）。 */
+async function copyHealth() {
+  if (!health.value) return
+  const lines = health.value.map((h) => {
+    const mark = h.ok ? '正常' : h.sample ? '异常' : '未测'
+    const url = h.sample ? `  ${h.sample.split(/[?#]/)[0]}` : ''
+    const secs = h.millis ? `  ${(h.millis / 1000).toFixed(1)}s` : ''
+    return `[${mark}] ${h.name}${secs}${url}\n    ${h.message}`
+  })
+  try {
+    await api.copyText(`清影平台体检  ${new Date().toLocaleString()}\n${lines.join('\n')}`)
+    ElMessage.success('体检结果已复制')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
 }
 
 async function runHealth() {
@@ -576,9 +593,10 @@ function insertVar(v: string) {
         <div class="groups">
           <section class="group card">
             <h3>问题反馈</h3>
-            <p class="mute small">诊断信息包含版本、系统、设置概要、失败任务和最近日志。Cookie、令牌等敏感内容会自动隐去。</p>
+            <p class="mute small">诊断信息包含版本、系统、网页组件和 yt-dlp / ffmpeg 的版本、设置概要、失败任务和最近日志（连续重复的行合成一行）。“复制摘要”只带警告和错误，短得多。Cookie、令牌等敏感内容会自动隐去。</p>
             <div class="inline wrap">
               <el-button size="small" type="primary" @click="copyDiagnostics">复制诊断信息</el-button>
+              <el-button size="small" @click="copyDiagnosticsSummary">复制摘要</el-button>
               <el-button size="small" @click="call(api.openLogDir)">打开日志目录</el-button>
             </div>
           </section>
@@ -593,8 +611,11 @@ function insertVar(v: string) {
           </section>
           <section class="group card wide">
             <h3>平台健康检查</h3>
-            <p class="mute small">用示例链接（最近一次成功解析的链接，或内置示例）测试各平台解析是否正常，用于判断是网站改版还是网络问题。</p>
-            <div class="inline"><el-button size="small" type="primary" :loading="checkingHealth" @click="runHealth">开始检查</el-button></div>
+            <p class="mute small">用示例链接（最近一次成功解析的链接，或内置示例）测试各平台解析是否正常，用于判断是网站改版还是网络问题。列表页（播放列表、创作者主页、合集）用你最近解析成功过的链接测，并且会展开其中一个列表试一次；没解析过的就显示“没有示例链接”。每升级一个版本后跑一次，有异常就复制结果发给开发者。</p>
+            <div class="inline wrap">
+              <el-button size="small" type="primary" :loading="checkingHealth" @click="runHealth">开始检查</el-button>
+              <el-button v-if="health" size="small" @click="copyHealth">复制结果</el-button>
+            </div>
             <div v-if="health" class="health">
               <div v-for="h in health" :key="h.platform" class="hrow">
                 <span :class="h.ok ? 'okc' : h.sample ? 'err' : 'mute'">{{ h.ok ? '●' : h.sample ? '●' : '○' }}</span>

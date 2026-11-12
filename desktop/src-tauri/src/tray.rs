@@ -25,6 +25,7 @@ pub struct TrayLabels {
     show: MenuItem<Wry>,
     parse: MenuItem<Wry>,
     lock: MenuItem<Wry>,
+    restart: MenuItem<Wry>,
     quit: MenuItem<Wry>,
 }
 
@@ -35,6 +36,7 @@ pub fn apply_language(app: &AppHandle, en: bool) {
         let _ = l.show.set_text(tr(en, "显示主窗口"));
         let _ = l.parse.set_text(tr(en, "解析剪贴板"));
         let _ = l.lock.set_text(tr(en, "锁定"));
+        let _ = l.restart.set_text(tr(en, "重启清影"));
         let _ = l.quit.set_text(tr(en, "退出清影"));
     }
     if let Some(w) = app.try_state::<TrayWatchItem>() {
@@ -48,8 +50,10 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let parse = MenuItem::with_id(app, "parse", "解析剪贴板", true, None::<&str>)?;
     let watch = CheckMenuItem::with_id(app, "watch", "监听剪贴板", true, watching, None::<&str>)?;
     let lock = MenuItem::with_id(app, "lock", "锁定", true, None::<&str>)?;
+    // 窗口组件（WebView2）断开时新窗口都打不开，只有重启能恢复：托盘菜单是系统原生的，那时还能点
+    let restart = MenuItem::with_id(app, "restart", "重启清影", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出清影", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &parse, &watch, &lock, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &parse, &watch, &lock, &PredefinedMenuItem::separator(app)?, &restart, &quit])?;
     if cfg!(windows) {
         // 写作浮标的临时控制：暂停一小时、在上一个出现过浮标的程序里不再出现
         menu.insert(&MenuItem::with_id(app, "wpause", "写作浮标：暂停 1 小时", true, None::<&str>)?, 4)?;
@@ -60,7 +64,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         menu.insert(&MenuItem::with_id(app, "sc_hide", "屏幕翻译：显示 / 隐藏译文", true, None::<&str>)?, 8)?;
     }
     app.manage(TrayWatchItem(watch));
-    app.manage(TrayLabels { show: show.clone(), parse: parse.clone(), lock: lock.clone(), quit: quit.clone() });
+    app.manage(TrayLabels { show: show.clone(), parse: parse.clone(), lock: lock.clone(), restart: restart.clone(), quit: quit.clone() });
 
     let mut builder = TrayIconBuilder::with_id("main").tooltip("清影 ClearClip").menu(&menu).show_menu_on_left_click(false);
     if let Some(icon) = app.default_window_icon() {
@@ -100,6 +104,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             "sc_toggle" => crate::livetr::hotkey(app, "toggle"),
             "sc_pick" => crate::livetr::hotkey(app, "pick"),
             "sc_hide" => crate::livetr::hotkey(app, "hide"),
+            "restart" => app.restart(),
             "quit" => app.exit(0),
             _ => {}
         })

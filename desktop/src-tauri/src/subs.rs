@@ -55,6 +55,8 @@ pub struct SubSettings {
     pub keep_latest: u32,
     /// 只保留最近多少天下载的，更早的移到回收站（0 表示全部保留）
     pub keep_days: u32,
+    /// 按哪种方式取列表（listing::route_id）；空表示 1.14.1 之前建的订阅
+    pub list_route: String,
 }
 
 impl Default for SubSettings {
@@ -75,6 +77,7 @@ impl Default for SubSettings {
             notify: true,
             keep_latest: 0,
             keep_days: 0,
+            list_route: String::new(),
         }
     }
 }
@@ -478,6 +481,7 @@ pub async fn add(app: &AppHandle, url: &str, title: Option<String>, mut settings
     }
     settings.normalize();
     let url = listing::normalize_url(url.trim());
+    settings.list_route = listing::route_id(&url).into();
     let list = fetch_list(app, &url, 10).await?;
     let mut list2 = list.clone();
     if let Some(t) = title.filter(|t| !t.trim().is_empty()) {
@@ -545,9 +549,15 @@ async fn check_inner(app: &AppHandle, state: &Arc<AppState>, id: i64) -> AppResu
     let t = now();
 
     let fresh: Vec<&SubEntry> = list.entries.iter().filter(|e| !known.contains(&e.id)).collect();
+    // 取法变了（1.14.1 起 B站合集跟合集本身）：这一次列表里已有的都当成订阅前已发布，不一下子全下载
+    let rebase = listing::should_rebase(first, &sub.settings.list_route, &sub.url);
     let mut to_download: Vec<SubEntry> = vec![];
     let mut found = 0usize;
     for (i, e) in fresh.iter().enumerate() {
+        if rebase {
+            state.db.sub_item_insert(id, e, "seen", Some("订阅的取法变了，之前已有的内容不自动下载"))?;
+            continue;
+        }
         if first {
             let take = match sub.settings.first_run.as_str() {
                 "all" => true,
@@ -577,6 +587,12 @@ async fn check_inner(app: &AppHandle, state: &Arc<AppState>, id: i64) -> AppResu
         }
     }
     state.db.sub_checked(id, next_check_time(t, sub.settings.interval_hours, jitter()), found as i64)?;
+    let route = listing::route_id(&sub.url);
+    if sub.settings.list_route != route {
+        let mut settings = sub.settings.clone();
+        settings.list_route = route.into();
+        state.db.sub_update(id, &sub.title, &settings)?;
+    }
     if list.avatar.is_some() && sub.avatar.is_none() {
         let _ = state.db.conn().execute("UPDATE subscriptions SET avatar=?2 WHERE id=?1", params![id, list.avatar]);
     }
