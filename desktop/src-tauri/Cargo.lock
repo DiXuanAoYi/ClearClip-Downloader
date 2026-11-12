@@ -1113,7 +1113,7 @@ dependencies = [
 
 [[package]]
 name = "clearclip"
-version = "1.14.0"
+version = "1.15.0"
 dependencies = [
  "aes 0.8.4",
  "aes-gcm 0.10.3",
