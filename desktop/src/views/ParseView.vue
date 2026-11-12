@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../api'
 import { useAppStore, useParseStore } from '../stores/app'
-import type { Asset, BatchProgress, Settings, Clip, CreatorTabs, DetectedLink, HistoryItem, ListOptions, MediaInfo } from '../types'
+import type { Asset, BatchProgress, Settings, Clip, CreatorTabs, DetectedLink, HistoryItem, ListOptions, MediaInfo, PlaylistEntry } from '../types'
 import { formatBytes, formatDate, formatDuration } from '../utils/format'
 import { formatClock } from '../utils/time'
 import { SUB_DEFAULTS } from '../utils/subs'
@@ -587,9 +587,15 @@ function openSource() {
   if (result.value?.sourceUrl) api.openUrl(result.value.sourceUrl).catch((e) => ElMessage.error(errorText(e)))
 }
 const subscribing = ref(false)
+/** 这一栏里每一项都是列表（频道的“播放列表”、B站“合集和系列”）：整个订阅没有意义，要订阅其中某个列表 */
+const listsOnly = computed(() => isPlaylist.value && entries.value.length > 0 && entries.value.every((e) => e.isList))
 async function subscribe() {
   const r = result.value
   if (!r) return
+  if (listsOnly.value) {
+    ElMessage.info({ message: '这一栏里每一项是一个列表，不能整个订阅。在要订阅的列表那一行点“订阅”。', duration: 6000 })
+    return
+  }
   subscribing.value = true
   try {
     await api.subsAdd(r.sourceUrl, r.title || null, { ...SUB_DEFAULTS, include: [], exclude: [] })
@@ -598,6 +604,15 @@ async function subscribe() {
     ElMessage.error(errorText(e))
   } finally {
     subscribing.value = false
+  }
+}
+/** 订阅列表里的某一个列表 */
+async function subscribeList(e: PlaylistEntry) {
+  try {
+    await api.subsAdd(e.url, e.title || null, { ...SUB_DEFAULTS, include: [], exclude: [] })
+    ElMessage.success(`已订阅“${e.title}”：以后这个列表有新视频会自动下载，可以在“订阅”里改设置。`)
+  } catch (err) {
+    ElMessage.error(errorText(err))
   }
 }
 function invertImages() {
@@ -852,7 +867,7 @@ function recentKind(r: HistoryItem) {
             </button>
           </div>
           <div class="sec">
-            <PlaylistPicker v-model:selected="entrySel" v-model:only="entryOnly" v-model:total="entryTotal" :entries="entries" :downloaded="downloadedEntries" />
+            <PlaylistPicker v-model:selected="entrySel" v-model:only="entryOnly" v-model:total="entryTotal" :entries="entries" :downloaded="downloadedEntries" @subscribe="subscribeList" />
           </div>
           <div class="sec">
             <div class="pz-sh">

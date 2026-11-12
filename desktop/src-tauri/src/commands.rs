@@ -553,6 +553,10 @@ pub async fn subs_add(app: AppHandle, url: String, title: Option<String>, settin
 pub fn subs_update(app: AppHandle, state: St<'_>, id: i64, title: String, settings: subs::SubSettings) -> AppResult<()> {
     let mut settings = settings;
     settings.normalize();
+    // 取法是程序自己记的，界面不管它：保留原来的，免得改一次设置就被当成“取法变了”
+    if let Some(old) = state.db.sub_get(id)? {
+        settings.list_route = old.settings.list_route;
+    }
     state.db.sub_update(id, title.trim(), &settings)?;
     let _ = app.emit(subs::EVT_SUBS, ());
     Ok(())
@@ -752,6 +756,39 @@ pub struct HealthResult {
     kind: Option<crate::error::ErrorKind>,
 }
 
+/// 列表页体检的结论：读出来了几项、其中几项本身是列表，以及展开第一个列表的结果（`None` 表示没有需要展开的）。
+#[derive(Debug, PartialEq)]
+pub struct ListCheck {
+    pub ok: bool,
+    pub message: String,
+}
+
+/// 把“解析出的列表 + 展开第一个子列表的结果”整理成体检的一行。纯函数，不联网，可以单元测试。
+pub fn judge_list(info: &MediaInfo, expanded: Option<Result<&MediaInfo, &str>>) -> ListCheck {
+    if info.kind != MediaKind::Playlist {
+        return ListCheck {
+            ok: false, message: format!("这个链接现在解析成了单个作品（{}），不再是列表：网站可能改版，或者链接已经失效", info.title)
+        };
+    }
+    if info.entries.is_empty() {
+        return ListCheck { ok: false, message: "读出来是空的：需要登录、列表被删了，或者网站改版让解析取不到条目".into() };
+    }
+    let lists = info.entries.iter().filter(|e| e.is_list).count();
+    let head = if lists > 0 {
+        format!("{}（{} 项，其中 {lists} 项是列表）", info.title, info.entries.len())
+    } else {
+        format!("{}（{} 个视频）", info.title, info.entries.len())
+    };
+    match expanded {
+        None => ListCheck { ok: true, message: format!("列表正常：{head}") },
+        Some(Ok(sub)) if sub.kind == MediaKind::Playlist && !sub.entries.is_empty() => {
+            ListCheck { ok: true, message: format!("列表正常：{head}；展开“{}”得到 {} 个条目", sub.title, sub.entries.len()) }
+        }
+        Some(Ok(sub)) => ListCheck { ok: false, message: format!("列表读出来了：{head}；但展开“{}”是空的，或者不是列表", sub.title) },
+        Some(Err(e)) => ListCheck { ok: false, message: format!("列表读出来了：{head}；但展开其中一个失败：{e}") },
+    }
+}
+
 /// 内置示例链接（长期稳定的公开内容）；其他平台用最近一次成功解析的链接。
 const HEALTH_SAMPLES: &[(&str, &str)] =
     &[("bilibili", "https://www.bilibili.com/video/BV1GJ411x7h7"), ("yt-dlp", "https://www.youtube.com/watch?v=jNQXAC9IVRw")];
@@ -822,6 +859,73 @@ pub async fn health_check(state: St<'_>) -> AppResult<Vec<HealthResult>> {
             },
             Ok(Err(e)) => HealthResult { platform: id, name, sample, ok: false, millis, message: e.message.clone(), kind: Some(e.kind) },
             Err(_) => HealthResult { platform: id, name, sample, ok: false, millis, message: "超时".into(), kind: Some(crate::error::ErrorKind::Network) },
+        });
+    }
+    // 列表页：每个平台最近解析成功过的列表链接（播放列表、创作者主页、合集），读出来以后再展开第一个子列表试一次。
+    // 抖音 / 快手 / 小红书 / 微博的主页要用隐藏窗口读，不在这里测。
+    let lists: Vec<_> = state.db.latest_list_urls()?.into_iter().filter(|(_, _, u)| crate::weblist::classify(u).is_none()).collect();
+    if lists.is_empty() {
+        out.push(HealthResult {
+            platform: "list".into(),
+            name: "列表页（播放列表、创作者主页、合集）".into(),
+            sample: None,
+            ok: false,
+            millis: 0,
+            message: "没有示例链接：在“解析”页打开过一次播放列表、创作者主页或合集后即可检测".into(),
+            kind: None,
+        });
+    }
+    for (platform, platform_name, url) in lists {
+        let ctx = state.parse_ctx(&settings);
+        let t = std::time::Instant::now();
+        let first = tokio::time::timeout(std::time::Duration::from_secs(60), providers::resolve_url(&ctx, &url)).await;
+        let name = format!("{platform_name} · 列表页");
+        let sample = Some(url.clone());
+        let id = format!("list:{platform}");
+        let info = match first {
+            Ok(Ok(info)) => info,
+            Ok(Err(e)) => {
+                out.push(HealthResult {
+                    platform: id,
+                    name,
+                    sample,
+                    ok: false,
+                    millis: t.elapsed().as_millis() as u64,
+                    message: e.message.clone(),
+                    kind: Some(e.kind),
+                });
+                continue;
+            }
+            Err(_) => {
+                out.push(HealthResult {
+                    platform: id,
+                    name,
+                    sample,
+                    ok: false,
+                    millis: t.elapsed().as_millis() as u64,
+                    message: "超时".into(),
+                    kind: Some(crate::error::ErrorKind::Network),
+                });
+                continue;
+            }
+        };
+        let sub_url = info.entries.iter().find(|e| e.is_list).map(|e| e.url.clone());
+        let expanded = match &sub_url {
+            Some(u) => Some(match tokio::time::timeout(std::time::Duration::from_secs(60), providers::resolve_url(&state.parse_ctx(&settings), u)).await {
+                Ok(r) => r.map_err(|e| e.message),
+                Err(_) => Err("超时".to_string()),
+            }),
+            None => None,
+        };
+        let verdict = judge_list(&info, expanded.as_ref().map(|r| r.as_ref().map_err(String::as_str)));
+        out.push(HealthResult {
+            platform: id,
+            name,
+            sample,
+            ok: verdict.ok,
+            millis: t.elapsed().as_millis() as u64,
+            message: verdict.message,
+            kind: if verdict.ok { None } else { Some(crate::error::ErrorKind::ParserBroken) },
         });
     }
     Ok(out)
@@ -1238,8 +1342,10 @@ pub async fn test_route(state: St<'_>, url: String) -> AppResult<crate::net::Rou
 // ---------- 诊断 ----------
 
 /// 生成诊断信息（已隐去 Cookie 和令牌），用户可以复制后反馈问题。
+/// `summary` 为 true 时日志只保留警告和错误（“复制摘要”）。连续重复的日志行合成一行。
 #[tauri::command]
-pub async fn get_diagnostics(app: AppHandle, state: St<'_>) -> AppResult<String> {
+pub async fn get_diagnostics(app: AppHandle, state: St<'_>, summary: Option<bool>) -> AppResult<String> {
+    let summary = summary.unwrap_or(false);
     let s = state.settings();
     let tasks = state.downloads.snapshots();
     let count = |st: download::TaskStatus| tasks.iter().filter(|t| t.status == st).count();
@@ -1247,7 +1353,30 @@ pub async fn get_diagnostics(app: AppHandle, state: St<'_>) -> AppResult<String>
     let mut out = String::new();
     out.push_str(&format!("清影 ClearClip {}\n", app.package_info().version));
     out.push_str(&format!("系统：{} {}\n", std::env::consts::OS, std::env::consts::ARCH));
-    out.push_str(&format!("时间：{}\n\n", chrono::Utc::now().to_rfc3339()));
+    out.push_str(&format!("时间：{}\n", chrono::Utc::now().to_rfc3339()));
+    // 网页组件（Windows 上是 WebView2）：屏幕翻译、写作浮标等新窗口打不开时，先看它的版本和状态
+    let webview = tauri::webview_version().unwrap_or_else(|e| format!("读不到（{e}）"));
+    let broken = if crate::webhealth::is_broken() { "，新窗口打不开（已断开，重启清影可恢复）" } else { "" };
+    out.push_str(&format!("网页组件：{webview}{broken}\n"));
+    let mut comps = Vec::new();
+    for t in tools::Tool::all() {
+        let ts = tools::status(&state, t).await;
+        let v = match &ts.version {
+            Some(v) => format!("{v}{}", ts.edition.map(|e| format!("（{e}）")).unwrap_or_default()),
+            None => "未安装".to_string(),
+        };
+        comps.push(format!("{} {v}", ts.id));
+    }
+    out.push_str(&format!("组件：{}\n", comps.join("，")));
+    let phone = &s.phone;
+    let now = chrono::Utc::now().timestamp();
+    let last = phone.devices.iter().map(|d| d.last_seen).max();
+    out.push_str(&format!(
+        "本机服务（手机 / 扩展）：{}，已配对 {} 台设备{}\n\n",
+        if phone.enabled { "开启" } else { "关闭" },
+        phone.devices.len(),
+        last.map(|t| format!("，最近一次连接在 {} 分钟前", (now - t).max(0) / 60)).unwrap_or_default()
+    ));
     out.push_str(&format!(
         "设置：解析模式 {:?}，远程 API {}，并发 {}，重试 {} 次，自动继续 {}，剪贴板监听 {}，录制样本 {}\n",
         s.parse_mode,
@@ -1271,8 +1400,12 @@ pub async fn get_diagnostics(app: AppHandle, state: St<'_>) -> AppResult<String>
     for t in tasks.iter().filter(|t| t.status == download::TaskStatus::Failed).take(10) {
         out.push_str(&format!("  失败：[{}] {:?} {}\n", t.platform, t.error_kind, t.error.as_deref().unwrap_or("")));
     }
-    out.push_str("\n最近日志：\n");
-    out.push_str(&diagnostics::log_tail(&state.log_dir, 200));
+    out.push_str(if summary {
+        "\n最近的警告和错误（连续重复的合成一行）：\n"
+    } else {
+        "\n最近日志（连续重复的合成一行）：\n"
+    });
+    out.push_str(&diagnostics::log_tail(&state.log_dir, if summary { 80 } else { 300 }, summary));
     Ok(diagnostics::redact(&out))
 }
 
@@ -1373,6 +1506,64 @@ fn is_newer(latest: &str, current: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pl(title: &str, entries: Vec<(&str, bool)>) -> MediaInfo {
+        MediaInfo {
+            platform: "youtube".into(),
+            platform_name: "YouTube".into(),
+            id: title.into(),
+            source_url: String::new(),
+            title: title.into(),
+            author: String::new(),
+            cover: None,
+            duration_ms: None,
+            kind: MediaKind::Playlist,
+            width: None,
+            height: None,
+            published_at: None,
+            assets: vec![],
+            entries: entries
+                .into_iter()
+                .enumerate()
+                .map(|(i, (id, is_list))| PlaylistEntry {
+                    id: id.into(),
+                    title: id.into(),
+                    url: format!("https://x/{id}"),
+                    duration_ms: None,
+                    thumbnail: None,
+                    index: i as u32 + 1,
+                    is_list,
+                    count: None,
+                })
+                .collect(),
+            series: None,
+            extractor: None,
+            chapters: vec![],
+        }
+    }
+
+    #[test]
+    fn list_health_verdicts() {
+        let videos = pl("AI新聞", vec![("a", false), ("b", false)]);
+        let r = judge_list(&videos, None);
+        assert!(r.ok && r.message.contains("2 个视频"), "{r:?}");
+        // 列表的列表：展开成功才算正常
+        let tab = pl("彼德 - Playlists", vec![("PL1", true), ("PL2", true)]);
+        let r = judge_list(&tab, Some(Ok(&videos)));
+        assert!(r.ok && r.message.contains("其中 2 项是列表") && r.message.contains("展开“AI新聞”得到 2 个条目"), "{r:?}");
+        let r = judge_list(&tab, Some(Err("需要登录")));
+        assert!(!r.ok && r.message.contains("展开其中一个失败：需要登录"), "{r:?}");
+        let empty = pl("空", vec![]);
+        let r = judge_list(&tab, Some(Ok(&empty)));
+        assert!(!r.ok && r.message.contains("是空的"), "{r:?}");
+        // 读出来是空的、或者变成了单个作品：都是红的，并说明原因
+        let r = judge_list(&empty, None);
+        assert!(!r.ok && r.message.contains("空的"), "{r:?}");
+        let mut single = pl("某个视频", vec![]);
+        single.kind = MediaKind::Video;
+        let r = judge_list(&single, None);
+        assert!(!r.ok && r.message.contains("不再是列表"), "{r:?}");
+    }
 
     #[test]
     fn version_compare() {
