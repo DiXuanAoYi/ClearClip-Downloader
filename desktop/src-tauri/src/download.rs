@@ -2494,7 +2494,17 @@ mod tests {
     #[test]
     fn job_spec_list_round_trips_and_is_optional() {
         let a = Asset::base("file", AssetKind::File, "https://a/f".into(), "文件", "bin");
-        let mut spec = JobSpec { inputs: vec![a], post: PostOptions::default(), priority: 0, start_at: None, origin: None, sub_item: None, tried: vec![], batch: None, list: Some("播放列表".into()) };
+        let mut spec = JobSpec {
+            inputs: vec![a],
+            post: PostOptions::default(),
+            priority: 0,
+            start_at: None,
+            origin: None,
+            sub_item: None,
+            tried: vec![],
+            batch: None,
+            list: Some("播放列表".into()),
+        };
         let json = serde_json::to_string(&spec).unwrap();
         assert_eq!(serde_json::from_str::<JobSpec>(&json).unwrap().list.as_deref(), Some("播放列表"));
         // 旧版本存下来的任务没有 list 字段，要能读出来
