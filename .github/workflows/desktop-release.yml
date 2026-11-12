@@ -66,7 +66,14 @@ jobs:
           PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
         run: |
           if [ -n "$KEY" ]; then
-            echo 'args=--config {"bundle":{"createUpdaterArtifacts":true}}' >> "$GITHUB_OUTPUT"
+            # 生成更新包时，Tauri 要求构建配置里有更新公钥（tauri.conf.json 里是空的），所以和 createUpdaterArtifacts 一起传进去。
+            # 公钥文件内容是一行 base64，去掉可能带上的空白、换行再放进 JSON。
+            pub=$(printf '%s' "$PUBKEY" | tr -d '[:space:]')
+            if [ -z "$pub" ]; then
+              echo "::error title=缺少更新公钥::配置了 TAURI_SIGNING_PRIVATE_KEY 却没有 TAURI_UPDATER_PUBKEY，无法生成更新包。请补上公钥（clearclip.key.pub 的全部内容），或删掉私钥 Secret 发一版不带自动更新的。"
+              exit 1
+            fi
+            echo "args=--config {\"bundle\":{\"createUpdaterArtifacts\":true},\"plugins\":{\"updater\":{\"pubkey\":\"$pub\"}}}" >> "$GITHUB_OUTPUT"
           else
             echo 'args=' >> "$GITHUB_OUTPUT"
             echo "::warning title=没有生成更新包和 latest.json::仓库 Secrets 里没有 TAURI_SIGNING_PRIVATE_KEY，这次发布的版本不支持程序内一键更新（只能到发布页下载）。配置方法见 docs/release-guide/1-updater-key.md"

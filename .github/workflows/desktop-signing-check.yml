@@ -54,6 +54,8 @@ jobs:
           else
             echo "✓ TAURI_UPDATER_PUBKEY：有"
             case "$PUBKEY" in "$prefix"*) echo "  ✓ 内容以公钥文件的标准开头开始";; *) echo "  ✗ 内容不是以 $prefix 开头"; ok=0;; esac
+            pcomment=$(printf '%s' "$PUBKEY" | tr -d '[:space:]' | base64 -d 2>/dev/null | head -n 1 | LC_ALL=C tr -cd '[:print:]' | cut -c1-80)
+            case "$pcomment" in "untrusted comment:"*public*) echo "  ✓ 解码后有注释行，是公钥（$pcomment）";; *) echo "  ✗ 解码后没有预期的注释行：$pcomment"; ok=0;; esac
           fi
           [ "$ok" = 1 ] || echo "上面标 ✗ 的先改正。"
 
