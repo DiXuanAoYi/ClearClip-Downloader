@@ -12,7 +12,7 @@ use crate::vidnorm::facts;
 use super::build::{build, EditPlan, Mode, Source};
 use super::fonts;
 use super::region::render_mask;
-use super::spec::{ClipKind, Project, MIN_MS};
+use super::spec::{ClipKind, OutputSpec, Project, MAX_COMPOUND_DEPTH, MIN_MS};
 use crate::ml::matte::render_matte;
 
 fn tmp_dir(ctx: &JobCtx) -> PathBuf {
@@ -119,10 +119,89 @@ struct Prepared {
 }
 
 async fn prepare(ctx: &JobCtx, project: &Project, mode: Mode) -> AppResult<Prepared> {
+    prepare_at(ctx, project, mode, 0).await
+}
+
+/// 一个要先渲染的复合片段。
+pub(super) struct CompoundJob {
+    pub index: usize,
+    pub id: u32,
+    pub name: String,
+    /// 子时间线，已经带上和外面一样的输出尺寸、帧率和画面适配方式，质量固定用“高”（免得多压一遍掉画质）
+    pub inner: Project,
+}
+
+/// 工程里有哪些复合片段要先渲染（按片段顺序）。
+pub(super) fn compound_jobs(project: &Project) -> AppResult<Vec<CompoundJob>> {
+    let mut out = vec![];
+    for (i, c) in project.clips.iter().enumerate() {
+        let Some(id) = c.compound else { continue };
+        let comp = project.compounds.iter().find(|x| x.id == id).ok_or_else(|| AppError::invalid(format!("找不到复合片段（编号 {id}）的内容。")))?;
+        let mut inner = comp.project.clone();
+        inner.title.clear();
+        inner.compounds = project.compounds.iter().filter(|x| x.id != id).cloned().collect();
+        inner.out = OutputSpec {
+            width: project.out.width,
+            height: project.out.height,
+            fps: project.out.fps,
+            fit: project.out.fit.clone(),
+            codec: project.out.codec.clone(),
+            quality: "high".into(),
+            ..OutputSpec::default()
+        };
+        out.push(CompoundJob { index: i, id, name: comp.name.clone(), inner });
+    }
+    Ok(out)
+}
+
+/// 复合片段渲染好以后，把它换成指向这个文件的普通视频片段（片段自己的裁剪、转场、音量等设置保留）。
+pub(super) fn apply_rendered(project: &mut Project, index: usize, path: &Path, out_ms: u64) {
+    let c = &mut project.clips[index];
+    c.path = path.to_string_lossy().into_owned();
+    c.kind = ClipKind::Video;
+    c.compound = None;
+    c.in_ms = c.in_ms.min(out_ms.saturating_sub(MIN_MS));
+    c.out_ms = c.out_ms.min(out_ms).max(c.in_ms + MIN_MS);
+}
+
+/// 把工程里的复合片段先各自渲染成一个临时视频，换成普通的视频片段（子时间线里再有复合片段，就一层一层往里渲染）。
+/// 临时文件放在任务的临时文件夹里，任务结束时一起删。
+fn flatten_compounds<'a>(
+    ctx: &'a JobCtx,
+    project: &'a mut Project,
+    mode: Mode,
+    depth: u32,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let jobs = compound_jobs(project)?;
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        if depth >= MAX_COMPOUND_DEPTH {
+            return Err(AppError::invalid(format!("复合片段嵌套太深了（最多 {MAX_COMPOUND_DEPTH} 层）。")));
+        }
+        let tmp = tmp_dir(ctx);
+        std::fs::create_dir_all(&tmp)?;
+        let n = jobs.len();
+        for (k, j) in jobs.into_iter().enumerate() {
+            ctx.check()?;
+            ctx.note(format!("正在渲染复合片段“{}”（{}/{}）…", j.name, k + 1, n));
+            let pre = prepare_at(ctx, &j.inner, mode, depth + 1).await?;
+            let out = tmp.join(format!("compound-{}-{depth}-{}.{}", j.id, j.index, pre.plan.ext));
+            run(ctx, &pre, &out).await?;
+            apply_rendered(project, j.index, &out, pre.plan.out_ms);
+        }
+        Ok(())
+    })
+}
+
+async fn prepare_at(ctx: &JobCtx, project: &Project, mode: Mode, depth: u32) -> AppResult<Prepared> {
     let st = &ctx.st;
     let ffmpeg = find_ffmpeg(st).ok_or_else(crate::postprocess::ffmpeg_missing)?;
     let caps = st.vcaps.get(&ffmpeg).await;
-    let mut project = project.clone().checked().map_err(AppError::invalid)?.effective();
+    let mut project = project.clone();
+    flatten_compounds(ctx, &mut project, mode, depth).await?;
+    let mut project = project.checked().map_err(AppError::invalid)?.effective();
     ctx.note("正在检查素材…");
     let sources = read_sources(&ffmpeg, &project, ctx).await?;
     let notes = fit_to_sources(&mut project, &sources)?;
@@ -218,7 +297,8 @@ async fn run(ctx: &JobCtx, pre: &Prepared, out: &Path) -> AppResult<()> {
 
 /// 导出文件的路径：有标题用标题，没有就用第一个片段的名字加“.剪辑”。
 pub fn output_path(p: &Project, dir: Option<&Path>, ext: &str) -> PathBuf {
-    let first = Path::new(&p.clips[0].path);
+    let first_path = p.first_media_path().unwrap_or_default();
+    let first = Path::new(&first_path);
     let dir = dir.map(Path::to_path_buf).or_else(|| first.parent().map(Path::to_path_buf)).unwrap_or_default();
     let title = crate::naming::sanitize(p.title.trim());
     let name = if title.is_empty() {
@@ -237,7 +317,8 @@ pub async fn run_edit(ctx: &JobCtx, job: &ToolJob, project: &Project) -> AppResu
     if let Some(d) = dir {
         std::fs::create_dir_all(d)?;
     }
-    let out = output_path(&pre.project, dir, pre.plan.ext);
+    // 用最初的工程取名和定位：渲染过的工程里复合片段已经换成了临时文件，不能拿它的路径当导出位置
+    let out = output_path(project, dir, pre.plan.ext);
     let result = run(ctx, &pre, &out).await;
     let _ = std::fs::remove_dir_all(&pre.tmp);
     result?;

@@ -1651,6 +1651,10 @@ export interface TrackResult {
 
 export interface EditClip {
   id: number
+  /** 编组编号：同编号的是一组，选中、移动、删除时一起走 */
+  group?: number
+  /** 复合片段：内容是工程里 `compounds` 中这个编号的子时间线（`path` 为空） */
+  compound?: number
   path: string
   kind: 'video' | 'image'
   inMs: number
@@ -1699,6 +1703,8 @@ export type EditKeyframes = Record<string, EditKeyframe[]>
 
 export interface EditText {
   id: number
+  /** 编组编号：同编号的是一组，选中、移动、删除时一起走 */
+  group?: number
   /** 所在的文字轨编号 1–8；编号大的画在上面 */
   track: number
   text: string
@@ -1755,6 +1761,8 @@ export interface SttStatus {
 
 export interface EditAudio {
   id: number
+  /** 编组编号：同编号的是一组，选中、移动、删除时一起走 */
+  group?: number
   /** 所在的音频轨编号 1–12 */
   track: number
   path: string
@@ -1810,6 +1818,8 @@ export type OverlayAnim = 'none' | 'slide-left' | 'slide-right' | 'slide-up' | '
 
 export interface EditOverlay {
   id: number
+  /** 编组编号：同编号的是一组，选中、移动、删除时一起走 */
+  group?: number
   /** 调整图层：不放画面，只把下面所有轨道在这段时间里调色 */
   adjust: boolean
   path: string
@@ -1926,6 +1936,14 @@ export interface EditProject {
   /** 时间线上的标记 */
   markers: EditMarker[]
   out: EditOutput
+  /** 复合片段的子时间线（主轨片段的 `compound` 指向这里）；只放在最外层的工程里 */
+  compounds: EditCompound[]
+}
+
+export interface EditCompound {
+  id: number
+  name: string
+  project: EditProject
 }
 
 export type EditTrackKind = 'video' | 'audio' | 'text'

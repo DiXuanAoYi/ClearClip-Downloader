@@ -63,17 +63,36 @@ import {
   arrangeToBeats,
   beatsOnTimeline,
   fitAudio,
+  makeCompoundIn,
+  enterCompoundProject,
+  leaveCompoundProject,
+  foldToRoot,
+  pruneCompounds,
 } from '../utils/edit'
+import type { CompoundFrame } from '../utils/edit'
 
 export interface Sel {
   kind: 'clip' | 'overlay' | 'text' | 'audio'
   id: number
 }
 
+const PROXY_KEY = 'clearclip.edit.proxyBig'
+const METER_KEY = 'clearclip.edit.meters'
 const DRAFT_KEY = 'clearclip.edit.draft'
 const RECENT_KEY = 'clearclip.edit.recent'
 const RECENT_LIMIT = 8
 const HISTORY_LIMIT = 100
+
+function readProxyBig(): boolean {
+  return readFlag(PROXY_KEY)
+}
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
 
 function readRecent(): string[] {
   try {
@@ -106,9 +125,48 @@ export function useEditProject() {
       delete proxying[path]
     }
   }
+  /** 大素材（高过 1080 行）自动生成预览用的小文件。关着时只有系统播放器解不了的素材才需要手动生成。 */
+  const proxyBig = ref(readProxyBig())
+  watch(proxyBig, (v) => {
+    try {
+      localStorage.setItem(PROXY_KEY, v ? '1' : '0')
+    } catch {
+      /* 记不住不影响使用 */
+    }
+  })
+  /** 值得换成小文件预览的素材：视频，且分辨率高过 1080p（HDR 的不在这里处理，它另有转换流程）。 */
+  const needsProxy = (s: EditSource) => s.kind === 'video' && s.hasVideo && !s.hdr && Math.max(s.width, s.height) > 1920
+  async function autoProxy() {
+    if (!proxyBig.value) return
+    for (const path of Object.keys(sources)) {
+      const s = sources[path]
+      if (!s || !needsProxy(s) || proxies[path] || proxying[path] || !proxyBig.value) continue
+      try {
+        await makeProxy(path)
+      } catch {
+        /* 生成不了就继续用原素材预览，不打扰 */
+      }
+    }
+  }
+  watch([proxyBig, () => Object.keys(sources).length], () => void autoProxy())
+  /** 混音器里的电平表（实验）：默认关。开着时预览的声音会先经过 Web Audio 再出来，要重新打开剪辑页才生效。 */
+  const meterOn = ref(readFlag(METER_KEY))
+  watch(meterOn, (v) => {
+    try {
+      localStorage.setItem(METER_KEY, v ? '1' : '0')
+    } catch {
+      /* 记不住不影响使用 */
+    }
+  })
+  /** 各路电平（dBFS，没声音 −90）：a1、a2… 是音频轨，out 是主输出；只在播放时更新。 */
+  const levels = reactive<Record<string, number>>({})
+  /** 各路最近一次削波（超过 0 dBFS）的时刻，毫秒时间戳 */
+  const clips = reactive<Record<string, number>>({})
   /** 工程里用到、但现在找不到或读不出来的文件 */
   const broken = reactive<Record<string, string>>({})
   const sel = ref<Sel | null>(null)
+  /** 和 sel 一起被选中的其他项（Shift 点选加进来的、同组的） */
+  const extra = ref<Sel[]>([])
   const playhead = ref(0)
   const playing = ref(false)
   const filePath = ref('')
@@ -156,6 +214,21 @@ export function useEditProject() {
   let lastAt = 0
   const snapshot = () => JSON.stringify(project.value)
 
+  // ---------- 复合片段 ----------
+  /** 进入复合片段以后，每一层外面那层的信息（最外面的在最前）。空 = 正在编辑最外层的工程。 */
+  const compoundStack = ref<CompoundFrame[]>([])
+  /** 最外层的工程：正在编辑某个复合片段时，把子时间线一层层放回去。保存、导出、预览、草稿都用它，不用 `project`。 */
+  const rootProject = computed<EditProject>(() => pruneCompounds(compoundStack.value.length ? foldToRoot(project.value, compoundStack.value) : project.value))
+  const rootJson = computed(() => JSON.stringify(rootProject.value))
+  /** 面包屑：主时间线 › 复合片段名 › … */
+  const compoundPath = computed(() => compoundStack.value.map((f) => f.name))
+  /** 进出复合片段后撤销记录从头开始（里外两层的撤销记录不能混在一起） */
+  function resetHistory() {
+    undoStack.value = []
+    redoStack.value = []
+    lastKey = ''
+  }
+
   /** 修改工程。`key` 相同且间隔很短的连续修改（拖滑块、拖片段边缘）合并成一步撤销。 */
   function mutate(fn: (p: EditProject) => void, key = '') {
     const now = Date.now()
@@ -176,6 +249,7 @@ export function useEditProject() {
     dirty.value = true
     lastKey = ''
     if (sel.value && !find(sel.value)) sel.value = null
+    extra.value = extra.value.filter((x) => find(x))
     playhead.value = clamp(playhead.value, 0, Math.max(0, total.value))
   }
   function undo() {
@@ -203,6 +277,131 @@ export function useEditProject() {
   const overlayOf = (id: number) => project.value.overlays.find((c) => c.id === id)
   const textOf = (id: number) => project.value.texts.find((c) => c.id === id)
   const audioOf = (id: number) => project.value.audio.find((c) => c.id === id)
+  // ---------- 多选与编组 ----------
+
+  const sameSel = (a: Sel, b: Sel) => a.kind === b.kind && a.id === b.id
+  const selection = computed<Sel[]>(() => (sel.value ? [sel.value, ...extra.value.filter((x) => !sameSel(x, sel.value as Sel))] : []))
+  const isSelected = (kind: Sel['kind'], id: number) => selection.value.some((x) => x.kind === kind && x.id === id)
+  const itemLists = (p: EditProject): [Sel['kind'], { id: number; group?: number }[]][] => [
+    ['clip', p.clips],
+    ['overlay', p.overlays],
+    ['text', p.texts],
+    ['audio', p.audio],
+  ]
+  /** 同一组的所有项 */
+  function groupMembers(g: number): Sel[] {
+    const out: Sel[] = []
+    for (const [kind, list] of itemLists(project.value)) for (const x of list) if (x.group === g) out.push({ kind, id: x.id })
+    return out
+  }
+  /** 和 s 同组的其他项（没有编组返回空） */
+  function groupMates(s: Sel): Sel[] {
+    const g = find(s)?.group
+    return g === undefined ? [] : groupMembers(g).filter((x) => !sameSel(x, s))
+  }
+  // 点选一项时，同组的一起选中（要同步更新，后面的 Shift 点选才能在它上面继续改）
+  watch(sel, (s) => (extra.value = s ? groupMates(s) : []), { flush: 'sync' })
+  /** Shift 点选：把一项加进选择，或从选择里去掉（同组的一起）。 */
+  function toggleSel(kind: Sel['kind'], id: number) {
+    const s: Sel = { kind, id }
+    const mates = [s, ...groupMates(s)]
+    if (!sel.value) {
+      sel.value = s
+      return
+    }
+    const cur = selection.value
+    if (cur.some((x) => sameSel(x, s))) {
+      const rest = cur.filter((x) => !mates.some((m) => sameSel(m, x)))
+      if (!rest.length) {
+        sel.value = null
+        return
+      }
+      sel.value = rest[0]
+      extra.value = rest.slice(1)
+    } else {
+      extra.value = [...cur.slice(1), ...mates]
+    }
+  }
+  /** 把选中的主轨片段（要连着）和选中的叠加素材、文字、配乐合成一个复合片段。成功返回 null，不行返回原因。 */
+  function makeCompound(): string | null {
+    const r = makeCompoundIn(project.value, selection.value)
+    if (typeof r === 'string') return r
+    mutate((p) => {
+      p.clips = r.project.clips
+      p.overlays = r.project.overlays
+      p.texts = r.project.texts
+      p.audio = r.project.audio
+      p.compounds = r.project.compounds
+    })
+    sel.value = { kind: 'clip', id: r.clipId }
+    return null
+  }
+  /** 进入复合片段，编辑它里面的内容（撤销记录从头开始）。 */
+  function enterCompound(clipId: number): boolean {
+    const r = enterCompoundProject(project.value, clipId)
+    if (!r) return false
+    compoundStack.value.push(r.frame)
+    project.value = r.inner
+    sel.value = null
+    playhead.value = 0
+    playing.value = false
+    resetHistory()
+    return true
+  }
+  /** 退出一层复合片段，回到外面。 */
+  function exitCompound(): boolean {
+    const f = compoundStack.value.pop()
+    if (!f) return false
+    playing.value = false
+    project.value = leaveCompoundProject(project.value, f)
+    resetHistory()
+    dirty.value = true
+    sel.value = project.value.clips.some((c) => c.id === f.clipId) ? { kind: 'clip', id: f.clipId } : null
+    playhead.value = clamp(playhead.value, 0, Math.max(0, total.value))
+    return true
+  }
+  /** 选中的几项编成一组；少于两项返回 false。 */
+  function groupSelected(): boolean {
+    const list = selection.value
+    if (list.length < 2) return false
+    let next = 1
+    for (const [, items] of itemLists(project.value)) for (const x of items) next = Math.max(next, (x.group ?? 0) + 1)
+    mutate((p) => {
+      for (const [kind, items] of itemLists(p)) for (const x of items) if (list.some((s) => s.kind === kind && s.id === x.id)) x.group = next
+    })
+    return true
+  }
+  /** 把选中的项所在的组拆开。没有编组返回 false。 */
+  function ungroupSelected(): boolean {
+    const gs = new Set(selection.value.map((s) => find(s)?.group).filter((g): g is number => g !== undefined))
+    if (!gs.size) return false
+    mutate((p) => {
+      for (const [, items] of itemLists(p)) for (const x of items) if (x.group !== undefined && gs.has(x.group)) delete x.group
+    })
+    return true
+  }
+  /** 选中的项里，除 anchor 以外在时间线上自由摆放的（叠加素材、文字、配乐）。主轨片段的位置由顺序决定，不跟着动。 */
+  function followersOf(p: EditProject, anchor: Sel): (EditOverlay | EditText | EditAudio)[] {
+    const out: (EditOverlay | EditText | EditAudio)[] = []
+    for (const s of selection.value) {
+      if (sameSel(s, anchor) || s.kind === 'clip') continue
+      const it = (s.kind === 'overlay' ? p.overlays : s.kind === 'text' ? p.texts : p.audio).find((x) => x.id === s.id)
+      if (it) out.push(it)
+    }
+    return out
+  }
+  /** 拖动 anchor 时，其余选中的自由项平移同样的时间（不会移到 0 之前）。 */
+  function shiftFollowers(p: EditProject, anchor: Sel, delta: number) {
+    if (!delta) return
+    const fs = followersOf(p, anchor)
+    if (!fs.length) return
+    const d = Math.max(delta, -Math.min(...fs.map((x) => x.startMs)))
+    for (const x of fs) {
+      x.startMs = Math.round(x.startMs + d)
+      if ('endMs' in x && 'text' in x) x.endMs = Math.round(x.endMs + d)
+    }
+  }
+
   const selectedClip = computed(() => (sel.value?.kind === 'clip' ? clipOf(sel.value.id) : undefined))
   const selectedOverlay = computed(() => (sel.value?.kind === 'overlay' ? overlayOf(sel.value.id) : undefined))
   const selectedText = computed(() => (sel.value?.kind === 'text' ? textOf(sel.value.id) : undefined))
@@ -355,7 +554,10 @@ export function useEditProject() {
   function patchOverlay(id: number, patch: Partial<EditOverlay>, key = '') {
     mutate((p) => {
       const c = p.overlays.find((x) => x.id === id)
-      if (c) Object.assign(c, patch)
+      if (!c) return
+      const before = c.startMs
+      Object.assign(c, patch)
+      if (key.startsWith('omove:') && patch.startMs !== undefined) shiftFollowers(p, { kind: 'overlay', id }, c.startMs - before)
     }, key)
   }
   /** 播放头相对这个素材 / 文字开头的位置（毫秒，收紧在它自己的时长里） */
@@ -412,13 +614,19 @@ export function useEditProject() {
   function patchText(id: number, patch: Partial<EditText>, key = '') {
     mutate((p) => {
       const c = p.texts.find((x) => x.id === id)
-      if (c) Object.assign(c, patch)
+      if (!c) return
+      const before = c.startMs
+      Object.assign(c, patch)
+      if (key.startsWith('tmove:') && patch.startMs !== undefined) shiftFollowers(p, { kind: 'text', id }, c.startMs - before)
     }, key)
   }
   function patchAudio(id: number, patch: Partial<EditAudio>, key = '') {
     mutate((p) => {
       const c = p.audio.find((x) => x.id === id)
-      if (c) Object.assign(c, patch)
+      if (!c) return
+      const before = c.startMs
+      Object.assign(c, patch)
+      if (key.startsWith('amove:') && patch.startMs !== undefined) shiftFollowers(p, { kind: 'audio', id }, c.startMs - before)
     }, key)
   }
 
@@ -914,13 +1122,14 @@ export function useEditProject() {
   }
 
   function removeSelected() {
-    const s = sel.value
-    if (!s) return
+    const list = selection.value
+    if (!list.length) return
+    const has = (kind: Sel['kind'], id: number) => list.some((s) => s.kind === kind && s.id === id)
     mutate((p) => {
-      if (s.kind === 'clip') p.clips = p.clips.filter((c) => c.id !== s.id)
-      else if (s.kind === 'overlay') p.overlays = p.overlays.filter((c) => c.id !== s.id)
-      else if (s.kind === 'text') p.texts = p.texts.filter((c) => c.id !== s.id)
-      else p.audio = p.audio.filter((c) => c.id !== s.id)
+      p.clips = p.clips.filter((c) => !has('clip', c.id))
+      p.overlays = p.overlays.filter((c) => !has('overlay', c.id))
+      p.texts = p.texts.filter((c) => !has('text', c.id))
+      p.audio = p.audio.filter((c) => !has('audio', c.id))
     })
     sel.value = null
     playhead.value = clamp(playhead.value, 0, total.value)
@@ -1110,6 +1319,7 @@ export function useEditProject() {
   // ---------- 新建 / 打开 / 保存 ----------
 
   function reset(next: EditProject, path = '') {
+    compoundStack.value = []
     project.value = next
     filePath.value = path
     sel.value = null
@@ -1148,7 +1358,7 @@ export function useEditProject() {
   }
 
   async function saveProject(path: string) {
-    await api.editSave(path, JSON.parse(snapshot()))
+    await api.editSave(path, JSON.parse(rootJson.value))
     filePath.value = path
     dirty.value = false
     remember(path)
@@ -1163,7 +1373,7 @@ export function useEditProject() {
       clearTimeout(draftTimer)
       draftTimer = setTimeout(() => {
         try {
-          const p = project.value
+          const p = rootProject.value
           if (!p.clips.length && !p.overlays.length && !p.texts.length && !p.audio.length) localStorage.removeItem(DRAFT_KEY)
           else localStorage.setItem(DRAFT_KEY, JSON.stringify({ project: p, filePath: filePath.value }))
         } catch {
@@ -1205,6 +1415,20 @@ export function useEditProject() {
     sources,
     broken,
     sel,
+    extra,
+    selection,
+    isSelected,
+    toggleSel,
+    makeCompound,
+    enterCompound,
+    exitCompound,
+    compoundStack,
+    compoundPath,
+    rootProject,
+    rootJson,
+    groupSelected,
+    ungroupSelected,
+    groupMates,
     playhead,
     playing,
     filePath,
@@ -1275,6 +1499,11 @@ export function useEditProject() {
     proxies,
     proxying,
     makeProxy,
+    proxyBig,
+    autoProxy,
+    meterOn,
+    levels,
+    clips,
     splitAtPlayhead,
     bladeAt,
     removeSelected,

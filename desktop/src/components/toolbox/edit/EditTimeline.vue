@@ -7,13 +7,13 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { api } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { EditAudio, EditClip, EditMarker, EditOverlay, EditText, EditTrack, EditTrackKind, EditTrackRole } from '../../../types'
-import { beatSnapPoints, beatsOnTimeline, kfEval, MIN_MS, audioSpan, clamp, editPoints, overlayDuration, overlayEnd, overlaySourceLimit, snap, tickStep } from '../../../utils/edit'
+import { beatSnapPoints, beatsOnTimeline, kfEval, MIN_MS, movePairBy, audioSpan, clamp, editPoints, overlayDuration, overlayEnd, overlaySourceLimit, snap, tickStep } from '../../../utils/edit'
 import { maxNo, nextNo, roomFor, shownNos, swapTracks, TRACK_ROLES, trackCode, trackOf, trackTitle } from '../../../utils/tracks'
 import { BUILTIN_TEMPLATES, loadTemplates, saveTemplates, templateFrom } from '../../../utils/trackTemplates'
 import TrackHead from './TrackHead.vue'
 import TrackMenu, { type MenuItem } from './TrackMenu.vue'
 
-const props = withDefaults(defineProps<{ ed: EditApi; pps: number; snapOn?: boolean; tool?: 'select' | 'blade' | 'slip' | 'roll'; showWave?: boolean; showVol?: boolean }>(), { snapOn: true, tool: 'select', showWave: true, showVol: true })
+const props = withDefaults(defineProps<{ ed: EditApi; pps: number; snapOn?: boolean; tool?: 'select' | 'blade' | 'slip' | 'roll' | 'slide'; showWave?: boolean; showVol?: boolean }>(), { snapOn: true, tool: 'select', showWave: true, showVol: true })
 const emit = defineEmits<{ zoom: [pps: number] }>()
 const ed = props.ed
 
@@ -96,7 +96,15 @@ function blurInput() {
   if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur()
 }
 
-const isSel = (kind: 'clip' | 'overlay' | 'text' | 'audio', id: number) => ed.sel.value?.kind === kind && ed.sel.value.id === id
+const isSel = (kind: 'clip' | 'overlay' | 'text' | 'audio', id: number) => ed.isSelected(kind, id)
+/** 在组里的项：编组编号（用来显示小标记）。 */
+const groupNo = (x: { group?: number }) => x.group
+/** Shift+点击：多选。返回 true 表示已处理，不再往下走（不拖动）。 */
+function shiftPick(e: PointerEvent, kind: 'clip' | 'overlay' | 'text' | 'audio', id: number): boolean {
+  if (!e.shiftKey) return false
+  ed.toggleSel(kind, id)
+  return true
+}
 const lockedNo = (kind: EditTrackKind, no: number) => metaOf(kind, no).lock
 
 // ---------- 拖动 ----------
@@ -230,8 +238,10 @@ function dropX(idx: number, from: number): number {
 function clipDown(e: PointerEvent, i: number) {
   const c = ed.project.value.clips[i]
   if (props.tool === 'blade' && !lockedNo('video', 0)) return blade('clip', c.id, e)
+  if (shiftPick(e, 'clip', c.id)) return
   ed.sel.value = { kind: 'clip', id: c.id }
   if (props.tool === 'slip' && c.kind === 'video' && !c.freeze && !lockedNo('video', 0)) return slip(e, c)
+  if (props.tool === 'slide' && !lockedNo('video', 0) && slide(e, c)) return
   const t0 = timeAt(e.clientX)
   if (lockedNo('video', 0)) return drag(e, () => {}, (moved) => !moved && seek(t0))
   drag(
@@ -264,25 +274,38 @@ function slip(e: PointerEvent, c: EditClip) {
   })
 }
 
+/** 拖动一对相邻的视频片段 a、b 之间的切点：a 的出点和 b 的入点一起前后挪，前一个多一点，后一个就少一点，总长不变。 */
+function movePair(e: PointerEvent, a: EditClip, b: EditClip, selId: number) {
+  const o = { ao: a.outMs, bi: b.inMs }
+  const limitA = ed.sources[a.path]?.durationMs ?? Infinity
+  ed.sel.value = { kind: 'clip', id: selId }
+  drag(e, (dx) => {
+    const r = movePairBy(a, b, o, msOf(dx), limitA)
+    ed.patchClip(a.id, { outMs: r.aOut }, `roll:${a.id}`)
+    ed.patchClip(b.id, { inMs: r.bIn }, `roll:${a.id}`)
+  })
+}
+const rollable = (a: EditClip | undefined, b: EditClip | undefined): a is EditClip => !!a && !!b && a.kind === 'video' && b.kind === 'video' && !a.freeze && !b.freeze && !a.reverse && !b.reverse
+
 /** 滚动：拖两个相邻片段之间的切点——前一个多一点，后一个就少一点，总长不变。 */
 function roll(e: PointerEvent, c: EditClip, side: 'l' | 'r') {
   const list = ed.project.value.clips
   const i = list.findIndex((x) => x.id === c.id)
   const a = side === 'l' ? list[i - 1] : c
   const b = side === 'l' ? c : list[i + 1]
-  if (!a || !b || a.kind !== 'video' || b.kind !== 'video' || a.freeze || b.freeze || a.reverse || b.reverse) return false
-  const o = { ao: a.outMs, bi: b.inMs }
-  const limitA = ed.sources[a.path]?.durationMs ?? Infinity
-  ed.sel.value = { kind: 'clip', id: c.id }
-  drag(e, (dx) => {
-    const d = msOf(dx)
-    // 切点往右（d > 0）：前一个的出点后移，后一个的入点后移
-    const lo = Math.max(-(a.outMs - a.inMs - MIN_MS * a.speed) / a.speed, -o.bi / b.speed)
-    const hi = Math.min((limitA - o.ao) / a.speed, (b.outMs - b.inMs - MIN_MS * b.speed) / b.speed)
-    const dd = clamp(d, lo, hi)
-    ed.patchClip(a.id, { outMs: Math.round(o.ao + dd * a.speed) }, `roll:${a.id}`)
-    ed.patchClip(b.id, { inMs: Math.round(o.bi + dd * b.speed) }, `roll:${a.id}`)
-  })
+  if (!rollable(a, b)) return false
+  movePair(e, a, b!, c.id)
+  return true
+}
+
+/** 滑动：片段自己不变，在前后两个片段之间挪——前一个的出点和后一个的入点一起动，总长不变。头尾的片段（没有两个邻居）不能滑动。 */
+function slide(e: PointerEvent, c: EditClip): boolean {
+  const list = ed.project.value.clips
+  const i = list.findIndex((x) => x.id === c.id)
+  const a = list[i - 1]
+  const b = list[i + 1]
+  if (!rollable(a, b)) return false
+  movePair(e, a, b, c.id)
   return true
 }
 
@@ -318,14 +341,19 @@ const thumbOf = (c: EditClip) => {
   const t = ed.sources[c.path]?.thumb
   return t ? `url("${convertFileSrc(t)}")` : 'none'
 }
-const clipName = (c: EditClip) => ed.sources[c.path]?.name ?? c.path.split(/[\\/]/).pop() ?? c.path
+const clipName = (c: EditClip) => (c.compound !== undefined ? `▣ ${ed.project.value.compounds.find((x) => x.id === c.compound)?.name ?? '复合片段'}` : (ed.sources[c.path]?.name ?? c.path.split(/[\\/]/).pop() ?? c.path))
+/** 双击复合片段：进去编辑它里面的内容。 */
+function enterIfCompound(c: EditClip) {
+  if (c.compound !== undefined) ed.enterCompound(c.id)
+}
 const isBroken = (path: string) => path in ed.broken
 
 // ---------- 叠加素材 ----------
 
 function overlayDown(e: PointerEvent, o: EditOverlay) {
   if (props.tool === 'blade' && !lockedNo('video', o.track)) return blade('overlay', o.id, e)
-  ed.sel.value = { kind: 'overlay', id: o.id }
+  if (shiftPick(e, 'overlay', o.id)) return
+  if (!ed.isSelected('overlay', o.id) || !ed.extra.value.length) ed.sel.value = { kind: 'overlay', id: o.id }
   const t0 = timeAt(e.clientX)
   if (lockedNo('video', o.track)) return drag(e, () => {}, (moved) => !moved && seek(t0))
   const s0 = o.startMs
@@ -345,7 +373,11 @@ function overlayDown(e: PointerEvent, o: EditOverlay) {
       ed.patchOverlay(o.id, patch, `omove:${o.id}`)
     },
     (moved) => {
-      if (!moved) return seek(t0)
+      if (!moved) {
+        // 没拖动：多选时点一下就只选这一项（同组的仍一起选中）
+        if (ed.extra.value.length) ed.sel.value = { kind: 'overlay', id: o.id }
+        return seek(t0)
+      }
       settleDrag('overlay', o.id, hit, ed.overlayOf(o.id)?.track ?? o.track)
     },
   )
@@ -397,7 +429,8 @@ function cutW(o: EditOverlay): number {
 
 function textDown(e: PointerEvent, t: EditText) {
   if (props.tool === 'blade' && !lockedNo('text', t.track)) return blade('text', t.id, e)
-  ed.sel.value = { kind: 'text', id: t.id }
+  if (shiftPick(e, 'text', t.id)) return
+  if (!ed.isSelected('text', t.id) || !ed.extra.value.length) ed.sel.value = { kind: 'text', id: t.id }
   const t0 = timeAt(e.clientX)
   if (lockedNo('text', t.track)) return drag(e, () => {}, (moved) => !moved && seek(t0))
   const o = { s: t.startMs, e: t.endMs }
@@ -419,7 +452,11 @@ function textDown(e: PointerEvent, t: EditText) {
       ed.patchText(t.id, patch, `tmove:${t.id}`)
     },
     (moved) => {
-      if (!moved) return seek(t0)
+      if (!moved) {
+        // 没拖动：多选时点一下就只选这一项（同组的仍一起选中）
+        if (ed.extra.value.length) ed.sel.value = { kind: 'text', id: t.id }
+        return seek(t0)
+      }
       settleDrag('text', t.id, hit, ed.textOf(t.id)?.track ?? t.track)
     },
   )
@@ -442,7 +479,8 @@ const aSpan = (a: EditAudio) => audioSpan(a, ed.sources[a.path], ed.total.value)
 
 function audioDown(e: PointerEvent, a: EditAudio) {
   if (props.tool === 'blade' && !lockedNo('audio', a.track)) return blade('audio', a.id, e)
-  ed.sel.value = { kind: 'audio', id: a.id }
+  if (shiftPick(e, 'audio', a.id)) return
+  if (!ed.isSelected('audio', a.id) || !ed.extra.value.length) ed.sel.value = { kind: 'audio', id: a.id }
   const t0 = timeAt(e.clientX)
   if (lockedNo('audio', a.track)) return drag(e, () => {}, (moved) => !moved && seek(t0))
   const s0 = a.startMs
@@ -458,7 +496,11 @@ function audioDown(e: PointerEvent, a: EditAudio) {
       ed.patchAudio(a.id, patch, `amove:${a.id}`)
     },
     (moved) => {
-      if (!moved) return seek(t0)
+      if (!moved) {
+        // 没拖动：多选时点一下就只选这一项（同组的仍一起选中）
+        if (ed.extra.value.length) ed.sel.value = { kind: 'audio', id: a.id }
+        return seek(t0)
+      }
       settleDrag('audio', a.id, hit, ed.audioOf(a.id)?.track ?? a.track)
     },
   )
@@ -527,6 +569,7 @@ function volPoints(a: EditAudio, h: number): string {
 const volVisible = (r: Row) => props.showVol && r.meta.height !== 's'
 
 function volDown(e: PointerEvent, a: EditAudio, h: number) {
+  if (shiftPick(e, 'audio', a.id)) return
   // 点在线上：在这个时间加一个点，并且可以接着拖
   ed.sel.value = { kind: 'audio', id: a.id }
   if (lockedNo('audio', a.track)) return
@@ -692,6 +735,12 @@ const canAdd = (kind: EditTrackKind) => nextNo(P.value, kind) !== null
 const mixerOpen = ref(false)
 const audioTracks = computed(() => shownNos(P.value, 'audio').map((no) => ({ no, meta: metaOf('audio', no), n: audioOn(no).length })))
 const hasSolo = computed(() => P.value.tracks.some((t) => t.kind === 'audio' && t.solo))
+/** 电平表：dBFS 转成 0–100 的高度（−60 以下为 0，0 dBFS 为满）。 */
+const meterPct = (db: number | undefined) => Math.round(Math.max(0, Math.min(100, ((db ?? -90) + 60) * (100 / 60))))
+const meterClass = (key: string) => {
+  const db = ed.levels[key] ?? -90
+  return { hot: db >= -6 && db < 0, clip: Date.now() - (ed.clips[key] ?? 0) < 2000 }
+}
 const dB = (v: number) => (v < 0.001 ? '−∞' : `${(20 * Math.log10(v)).toFixed(1)} dB`)
 
 // ---------- 轨道模板 ----------
@@ -919,9 +968,18 @@ defineExpose({ reveal, targetAt, hover, fit })
     </div>
 
 
+    <div v-if="ed.compoundStack.value.length" class="crumb" role="navigation" aria-label="复合片段层级">
+      <button type="button" class="b" title="回到外面一层" @click="ed.exitCompound()">‹ 返回</button>
+      <span class="mute">主时间线</span>
+      <template v-for="(n, i) in ed.compoundPath.value" :key="i">
+        <span class="mute">›</span>
+        <b :class="{ cur: i === ed.compoundPath.value.length - 1 }">{{ n }}</b>
+      </template>
+      <span class="mute small">正在编辑复合片段里面的内容；导出、预览用的是放回去以后的整个工程</span>
+    </div>
     <div v-if="mixerOpen" class="mixer" role="group" aria-label="混音器">
       <div v-for="t in audioTracks" :key="t.no" class="ch" :class="{ off: t.meta.mute || (hasSolo && !t.meta.solo) }">
-        <div class="cn"><b>{{ trackCode('audio', t.no) }}</b><span class="ellipsis">{{ trackTitle(t.meta) }}</span></div>
+        <div class="cn"><b>{{ trackCode('audio', t.no) }}</b><span class="ellipsis">{{ trackTitle(t.meta) }}</span><span v-if="ed.meterOn.value" class="meter" :class="meterClass('a' + t.no)" role="meter" :aria-valuenow="Math.round(ed.levels['a' + t.no] ?? -90)" aria-valuemin="-90" aria-valuemax="0" :title="`${Math.round(ed.levels['a' + t.no] ?? -90)} dBFS`"><i :style="{ width: meterPct(ed.levels['a' + t.no]) + '%' }" /></span></div>
         <div class="cb">
           <button type="button" class="b" :class="{ on: t.meta.mute }" :aria-pressed="t.meta.mute" title="静音" @click="ed.patchTrack('audio', t.no, { mute: !t.meta.mute })">M</button>
           <button type="button" class="b solo" :class="{ on: t.meta.solo }" :aria-pressed="t.meta.solo" title="独奏（只影响预览）" @click="ed.patchTrack('audio', t.no, { solo: !t.meta.solo })">S</button>
@@ -930,6 +988,10 @@ defineExpose({ reveal, targetAt, hover, fit })
         <label class="sl"><span>声道</span><el-slider :model-value="t.meta.pan" :min="-1" :max="1" :step="0.01" :show-tooltip="false" size="small" @update:model-value="(v: number | number[]) => ed.patchTrack('audio', t.no, { pan: v as number }, `mp:${t.no}`)" /><em>{{ t.meta.pan === 0 ? '居中' : t.meta.pan < 0 ? `左 ${Math.round(-t.meta.pan * 100)}` : `右 ${Math.round(t.meta.pan * 100)}` }}</em></label>
         <el-checkbox :model-value="t.meta.duck" size="small" title="主轨有声音（人声）时，自动压低这条轨上的所有音频" @update:model-value="(v: unknown) => ed.patchTrack('audio', t.no, { duck: !!v })">自动避让</el-checkbox>
         <span class="cc">{{ t.n }} 段</span>
+      </div>
+      <div class="mout">
+        <el-checkbox v-model="ed.meterOn.value" size="small" title="实验功能：预览的声音先经过 Web Audio 量电平再出来。改动后要重新打开剪辑页才生效；如果读不到声音会自动关掉。">电平表（实验，重新打开剪辑页后生效）</el-checkbox>
+        <span v-if="ed.meterOn.value" class="mo"><b>主输出</b><span class="meter" :class="meterClass('out')" role="meter" :aria-valuenow="Math.round(ed.levels.out ?? -90)" aria-valuemin="-90" aria-valuemax="0"><i :style="{ width: meterPct(ed.levels.out) + '%' }" /></span><em>{{ Math.round(ed.levels.out ?? -90) <= -90 ? '−∞' : Math.round(ed.levels.out ?? -90) + ' dBFS' }}</em></span>
       </div>
       <p class="mnote">独奏只影响预览，导出不受影响；静音的轨道预览和导出都没有声音。整体响度在“输出”页的“响度标准化”里设。</p>
     </div>
@@ -974,7 +1036,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="t in textsOn(r.no)"
               :key="t.id"
               class="blk txt"
-              :class="{ sel: isSel('text', t.id) }"
+              :class="{ sel: isSel('text', t.id), grouped: groupNo(t) !== undefined }"
               :style="{ left: px(t.startMs) + 'px', width: Math.max(8, px(t.endMs - t.startMs)) + 'px' }"
               :title="t.text"
               @pointerdown.stop.prevent="textDown($event, t)"
@@ -993,7 +1055,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="(c, i) in ed.project.value.clips"
               :key="c.id"
               class="blk clip"
-              :class="{ sel: isSel('clip', c.id), img: c.kind === 'image', bad: isBroken(c.path), moving: dragIdx === i }"
+              :class="{ sel: isSel('clip', c.id), grouped: groupNo(c) !== undefined, cmp: c.compound !== undefined, img: c.kind === 'image', bad: isBroken(c.path), moving: dragIdx === i }"
               :style="{
                 left: px(ed.placed.value[i].startMs) + 'px',
                 width: Math.max(10, px(ed.placed.value[i].durMs)) + 'px',
@@ -1003,6 +1065,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               }"
               :title="clipName(c)"
               @pointerdown.stop.prevent="clipDown($event, i)"
+              @dblclick.stop.prevent="enterIfCompound(c)"
             >
               <span v-if="ed.placed.value[i].overlapMs > 0" class="xf" :style="{ width: px(ed.placed.value[i].overlapMs) + 'px' }" title="转场" />
               <i class="h l" @pointerdown.stop.prevent="trimClip($event, c, 'l')" />
@@ -1019,7 +1082,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="x in byTrack.get(r.no) ?? []"
               :key="x.o.id"
               class="blk ovl"
-              :class="{ sel: isSel('overlay', x.o.id), img: x.o.kind === 'image', bad: isBroken(x.o.path), adj: x.o.adjust }"
+              :class="{ sel: isSel('overlay', x.o.id), grouped: groupNo(x.o) !== undefined, img: x.o.kind === 'image', bad: isBroken(x.o.path), adj: x.o.adjust }"
               :style="{
                 left: px(x.o.startMs) + 'px',
                 width: Math.max(10, px(overlayDuration(x.o))) + 'px',
@@ -1046,7 +1109,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="a in audioOn(r.no)"
               :key="a.id"
               class="blk aud"
-              :class="{ sel: isSel('audio', a.id), bad: isBroken(a.path), wave: !!waveUrl(a) }"
+              :class="{ sel: isSel('audio', a.id), grouped: groupNo(a) !== undefined, bad: isBroken(a.path), wave: !!waveUrl(a) }"
               :style="audioStyle(a)"
               :title="audioName(a)"
               @pointerdown.stop.prevent="audioDown($event, a)"
@@ -1160,6 +1223,13 @@ defineExpose({ reveal, targetAt, hover, fit })
   display: flex;
   align-items: center;
   min-width: 0;
+}
+.crumb { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border: 1px solid var(--cc-acc, #2457e6); border-radius: 8px; background: var(--cc-card); font-size: 12px; flex-wrap: wrap }
+.crumb .b { border: 1px solid var(--cc-line); background: var(--cc-card); color: var(--cc-fg); border-radius: 10px; padding: 1px 10px; cursor: pointer }
+.crumb b.cur { color: var(--cc-acc, #2457e6) }
+.blk.cmp { background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0 6px, transparent 6px 12px) !important }
+.blk.grouped {
+  box-shadow: inset 0 -3px 0 #d98a1f;
 }
 .blk.sel {
   outline: 2px solid var(--cc-acc);
@@ -1420,6 +1490,13 @@ defineExpose({ reveal, targetAt, hover, fit })
 .mixer .ch.off { opacity: 0.55 }
 .mixer .cn { display: flex; gap: 6px; align-items: center }
 .mixer .cn b { color: #b9812d }
+.mixer .meter { flex: 1; min-width: 40px; height: 6px; border-radius: 3px; background: var(--cc-line); overflow: hidden; display: inline-block }
+.mixer .meter i { display: block; height: 100%; background: #3a9d6e; transition: width 60ms linear }
+.mixer .meter.hot i { background: #d9a21a }
+.mixer .meter.clip i { background: #e5484d }
+.mixer .mout { flex-basis: 100%; display: flex; gap: 14px; align-items: center; flex-wrap: wrap }
+.mixer .mout .mo { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 220px }
+.mixer .mout .mo em { font-style: normal; color: var(--cc-sub, #888); font-size: 11px; min-width: 64px }
 .mixer .cb { display: flex; gap: 4px }
 .mixer .b { width: 22px; height: 20px; padding: 0; border: 1px solid var(--cc-line); border-radius: 4px; background: var(--cc-card); color: var(--cc-mute); font: 700 10px/1 system-ui, sans-serif; cursor: pointer }
 .mixer .b.on { background: color-mix(in srgb, var(--cc-acc) 18%, var(--cc-card)); color: var(--cc-acc); border-color: var(--cc-acc) }
