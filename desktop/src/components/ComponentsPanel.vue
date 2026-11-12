@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BalancedGrid from './BalancedGrid.vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -142,7 +143,7 @@ onUnmounted(() => unlisten?.())
 </script>
 
 <template>
-  <div class="panel">
+  <BalancedGrid>
     <section v-for="t in list" :key="t.id" class="card block">
       <div class="title">
         <h3>{{ INFO[t.id]?.name ?? t.id }}</h3>
@@ -213,6 +214,7 @@ onUnmounted(() => unlisten?.())
       </div>
     </section>
 
+  </BalancedGrid>
     <el-dialog v-model="sitesOpen" title="yt-dlp 支持的网站" width="520px" append-to-body>
       <el-input v-model="sitesQuery" size="small" clearable placeholder="搜索，例如 youtube、pornhub、twitter" />
       <p class="mute small count">共 {{ sites.length }} 个提取器{{ sitesQuery ? `，匹配 ${filteredSites.length} 个` : '' }}。部分网站需要登录或代理。</p>
@@ -221,15 +223,9 @@ onUnmounted(() => unlisten?.())
         <div v-if="filteredSites.length > 500" class="mute">还有 {{ filteredSites.length - 500 }} 个，请输入关键词筛选</div>
       </div>
     </el-dialog>
-  </div>
 </template>
 
 <style scoped>
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 .block {
   padding: 14px 16px;
   display: flex;

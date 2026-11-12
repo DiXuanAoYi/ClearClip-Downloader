@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BalancedGrid from './BalancedGrid.vue'
 import SafeboxView from '../views/SafeboxView.vue'
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -104,7 +105,7 @@ async function wipe() {
 </script>
 
 <template>
-  <div class="groups">
+  <BalancedGrid class="groups">
     <section class="group card">
       <h3>应用锁</h3>
       <div class="kv" :class="{ stack: app.lock.enabled }">
@@ -181,6 +182,7 @@ async function wipe() {
       </div>
     </section>
 
+  </BalancedGrid>
     <el-dialog :model-value="dialog !== null" :title="dialog === 'set' ? (app.lock.enabled ? '修改应用锁密码' : '设置应用锁密码') : '关闭应用锁'" width="380px" @close="dialog = null">
       <div class="col">
         <el-input v-if="app.lock.enabled" v-model="current" type="password" show-password placeholder="当前密码" autocomplete="off" />
@@ -211,16 +213,9 @@ async function wipe() {
         <el-button type="danger" :loading="busy" :disabled="!canWipe" @click="wipe">清除 {{ picked.length }} 项</el-button>
       </template>
     </el-dialog>
-  </div>
 </template>
 
 <style scoped>
-.groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-  gap: 12px;
-  align-items: start;
-}
 .group {
   padding: 14px 16px;
   display: flex;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BalancedGrid from './BalancedGrid.vue'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -100,7 +101,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="info" class="panel">
+  <BalancedGrid v-if="info">
     <section class="card block">
       <div class="kv">
         <span>
@@ -228,15 +229,10 @@ onUnmounted(() => {
       </div>
       <p class="mute small">网页只能发送链接、文字和文件，下载电脑上明确发给手机的项目，不能浏览电脑上的其他文件。只接受局域网内的访问；手机和电脑不在同一网络时无法使用。</p>
     </section>
-  </div>
+  </BalancedGrid>
 </template>
 
 <style scoped>
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 .block {
   padding: 14px 16px;
   display: flex;

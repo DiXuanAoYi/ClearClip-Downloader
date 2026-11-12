@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BalancedGrid from './BalancedGrid.vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -208,8 +209,8 @@ async function remove(a: AccountSummary) {
 </script>
 
 <template>
-  <div class="panel">
-    <el-alert v-if="app.info && !app.info.keyInKeyring" type="warning" show-icon :closable="false" title="系统钥匙串不可用，Cookie 的加密密钥保存在本机的应用数据目录中。" />
+  <BalancedGrid>
+    <el-alert v-if="app.info && !app.info.keyInKeyring" class="wide" type="warning" show-icon :closable="false" title="系统钥匙串不可用，Cookie 的加密密钥保存在本机的应用数据目录中。" />
 
     <section class="card block">
       <h3>已保存的账号</h3>
@@ -294,6 +295,7 @@ async function remove(a: AccountSummary) {
       <small class="mute">Cookie 加密保存在本机，只会发送给它所属的网站。使用登录账号大量下载有被平台限制的风险。</small>
     </section>
 
+  </BalancedGrid>
     <el-dialog v-model="pasteVisible" title="粘贴 Cookie" width="560px">
       <p class="mute small">当前网站：{{ targetSite || '未选择' }}。粘贴 cookies.txt 内容时会按文件里的域名自动分组。</p>
       <el-input v-model="pasteText" type="textarea" :rows="8" class="mono" placeholder="SESSDATA=...; bili_jct=...  或  cookies.txt 内容" />
@@ -302,15 +304,9 @@ async function remove(a: AccountSummary) {
         <el-button type="primary" :loading="busy" @click="importPaste">保存</el-button>
       </template>
     </el-dialog>
-  </div>
 </template>
 
 <style scoped>
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 .block {
   padding: 14px 16px;
   display: flex;

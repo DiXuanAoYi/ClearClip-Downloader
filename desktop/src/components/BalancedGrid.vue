@@ -1,6 +1,7 @@
 <script lang="ts">
-import { Comment, Fragment, cloneVNode, defineComponent, h, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch, type PropType, type VNode } from 'vue'
+import { Comment, Fragment, defineComponent, h, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch, type PropType, type VNode } from 'vue'
 import { balanceColumns, type LayoutMode } from '../utils/balance'
+import { layoutMode } from '../utils/settingsLayout'
 
 /**
  * 设置页的卡片排布：把卡片分到几列，让各列高度尽量接近，没有一行里矮卡片下面空着的位置。
@@ -13,12 +14,16 @@ import { balanceColumns, type LayoutMode } from '../utils/balance'
 export default defineComponent({
   name: 'BalancedGrid',
   props: {
-    mode: { type: String as PropType<LayoutMode>, default: 'balance' },
+    /** 不传就用“设置 → 通用 → 设置页排布”里选的；传了就以传的为准 */
+    mode: { type: String as PropType<LayoutMode>, default: undefined },
     minCol: { type: Number, default: 340 },
+    /** 最多几列：窗口再宽也不会把卡片挤成很窄的长条 */
+    maxCols: { type: Number, default: 4 },
     gap: { type: Number, default: 12 },
   },
   setup(props, { slots }) {
     const root = ref<HTMLElement | null>(null)
+    const curMode = (): LayoutMode => props.mode ?? layoutMode.value
     const cols = ref(1)
     const assign = ref<number[]>([])
     const heights = ref<number[]>([])
@@ -55,7 +60,7 @@ export default defineComponent({
         const a = balanceColumns(
           seg.idx.map((i) => hs[i] ?? 0),
           cols.value,
-          props.mode,
+          curMode(),
         )
         seg.idx.forEach((i, k) => (res[i] = a[k]))
       }
@@ -74,13 +79,13 @@ export default defineComponent({
       const el = root.value
       if (!el) return
       const w = el.clientWidth
-      const n = props.mode === 'single' ? 1 : Math.max(1, Math.floor((w + props.gap) / (props.minCol + props.gap)))
+      const n = curMode() === 'single' ? 1 : Math.min(props.maxCols, Math.max(1, Math.floor((w + props.gap) / (props.minCol + props.gap))))
       const nodes = [...el.querySelectorAll<HTMLElement>('[data-bgi]')]
       const hs: number[] = []
       for (const e of nodes) hs[Number(e.dataset.bgi)] = e.offsetHeight
       const sameHeights = hs.length === heights.value.length && hs.every((x, i) => Math.abs(x - heights.value[i]) < 2)
-      if (n === cols.value && sameHeights && assign.value.length === hs.length && lastMode === props.mode) return
-      lastMode = props.mode
+      if (n === cols.value && sameHeights && assign.value.length === hs.length && lastMode === curMode()) return
+      lastMode = curMode()
       heights.value = hs
       cols.value = n
       const items = flatten(slots.default?.())
@@ -109,7 +114,7 @@ export default defineComponent({
       }, 0)
     }
 
-    watch(() => props.mode, schedule)
+    watch(curMode, schedule)
 
     onMounted(() => {
       ro = new ResizeObserver(schedule)
@@ -131,7 +136,8 @@ export default defineComponent({
       const items = flatten(slots.default?.())
       // 卡片数量变了（有的卡片按条件出现 / 消失）或还没量过：先都放第一列，渲染后量高度再分
       const a = assign.value.length === items.length ? assign.value : items.map(() => 0)
-      const node = (v: VNode, i: number) => cloneVNode(v, { 'data-bgi': i, key: v.key ?? `bg-${i}` })
+      // 每张卡片外包一层，用这一层量高度：卡片本身是组件时（多根节点、带 v-if）也量得到
+      const node = (v: VNode, i: number) => h('div', { class: 'bg-item', 'data-bgi': i, key: v.key ?? `bg-${i}`, style: { minWidth: '0' } }, [v])
       const gap = `${props.gap}px`
       return h(
         'div',

@@ -40,7 +40,7 @@ if (which === 'parse') {
   ps.result = (W.__result ?? null) as never
   W.__parse = ps
 }
-const style = which === 'float' ? 'width:780px;height:64px;position:relative' : which === 'write' ? 'width:464px' : 'padding:16px;max-width:1100px;height:900px;display:flex;flex-direction:column'
+const style = which === 'float' ? 'width:780px;height:64px;position:relative' : which === 'write' ? 'width:464px' : which === 'settings' ? 'padding:16px' : 'padding:16px;max-width:1100px;height:900px;display:flex;flex-direction:column'
 createApp({ render: () => h('div', { style }, [which === 'glossary' ? h(GlossaryPanel, { modelValue: store.settings!.ai, 'onUpdate:modelValue': () => {} }) : which === 'video' ? h(VideoTools, { preset: ['/m/clip.mp4'] }) : which === 'security' ? h(SecurityPanel, { modelValue: store.settings!.security, 'onUpdate:modelValue': () => {} }) : h(C[which] ?? ExcerptsPanel)]) })
   .use(pinia)
   .use(ElementPlus, { locale: zhCn })

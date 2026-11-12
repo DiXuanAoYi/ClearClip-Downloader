@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BalancedGrid from './BalancedGrid.vue'
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../api'
@@ -145,7 +146,7 @@ async function runTest() {
 </script>
 
 <template>
-  <div class="panel">
+  <BalancedGrid>
     <section class="card block">
       <h3>线路测速</h3>
       <p class="mute small">对直连、系统代理和每个自定义代理，各下载这个地址开头的一小段（最多 1.5 MB / 6 秒），比较首字节耗时和速度。找出访问某个网站最快的出口后，可以一键设为这个网站的出口规则。</p>
@@ -209,15 +210,10 @@ async function runTest() {
         </div>
       </div>
     </section>
-  </div>
+  </BalancedGrid>
 </template>
 
 <style scoped>
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 .block {
   padding: 14px 16px;
   display: flex;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BalancedGrid from './BalancedGrid.vue'
 import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../api'
@@ -53,7 +54,7 @@ onMounted(refresh)
 </script>
 
 <template>
-  <div class="groups">
+  <BalancedGrid class="groups">
     <section class="group card">
       <h3>BT / 磁力</h3>
       <small class="mute">粘贴 magnet: 链接或 .torrent 地址即可下载；多文件的种子会展开成列表，选择要下载的文件。下载完成后不做种。DHT、PEX、UPnP 已启用。</small>
@@ -94,16 +95,10 @@ onMounted(refresh)
         <small class="mute">每次下载时取其中前几台服务器；下载失败时使用上次缓存的列表</small>
       </div>
     </section>
-  </div>
+  </BalancedGrid>
 </template>
 
 <style scoped>
-.groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-  gap: 14px;
-  align-items: start;
-}
 .group {
   padding: 14px 16px;
   display: flex;
@@ -133,9 +128,18 @@ h3 {
 .status {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   font-size: 12px;
   color: var(--cc-mute);
+}
+/* 来源地址很长又没有空格：不允许把右边的按钮挤出卡片 */
+.status > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.status > .el-button {
+  flex: none;
 }
 </style>
