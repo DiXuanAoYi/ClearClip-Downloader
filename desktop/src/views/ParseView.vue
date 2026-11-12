@@ -1651,8 +1651,8 @@ function recentKind(r: HistoryItem) {
   cursor: pointer;
 }
 .tab.on {
-  color: var(--cc-accent, #2457e6);
-  border-bottom-color: var(--cc-accent, #2457e6);
+  color: var(--cc-amber);
+  border-bottom-color: var(--cc-amber);
   font-weight: 600;
 }
 .tab:disabled {
@@ -1697,8 +1697,8 @@ function recentKind(r: HistoryItem) {
   color: var(--cc-mute);
 }
 .chip.on {
-  border-color: var(--cc-accent, #2457e6);
-  background: var(--cc-accent-soft, rgba(36, 87, 230, 0.1));
+  border-color: var(--cc-amber);
+  background: var(--cc-acc-soft);
   font-weight: 600;
 }
 .chip.lay {

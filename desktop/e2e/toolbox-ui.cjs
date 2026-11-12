@@ -219,30 +219,20 @@ const INIT = `
     await page.close()
   }
 
-  // 7. 主导航：没有“保险箱”；在工具箱里默认收成图标条，点 ≡ 展开，记住选择
+  // 7. 主导航：没有“保险箱”；固定 88px 图标加文字，进工具箱也不收起
   {
     const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } })
     page.on('pageerror', (e) => errors.push(e.message))
     await page.addInitScript(INIT)
     await page.goto(`http://127.0.0.1:${PORT}/merge-harness.html#app`)
     await page.waitForTimeout(2500)
-    const labels = await page.locator('aside.side .nav').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+    const labels = await page.locator('nav.side .nav').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
     ok('主导航里没有“保险箱”', labels.length >= 9 && !labels.includes('保险箱'), labels.join(','))
-    ok('其他页面的主导航保持原样：文字、没有图标条', (await page.locator('aside.side.compact').count()) === 0 && (await page.locator('aside.side .nav svg.ico').count()) === 0)
-    await page.locator('aside.side .nav', { hasText: '工具箱' }).click()
+    ok('主导航固定 88px，每项都有图标和文字', Math.round((await page.locator('nav.side').boundingBox()).width) === 88 && (await page.locator('nav.side .nav svg.ico').count()) === labels.length && (await page.locator('nav.side .nav span').count()) === labels.length)
+    await page.locator('nav.side .nav', { hasText: '工具箱' }).click()
     await page.waitForTimeout(600)
-    ok('进工具箱后主导航收成图标条', (await page.locator('aside.side.compact').count()) === 1 && (await page.locator('aside.side.compact .nav span').count()) === 0 && (await page.locator('aside.side .nav svg.ico').count()) === labels.length)
-    const w = (await page.locator('aside.side').boundingBox()).width
-    ok('图标条宽度约 56px', w > 50 && w < 64, String(w))
-    ok('图标条上悬停能看到名字（title）', (await page.locator('aside.side .nav').first().getAttribute('title')) === labels[0])
-    await page.getByRole('button', { name: '展开主导航' }).click()
-    await page.waitForTimeout(250)
-    ok('点 ≡ 展开成图标加名字', (await page.locator('aside.side.compact').count()) === 0 && (await page.locator('aside.side .nav span').count()) === labels.length)
-    ok('展开的选择被记住', (await page.evaluate(() => localStorage.getItem('clearclip.toolbox.nav'))) === '1')
-    // 离开工具箱：恢复原样
-    await page.locator('aside.side .nav', { hasText: '解析' }).click()
-    await page.waitForTimeout(300)
-    ok('离开工具箱后主导航恢复成原来的样子', (await page.locator('aside.side .nav svg.ico').count()) === 0 && (await page.locator('aside.side .brand').count()) === 1)
+    ok('进工具箱后主导航不变（不再收成图标条）', Math.round((await page.locator('nav.side').boundingBox()).width) === 88 && (await page.locator('nav.side .nav span').count()) === labels.length)
+    ok('当前页在导航里标出（aria-current）', (await page.locator('nav.side .nav[aria-current="page"]').innerText()).includes('工具箱'))
     await page.close()
   }
 

@@ -883,7 +883,19 @@ h3 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+  padding: 11px 0;
+  border-top: 1px solid var(--cc-line);
+}
+h3 + .kv,
+.kv:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.kv > span small.block {
+  color: var(--cc-mute);
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 .kv > span {
   min-width: 0;

@@ -1224,9 +1224,9 @@ defineExpose({ reveal, targetAt, hover, fit })
   align-items: center;
   min-width: 0;
 }
-.crumb { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border: 1px solid var(--cc-acc, #2457e6); border-radius: 8px; background: var(--cc-card); font-size: 12px; flex-wrap: wrap }
+.crumb { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border: 1px solid var(--cc-acc); border-radius: 8px; background: var(--cc-card); font-size: 12px; flex-wrap: wrap }
 .crumb .b { border: 1px solid var(--cc-line); background: var(--cc-card); color: var(--cc-fg); border-radius: 10px; padding: 1px 10px; cursor: pointer }
-.crumb b.cur { color: var(--cc-acc, #2457e6) }
+.crumb b.cur { color: var(--cc-acc) }
 .blk.cmp { background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0 6px, transparent 6px 12px) !important }
 .blk.grouped {
   box-shadow: inset 0 -3px 0 #d98a1f;
@@ -1245,7 +1245,8 @@ defineExpose({ reveal, targetAt, hover, fit })
   min-width: 0;
 }
 .txt {
-  background: #4f7cc9;
+  background: #5b4fb0;
+  border: 1px solid #a08cff80;
   color: #fff;
   font-size: 11.5px;
 }
@@ -1254,7 +1255,7 @@ defineExpose({ reveal, targetAt, hover, fit })
   min-width: 0;
 }
 .clip {
-  background-color: #3f6f5e;
+  background-color: #1d6b66;
   background-repeat: no-repeat;
   background-position: left center;
   background-size: auto 100%;
@@ -1262,10 +1263,10 @@ defineExpose({ reveal, targetAt, hover, fit })
   align-items: flex-end;
 }
 .clip.img {
-  background-color: #6b5a8e;
+  background-color: #35607f;
 }
 .ovl {
-  background-color: #2f6f8f;
+  background-color: #1f5f7a;
   background-repeat: no-repeat;
   background-position: left center;
   background-size: auto 100%;
@@ -1321,7 +1322,7 @@ defineExpose({ reveal, targetAt, hover, fit })
   padding-bottom: 3px;
 }
 .aud {
-  background: #b9812d;
+  background: #a8741f;
 }
 .xf {
   position: absolute;
