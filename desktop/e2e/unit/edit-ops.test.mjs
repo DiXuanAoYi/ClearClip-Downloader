@@ -176,3 +176,66 @@ console.log('edit ops ok')
   // 倍速：时间线上的 d 毫秒对应素材里 d * speed
   assert.deepEqual(E.movePairBy({ inMs: 0, outMs: 8000, speed: 2 }, { inMs: 0, outMs: 8000, speed: 1 }, { ao: 8000, bi: 0 }, 1000, 20000), { aOut: 10000, bIn: 1000 })
 }
+
+// ---- 复合片段
+{
+  const mk = (id, inMs, outMs, extra = {}) => ({ ...E.normalizeProject({ clips: [{ id, path: `/m/${id}.mp4`, kind: 'video', inMs, outMs }] }).clips[0], ...extra })
+  const p0 = E.normalizeProject({
+    clips: [mk(1, 0, 2000), mk(2, 0, 3000, { transition: { kind: 'fade', durationMs: 500 } }), mk(3, 0, 1000)],
+    overlays: [ovl({ id: 10, startMs: 2500 })],
+    texts: [{ id: 11, text: 't', startMs: 2200, endMs: 3000, track: 1 }],
+    audio: [{ id: 12, path: 'm.mp3', startMs: 2000, track: 1 }],
+  })
+  assert.equal(E.totalMs(p0.clips), 2000 + 3000 - 500 + 1000)
+  // 选两个连着的主轨片段加上叠加素材、文字、配乐
+  const r = E.makeCompoundIn(p0, [{ kind: 'clip', id: 2 }, { kind: 'clip', id: 3 }, { kind: 'overlay', id: 10 }, { kind: 'text', id: 11 }, { kind: 'audio', id: 12 }])
+  assert.equal(typeof r, 'object')
+  const p1 = r.project
+  assert.deepEqual(p1.clips.map((c) => c.compound ?? 'plain'), ['plain', r.compoundId])
+  const cc = p1.clips[1]
+  assert.equal(cc.path, '')
+  assert.equal(cc.outMs, E.totalMs([{ ...mk(2, 0, 3000), transition: null }, mk(3, 0, 1000)]), '复合片段的长度是里面主轨的总时长')
+  assert.deepEqual(cc.transition, { kind: 'fade', durationMs: 500 }, '原来第一个片段进来的转场留在复合片段上')
+  const comp = p1.compounds[0]
+  assert.equal(comp.project.clips[0].transition, null)
+  assert.deepEqual([comp.project.overlays[0].startMs, comp.project.texts[0].startMs, comp.project.texts[0].endMs, comp.project.audio[0].startMs], [Math.max(0, 2500 - 1500), 700, 1500, 500], '时间减去它在外面开始的位置')
+  assert.equal(p1.overlays.length + p1.texts.length + p1.audio.length, 0, '外面不再有被收进去的叠加素材、文字、配乐')
+  assert.equal(E.mediaPaths(p1).filter((x) => x === '/m/3.mp4').length, 1, '素材清单里包含子时间线用到的文件')
+  // 不连着、什么都没选：给出原因
+  assert.match(E.makeCompoundIn(p0, [{ kind: 'clip', id: 1 }, { kind: 'clip', id: 3 }]), /连着/)
+  assert.match(E.makeCompoundIn(p0, [{ kind: 'overlay', id: 10 }]), /选中主轨/)
+  // 嵌套：再把复合片段和前一个片段合成一个，是第 2 层；到第 4 层被拒绝
+  const r2 = E.makeCompoundIn(p1, [{ kind: 'clip', id: 1 }, { kind: 'clip', id: cc.id }])
+  assert.equal(E.compoundDepth(r2.project.compounds, r2.compoundId), 2)
+  const r3 = E.makeCompoundIn(r2.project, [{ kind: 'clip', id: r2.clipId }])
+  assert.equal(E.compoundDepth(r3.project.compounds, r3.compoundId), 3)
+  assert.match(E.makeCompoundIn(r3.project, [{ kind: 'clip', id: r3.clipId }]), /最多嵌套/)
+  // 进入、改、退出
+  const e = E.enterCompoundProject(p1, cc.id)
+  assert.equal(e.inner.clips.length, 2)
+  assert.equal(e.inner.compounds.length, 0, '里面没有别的复合片段时，表是空的')
+  e.inner.clips[1].outMs = 500 // 把里面最后一个片段剪短
+  const back = E.leaveCompoundProject(e.inner, e.frame)
+  assert.equal(back.compounds.length, 1)
+  assert.equal(back.compounds[0].project.clips[1].outMs, 500)
+  assert.equal(back.clips[1].outMs, E.totalMs(back.compounds[0].project.clips), '外面的片段跟上新的总时长')
+  // 外面裁过的（出点比里面总时长短）不会被拉长
+  const trimmed = E.normalizeProject(JSON.parse(JSON.stringify(p1)))
+  trimmed.clips[1].outMs = 1000
+  const e2 = E.enterCompoundProject(trimmed, cc.id)
+  e2.inner.clips[1].outMs = 3000
+  assert.equal(E.leaveCompoundProject(e2.inner, e2.frame).clips[1].outMs, 1000)
+  // 里面被清空：复合片段连同外面的片段一起删掉
+  const e3 = E.enterCompoundProject(p1, cc.id)
+  e3.inner.clips = []
+  const gone = E.leaveCompoundProject(e3.inner, e3.frame)
+  assert.deepEqual([gone.clips.length, gone.compounds.length], [1, 0])
+  // 两层都在里面时，保存用的最外层工程要把两层都放回去
+  const deep = E.enterCompoundProject(r2.project, r2.clipId)
+  const deeper = E.enterCompoundProject(deep.inner, deep.inner.clips.find((c) => c.compound !== undefined).id)
+  deeper.inner.clips[0].outMs = 700
+  const root = E.foldToRoot(deeper.inner, [deep.frame, deeper.frame])
+  assert.equal(root.compounds.length, 2)
+  assert.equal(root.clips.length, r2.project.clips.length)
+  assert.equal(root.compounds.find((c) => c.id === cc.compound).project.clips[0].outMs, 700)
+}

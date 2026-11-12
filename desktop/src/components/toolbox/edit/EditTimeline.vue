@@ -341,7 +341,11 @@ const thumbOf = (c: EditClip) => {
   const t = ed.sources[c.path]?.thumb
   return t ? `url("${convertFileSrc(t)}")` : 'none'
 }
-const clipName = (c: EditClip) => ed.sources[c.path]?.name ?? c.path.split(/[\\/]/).pop() ?? c.path
+const clipName = (c: EditClip) => (c.compound !== undefined ? `▣ ${ed.project.value.compounds.find((x) => x.id === c.compound)?.name ?? '复合片段'}` : (ed.sources[c.path]?.name ?? c.path.split(/[\\/]/).pop() ?? c.path))
+/** 双击复合片段：进去编辑它里面的内容。 */
+function enterIfCompound(c: EditClip) {
+  if (c.compound !== undefined) ed.enterCompound(c.id)
+}
 const isBroken = (path: string) => path in ed.broken
 
 // ---------- 叠加素材 ----------
@@ -964,6 +968,15 @@ defineExpose({ reveal, targetAt, hover, fit })
     </div>
 
 
+    <div v-if="ed.compoundStack.value.length" class="crumb" role="navigation" aria-label="复合片段层级">
+      <button type="button" class="b" title="回到外面一层" @click="ed.exitCompound()">‹ 返回</button>
+      <span class="mute">主时间线</span>
+      <template v-for="(n, i) in ed.compoundPath.value" :key="i">
+        <span class="mute">›</span>
+        <b :class="{ cur: i === ed.compoundPath.value.length - 1 }">{{ n }}</b>
+      </template>
+      <span class="mute small">正在编辑复合片段里面的内容；导出、预览用的是放回去以后的整个工程</span>
+    </div>
     <div v-if="mixerOpen" class="mixer" role="group" aria-label="混音器">
       <div v-for="t in audioTracks" :key="t.no" class="ch" :class="{ off: t.meta.mute || (hasSolo && !t.meta.solo) }">
         <div class="cn"><b>{{ trackCode('audio', t.no) }}</b><span class="ellipsis">{{ trackTitle(t.meta) }}</span><span v-if="ed.meterOn.value" class="meter" :class="meterClass('a' + t.no)" role="meter" :aria-valuenow="Math.round(ed.levels['a' + t.no] ?? -90)" aria-valuemin="-90" aria-valuemax="0" :title="`${Math.round(ed.levels['a' + t.no] ?? -90)} dBFS`"><i :style="{ width: meterPct(ed.levels['a' + t.no]) + '%' }" /></span></div>
@@ -1042,7 +1055,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="(c, i) in ed.project.value.clips"
               :key="c.id"
               class="blk clip"
-              :class="{ sel: isSel('clip', c.id), grouped: groupNo(c) !== undefined, img: c.kind === 'image', bad: isBroken(c.path), moving: dragIdx === i }"
+              :class="{ sel: isSel('clip', c.id), grouped: groupNo(c) !== undefined, cmp: c.compound !== undefined, img: c.kind === 'image', bad: isBroken(c.path), moving: dragIdx === i }"
               :style="{
                 left: px(ed.placed.value[i].startMs) + 'px',
                 width: Math.max(10, px(ed.placed.value[i].durMs)) + 'px',
@@ -1052,6 +1065,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               }"
               :title="clipName(c)"
               @pointerdown.stop.prevent="clipDown($event, i)"
+              @dblclick.stop.prevent="enterIfCompound(c)"
             >
               <span v-if="ed.placed.value[i].overlapMs > 0" class="xf" :style="{ width: px(ed.placed.value[i].overlapMs) + 'px' }" title="转场" />
               <i class="h l" @pointerdown.stop.prevent="trimClip($event, c, 'l')" />
@@ -1210,6 +1224,10 @@ defineExpose({ reveal, targetAt, hover, fit })
   align-items: center;
   min-width: 0;
 }
+.crumb { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border: 1px solid var(--cc-acc, #2457e6); border-radius: 8px; background: var(--cc-card); font-size: 12px; flex-wrap: wrap }
+.crumb .b { border: 1px solid var(--cc-line); background: var(--cc-card); color: var(--cc-fg); border-radius: 10px; padding: 1px 10px; cursor: pointer }
+.crumb b.cur { color: var(--cc-acc, #2457e6) }
+.blk.cmp { background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0 6px, transparent 6px 12px) !important }
 .blk.grouped {
   box-shadow: inset 0 -3px 0 #d98a1f;
 }

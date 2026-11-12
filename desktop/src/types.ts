@@ -1721,6 +1721,8 @@ export interface EditClip {
   id: number
   /** 编组编号：同编号的是一组，选中、移动、删除时一起走 */
   group?: number
+  /** 复合片段：内容是工程里 `compounds` 中这个编号的子时间线（`path` 为空） */
+  compound?: number
   path: string
   kind: 'video' | 'image'
   inMs: number
@@ -2002,6 +2004,14 @@ export interface EditProject {
   /** 时间线上的标记 */
   markers: EditMarker[]
   out: EditOutput
+  /** 复合片段的子时间线（主轨片段的 `compound` 指向这里）；只放在最外层的工程里 */
+  compounds: EditCompound[]
+}
+
+export interface EditCompound {
+  id: number
+  name: string
+  project: EditProject
 }
 
 export type EditTrackKind = 'video' | 'audio' | 'text'

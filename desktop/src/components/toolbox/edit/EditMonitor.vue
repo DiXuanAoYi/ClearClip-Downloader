@@ -486,6 +486,12 @@ function regUp() {
 }
 
 const empty = computed(() => !clips.value.length && !ed.project.value.overlays.length)
+/** 现在这一刻在看的主轨片段是复合片段：实时画面里没有它的素材，提示用“精确预览”看 */
+const curCompound = computed(() => {
+  const c = cur.value
+  if (!c || c.compound === undefined) return null
+  return ed.project.value.compounds.find((x) => x.id === c.compound)?.name ?? '复合片段'
+})
 </script>
 
 <template>
@@ -552,6 +558,7 @@ const empty = computed(() => !clips.value.length && !ed.project.value.overlays.l
       </template>
       <video v-show="mode === 'preview'" ref="pv" class="pv" :src="mode === 'preview' ? (previewUrl ?? undefined) : undefined" preload="auto" playsinline />
       <div v-if="showRegions && rg.drawing.value" class="rhint">{{ rg.detecting.value ? '正在感知运动的物体…' : rg.candidates.value.length ? '点虚线框选中那个物体，或在画面上拖出一个框' : '在画面上拖出一个框，或点一下放一个框' }}</div>
+      <div v-if="curCompound && mode === 'live'" class="hint">复合片段“{{ curCompound }}”：实时画面里不显示它，点“精确预览”查看（双击时间线上的它可以进去编辑）</div>
       <div v-if="empty" class="hint">添加素材后，在这里预览</div>
     </div>
   </div>

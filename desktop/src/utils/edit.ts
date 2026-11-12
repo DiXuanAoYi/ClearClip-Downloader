@@ -3,7 +3,7 @@
 // 这个文件不要引入别的运行时模块（用 node 直接跑 scripts 里的检查时需要）。
 
 import { blankTrack, MAX_AUDIO_TRACKS, MAX_TEXT_TRACKS, packTracks } from './tracks.ts'
-import type { EditShapeMask, EditBackground, EditAudio, EditBeats, EditChroma, EditClip, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
+import type { EditShapeMask, EditBackground, EditAudio, EditBeats, EditChroma, EditClip, EditCompound, EditKeyframe, EditKeyframes, EditOutput, EditOverlay, EditProject, EditRegion, EditSource, EditText, NRect, RegionEffect, TimeSpan, TrackPt, TranscriptWord } from '../types'
 
 export const MIN_MS = 100
 export const MIN_TRANSITION_MS = 100
@@ -68,7 +68,7 @@ export function defaultOutput(): EditOutput {
 }
 
 export function emptyProject(): EditProject {
-  return { title: '', clips: [], overlays: [], texts: [], audio: [], tracks: [], markers: [], out: defaultOutput() }
+  return { title: '', clips: [], overlays: [], texts: [], audio: [], tracks: [], markers: [], out: defaultOutput(), compounds: [] }
 }
 
 /** 补全旧版本或手改过的工程文件里缺的字段。 */
@@ -82,6 +82,7 @@ export function normalizeProject(raw: Partial<EditProject> | null | undefined): 
   p.texts = (r.texts ?? []).map((t, i) => ({ ...blankText(), ...t, id: t.id ?? i + 1, keyframes: kfClean(t.keyframes) }))
   p.audio = (r.audio ?? []).map((a, i) => ({ ...blankAudio(), ...a, id: a.id ?? i + 1, keyframes: kfClean(a.keyframes), beats: cleanBeats(a.beats) }))
   p.tracks = (r.tracks ?? []).map((t) => ({ ...blankTrack(t.kind, t.no), ...t }))
+  p.compounds = (r.compounds ?? []).map((c, i) => ({ id: c.id ?? i + 1, name: c.name ?? '复合片段', project: normalizeProject(c.project) }))
   p.markers = (r.markers ?? []).map((m, i) => ({ id: m.id ?? i + 1, ms: Math.max(0, Math.round(m.ms ?? 0)), name: m.name ?? '', color: m.color ?? 'orange' }))
   // 旧工程里的配乐、文字没有轨道编号：按时间重叠与否分到不同的轨道，看上去和以前错开的行一样
   const rawAudio = r.audio ?? []
@@ -703,6 +704,7 @@ export function mediaPaths(p: EditProject): string[] {
   for (const o of p.overlays) if (o.path) set.add(o.path)
   for (const a of p.audio) if (a.path) set.add(a.path)
   for (const t of p.texts) if (t.font) set.add(t.font)
+  for (const comp of p.compounds ?? []) for (const m of mediaPaths(comp.project)) set.add(m)
   return [...set]
 }
 
@@ -1927,4 +1929,135 @@ export function movePairBy(a: Pick<EditClip, 'inMs' | 'outMs' | 'speed'>, b: Pic
   const hi = Math.min((limitA - o.ao) / a.speed, (b.outMs - b.inMs - MIN_MS * b.speed) / b.speed)
   const dd = clamp(d, lo, hi)
   return { aOut: Math.round(o.ao + dd * a.speed), bIn: Math.round(o.bi + dd * b.speed) }
+}
+
+
+// ---------- 复合片段 ----------
+
+/** 复合片段最多嵌套几层（和后端一致）。 */
+export const MAX_COMPOUND_DEPTH = 3
+
+/** 进入了一层复合片段以后，要退回去时用来还原外面那层的信息。 */
+export interface CompoundFrame {
+  /** 外面那层工程（进入时的样子，JSON） */
+  parent: string
+  compoundId: number
+  /** 外面那层里指向它的片段 */
+  clipId: number
+  name: string
+  /** 进入时里面主轨的总时长，用来判断出来时要不要跟着改外面那个片段的出点 */
+  oldTotal: number
+}
+
+const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x))
+
+/** 一个复合片段嵌套了几层（自己算 1 层）；表里有环时返回一个超过上限的数。 */
+export function compoundDepth(table: EditCompound[], id: number, seen: number[] = []): number {
+  if (seen.includes(id) || seen.length > MAX_COMPOUND_DEPTH) return MAX_COMPOUND_DEPTH + 1
+  const comp = table.find((x) => x.id === id)
+  if (!comp) return 1
+  let deepest = 0
+  for (const c of comp.project.clips) if (c.compound !== undefined) deepest = Math.max(deepest, compoundDepth(table, c.compound, [...seen, id]))
+  return 1 + deepest
+}
+
+/**
+ * 把选中的主轨片段（要连着）和选中的叠加素材、文字、配乐合成一个复合片段：它们进到新的子时间线，外面的主轨上换成一个复合片段。
+ * 子时间线里的叠加素材、文字、配乐的时间减去开头的位置，从 0 开始。成功返回新工程和复合片段的片段编号，不行返回原因。
+ */
+export function makeCompoundIn(p: EditProject, sel: { kind: 'clip' | 'overlay' | 'text' | 'audio'; id: number }[], name?: string): { project: EditProject; clipId: number; compoundId: number } | string {
+  const ids = new Set(sel.filter((s) => s.kind === 'clip').map((s) => s.id))
+  if (!ids.size) return '先选中主轨上要合并的片段（Shift+点击可以多选）。'
+  const idx = p.clips.map((c, i) => (ids.has(c.id) ? i : -1)).filter((i) => i >= 0)
+  for (let k = 1; k < idx.length; k++) if (idx[k] !== idx[k - 1] + 1) return '选中的主轨片段要是连着的，才能合成一个复合片段。'
+  const compoundId = p.compounds.reduce((m, c) => Math.max(m, c.id), 0) + 1
+  // 嵌套层数：选中的片段里已经有复合片段的话，新的这个要比它们都深一层
+  let deepest = 0
+  for (const i of idx) {
+    const c = p.clips[i].compound
+    if (c !== undefined) deepest = Math.max(deepest, compoundDepth(p.compounds, c))
+  }
+  if (deepest + 1 > MAX_COMPOUND_DEPTH) return `复合片段最多嵌套 ${MAX_COMPOUND_DEPTH} 层。`
+  const next = clone(p)
+  const first = idx[0]
+  const start = layout(p.clips)[first].startMs
+  const inner = emptyProject()
+  inner.clips = idx.map((i) => clone(next.clips[i]))
+  const entering = inner.clips[0].transition ?? null
+  inner.clips[0].transition = null
+  inner.out = clone(p.out)
+  const shift = (ms: number) => Math.max(0, ms - start)
+  const take = <T extends { id: number }>(kind: 'overlay' | 'text' | 'audio', list: T[]): T[] => list.filter((x) => sel.some((s) => s.kind === kind && s.id === x.id))
+  inner.overlays = take('overlay', next.overlays).map((o) => ({ ...o, startMs: shift(o.startMs) }))
+  inner.texts = take('text', next.texts).map((t) => ({ ...t, startMs: shift(t.startMs), endMs: shift(t.endMs) }))
+  inner.audio = take('audio', next.audio).map((a) => ({ ...a, startMs: shift(a.startMs) }))
+  const clipId = nextId(p)
+  const total = totalMs(inner.clips)
+  const compoundClip: EditClip = { ...blankClip(), id: clipId, kind: 'video', path: '', compound: compoundId, inMs: 0, outMs: total, transition: entering }
+  next.clips.splice(first, idx.length, compoundClip)
+  next.overlays = next.overlays.filter((o) => !sel.some((s) => s.kind === 'overlay' && s.id === o.id))
+  next.texts = next.texts.filter((t) => !sel.some((s) => s.kind === 'text' && s.id === t.id))
+  next.audio = next.audio.filter((a) => !sel.some((s) => s.kind === 'audio' && s.id === a.id))
+  const title = name ?? `复合片段 ${compoundId}`
+  next.compounds.push({ id: compoundId, name: title, project: inner })
+  return { project: next, clipId, compoundId }
+}
+
+/** 进入复合片段：返回用来编辑的子时间线工程（带着外面的复合片段表，里面再嵌套的也能找到）和退回时要用的信息。 */
+export function enterCompoundProject(parent: EditProject, clipId: number): { inner: EditProject; frame: CompoundFrame } | null {
+  const c = parent.clips.find((x) => x.id === clipId)
+  if (c?.compound === undefined) return null
+  const comp = parent.compounds.find((x) => x.id === c.compound)
+  if (!comp) return null
+  const inner = normalizeProject(clone(comp.project))
+  inner.out = clone(parent.out)
+  inner.compounds = clone(parent.compounds.filter((x) => x.id !== comp.id))
+  return { inner, frame: { parent: JSON.stringify(parent), compoundId: comp.id, clipId, name: comp.name, oldTotal: totalMs(inner.clips) } }
+}
+
+/**
+ * 退出复合片段：把改过的子时间线放回外面那层的表里，并让外面那个片段的出点跟上新的总时长（整段用的跟着变长变短，裁过的只会变短）。
+ * 子时间线里的主轨被清空了，就把这个复合片段和它在外面的片段一起删掉。
+ */
+export function leaveCompoundProject(inner: EditProject, frame: CompoundFrame): EditProject {
+  const parent = normalizeProject(JSON.parse(frame.parent))
+  const rest = inner.compounds
+  const cleaned: EditProject = { ...inner, compounds: [], title: '' }
+  if (!cleaned.clips.length) {
+    parent.clips = parent.clips.filter((c) => c.id !== frame.clipId)
+    parent.compounds = rest
+    return parent
+  }
+  const comp = parent.compounds.find((x) => x.id === frame.compoundId)
+  parent.compounds = [...rest, { id: frame.compoundId, name: comp?.name ?? frame.name, project: cleaned }]
+  const clip = parent.clips.find((c) => c.id === frame.clipId)
+  if (clip) {
+    const total = totalMs(cleaned.clips)
+    clip.outMs = clip.outMs >= frame.oldTotal ? total : Math.min(clip.outMs, total)
+    clip.inMs = Math.min(clip.inMs, Math.max(0, clip.outMs - MIN_MS))
+  }
+  return parent
+}
+
+/** 把正在编辑的子时间线一层层放回去，得到最外层的工程（保存、导出、预览、草稿都用它）。 */
+export function foldToRoot(current: EditProject, stack: CompoundFrame[]): EditProject {
+  let cur = current
+  for (let i = stack.length - 1; i >= 0; i--) cur = leaveCompoundProject(cur, stack[i])
+  return cur
+}
+
+/** 去掉没有被任何片段用到的复合片段（删掉复合片段的片段以后，它的子时间线不再带在工程文件里）。 */
+export function pruneCompounds(p: EditProject): EditProject {
+  if (!p.compounds.length) return p
+  const used = new Set<number>()
+  const visit = (clips: EditClip[]) => {
+    for (const c of clips) {
+      if (c.compound === undefined || used.has(c.compound)) continue
+      used.add(c.compound)
+      const comp = p.compounds.find((x) => x.id === c.compound)
+      if (comp) visit(comp.project.clips)
+    }
+  }
+  visit(p.clips)
+  return used.size === p.compounds.length ? p : { ...p, compounds: p.compounds.filter((c) => used.has(c.id)) }
 }

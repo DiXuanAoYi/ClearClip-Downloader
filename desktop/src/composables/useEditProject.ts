@@ -63,7 +63,13 @@ import {
   arrangeToBeats,
   beatsOnTimeline,
   fitAudio,
+  makeCompoundIn,
+  enterCompoundProject,
+  leaveCompoundProject,
+  foldToRoot,
+  pruneCompounds,
 } from '../utils/edit'
+import type { CompoundFrame } from '../utils/edit'
 
 export interface Sel {
   kind: 'clip' | 'overlay' | 'text' | 'audio'
@@ -208,6 +214,21 @@ export function useEditProject() {
   let lastAt = 0
   const snapshot = () => JSON.stringify(project.value)
 
+  // ---------- 复合片段 ----------
+  /** 进入复合片段以后，每一层外面那层的信息（最外面的在最前）。空 = 正在编辑最外层的工程。 */
+  const compoundStack = ref<CompoundFrame[]>([])
+  /** 最外层的工程：正在编辑某个复合片段时，把子时间线一层层放回去。保存、导出、预览、草稿都用它，不用 `project`。 */
+  const rootProject = computed<EditProject>(() => pruneCompounds(compoundStack.value.length ? foldToRoot(project.value, compoundStack.value) : project.value))
+  const rootJson = computed(() => JSON.stringify(rootProject.value))
+  /** 面包屑：主时间线 › 复合片段名 › … */
+  const compoundPath = computed(() => compoundStack.value.map((f) => f.name))
+  /** 进出复合片段后撤销记录从头开始（里外两层的撤销记录不能混在一起） */
+  function resetHistory() {
+    undoStack.value = []
+    redoStack.value = []
+    lastKey = ''
+  }
+
   /** 修改工程。`key` 相同且间隔很短的连续修改（拖滑块、拖片段边缘）合并成一步撤销。 */
   function mutate(fn: (p: EditProject) => void, key = '') {
     const now = Date.now()
@@ -300,6 +321,44 @@ export function useEditProject() {
     } else {
       extra.value = [...cur.slice(1), ...mates]
     }
+  }
+  /** 把选中的主轨片段（要连着）和选中的叠加素材、文字、配乐合成一个复合片段。成功返回 null，不行返回原因。 */
+  function makeCompound(): string | null {
+    const r = makeCompoundIn(project.value, selection.value)
+    if (typeof r === 'string') return r
+    mutate((p) => {
+      p.clips = r.project.clips
+      p.overlays = r.project.overlays
+      p.texts = r.project.texts
+      p.audio = r.project.audio
+      p.compounds = r.project.compounds
+    })
+    sel.value = { kind: 'clip', id: r.clipId }
+    return null
+  }
+  /** 进入复合片段，编辑它里面的内容（撤销记录从头开始）。 */
+  function enterCompound(clipId: number): boolean {
+    const r = enterCompoundProject(project.value, clipId)
+    if (!r) return false
+    compoundStack.value.push(r.frame)
+    project.value = r.inner
+    sel.value = null
+    playhead.value = 0
+    playing.value = false
+    resetHistory()
+    return true
+  }
+  /** 退出一层复合片段，回到外面。 */
+  function exitCompound(): boolean {
+    const f = compoundStack.value.pop()
+    if (!f) return false
+    playing.value = false
+    project.value = leaveCompoundProject(project.value, f)
+    resetHistory()
+    dirty.value = true
+    sel.value = project.value.clips.some((c) => c.id === f.clipId) ? { kind: 'clip', id: f.clipId } : null
+    playhead.value = clamp(playhead.value, 0, Math.max(0, total.value))
+    return true
   }
   /** 选中的几项编成一组；少于两项返回 false。 */
   function groupSelected(): boolean {
@@ -1260,6 +1319,7 @@ export function useEditProject() {
   // ---------- 新建 / 打开 / 保存 ----------
 
   function reset(next: EditProject, path = '') {
+    compoundStack.value = []
     project.value = next
     filePath.value = path
     sel.value = null
@@ -1298,7 +1358,7 @@ export function useEditProject() {
   }
 
   async function saveProject(path: string) {
-    await api.editSave(path, JSON.parse(snapshot()))
+    await api.editSave(path, JSON.parse(rootJson.value))
     filePath.value = path
     dirty.value = false
     remember(path)
@@ -1313,7 +1373,7 @@ export function useEditProject() {
       clearTimeout(draftTimer)
       draftTimer = setTimeout(() => {
         try {
-          const p = project.value
+          const p = rootProject.value
           if (!p.clips.length && !p.overlays.length && !p.texts.length && !p.audio.length) localStorage.removeItem(DRAFT_KEY)
           else localStorage.setItem(DRAFT_KEY, JSON.stringify({ project: p, filePath: filePath.value }))
         } catch {
@@ -1359,6 +1419,13 @@ export function useEditProject() {
     selection,
     isSelected,
     toggleSel,
+    makeCompound,
+    enterCompound,
+    exitCompound,
+    compoundStack,
+    compoundPath,
+    rootProject,
+    rootJson,
     groupSelected,
     ungroupSelected,
     groupMates,
