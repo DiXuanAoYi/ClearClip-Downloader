@@ -558,7 +558,7 @@ const curCompound = computed(() => {
       </template>
       <video v-show="mode === 'preview'" ref="pv" class="pv" :src="mode === 'preview' ? (previewUrl ?? undefined) : undefined" preload="auto" playsinline />
       <div v-if="showRegions && rg.drawing.value" class="rhint">{{ rg.detecting.value ? '正在感知运动的物体…' : rg.candidates.value.length ? '点虚线框选中那个物体，或在画面上拖出一个框' : '在画面上拖出一个框，或点一下放一个框' }}</div>
-      <div v-if="curCompound && mode === 'live'" class="hint">复合片段“{{ curCompound }}”：实时画面里不显示它，点“精确预览”查看（双击时间线上的它可以进去编辑）</div>
+      <div v-if="curCompound && mode === 'live'" class="hint">这一段是复合片段：实时画面里不显示它，点“精确预览”查看（双击时间线上的它可以进去编辑）</div>
       <div v-if="empty" class="hint">添加素材后，在这里预览</div>
     </div>
   </div>
