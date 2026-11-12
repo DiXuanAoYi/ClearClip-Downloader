@@ -1,0 +1,68 @@
+name: desktop-signing-check
+
+# 只检查更新签名的 Secrets 配得对不对：用它们给一个临时文件签一次名，几分钟出结果（完整发版要 25 分钟以上）。
+# 手动运行，不会发布任何东西。只报告“有没有、格式、是否有多余空白”，不打印内容（Secrets 的值在日志里也会被遮盖）。
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+        working-directory: desktop
+
+      - name: 检查 Secrets 的形状
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          PASS: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+        run: |
+          # untrusted comment: 的 base64 开头：tauri signer 生成的私钥和公钥文件内容都以它开头
+          prefix='dW50cnVzdGVkIGNvbW1lbnQ6'
+          ok=1
+          if [ -z "$KEY" ]; then echo "✗ TAURI_SIGNING_PRIVATE_KEY：没有（仓库 Actions Secrets 里没有这个名字，或是空的）"; ok=0
+          else
+            echo "✓ TAURI_SIGNING_PRIVATE_KEY：有"
+            case "$KEY" in "$prefix"*) echo "  ✓ 内容以密钥文件的标准开头开始";; *) echo "  ✗ 内容不是以 $prefix 开头：可能贴的是路径、公钥或不完整的内容"; ok=0;; esac
+            lines=$(printf '%s' "$KEY" | wc -l | tr -d ' ')
+            echo "  换行数：$lines（私钥文件通常是 1 行或更少）"
+            case "$KEY" in *[[:space:]]) echo "  ⚠ 结尾有空白或换行字符";; esac
+            case "$KEY" in [[:space:]]*) echo "  ⚠ 开头有空白"; ok=0;; esac
+          fi
+          if [ -z "$PASS" ]; then echo "✗ TAURI_SIGNING_PRIVATE_KEY_PASSWORD：没有或是空的（这把密钥需要密码）"; ok=0
+          else
+            echo "✓ TAURI_SIGNING_PRIVATE_KEY_PASSWORD：有"
+            case "$PASS" in [[:space:]]*) echo "  ✗ 密码开头有空白字符"; ok=0;; esac
+            case "$PASS" in *[[:space:]]) echo "  ✗ 密码结尾有空白或换行字符（复制时多带了）"; ok=0;; esac
+            if printf '%s' "$PASS" | LC_ALL=C grep -q '[^ -~]'; then echo "  ⚠ 密码里有非 ASCII 字符（全角符号、中文等）"; fi
+          fi
+          if [ -z "$PUBKEY" ]; then echo "✗ TAURI_UPDATER_PUBKEY：没有"; ok=0
+          else
+            echo "✓ TAURI_UPDATER_PUBKEY：有"
+            case "$PUBKEY" in "$prefix"*) echo "  ✓ 内容以公钥文件的标准开头开始";; *) echo "  ✗ 内容不是以 $prefix 开头"; ok=0;; esac
+          fi
+          [ "$ok" = 1 ] || echo "上面标 ✗ 的先改正。"
+
+      - name: 用这些 Secrets 给临时文件签一次名
+        shell: bash
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          echo test > "$RUNNER_TEMP/x.txt"
+          if npm run --silent tauri signer sign -- "$RUNNER_TEMP/x.txt"; then
+            echo "✓ 签名成功：私钥和密码对得上。"
+          else
+            echo "✗ 签名失败：见上面的报错。"
+            exit 1
+          fi
