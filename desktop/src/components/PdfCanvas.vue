@@ -729,61 +729,61 @@ onBeforeUnmount(() => ro?.disconnect())
 
 <style scoped>
 .pdfcv { flex: 1; min-height: 0; display: flex; flex-direction: column }
-.cbar { display: flex; gap: 6px; align-items: center; padding: 8px 12px; flex-wrap: wrap; border-bottom: 1px solid var(--el-border-color) }
+.cbar { display: flex; gap: 6px; align-items: center; padding: 8px 12px; flex-wrap: wrap; border-bottom: 1px solid var(--cc-line) }
 .cbar .sp, .ih .sp { flex: 1 }
 .zt { min-width: 44px; text-align: center }
-.seg3 { display: flex; background: var(--el-fill-color-blank); border: 1px solid var(--el-border-color); border-radius: 8px; padding: 2px; gap: 2px }
-.seg3 span { padding: 3px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--el-text-color-secondary); white-space: nowrap }
-.seg3 .on { background: var(--el-color-primary); color: #fff; font-weight: 700 }
+.seg3 { display: flex; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px }
+.seg3 span { padding: 3px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--cc-mute); white-space: nowrap }
+.seg3 .on { background: var(--cc-amber); color: #fff; font-weight: 700 }
 .vrow { flex: 1; min-height: 0; display: flex }
-.banner { display: flex; align-items: center; gap: 10px; padding: 7px 14px; background: var(--el-color-warning-light-9); border-bottom: 1px solid var(--el-color-warning-light-7); color: var(--el-color-warning-dark-2); font-size: 12.5px }
+.banner { display: flex; align-items: center; gap: 10px; padding: 7px 14px; background: var(--cc-acc-soft); border-bottom: 1px solid var(--cc-acc-line); color: var(--cc-amber); font-size: 12.5px }
 .banner span { flex: 1 }
-.side { width: 292px; flex: none; border-left: 1px solid var(--el-border-color-lighter); display: flex; flex-direction: column; overflow: hidden; font-size: 12px; background: var(--el-fill-color-lighter) }
-.insp { padding: 10px; display: flex; flex-direction: column; gap: 7px; border-bottom: 1px solid var(--el-border-color-lighter); overflow-y: auto; max-height: 62% }
+.side { width: 292px; flex: none; border-left: 1px solid var(--cc-line-soft); display: flex; flex-direction: column; overflow: hidden; font-size: 12px; background: var(--cc-fill) }
+.insp { padding: 10px; display: flex; flex-direction: column; gap: 7px; border-bottom: 1px solid var(--cc-line-soft); overflow-y: auto; max-height: 62% }
 .ih { display: flex; align-items: center; gap: 2px }
 .ir { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
-.il { width: 44px; flex: none; color: var(--el-text-color-secondary) }
-.swb { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--el-border-color); background: var(--el-bg-color); border-radius: 6px; padding: 2px 8px 2px 3px; cursor: pointer; font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--el-text-color-primary); min-width: 96px }
-.swb:hover { border-color: var(--el-color-primary) }
+.il { width: 44px; flex: none; color: var(--cc-mute) }
+.swb { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--cc-line); background: var(--cc-card); border-radius: 6px; padding: 2px 8px 2px 3px; cursor: pointer; font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--cc-fg); min-width: 96px }
+.swb:hover { border-color: var(--cc-amber) }
 .swb i { width: 22px; height: 18px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, .25); flex: none }
-.chip { font-size: 11.5px; padding: 1px 8px; border-radius: 10px; background: var(--el-fill-color); color: var(--el-text-color-secondary) }
-.chip.warn { background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2) }
-.seg { display: flex; background: var(--el-fill-color-blank); border: 1px solid var(--el-border-color); border-radius: 8px; padding: 2px; gap: 2px }
-.seg span { padding: 2px 8px; border-radius: 6px; cursor: pointer; color: var(--el-text-color-secondary); white-space: nowrap }
-.seg .on { background: var(--el-color-primary); color: #fff; font-weight: 700 }
+.chip { font-size: 11.5px; padding: 1px 8px; border-radius: 10px; background: var(--cc-fill); color: var(--cc-mute) }
+.chip.warn { background: var(--cc-acc-soft); color: var(--cc-amber) }
+.seg { display: flex; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px }
+.seg span { padding: 2px 8px; border-radius: 6px; cursor: pointer; color: var(--cc-mute); white-space: nowrap }
+.seg .on { background: var(--cc-amber); color: #fff; font-weight: 700 }
 .szin { width: 62px }
 .grow { flex: 1; margin: 0 6px }
-.adv { color: var(--el-color-primary); cursor: pointer; user-select: none; margin-top: 2px }
-.rp { display: flex; flex-direction: column; gap: 7px; border-top: 1px dashed var(--el-border-color); padding-top: 7px }
+.adv { color: var(--cc-amber); cursor: pointer; user-select: none; margin-top: 2px }
+.rp { display: flex; flex-direction: column; gap: 7px; border-top: 1px dashed var(--cc-line); padding-top: 7px }
 .lst { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 3px }
 .side .row { display: flex; gap: 6px; align-items: center; border: 0; background: none; text-align: left; padding: 3px 4px; border-radius: 6px; cursor: pointer; color: inherit; font: inherit }
-.side .row:hover { background: var(--el-fill-color) }
-.side .row.on { background: var(--el-color-primary-light-9) }
+.side .row:hover { background: var(--cc-fill) }
+.side .row.on { background: var(--cc-acc-soft) }
 .side i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #b7beb9 }
 .side i.ok { background: #2f8a57 }
 .side i.td { background: #d9762b }
 .side .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.side em { font-style: normal; color: var(--el-text-color-secondary) }
+.side em { font-style: normal; color: var(--cc-mute) }
 .side em.td { color: #b4561a; font-weight: 700 }
-.side em.ed { color: var(--el-color-primary) }
-.mute { color: var(--el-text-color-secondary); font-size: 12px }
-.sel { position: absolute; pointer-events: none; z-index: 5; border: 1.5px solid var(--el-color-primary) }
-.sel .grip { position: absolute; left: -1px; top: -20px; height: 18px; min-width: 22px; padding: 0 4px; background: var(--el-color-primary); color: #fff; border-radius: 4px 4px 0 0; font-size: 12px; line-height: 18px; text-align: center; cursor: move; pointer-events: auto; user-select: none }
-.sel .rsz { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--el-color-primary); border: 2px solid #fff; border-radius: 3px; cursor: nwse-resize; pointer-events: auto }
+.side em.ed { color: var(--cc-amber) }
+.mute { color: var(--cc-mute); font-size: 12px }
+.sel { position: absolute; pointer-events: none; z-index: 5; border: 1.5px solid var(--cc-amber) }
+.sel .grip { position: absolute; left: -1px; top: -20px; height: 18px; min-width: 22px; padding: 0 4px; background: var(--cc-amber); color: #fff; border-radius: 4px 4px 0 0; font-size: 12px; line-height: 18px; text-align: center; cursor: move; pointer-events: auto; user-select: none }
+.sel .rsz { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--cc-amber); border: 2px solid #fff; border-radius: 3px; cursor: nwse-resize; pointer-events: auto }
 .blk.todo { border: 1.5px dashed #d9762b; min-height: 6px }
-.blk.on { outline: 1.5px solid var(--el-color-primary); outline-offset: 0 }
-.vp { flex: 1; min-height: 0; display: flex; gap: 10px; overflow: hidden; background: var(--el-fill-color-light); padding: 4px; position: relative }
+.blk.on { outline: 1.5px solid var(--cc-amber); outline-offset: 0 }
+.vp { flex: 1; min-height: 0; display: flex; gap: 10px; overflow: hidden; background: var(--cc-hover); padding: 4px; position: relative }
 .vp > figure { flex: 1; margin: 0; display: flex; flex-direction: column; gap: 6px; overflow: auto; min-width: 0 }
-.vp figcaption { font-size: 12.5px; font-weight: 700; color: var(--el-text-color-secondary) }
-.vp figure img { width: 100%; height: auto; border: 1px solid var(--el-border-color); background: #fff }
+.vp figcaption { font-size: 12.5px; font-weight: 700; color: var(--cc-mute) }
+.vp figure img { width: 100%; height: auto; border: 1px solid var(--cc-line); background: #fff }
 .pane { position: relative; overflow: hidden; cursor: grab; touch-action: none; flex: none }
 .pane:active { cursor: grabbing }
 .lbl { position: absolute; left: 6px; top: 4px; z-index: 3; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.55); color: #fff; pointer-events: none }
 .stage { position: relative; transform-origin: 0 0; margin: 4px; box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25); background: #fff }
 .stage img { width: 100%; height: 100%; display: block; user-select: none; -webkit-user-drag: none }
 .blk { position: absolute; box-sizing: border-box; display: flex; align-items: center; line-height: 1.25; cursor: text; white-space: pre-wrap; word-break: break-word; outline: 0 }
-.blk:hover { outline: 1px dashed var(--el-color-primary) }
-.blk:focus { outline: 2px solid var(--el-color-primary); z-index: 2 }
+.blk:hover { outline: 1px dashed var(--cc-amber) }
+.blk:focus { outline: 2px solid var(--cc-amber); z-index: 2 }
 .empty { margin: auto }
-.tip { font-size: 12px; color: var(--el-text-color-secondary); padding: 4px 12px }
+.tip { font-size: 12px; color: var(--cc-mute); padding: 4px 12px }
 </style>

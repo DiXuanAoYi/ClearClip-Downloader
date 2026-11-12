@@ -196,7 +196,7 @@ function appendAll() {
   gap: 3px;
 }
 .cand:hover {
-  border-color: var(--el-color-primary);
+  border-color: var(--cc-amber);
 }
 .head {
   display: flex;
@@ -204,7 +204,7 @@ function appendAll() {
   gap: 8px;
 }
 .score {
-  color: var(--el-color-primary);
+  color: var(--cc-amber);
   white-space: nowrap;
 }
 </style>

@@ -352,13 +352,13 @@ const shown = (c: ECue) => S.viewLines(S.textOf(c), view.value)
   align-items: start;
 }
 .row.sel {
-  background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
+  background: color-mix(in srgb, var(--cc-amber) 10%, transparent);
 }
 .row.now {
-  box-shadow: inset 3px 0 0 var(--el-color-primary);
+  box-shadow: inset 3px 0 0 var(--cc-amber);
 }
 .row.hit {
-  background: color-mix(in srgb, var(--el-color-warning) 14%, transparent);
+  background: color-mix(in srgb, var(--cc-amber) 14%, transparent);
 }
 .row.bad .no {
   color: var(--cc-err);

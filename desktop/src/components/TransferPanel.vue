@@ -468,7 +468,7 @@ onUnmounted(() => {
   border: 1px solid var(--cc-line);
   border-radius: 14px;
   overflow: hidden;
-  background: var(--el-bg-color);
+  background: var(--cc-card);
 }
 .topbar {
   display: flex;
@@ -532,7 +532,7 @@ onUnmounted(() => {
   border: 1px solid var(--cc-line);
   border-radius: 16px;
   padding: 14px;
-  background: var(--el-fill-color-blank);
+  background: var(--cc-inset);
 }
 .qrbox {
   display: flex;
@@ -572,7 +572,7 @@ onUnmounted(() => {
   gap: 8px;
 }
 .warn {
-  color: var(--el-color-warning);
+  color: var(--cc-amber);
   line-height: 1.5;
 }
 .devs {
@@ -661,7 +661,7 @@ onUnmounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--el-fill-color-light);
+  background: var(--cc-hover);
 }
 .feed {
   flex: 1;
@@ -712,7 +712,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--el-bg-color);
+  background: var(--cc-card);
   border: 1px solid var(--cc-line);
   border-top-left-radius: 4px;
 }
@@ -774,7 +774,7 @@ onUnmounted(() => {
   color: var(--x-ok);
 }
 .bad {
-  color: var(--el-color-danger);
+  color: var(--cc-err);
 }
 .ellipsis {
   overflow: hidden;
@@ -823,7 +823,7 @@ onUnmounted(() => {
   padding: 0 6px 0 8px;
   border: 1px solid var(--cc-line);
   border-radius: 14px;
-  background: var(--el-bg-color);
+  background: var(--cc-card);
 }
 .tchip {
   flex: none;
@@ -841,7 +841,7 @@ onUnmounted(() => {
   font-weight: 600;
 }
 .tchip.none {
-  color: var(--el-color-danger);
+  color: var(--cc-err);
 }
 .clip {
   flex: none;
@@ -863,7 +863,7 @@ onUnmounted(() => {
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--el-text-color-primary);
+  color: var(--cc-fg);
   font-size: 13.5px;
 }
 .tin::placeholder {
@@ -882,19 +882,19 @@ onUnmounted(() => {
   --el-button-hover-text-color: #1a1208;
   --el-button-active-bg-color: #e86a08;
   --el-button-active-border-color: #e86a08;
-  --el-button-disabled-bg-color: color-mix(in srgb, #ff7a14 38%, var(--el-bg-color));
-  --el-button-disabled-border-color: color-mix(in srgb, #ff7a14 38%, var(--el-bg-color));
-  --el-button-disabled-text-color: color-mix(in srgb, #1a1208 70%, var(--el-bg-color));
+  --el-button-disabled-bg-color: color-mix(in srgb, #ff7a14 38%, var(--cc-card));
+  --el-button-disabled-border-color: color-mix(in srgb, #ff7a14 38%, var(--cc-card));
+  --el-button-disabled-text-color: color-mix(in srgb, #1a1208 70%, var(--cc-card));
   font-weight: 700;
 }
 .dev.pend {
   border-color: var(--x-acc);
-  background: color-mix(in srgb, var(--x-acc) 10%, var(--el-bg-color));
+  background: color-mix(in srgb, var(--x-acc) 10%, var(--cc-card));
 }
 .code {
   font-family: var(--el-font-family-mono, monospace);
   letter-spacing: 1px;
-  color: var(--el-text-color-primary);
+  color: var(--cc-fg);
 }
 .main {
   position: relative;
@@ -905,7 +905,7 @@ onUnmounted(() => {
   z-index: 5;
   border: 2px dashed var(--x-acc);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--x-acc) 12%, var(--el-bg-color));
+  background: color-mix(in srgb, var(--x-acc) 12%, var(--cc-card));
   color: var(--x-acc);
   font-weight: 700;
   font-size: 15px;

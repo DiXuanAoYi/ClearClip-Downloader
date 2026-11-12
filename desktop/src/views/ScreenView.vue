@@ -396,17 +396,13 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 </script>
 
 <template>
-  <div class="scr">
-    <header class="head">
-      <div>
-        <h2>屏幕翻译</h2>
-        <p class="sub">翻译别的软件和游戏画面上的文字。译文贴在原位，不挡鼠标，也不会被自己再识别一遍。</p>
-      </div>
-      <div class="state">
-        <span class="dot" :class="{ on: st.running }" />
-        {{ st.running ? `运行中 · ${modeName(st.mode)}` : '未运行' }}<span v-if="st.msg" class="mute"> · {{ st.msg }}</span>
-      </div>
+  <div class="scr dpage">
+    <header class="head dtop">
+      <h1>屏幕翻译</h1>
+      <span class="dspacer" />
+      <span class="chip" :class="{ cyan: st.running }"><i v-if="st.running" class="ddot" />{{ st.running ? `运行中 · ${modeName(st.mode)}` : '未运行' }}<template v-if="st.msg"> · {{ st.msg }}</template></span>
     </header>
+    <p class="sub dnote">翻译别的软件和游戏画面上的文字。译文贴在原位，不挡鼠标，也不会被自己再识别一遍。</p>
 
     <el-alert v-if="!st.supported" type="info" :closable="false" show-icon title="屏幕翻译目前只支持 Windows。其他系统暂时不能用。" />
 
@@ -734,42 +730,42 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 </template>
 
 <style scoped>
-.scr { display: flex; flex-direction: column; gap: 14px; padding: 20px 24px; height: 100%; overflow-y: auto; box-sizing: border-box }
+.scr { height: 100%; overflow-y: auto; box-sizing: border-box }
 .head { display: flex; align-items: center; gap: 20px; flex-wrap: wrap }
 .head h2 { margin: 0 }
-.sub { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px }
+.sub { margin: 4px 0 0; color: var(--cc-mute); font-size: 13px }
 .state { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 13px }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--el-text-color-placeholder) }
-.dot.on { background: var(--el-color-success) }
-.mute { color: var(--el-text-color-secondary); font-size: 12.5px }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cc-faint) }
+.dot.on { background: var(--cc-cyan) }
+.mute { color: var(--cc-mute); font-size: 12.5px }
 .block { display: block }
-.card { border: 1px solid var(--el-border-color); border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--el-bg-color) }
-.card h3 { margin: 0; font-size: 14px }
+.card { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px }
+.card h3 { margin: 0; font-size: 15px; font-weight: 700 }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
 .modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px }
-.mode { text-align: left; border: 1px solid var(--el-border-color); background: var(--el-fill-color-blank); border-radius: 8px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; color: var(--el-text-color-primary) }
-.mode small { color: var(--el-text-color-secondary); line-height: 1.5 }
-.mode.sel { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9) }
+.mode { text-align: left; border: 1px solid var(--cc-line); background: var(--cc-panel2); border-radius: 12px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; color: var(--cc-fg) }
+.mode small { color: var(--cc-mute); line-height: 1.5 }
+.mode.sel { border-color: var(--cc-amber); background: var(--cc-acc-soft) }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 6px 24px }
 .field { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 }
 .field label { font-size: 13px; font-weight: 600 }
 .vert { display: flex; flex-direction: column; align-items: flex-start }
-.kv { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--el-border-color-extra-light) }
+.kv { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--cc-line-soft) }
 .mono :deep(input) { font-family: ui-monospace, Consolas, monospace }
-.ok { color: var(--el-color-success); font-size: 13px }
-.try { padding: 8px 10px; border-radius: 6px; background: var(--el-fill-color-light); display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto }
+.ok { color: var(--cc-cyan); font-size: 13px }
+.try { padding: 8px 10px; border-radius: 6px; background: var(--cc-hover); display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto }
 .tl { font-size: 13px }
-.prof { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--el-border-color-extra-light) }
+.prof { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--cc-line-soft) }
 .hrow { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; font-size: 13px }
-.hrow:hover { background: var(--el-fill-color-light) }
-.hs { color: var(--el-text-color-secondary); font-size: 12px }
+.hrow:hover { background: var(--cc-hover) }
+.hs { color: var(--cc-mute); font-size: 12px }
 .pack { align-items: center }
 .pname { width: 330px; flex: none; font-size: 13px }
 .vbox { margin-top: 12px; display: flex; flex-direction: column; gap: 8px }
-.vlist { max-height: 260px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px }
+.vlist { max-height: 260px; overflow-y: auto; border: 1px solid var(--cc-line-soft); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px }
 .vrow { display: grid; grid-template-columns: 52px 1fr 1fr; gap: 8px; font-size: 12.5px }
-.vt { color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums }
-.vs { color: var(--el-text-color-regular) }
+.vt { color: var(--cc-mute); font-variant-numeric: tabular-nums }
+.vs { color: var(--cc-fg2) }
 .vx { font-weight: 600 }
-.vsum pre { white-space: pre-wrap; font: inherit; margin: 4px 0 0; padding: 8px 10px; background: var(--el-fill-color-lighter); border-radius: 8px; max-height: 320px; overflow: auto }
+.vsum pre { white-space: pre-wrap; font: inherit; margin: 4px 0 0; padding: 8px 10px; background: var(--cc-fill); border-radius: 8px; max-height: 320px; overflow: auto }
 </style>

@@ -94,27 +94,27 @@ const live = (t: Task) => t.state === 'running' || t.state === 'queued'
 </template>
 
 <style scoped>
-.card { border: 1px solid var(--el-border-color); background: var(--el-bg-color); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px }
+.card { border: 1px solid var(--cc-line); background: var(--cc-card); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px }
 .hd { display: flex; align-items: center; gap: 6px }
-.hd h3 { margin: 0; font-size: 13px; color: var(--el-text-color-secondary); font-weight: 600 }
+.hd h3 { margin: 0; font-size: 13px; color: var(--cc-mute); font-weight: 600 }
 .sp { flex: 1 }
-.mute { color: var(--el-text-color-secondary); font-size: 12.5px }
+.mute { color: var(--cc-mute); font-size: 12.5px }
 .flt { display: flex; gap: 4px; flex-wrap: wrap }
-.flt span { font-size: 12px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--el-border-color); cursor: pointer; color: var(--el-text-color-secondary) }
-.flt .on { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-5); color: var(--el-color-primary); font-weight: 700 }
-.job { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--el-border-color); cursor: pointer }
-.job.cur { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9) }
+.flt span { font-size: 12px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--cc-line); cursor: pointer; color: var(--cc-mute) }
+.flt .on { background: var(--cc-acc-soft); border-color: var(--cc-acc-line); color: var(--cc-amber); font-weight: 700 }
+.job { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--cc-line); cursor: pointer }
+.job.cur { border-color: var(--cc-amber); background: var(--cc-acc-soft) }
 .n { display: flex; gap: 8px; align-items: center }
 .n b { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.tag { font-size: 11.5px; border-radius: 999px; padding: 0 8px; line-height: 20px; white-space: nowrap; background: var(--el-fill-color); color: var(--el-text-color-regular) }
-.tag.running { background: var(--el-color-primary-light-9); color: var(--el-color-primary) }
-.tag.failed { background: var(--el-color-danger-light-9); color: var(--el-color-danger) }
-.tag.ready { background: var(--el-color-warning-light-9); color: var(--el-color-warning-dark-2) }
-.tag.generated { background: var(--el-color-success-light-9); color: var(--el-color-success) }
-.bar { height: 5px; border-radius: 3px; background: var(--el-border-color); overflow: hidden }
-.bar i { display: block; height: 100%; background: var(--el-color-primary); transition: width 0.3s }
+.tag { font-size: 11.5px; border-radius: 999px; padding: 0 8px; line-height: 20px; white-space: nowrap; background: var(--cc-fill); color: var(--cc-fg2) }
+.tag.running { background: var(--cc-acc-soft); color: var(--cc-amber) }
+.tag.failed { background: var(--cc-err); color: var(--cc-err) }
+.tag.ready { background: var(--cc-acc-soft); color: var(--cc-amber) }
+.tag.generated { background: var(--cc-cyan-soft); color: var(--cc-cyan) }
+.bar { height: 5px; border-radius: 3px; background: var(--cc-line); overflow: hidden }
+.bar i { display: block; height: 100%; background: var(--cc-amber); transition: width 0.3s }
 .r2 { display: flex; align-items: center; gap: 6px }
-.sub { flex: 1; min-width: 0; font-size: 12px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.sub.bad { color: var(--el-color-danger) }
-.dng { color: var(--el-color-danger) }
+.sub { flex: 1; min-width: 0; font-size: 12px; color: var(--cc-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.sub.bad { color: var(--cc-err) }
+.dng { color: var(--cc-err) }
 </style>

@@ -412,7 +412,7 @@ h4 {
   gap: 2px;
 }
 .style.on {
-  border-color: var(--el-color-primary);
+  border-color: var(--cc-amber);
   background: rgba(64, 158, 255, 0.1);
 }
 .tr :deep(.el-checkbox) {

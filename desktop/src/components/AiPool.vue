@@ -350,5 +350,5 @@ h3 { margin: 0; font-size: 12px; color: var(--cc-mute); }
 .pr-row:first-child { border-top: 0; }
 .pr-row .nm2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-row .caps { display: flex; gap: 4px; flex-wrap: wrap; }
-.bad { color: var(--el-color-danger); font-weight: 600; }
+.bad { color: var(--cc-err); font-weight: 600; }
 </style>

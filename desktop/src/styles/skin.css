@@ -759,3 +759,28 @@ html:not(.dark) .el-button.pz-strong:not(.is-disabled) {
   object-fit: cover;
   display: block;
 }
+
+/* 下划线式标签页：给 el-radio-group 加 class="dtabs" */
+.el-radio-group.dtabs:has(.el-radio-button) {
+  display: flex;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--cc-line);
+  border-radius: 0;
+  background: transparent;
+  flex-wrap: wrap;
+}
+.dtabs .el-radio-button__inner {
+  padding: 10px 14px !important;
+  font-size: 14px;
+  border-radius: 0 !important;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent !important;
+}
+.dtabs .el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--cc-amber) !important;
+  border-bottom-color: var(--cc-amber) !important;
+}

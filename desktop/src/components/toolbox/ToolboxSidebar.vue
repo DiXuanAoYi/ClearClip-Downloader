@@ -45,12 +45,12 @@ function pickFirst() {
 
 <style scoped>
 .tbs {
-  width: 216px;
+  width: 230px;
   flex: none;
   box-sizing: border-box;
-  padding: 14px 10px;
+  padding: 22px 12px 14px;
   border-right: 1px solid var(--cc-line);
-  background: var(--cc-side);
+  background: var(--cc-rail);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -70,9 +70,9 @@ function pickFirst() {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--cc-line);
-  border-radius: 8px;
-  background: var(--cc-bg);
+  border: 1px solid var(--cc-line-strong);
+  border-radius: 10px;
+  background: var(--cc-inset);
   color: var(--cc-fg);
   cursor: pointer;
 }
@@ -92,9 +92,9 @@ function pickFirst() {
   height: 34px;
   box-sizing: border-box;
   padding: 0 10px;
-  border: 1px solid var(--cc-line);
-  border-radius: 8px;
-  background: var(--cc-bg);
+  border: 1px solid var(--cc-line-strong);
+  border-radius: 10px;
+  background: var(--cc-inset);
   color: var(--cc-mute);
 }
 .search input {
@@ -129,9 +129,10 @@ function pickFirst() {
   all: unset;
   box-sizing: border-box;
   width: 100%;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -140,11 +141,13 @@ function pickFirst() {
   cursor: pointer;
 }
 .item:hover {
-  background: var(--cc-acc-soft);
+  background: var(--cc-panel);
 }
 .item.on {
-  background: var(--cc-acc-soft);
-  color: var(--cc-acc);
+  background: var(--cc-panel);
+  border-color: var(--cc-line-strong);
+  box-shadow: inset 2px 0 0 var(--cc-amber);
+  color: var(--cc-amber);
   font-weight: 600;
 }
 .item.recent {

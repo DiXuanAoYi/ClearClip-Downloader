@@ -142,5 +142,5 @@ h3 { margin: 0; font-size: 12px; color: var(--cc-mute); font-weight: 500; letter
 .kv.stack { flex-direction: column; align-items: stretch; }
 .block { display: block; font-size: 11px; margin-top: 2px; }
 .slim { width: 210px; }
-.err { color: var(--el-color-danger); }
+.err { color: var(--cc-err); }
 </style>

@@ -94,7 +94,7 @@ const full = (id: string) => keysOf(id).length >= MAX_KEYFRAMES
   font-size: 12px;
 }
 .key.now {
-  background: var(--el-fill-color-light);
+  background: var(--cc-hover);
   border-radius: 4px;
 }
 .ease {

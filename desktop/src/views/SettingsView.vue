@@ -72,6 +72,25 @@ function readLayout(): LayoutMode {
     return 'balance'
   }
 }
+const CATS = [
+  { id: 'download', label: '下载', icon: 'M12 4v11M7 11l5 5 5-5M5 20h14' },
+  { id: 'parse', label: '解析', icon: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1' },
+  { id: 'p2p', label: 'BT 与 ed2k', icon: 'M6 4v9a6 6 0 0 0 12 0V4h-4v9a2 2 0 0 1-4 0V4zM6 8h4M14 8h4' },
+  { id: 'network', label: '网络', icon: 'M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18M12 3a9 9 0 1 0 0 18' },
+  { id: 'accounts', label: '账号与 Cookie', icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 20a8 8 0 0 1 16 0' },
+  { id: 'phone', label: '手机与浏览器扩展', icon: 'M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM11 18h2' },
+  { id: 'automation', label: '自动化', icon: 'M13 3 5 14h6l-1 7 8-11h-6z' },
+  { id: 'ai', label: 'AI', icon: 'M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4' },
+  { id: 'writing', label: '写作', icon: 'M4 20l4-1 11-11-3-3L5 16zM14 6l3 3' },
+  { id: 'security', label: '安全与隐私', icon: 'M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z' },
+  { id: 'components', label: '组件', icon: 'M12 3 4 7.5v9L12 21l8-4.5v-9L12 3ZM4 7.5 12 12l8-4.5M12 12v9' },
+  { id: 'diagnostics', label: '诊断', icon: 'M3 12h4l2-6 4 12 2-6h6' },
+  { id: 'general', label: '通用', icon: 'M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4' },
+] as const
+const catLabel = computed(() => CATS.find((c) => c.id === app.settingsTab)?.label ?? '')
+function openPalette() {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))
+}
 const layoutMode = ref<LayoutMode>(readLayout())
 watch(layoutMode, (v) => {
   try {
@@ -198,13 +217,36 @@ function insertVar(v: string) {
 </script>
 
 <template>
-  <div class="page">
-    <div class="head">
-      <h2>设置</h2>
-      <span class="mute saving">{{ saving ? '保存中…' : '修改后自动保存' }}</span>
+  <div class="dpage page">
+    <div class="dtop">
+      <h1>设置</h1>
+      <span class="dspacer" />
+      <span class="chip" :class="{ cyan: !saving }"><i v-if="!saving" class="ddot" />{{ saving ? '保存中…' : '已自动保存' }}</span>
     </div>
 
-    <el-tabs v-model="app.settingsTab">
+    <div class="dsplit2">
+      <aside class="cats dsticky" aria-label="设置分类">
+        <button type="button" class="catsearch" aria-label="搜索设置" @click="openPalette">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4-4" /></svg>
+          <span>搜索设置</span><span class="kbd">Ctrl K</span>
+        </button>
+        <button v-for="c in CATS" :key="c.id" type="button" class="cat" :aria-current="app.settingsTab === c.id ? 'true' : 'false'" @click="app.settingsTab = c.id">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="c.icon" /></svg>
+          <span>{{ c.label }}</span>
+        </button>
+      </aside>
+      <section class="setmain" :aria-label="catLabel + '设置'">
+        <div class="dtoolbar sethead">
+          <h2>{{ catLabel }}</h2>
+          <span class="dspacer" />
+          <span class="eyebrow">设置页排布</span>
+          <el-radio-group v-model="layoutMode" aria-label="设置页排布">
+            <el-radio-button value="balance">自动平衡</el-radio-button>
+            <el-radio-button value="order">按顺序</el-radio-button>
+            <el-radio-button value="single">单列</el-radio-button>
+          </el-radio-group>
+        </div>
+    <el-tabs v-model="app.settingsTab" class="hidetabs">
       <el-tab-pane label="下载" name="download">
         <BalancedGrid class="groups" :mode="layoutMode">
           <section class="group card">
@@ -720,6 +762,8 @@ function insertVar(v: string) {
         </BalancedGrid>
       </el-tab-pane>
     </el-tabs>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -730,25 +774,100 @@ function insertVar(v: string) {
 .slim {
   width: 180px;
 }
-.page {
-  padding: 20px 24px;
-  max-width: 1040px;
+.dsplit2 {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
 }
-.head {
+.cats {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 4px;
+  flex-direction: column;
+  gap: 4px;
 }
-h2 {
+.catsearch {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--cc-line-strong);
+  background: var(--cc-inset);
+  color: var(--cc-faint);
+  cursor: pointer;
+}
+.catsearch > span:first-of-type {
+  flex: 1;
+}
+.catsearch:focus-visible {
+  outline: 2px solid var(--cc-cyan);
+}
+.cat {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  color: var(--cc-mute);
+  font-size: 14px;
+  cursor: pointer;
+}
+.cat svg {
+  flex: none;
+}
+.cat:hover {
+  color: var(--cc-fg);
+  background: var(--cc-panel);
+}
+.cat[aria-current='true'] {
+  color: var(--cc-amber);
+  background: var(--cc-panel);
+  border-color: var(--cc-line-strong);
+  box-shadow: inset 2px 0 0 var(--cc-amber);
+}
+.cat:focus-visible {
+  outline: 2px solid var(--cc-cyan);
+  outline-offset: 2px;
+}
+.setmain {
+  min-width: 0;
+}
+.sethead {
+  margin-bottom: 14px;
+}
+.sethead h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 18px;
 }
-.saving {
-  font-size: 11.5px;
+.hidetabs :deep(.el-tabs__header) {
+  display: none;
+}
+@media (max-width: 900px) {
+  .dsplit2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cats {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .catsearch {
+    width: 100%;
+  }
+  .cat {
+    width: auto;
+  }
 }
 .group {
-  padding: 14px 16px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -756,10 +875,9 @@ h2 {
 }
 h3 {
   margin: 0;
-  font-size: 12px;
-  color: var(--cc-mute);
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-size: 15px;
+  color: var(--cc-fg);
+  font-weight: 700;
 }
 .kv {
   display: flex;

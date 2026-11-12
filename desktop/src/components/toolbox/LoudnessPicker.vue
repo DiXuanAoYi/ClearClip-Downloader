@@ -39,5 +39,5 @@ function pick(v: string) {
 .sel { width: 320px; max-width: 100%; }
 .row { display: flex; flex-wrap: wrap; gap: 12px 18px; }
 .row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.mute { color: var(--el-text-color-secondary); }
+.mute { color: var(--cc-mute); }
 </style>

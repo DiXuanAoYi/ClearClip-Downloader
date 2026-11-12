@@ -1288,7 +1288,7 @@ defineExpose({ reveal, targetAt, hover, fit })
   width: 7px;
   height: 7px;
   margin-left: -3px;
-  background: var(--el-color-warning);
+  background: var(--cc-amber);
   border: 1px solid rgba(0, 0, 0, 0.55);
   transform: rotate(45deg);
   pointer-events: none;

@@ -414,10 +414,10 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 </script>
 
 <template>
-  <div class="ft">
-    <header class="h1">
+  <div class="ft dpage">
+    <header class="h1 dtop">
       <h1>文件翻译</h1>
-      <p>PDF（含扫描版）、Word、PPT、Excel、EPUB、TXT、Markdown、字幕、图片，译完版面和格式不变，可双语对照，术语和专家沿用你的设置</p>
+      <p class="dnote">PDF（含扫描版）、Word、PPT、Excel、EPUB、TXT、Markdown、字幕、图片，译完版面和格式不变，可双语对照，术语和专家沿用你的设置</p>
     </header>
     <div class="cols">
       <aside v-if="!leftOpen" class="lrail" aria-label="左栏（已收起）">
@@ -557,50 +557,50 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 </template>
 
 <style scoped>
-.ft { display: flex; flex-direction: column; gap: 16px; padding: 24px 28px; height: 100%; box-sizing: border-box; min-height: 0 }
+.ft { height: 100%; box-sizing: border-box; min-height: 0 }
 .h1 { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap }
-.h1 h1 { margin: 0; font-size: 26px }
-.h1 p { margin: 0; color: var(--el-text-color-secondary) }
+.h1 h1 { margin: 0; font-size: 22px }
+.h1 p { margin: 0; color: var(--cc-mute) }
 .cols { flex: 1; display: flex; gap: 18px; min-height: 0 }
 .lrail { width: 46px; flex: none; display: flex; flex-direction: column; gap: 8px; align-items: stretch }
-.lrail button { position: relative; border: 1px solid var(--el-border-color); background: var(--el-bg-color); color: var(--el-text-color-primary); border-radius: 10px; padding: 9px 0; cursor: pointer; font: inherit; font-size: 12px; line-height: 1.2 }
-.lrail button:hover { border-color: var(--el-color-primary); color: var(--el-color-primary) }
-.lrail button i { position: absolute; top: -6px; right: -4px; min-width: 16px; height: 16px; line-height: 16px; font-style: normal; font-size: 11px; border-radius: 8px; background: var(--el-color-primary); color: #fff }
-.lfold { border: 0; background: none; text-align: left; color: var(--el-color-primary); cursor: pointer; font: inherit; font-size: 12.5px; padding: 0 2px }
+.lrail button { position: relative; border: 1px solid var(--cc-line); background: var(--cc-card); color: var(--cc-fg); border-radius: 10px; padding: 9px 0; cursor: pointer; font: inherit; font-size: 12px; line-height: 1.2 }
+.lrail button:hover { border-color: var(--cc-amber); color: var(--cc-amber) }
+.lrail button i { position: absolute; top: -6px; right: -4px; min-width: 16px; height: 16px; line-height: 16px; font-style: normal; font-size: 11px; border-radius: 8px; background: var(--cc-amber); color: #fff }
+.lfold { border: 0; background: none; text-align: left; color: var(--cc-amber); cursor: pointer; font: inherit; font-size: 12.5px; padding: 0 2px }
 .lc { width: 330px; flex: none; display: flex; flex-direction: column; gap: 12px; overflow-y: auto }
-.mute { color: var(--el-text-color-secondary); font-size: 12.5px }
-.drop { border: 2px dashed var(--el-border-color); border-radius: 12px; padding: 18px 14px; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; background: var(--el-bg-color); cursor: pointer }
-.drop.over, .drop:hover { border-color: var(--el-color-primary) }
+.mute { color: var(--cc-mute); font-size: 12.5px }
+.drop { border: 1px dashed var(--cc-amber-line); border-radius: 12px; padding: 18px 14px; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; background: var(--cc-card); cursor: pointer }
+.drop.over, .drop:hover { border-color: var(--cc-amber) }
 .drop b { font-size: 15px }
 .fmt { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center }
-.fmt span { height: 22px; padding: 0 8px; border-radius: 11px; background: var(--el-color-primary-light-9); color: var(--el-color-primary); font-size: 12px; font-weight: 700; display: flex; align-items: center }
-.card { border: 1px solid var(--el-border-color); background: var(--el-bg-color); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px }
-.card h3 { margin: 0; font-size: 13px; color: var(--el-text-color-secondary); font-weight: 600 }
-.job { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--el-border-color); cursor: pointer }
-.job.cur { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9) }
+.fmt span { height: 22px; padding: 0 8px; border-radius: 11px; background: var(--cc-acc-soft); color: var(--cc-amber); font-size: 12px; font-weight: 700; display: flex; align-items: center }
+.card { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px }
+.card h3 { margin: 0; font-size: 15px; color: var(--cc-fg); font-weight: 700 }
+.job { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--cc-line); cursor: pointer }
+.job.cur { border-color: var(--cc-amber); background: var(--cc-acc-soft) }
 .job .n { display: flex; gap: 8px; align-items: center }
 .job .n b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px }
-.job .s { color: var(--el-text-color-secondary); font-size: 12px }
-.s.ok { color: var(--el-color-success) }
-.s.bad { color: var(--el-color-danger) }
-.bar { height: 5px; border-radius: 3px; background: var(--el-border-color); overflow: hidden }
-.bar i { display: block; height: 5px; background: var(--el-color-primary); transition: width .3s }
-.bar.ok i { background: var(--el-color-success) }
+.job .s { color: var(--cc-mute); font-size: 12px }
+.s.ok { color: var(--cc-cyan) }
+.s.bad { color: var(--cc-err) }
+.bar { height: 5px; border-radius: 3px; background: var(--cc-line); overflow: hidden }
+.bar i { display: block; height: 5px; background: var(--cc-amber); transition: width .3s }
+.bar.ok i { background: var(--cc-cyan) }
 .fld { display: flex; align-items: center; gap: 8px }
-.fld > span { width: 58px; color: var(--el-text-color-secondary); font-size: 12.5px; flex: none }
+.fld > span { width: 58px; color: var(--cc-mute); font-size: 12.5px; flex: none }
 .grow { flex: 1 }
-.sel { flex: 1; min-height: 30px; border: 1px solid var(--el-border-color); border-radius: 8px; display: flex; align-items: center; padding: 0 10px; font-size: 12.5px; color: var(--el-text-color-secondary) }
+.sel { flex: 1; min-height: 30px; border: 1px solid var(--cc-line); border-radius: 8px; display: flex; align-items: center; padding: 0 10px; font-size: 12.5px; color: var(--cc-mute) }
 .sw { display: flex; align-items: center; gap: 8px; font-size: 13px }
-.sw i { width: 30px; height: 17px; border-radius: 9px; background: var(--el-border-color); position: relative; flex: none }
-.sw i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--el-bg-color) }
-.sw.on i { background: var(--el-color-primary) }
+.sw i { width: 30px; height: 17px; border-radius: 9px; background: var(--cc-line); position: relative; flex: none }
+.sw i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--cc-card) }
+.sw.on i { background: var(--cc-amber) }
 .sw.on i::after { left: 15px }
-.seg { display: flex; background: var(--el-fill-color-blank); border: 1px solid var(--el-border-color); border-radius: 8px; padding: 2px; gap: 2px; flex: 1 }
-.seg span { flex: 1; text-align: center; padding: 3px 0; border-radius: 6px; color: var(--el-text-color-secondary); font-size: 13px; cursor: pointer }
-.seg .on { background: var(--el-color-primary); color: #fff; font-weight: 700 }
+.seg { display: flex; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px; flex: 1 }
+.seg span { flex: 1; text-align: center; padding: 3px 0; border-radius: 6px; color: var(--cc-mute); font-size: 13px; cursor: pointer }
+.seg .on { background: var(--cc-amber); color: #fff; font-weight: 700 }
 .w210 { flex: none; width: 210px }
-.rd { flex: 1; min-width: 0; border: 1px solid var(--el-border-color); background: var(--el-bg-color); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden }
-.tb { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--el-border-color); flex-wrap: wrap }
+.rd { flex: 1; min-width: 0; border: 1px solid var(--cc-line); background: var(--cc-card); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden }
+.tb { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--cc-line); flex-wrap: wrap }
 .tb .t { font-weight: 700; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .sp { flex: 1 }
 .job .cancel { font-weight: 700; margin-left: auto }
@@ -608,32 +608,32 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 .pg { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; overflow-y: auto }
 .pg.src, .pg.trans { grid-template-columns: 1fr }
 .pane { padding: 18px 22px; display: flex; flex-direction: column; gap: 12px }
-.pane + .pane { border-left: 1px solid var(--el-border-color); background: var(--el-fill-color-lighter) }
+.pane + .pane { border-left: 1px solid var(--cc-line); background: var(--cc-fill) }
 .pg.src .pane + .pane, .pg.trans .pane + .pane { border-left: 0 }
-.lab { font-size: 11px; letter-spacing: .06em; color: var(--el-text-color-secondary); font-weight: 700 }
+.lab { font-size: 11px; letter-spacing: .06em; color: var(--cc-mute); font-weight: 700 }
 .pane p { margin: 0; line-height: 1.75; font-size: 13.5px; white-space: pre-wrap; word-break: break-word }
-.pane p.hl { background: var(--el-color-primary-light-9); border-radius: 6px; padding: 6px 8px; margin: -6px -8px }
-.pane p.miss { color: var(--el-text-color-secondary) }
+.pane p.hl { background: var(--cc-acc-soft); border-radius: 6px; padding: 6px 8px; margin: -6px -8px }
+.pane p.miss { color: var(--cc-mute) }
 .seg1 { position: relative; display: flex; flex-direction: column; gap: 2px }
 .pane p.ed { cursor: text; border-radius: 6px; padding: 2px 6px; margin: -2px -6px }
-.pane p.ed:hover { background: var(--el-fill-color) }
-.seg1 .acts { display: none; position: absolute; right: -6px; top: -14px; background: var(--el-bg-color); border: 1px solid var(--el-border-color); border-radius: 6px; padding: 0 2px }
+.pane p.ed:hover { background: var(--cc-fill) }
+.seg1 .acts { display: none; position: absolute; right: -6px; top: -14px; background: var(--cc-card); border: 1px solid var(--cc-line); border-radius: 6px; padding: 0 2px }
 .seg1:hover .acts { display: flex }
 .empty { flex: 1; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; padding: 24px; text-align: center }
-.st { display: flex; gap: 16px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--el-border-color); color: var(--el-text-color-secondary); font-size: 12.5px; flex-wrap: wrap }
-.st b { color: var(--el-text-color-primary) }
-.pdfx { border: 1px solid var(--el-border-color); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--el-fill-color-lighter) }
+.st { display: flex; gap: 16px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--cc-line); color: var(--cc-mute); font-size: 12.5px; flex-wrap: wrap }
+.st b { color: var(--cc-fg) }
+.pdfx { border: 1px solid var(--cc-line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--cc-fill) }
 .pdfx .row1 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline }
 .pdfx .row2 { display: flex; gap: 6px; flex-wrap: wrap }
-.pdfx .okc { color: var(--el-color-success); font-size: 12.5px }
-.stage { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; border: 1px solid var(--el-color-primary); background: color-mix(in srgb, var(--el-color-primary) 8%, var(--el-bg-color)) }
+.pdfx .okc { color: var(--cc-cyan); font-size: 12.5px }
+.stage { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; border: 1px solid var(--cc-amber); background: color-mix(in srgb, var(--cc-amber) 8%, var(--cc-card)) }
 .stage .sfile { display: flex; flex-direction: column; gap: 2px }
 .stage .sfile b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .stage .est { font-size: 12.5px; line-height: 1.7 }
 .stage .srow { display: flex; justify-content: flex-end; gap: 8px }
-.stage .mute { color: var(--el-text-color-secondary); font-size: 12.5px }
-.stage .bad { color: var(--el-color-danger); font-size: 12.5px }
-.stage .warn { color: var(--el-color-warning-dark-2) }
-.adv { font-size: 12.5px; color: var(--el-color-primary); cursor: pointer; user-select: none }
+.stage .mute { color: var(--cc-mute); font-size: 12.5px }
+.stage .bad { color: var(--cc-err); font-size: 12.5px }
+.stage .warn { color: var(--cc-amber) }
+.adv { font-size: 12.5px; color: var(--cc-amber); cursor: pointer; user-select: none }
 .chk { display: flex; flex-direction: column }
 </style>
