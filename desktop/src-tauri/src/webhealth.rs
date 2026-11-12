@@ -18,6 +18,8 @@ pub const HINT: &str = "清影的窗口组件（WebView2）已经断开，新窗
 pub const EVT_BROKEN: &str = "webview://broken";
 
 static BROKEN: AtomicBool = AtomicBool::new(false);
+/// 系统对话框这次运行里已经问过（选了“稍后”就不再追着问，之后只在主窗口里提示）
+static NATIVE_ASKED: AtomicBool = AtomicBool::new(false);
 static LAST_FAIL: Mutex<Option<Instant>> = Mutex::new(None);
 static LAST_NOTE: Mutex<Option<Instant>> = Mutex::new(None);
 
@@ -51,7 +53,7 @@ pub fn note_failure(app: &AppHandle, what: &str, err: &dyn std::fmt::Display) ->
         log::warn!("窗口组件（WebView2）已断开，{what}打不开：{err}。需要重启清影才能恢复");
         // 主窗口开着：在主窗口里弹提示；主窗口收在托盘里（看不到）：用系统自己的对话框，不需要网页组件
         let main_visible = app.get_webview_window("main").and_then(|w| w.is_visible().ok()).unwrap_or(false);
-        if main_visible {
+        if main_visible || NATIVE_ASKED.swap(true, Ordering::SeqCst) {
             let _ = app.emit(EVT_BROKEN, HINT);
         } else {
             ask_restart_native(app);
