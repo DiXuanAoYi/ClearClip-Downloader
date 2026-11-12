@@ -20,6 +20,7 @@ const INIT = `
   const batch = { id: 'b1', name: '批量-0101-1200', source: '粘贴', createdAt: 1, opts: { name: '', dir: '', folder: true, quality: '', concurrency: 2, jitterMin: 2, jitterMax: 6, speedLimitKbps: 0, afterDone: 'notify', useWindow: false, startPaused: false, template: '' }, total: 4, queued: 1, running: 1, paused: 0, done: 1, failed: 1, pending: 0, failedLinks: [], baseDir: '/tmp/x' }
   const task = (id, status, seq) => ({ id, platform: 'p', platformName: 'P', site: 'p', mediaId: String(id), title: '视频' + id, author: '', cover: null, assetId: 'a', assetLabel: '1080p', assetKind: 'video', filePath: '/tmp/x/v' + id + '.mp4', status, received: 10, total: 100, speed: 5, error: status === 'failed' ? '网络错误' : null, errorKind: null, note: null, warning: null, resumable: true, step: null, inputs: 1, priority: 0, startAt: null, createdAt: 1, finishedAt: null, batchId: 'b1', batchSeq: seq })
   window.__tasks = [task(1, 'done', 1), task(2, 'running', 2), task(3, 'queued', 3), task(4, 'failed', 4)]
+  Object.assign(window.__tasks[0], { listName: '播放列表A' }); Object.assign(window.__tasks[1], { listName: '播放列表A' }); Object.assign(window.__tasks[2], { listName: '合集B' })
   window.__TAURI_INTERNALS__ = {
     transformCallback(cb) { const id = cbId++; cbs[id] = cb; return id },
     unregisterCallback(id) { delete cbs[id] },
@@ -77,6 +78,13 @@ const INIT = `
   await page.waitForTimeout(150)
   ok('“失败”分页只剩失败的任务', (await page.locator('.task').count()) === 1)
   await page.locator('.tabs button', { hasText: '全部' }).click()
+  ok('队列上方有按列表筛选的一行（两个列表）', (await page.locator('.listbar button').count()) === 3)
+  ok('任务行带列表名', (await page.locator('.task .chip', { hasText: '播放列表A' }).count()) === 2)
+  await page.locator('.listbar button', { hasText: '播放列表A' }).click()
+  await page.waitForTimeout(150)
+  ok('点“播放列表A”只剩它的 2 个任务', (await page.locator('.task').count()) === 2)
+  await page.locator('.listbar button', { hasText: '播放列表A' }).click()
+  ok('再点一次恢复全部', (await page.locator('.task').count()) === 4)
   await page.locator('.bb button', { hasText: '查看任务' }).click()
   ok('“查看任务”切到下载队列并只看该批次', await page.evaluate(() => window.__app.view === 'queue' && window.__app.queueBatch === 'b1'))
   await page.locator('.bb button', { hasText: '只重试失败项' }).click()

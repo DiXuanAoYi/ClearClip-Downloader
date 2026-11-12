@@ -112,6 +112,9 @@ pub struct JobSpec {
     /// 所属批次（批量添加的任务）
     #[serde(default)]
     pub batch: Option<crate::batch::BatchTag>,
+    /// 从列表（播放列表、合集、创作者的某一栏）里展开下载时，这个列表的名字；队列里按它筛选
+    #[serde(default)]
+    pub list: Option<String>,
 }
 
 impl JobSpec {
@@ -178,6 +181,8 @@ pub struct TaskSnapshot {
     /// 所属批次 ID 和在批次里的序号（从 1 开始）
     pub batch_id: Option<String>,
     pub batch_seq: Option<u32>,
+    /// 所属列表的名字（从列表展开下载的任务才有）
+    pub list_name: Option<String>,
 }
 
 struct Entry {
@@ -314,6 +319,7 @@ fn parse_spec(json: &str) -> Option<JobSpec> {
             start_at: None,
             origin: None,
             batch: None,
+            list: None,
             sub_item: None,
             tried: vec![],
         })
@@ -416,6 +422,7 @@ fn snapshot_for(id: i64, media: &MediaInfo, spec: &JobSpec, path: &str, status: 
         finished_at: None,
         batch_id: spec.batch.as_ref().map(|b| b.id.clone()),
         batch_seq: spec.batch.as_ref().map(|b| b.seq),
+        list_name: spec.list.clone(),
     }
 }
 
@@ -432,7 +439,7 @@ pub fn build_specs(media: &MediaInfo, asset_ids: &[String]) -> Vec<JobSpec> {
                     inputs.push(audio.clone());
                 }
             }
-            JobSpec { inputs, post: PostOptions::default(), priority: 0, start_at: None, origin: None, sub_item: None, tried: vec![], batch: None }
+            JobSpec { inputs, post: PostOptions::default(), priority: 0, start_at: None, origin: None, sub_item: None, tried: vec![], batch: None, list: None }
         })
         .collect()
 }
@@ -462,6 +469,8 @@ pub struct EnqueueExtra {
     pub batch: Option<crate::batch::BatchTag>,
     /// 文件名模板里 `{index}` 的内容（批次序号，补零）
     pub seq_label: Option<String>,
+    /// 所属列表的名字
+    pub list: Option<String>,
 }
 
 /// 这个任务适用的后处理选项：字幕转换、内嵌、裁剪、章节只对相应类型的资源有意义。
@@ -540,6 +549,7 @@ pub fn enqueue_ext(app: &AppHandle, media: MediaInfo, asset_ids: &[String], post
             spec.sub_item = extra.sub_item.clone();
             spec.tried = extra.tried.clone();
             spec.batch = extra.batch.clone();
+            spec.list = extra.list.clone();
             let primary = spec.primary().clone();
             let in_queue = list.iter().any(|e| {
                 e.snap.platform == media.platform
@@ -1810,7 +1820,7 @@ fn try_downgrade(app: &AppHandle, failed_id: i64, media: &MediaInfo, spec: &JobS
     let Some(next) = crate::quality::next_lower(media, primary, &tried) else { return false };
     let describe = |a: &Asset| a.quality.clone().unwrap_or_else(|| a.label.clone());
     let note = format!("{} 下载失败，已自动改用 {}", describe(primary), describe(next));
-    let extra = EnqueueExtra { origin: spec.origin.clone(), tried, ..Default::default() };
+    let extra = EnqueueExtra { origin: spec.origin.clone(), list: spec.list.clone(), tried, ..Default::default() };
     let result = enqueue_ext(app, media.clone(), std::slice::from_ref(&next.id), spec.post.clone(), extra);
     match result {
         Ok(r) if !r.tasks.is_empty() => {
@@ -2374,6 +2384,7 @@ mod tests {
             sub_item: None,
             tried: vec![],
             batch: None,
+            list: None,
         };
         let meta = JobMeta::default();
         assert_eq!(section_plan(&spec, &meta), None, "没选一段：整段下载");
@@ -2478,5 +2489,18 @@ mod tests {
         assert_eq!(mask_header("Cookie", "SESSDATA=abc"), "（已隐藏，12 个字符）");
         assert_eq!(mask_header("authorization", "Bearer x"), "（已隐藏，8 个字符）");
         assert_eq!(mask_header("Referer", "https://b.com/"), "https://b.com/");
+    }
+
+    #[test]
+    fn job_spec_list_round_trips_and_is_optional() {
+        let a = Asset::base("file", AssetKind::File, "https://a/f".into(), "文件", "bin");
+        let mut spec = JobSpec { inputs: vec![a], post: PostOptions::default(), priority: 0, start_at: None, origin: None, sub_item: None, tried: vec![], batch: None, list: Some("播放列表".into()) };
+        let json = serde_json::to_string(&spec).unwrap();
+        assert_eq!(serde_json::from_str::<JobSpec>(&json).unwrap().list.as_deref(), Some("播放列表"));
+        // 旧版本存下来的任务没有 list 字段，要能读出来
+        spec.list = None;
+        let mut v: serde_json::Value = serde_json::to_value(&spec).unwrap();
+        v.as_object_mut().unwrap().remove("list");
+        assert_eq!(serde_json::from_value::<JobSpec>(v).unwrap().list, None);
     }
 }

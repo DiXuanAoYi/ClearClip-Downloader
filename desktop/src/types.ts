@@ -136,6 +136,8 @@ export interface TaskSnapshot {
   finishedAt: number | null
   batchId?: string | null
   batchSeq?: number | null
+  /** 从列表展开下载的任务：所属列表的名字 */
+  listName?: string | null
 }
 
 export interface HistoryItem {

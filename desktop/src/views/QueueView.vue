@@ -43,6 +43,16 @@ onBeforeUnmount(() => {
 })
 
 const batchName = (id: string | null | undefined) => batches.value.find((b) => b.id === id)?.name
+// 从列表（播放列表、合集）展开下载的任务按列表筛选
+const listFilter = ref<string | null>(null)
+const lists = computed(() => {
+  const m = new Map<string, number>()
+  for (const t of queue.tasks) if (t.listName) m.set(t.listName, (m.get(t.listName) ?? 0) + 1)
+  return [...m].map(([name, count]) => ({ name, count }))
+})
+watch(lists, (v) => {
+  if (listFilter.value && !v.some((l) => l.name === listFilter.value)) listFilter.value = null
+})
 
 onMounted(async () => {
   unBatch = await events.onBatchChanged(refreshSoon)
@@ -113,7 +123,7 @@ const tasks = computed(() => {
     }
   }
   const group = (t: TaskSnapshot) => ({ running: 0, queued: 1, paused: 2, failed: 2, done: 3, canceled: 3 })[t.status]
-  return queue.tasks.filter((t) => inTab(t) && (!batchFilter.value || t.batchId === batchFilter.value)).sort((a, b) => {
+  return queue.tasks.filter((t) => inTab(t) && (!batchFilter.value || t.batchId === batchFilter.value) && (!listFilter.value || t.listName === listFilter.value)).sort((a, b) => {
     const g = group(a) - group(b)
     if (g !== 0) return g
     if (group(a) === 3) return (b.finishedAt ?? b.id) - (a.finishedAt ?? a.id) || b.id - a.id
@@ -198,6 +208,12 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
       <span v-if="batchFilter" class="mute small">只看批次“{{ batchName(batchFilter) }}” <el-button link size="small" @click="batchFilter = null">显示全部</el-button></span>
     </div>
 
+    <div v-if="lists.length" class="listbar" data-testid="list-filter">
+      <span class="mute small">列表：</span>
+      <button :class="{ on: !listFilter }" @click="listFilter = null">全部</button>
+      <button v-for="l in lists" :key="l.name" :class="{ on: listFilter === l.name }" :title="l.name" @click="listFilter = listFilter === l.name ? null : l.name">{{ l.name }} <span class="mute">{{ l.count }}</span></button>
+    </div>
+
     <el-alert v-if="orphans.length" type="info" show-icon :closable="false">
       <template #title>下载目录里有 {{ orphans.length }} 个不属于任何任务的未完成文件（共 {{ formatBytes(orphanSize) }}）</template>
       <el-button size="small" @click="cleanOrphans">清理</el-button>
@@ -211,7 +227,7 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
       <img v-if="t.cover" :src="t.cover" class="thumb" referrerpolicy="no-referrer" alt="" />
       <div v-else class="thumb" />
       <div class="info">
-        <div class="name ellipsis" :title="`${fileNameOf(t.filePath) || t.title}（作品：${t.title}）`"><span v-if="t.batchSeq" class="seq mono">#{{ t.batchSeq }}</span> {{ fileNameOf(t.filePath) || t.title }} <span class="mute">· {{ t.assetLabel }}</span></div>
+        <div class="name ellipsis" :title="`${fileNameOf(t.filePath) || t.title}（作品：${t.title}）`"><span v-if="t.batchSeq" class="seq mono">#{{ t.batchSeq }}</span> {{ fileNameOf(t.filePath) || t.title }} <span class="mute">· {{ t.assetLabel }}</span> <span v-if="t.listName" class="chip" :title="`来自列表：${t.listName}`">{{ t.listName }}</span></div>
         <div class="bar"><i :style="{ width: percent(t) + '%' }" /></div>
         <small class="mono detail ellipsis selectable" :title="detail(t)">{{ detail(t) }}</small>
         <small v-if="t.warning" class="warn-line selectable" :title="t.warning">⚠ {{ t.warning }}</small>
@@ -268,13 +284,15 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
 </template>
 
 <style scoped>
-.tabs {
+.tabs,
+.listbar {
   display: flex;
   gap: 6px;
   align-items: center;
   flex-wrap: wrap;
 }
-.tabs button {
+.tabs button,
+.listbar button {
   border: 1px solid var(--cc-line);
   background: var(--cc-card);
   color: var(--cc-fg);
@@ -283,9 +301,16 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
   font-size: 12px;
   cursor: pointer;
 }
-.tabs button.on {
+.tabs button.on,
+.listbar button.on {
   border-color: var(--cc-acc);
   color: var(--cc-acc);
+}
+.listbar button {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .seq {
   color: var(--cc-acc);
