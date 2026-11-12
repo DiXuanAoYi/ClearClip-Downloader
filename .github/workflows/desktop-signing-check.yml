@@ -33,6 +33,10 @@ jobs:
           else
             echo "✓ TAURI_SIGNING_PRIVATE_KEY：有"
             case "$KEY" in "$prefix"*) echo "  ✓ 内容以密钥文件的标准开头开始";; *) echo "  ✗ 内容不是以 $prefix 开头：可能贴的是路径、公钥或不完整的内容"; ok=0;; esac
+            # 解码第一行的“注释”（不含密钥内容）：私钥写 encrypted secret key，公钥写 public key
+            comment=$(printf '%s' "$KEY" | base64 -d 2>/dev/null | head -n 1 | LC_ALL=C tr -cd '[:print:]' | cut -c1-80)
+            echo "  文件里的注释：$comment"
+            case "$comment" in *secret*) echo "  ✓ 看起来是私钥";; *public*) echo "  ✗ 这是公钥，不是私钥：TAURI_SIGNING_PRIVATE_KEY 里贴错文件了"; ok=0;; *) echo "  ⚠ 注释不是预期的写法";; esac
             lines=$(printf '%s' "$KEY" | wc -l | tr -d ' ')
             echo "  换行数：$lines（私钥文件通常是 1 行或更少）"
             case "$KEY" in *[[:space:]]) echo "  ⚠ 结尾有空白或换行字符";; esac
@@ -43,6 +47,7 @@ jobs:
             echo "✓ TAURI_SIGNING_PRIVATE_KEY_PASSWORD：有"
             case "$PASS" in [[:space:]]*) echo "  ✗ 密码开头有空白字符"; ok=0;; esac
             case "$PASS" in *[[:space:]]) echo "  ✗ 密码结尾有空白或换行字符（复制时多带了）"; ok=0;; esac
+            case "$PASS" in \"*\"|\'*\') echo "  ✗ 密码两头带着引号：Secret 里不要写引号，直接填密码本身"; ok=0;; esac
             if printf '%s' "$PASS" | LC_ALL=C grep -q '[^ -~]'; then echo "  ⚠ 密码里有非 ASCII 字符（全角符号、中文等）"; fi
           fi
           if [ -z "$PUBKEY" ]; then echo "✗ TAURI_UPDATER_PUBKEY：没有"; ok=0
