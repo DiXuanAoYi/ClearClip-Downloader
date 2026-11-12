@@ -23,10 +23,8 @@ export function snapshot() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const check = process.argv.includes('--check')
-  const before = snapshot()
   fs.rmSync(dir, { recursive: true, force: true })
-  // 单线程：多个类型都会顺带导出它们依赖的类型，并行时会同时写同一个文件
-  execFileSync('cargo', ['test', '--lib', 'export_bindings', '--quiet', '--', '--test-threads=1'], { cwd: path.join(root, 'src-tauri'), stdio: 'inherit' })
+  execFileSync('cargo', ['test', '--lib', 'export_bindings', '--quiet'], { cwd: path.join(root, 'src-tauri'), stdio: 'inherit' })
   for (const f of Object.keys(snapshot())) {
     const p = path.join(dir, f)
     fs.writeFileSync(p, normalize(fs.readFileSync(p, 'utf8')))
@@ -34,15 +32,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const after = snapshot()
   console.log(`生成了 ${Object.keys(after).length} 个类型文件`)
   if (check) {
-    const diff = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((f) => before[f] !== after[f])
-    if (diff.length) {
-      console.error('生成的类型和已提交的不一致，请运行 npm run gen:types 后提交：' + diff.join('、'))
-      for (const f of diff) {
-        const a = (before[f] ?? '').split('\n')
-        const b = (after[f] ?? '').split('\n')
-        const i = a.findIndex((line, k) => line !== b[k])
-        console.error(`--- ${f} 第 ${i + 1} 行\n  已提交：${JSON.stringify(a[i])}\n  生成的：${JSON.stringify(b[i])}`)
-      }
+    // 和 git 里提交的内容比，而不是和运行前磁盘上的文件比：CI 里前面的 cargo test 也会触发 ts-rs 导出，
+    // 把这个目录改写成没有做过 bigint → number 处理的原始输出。
+    const changed = execFileSync('git', ['status', '--porcelain', '--', 'src/generated'], { cwd: root, encoding: 'utf8' }).trim()
+    if (changed) {
+      console.error('生成的类型和已提交的不一致，请运行 npm run gen:types 后提交：\n' + changed)
+      console.error(execFileSync('git', ['diff', '--', 'src/generated'], { cwd: root, encoding: 'utf8' }).split('\n').slice(0, 40).join('\n'))
       process.exit(1)
     }
   }
