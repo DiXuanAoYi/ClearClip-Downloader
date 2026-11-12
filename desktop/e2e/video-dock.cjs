@@ -16,7 +16,7 @@ const ok = (name, cond, extra = '') => {
 const html = `<!doctype html><title>Video page</title><body style="margin:0"><video id="v" width="640" height="360" style="display:block;margin:40px;background:#000"></video><p>text</p>`
 
 ;(async () => {
-  const browser = await chromium.launch()
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 800 } })
   await ctx.route('https://video.test/**', (route) => route.fulfill({ contentType: 'text/html', body: html }))
   const page = await ctx.newPage()
