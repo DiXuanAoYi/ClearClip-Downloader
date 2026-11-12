@@ -52,6 +52,7 @@ pub mod livetx;
 pub mod livevoice;
 pub mod livewin;
 pub mod lut;
+mod mcp;
 pub mod media_cmds;
 pub mod media_server;
 pub mod media_tools;

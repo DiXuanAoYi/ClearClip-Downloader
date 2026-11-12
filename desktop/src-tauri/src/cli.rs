@@ -30,6 +30,7 @@ pub const HELP: &str = "清影 ClearClip 命令行
                                给没有字幕的视频 / 音频生成字幕（识别 → 纠错 → 断句 → 翻译 → 导出）
   clearclip subtitle correct <字幕或视频文件> [--mode conservative|aggressive|rules]
                                对已有字幕做 AI 纠错（补标点、改同音错字），另存为新文件
+  clearclip mcp [--read-only]  作为 MCP 服务运行（标准输入输出），让 Claude、Codex 等智能体调用清影；--read-only 只开放查询
   clearclip help               显示这份说明
 
 除 add 外的命令需要先在清影的“设置 → 手机与浏览器扩展”里开启服务。加 --json 输出原始 JSON。";
@@ -289,6 +290,30 @@ pub fn render(cmd: &Cmd, body: &Value) -> String {
     }
 }
 
+/// 本机接口的端口和令牌（从设置文件读取；每次调用都重读，清影晚于调用方启动也能连上）。
+pub fn connection() -> Result<(u16, String), String> {
+    let dir = config_dir().ok_or("找不到清影的设置目录")?;
+    let text = std::fs::read_to_string(dir.join("settings.json")).map_err(|_| "没有找到清影的设置文件，请先启动一次清影。".to_string())?;
+    let settings: Value = serde_json::from_str(&text).map_err(|_| "设置文件已损坏".to_string())?;
+    let phone = &settings["phone"];
+    let (port, token) = (phone["port"].as_u64().unwrap_or(0) as u16, phone["token"].as_str().unwrap_or(""));
+    if phone["enabled"].as_bool() != Some(true) || port == 0 || token.is_empty() {
+        return Err("还没有开启本机接口：请在清影的“设置 → 手机与浏览器扩展”里打开服务。".into());
+    }
+    Ok((port, token.to_string()))
+}
+
+/// 调一次本机接口，返回 JSON（接口报错时返回其 error 文字）。MCP 服务用它。
+pub fn call(method: &str, path: &str, body: Option<&str>) -> Result<Value, String> {
+    let (port, token) = connection()?;
+    let (code, text) = http(port, &token, method, path, body)?;
+    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    if code != 200 {
+        return Err(v["error"].as_str().map(str::to_string).unwrap_or_else(|| format!("接口返回 {code}")));
+    }
+    Ok(v)
+}
+
 /// 提交一次平台健康检查并等结果。返回的文字里每个平台一行；有不正常的平台时返回 `Err("…")` 不合适（那样会丢掉输出），
 /// 所以全部通过与否写在最后一行，退出码由 `try_run` 看 `HEALTH_FAILED` 决定。
 static HEALTH_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -345,14 +370,8 @@ pub fn render_health(v: &Value) -> String {
 }
 
 fn run_cmd(cmd: &Cmd, json: bool) -> Result<String, String> {
-    let dir = config_dir().ok_or("找不到清影的设置目录")?;
-    let text = std::fs::read_to_string(dir.join("settings.json")).map_err(|_| "没有找到清影的设置文件，请先启动一次清影。".to_string())?;
-    let settings: Value = serde_json::from_str(&text).map_err(|_| "设置文件已损坏".to_string())?;
-    let phone = &settings["phone"];
-    let (port, token) = (phone["port"].as_u64().unwrap_or(0) as u16, phone["token"].as_str().unwrap_or(""));
-    if phone["enabled"].as_bool() != Some(true) || port == 0 || token.is_empty() {
-        return Err("还没有开启本机接口：请在清影的“设置 → 手机与浏览器扩展”里打开服务。".into());
-    }
+    let (port, token) = connection()?;
+    let token = token.as_str();
     let mut post_body: Option<&str> = None;
     let (method, path): (&str, String) = match cmd {
         Cmd::Subtitle(p, b) => {
@@ -391,6 +410,10 @@ fn attach_console() {
 /// 命令行模式：是命令就执行并返回退出码；不是命令（正常启动桌面应用）返回 None。
 pub fn try_run() -> Option<i32> {
     let args: Vec<String> = std::env::args().collect();
+    // `clearclip mcp`：标准输入输出上的 MCP 服务，给大模型 / 智能体调用（不能往标准输出写任何别的文字）
+    if args.get(1).map(String::as_str) == Some("mcp") {
+        return Some(crate::mcp::serve(&args[2..]));
+    }
     let parsed = parse(&args)?;
     #[cfg(windows)]
     attach_console();

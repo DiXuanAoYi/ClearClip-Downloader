@@ -45,7 +45,7 @@
 
 **自动化与安全**
 
-- 自动规则、通知推送（Webhook / Telegram / Bark / 企业微信 / 钉钉 / 飞书等）、自动上传、HTTP 接口、网页控制台、命令行
+- 自动规则、通知推送（Webhook / Telegram / Bark / 企业微信 / 钉钉 / 飞书等）、自动上传、HTTP 接口、网页控制台、命令行、MCP 服务（让 Claude / Codex 等智能体调用，见 docs/mcp.md）
 - 应用锁、老板键、隐私模式、加密保险箱
 
 每一项的详细说明、设置位置和已知限制见 [desktop/README.md](desktop/README.md) 和 [docs/](docs/)：
