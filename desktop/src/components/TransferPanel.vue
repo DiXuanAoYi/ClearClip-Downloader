@@ -130,6 +130,17 @@ async function load() {
   }
 }
 
+async function answerPair(deviceId: string, accept: boolean) {
+  try {
+    await api.phonePairRespond(deviceId, accept)
+    if (accept) ElMessage.success('已配对')
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    await loadInfo()
+  }
+}
+
 async function loadInfo() {
   try {
     info.value = await api.phoneInfo()
@@ -315,7 +326,18 @@ onUnmounted(() => {
 
         <div class="devs">
           <div class="dhead"><b>发送对象</b><span class="mute small">已选 {{ targets.size }} / {{ info?.devices.length ?? 0 }}</span></div>
-          <div v-if="!info?.devices.length" class="mute small">还没有配对的设备，手机扫码后会出现在这里。</div>
+          <div v-for="p in info?.pending ?? []" :key="p.deviceId" class="dev pend">
+            <span class="avatar"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2.5" /><path d="M11 18h2" /></svg></span>
+            <span class="dinfo">
+              <b class="ellipsis">{{ p.name }}</b>
+              <small class="mute">请求配对<template v-if="p.code"> · 验证码 <b class="code">{{ p.code }}</b></template></small>
+            </span>
+            <el-button size="small" type="primary" @click="answerPair(p.deviceId, true)">允许</el-button>
+            <a class="link mutelink" @click="answerPair(p.deviceId, false)">拒绝</a>
+          </div>
+          <div v-if="!info?.devices.length && !info?.pending?.length" class="mute small">
+            还没有配对的设备。手机扫码后会出现在这里；如果扫码时手机还没连上同一个 Wi-Fi，连上之后在手机上刷新这个页面，这里就会出现配对请求。
+          </div>
           <div v-for="d in info?.devices" :key="d.id" class="dev" :class="{ ext: isExt(d.id) }">
             <el-checkbox :model-value="targets.has(d.id)" :aria-label="`发给${d.name}`" @change="toggleTarget(d.id)" />
             <span class="avatar" :class="{ ext: isExt(d.id) }">
@@ -424,6 +446,7 @@ onUnmounted(() => {
   --x-obmt: #85684c;
   --x-ok: #23703f;
   --x-chip: #efe9e0;
+  --x-chipfg: #1a1510;
 }
 :global(html.dark) .xfer {
   --x-acc: #f08c3e;
@@ -433,7 +456,8 @@ onUnmounted(() => {
   --x-obfg: #fdf0e3;
   --x-obmt: #d7b793;
   --x-ok: #6fd49a;
-  --x-chip: #2e2a26;
+  --x-chip: #3a342d;
+  --x-chipfg: #f5efe7;
 }
 .xfer {
     display: flex;
@@ -812,6 +836,7 @@ onUnmounted(() => {
   padding: 0 12px;
   border-radius: 999px;
   background: var(--x-chip);
+  color: var(--x-chipfg);
   font-size: 12px;
   font-weight: 600;
 }
@@ -848,6 +873,28 @@ onUnmounted(() => {
   flex: none;
   border-radius: 9px;
   margin-left: 0;
+  /* 纯度高的橙色底 + 黑字，浅色、深色下都清楚 */
+  --el-button-bg-color: #ff7a14;
+  --el-button-border-color: #ff7a14;
+  --el-button-text-color: #1a1208;
+  --el-button-hover-bg-color: #ff8c33;
+  --el-button-hover-border-color: #ff8c33;
+  --el-button-hover-text-color: #1a1208;
+  --el-button-active-bg-color: #e86a08;
+  --el-button-active-border-color: #e86a08;
+  --el-button-disabled-bg-color: color-mix(in srgb, #ff7a14 38%, var(--el-bg-color));
+  --el-button-disabled-border-color: color-mix(in srgb, #ff7a14 38%, var(--el-bg-color));
+  --el-button-disabled-text-color: color-mix(in srgb, #1a1208 70%, var(--el-bg-color));
+  font-weight: 700;
+}
+.dev.pend {
+  border-color: var(--x-acc);
+  background: color-mix(in srgb, var(--x-acc) 10%, var(--el-bg-color));
+}
+.code {
+  font-family: var(--el-font-family-mono, monospace);
+  letter-spacing: 1px;
+  color: var(--el-text-color-primary);
 }
 .main {
   position: relative;
