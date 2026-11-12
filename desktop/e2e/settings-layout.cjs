@@ -24,6 +24,7 @@ const init = `
       switch (cmd) {
         case 'plugin:event|listen': return evId++
         case 'get_settings': return ${JSON.stringify(settings)}
+        case 'bt_tracker_status': return { updatedAt: 1763000000, source: 'https://cdn.jsdelivr.net/gh/ngosang/trackerslist@master/trackers_best.txt', listCount: 20, effectiveCount: 20 }
         default: return null
       }
     },
@@ -75,6 +76,58 @@ const init = `
   await page.waitForTimeout(500)
   const bal2 = await stat()
   ok('自动平衡的填充率不低于按顺序', bal2.fill >= ord.fill - 0.005, `${bal2.fill.toFixed(3)} vs ${ord.fill.toFixed(3)}`)
+  // 各页签（含自带版面的面板）也跟着排布选项走
+  const TABS = ['BT 与 ed2k', 'AI', '写作', '安全与隐私', '网络', '账号与 Cookie', '手机与浏览器扩展', '组件']
+  const colsOf = (tab) => page.getByRole('tab', { name: tab, exact: true }).click().then(() => page.waitForTimeout(450)).then(stat)
+  await page.setViewportSize({ width: 1700, height: 1000 })
+  await page.waitForTimeout(400)
+  await page.getByRole('tab', { name: '通用' }).click()
+  await page.getByText('自动平衡', { exact: true }).click()
+  const wideRes = {}
+  for (const t of TABS) wideRes[t] = await colsOf(t)
+  // AI 页签在假后端下渲染不全（AiPool 拿到 null 会报错），不在这里要求多列
+  ok('宽窗口：BT 与 ed2k、写作、安全与隐私、网络、组件 都是多列', ['BT 与 ed2k', '写作', '安全与隐私', '网络', '组件'].every((t) => wideRes[t].cols >= 2), JSON.stringify(Object.fromEntries(Object.entries(wideRes).map(([k, v]) => [k, v.cols]))))
+  const pageW = await page.evaluate(() => document.querySelector('.page').getBoundingClientRect().width)
+  ok('设置页不再被限制在 1040px，随窗口变宽', pageW > 1200, String(pageW))
+  ok('列数最多 4 列', Object.values(wideRes).every((v) => v.cols <= 4))
+  // “立即更新”按钮在卡片里面
+  await page.getByRole('tab', { name: 'BT 与 ed2k', exact: true }).click()
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: '/tmp/settings-bt-wide.png' })
+  const inside = await page.evaluate(() => {
+    const b = document.querySelector('.status .el-button')
+    const c = b?.closest('.card')
+    if (!b || !c) return null
+    const br = b.getBoundingClientRect()
+    const cr = c.getBoundingClientRect()
+    return { inside: br.left >= cr.left && br.right <= cr.right + 0.5 && br.top >= cr.top && br.bottom <= cr.bottom + 0.5, br: [br.left, br.right], cr: [cr.left, cr.right] }
+  })
+  ok('“立即更新”按钮在卡片里面', inside && inside.inside, JSON.stringify(inside))
+  for (const w of [1180, 700]) {
+    await page.setViewportSize({ width: w, height: 900 })
+    await page.waitForTimeout(500)
+    const i2 = await page.evaluate(() => {
+      const b = document.querySelector('.status .el-button')
+      const c = b?.closest('.card')
+      const br = b.getBoundingClientRect()
+      const cr = c.getBoundingClientRect()
+      return br.left >= cr.left && br.right <= cr.right + 0.5
+    })
+    ok(`窗口 ${w}px：“立即更新”仍在卡片里`, i2)
+  }
+  await page.setViewportSize({ width: 1700, height: 1000 })
+  await page.waitForTimeout(400)
+  // 单列：这些页签也只有一列
+  await page.getByRole('tab', { name: '通用' }).click()
+  await page.getByText('单列', { exact: true }).click()
+  await page.waitForTimeout(300)
+  const singleRes = {}
+  for (const t of TABS) singleRes[t] = await colsOf(t)
+  ok('单列：所有页签都只有一列（含 BT 与 ed2k、安全与隐私、写作）', Object.values(singleRes).every((v) => v.cols === 1), JSON.stringify(Object.fromEntries(Object.entries(singleRes).map(([k, v]) => [k, v.cols]))))
+  await page.getByRole('tab', { name: '通用' }).click()
+  await page.getByText('自动平衡', { exact: true }).click()
+  await page.setViewportSize({ width: 1180, height: 900 })
+  await page.waitForTimeout(300)
   // 窄窗口：一列
   await page.setViewportSize({ width: 520, height: 900 })
   await page.waitForTimeout(600)

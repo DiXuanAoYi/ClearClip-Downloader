@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BalancedGrid from './BalancedGrid.vue'
 import { TARGET_LANGS } from '../utils/langs'
 import SttLocal from './SttLocal.vue'
 import { onMounted, ref } from 'vue'
@@ -47,7 +48,7 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
 </script>
 
 <template>
-  <div class="groups">
+  <BalancedGrid class="groups">
     <AiPool v-model="ai" />
     <GlossaryPanel v-model="ai" />
     <ExpertsPanel v-model="ai" />
@@ -143,16 +144,10 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <el-switch v-model="ai.autoTranscribe" />
       </div>
     </section>
-  </div>
+  </BalancedGrid>
 </template>
 
 <style scoped>
-.groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-  gap: 12px;
-  align-items: start;
-}
 .group {
   padding: 14px 16px;
   display: flex;

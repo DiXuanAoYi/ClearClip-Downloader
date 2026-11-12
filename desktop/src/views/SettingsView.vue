@@ -12,7 +12,7 @@ import NetworkPanel from '../components/NetworkPanel.vue'
 import ComponentsPanel from '../components/ComponentsPanel.vue'
 import PhonePanel from '../components/PhonePanel.vue'
 import BalancedGrid from '../components/BalancedGrid.vue'
-import type { LayoutMode } from '../utils/balance'
+import { layoutMode } from '../utils/settingsLayout'
 import AiPanel from '../components/AiPanel.vue'
 import SiteRulesPanel from '../components/SiteRulesPanel.vue'
 import NotifyPanel from '../components/NotifyPanel.vue'
@@ -62,24 +62,8 @@ const health = ref<HealthResult[] | null>(null)
 const checkingHealth = ref(false)
 const portable = ref(false)
 
-// 设置页卡片怎么排：自动平衡（默认）/ 按顺序 / 单列。只是这台电脑上的界面偏好，记在本机。
-const LAYOUT_KEY = 'cc-settings-layout'
-function readLayout(): LayoutMode {
-  try {
-    const v = localStorage.getItem(LAYOUT_KEY)
-    return v === 'order' || v === 'single' ? v : 'balance'
-  } catch {
-    return 'balance'
-  }
-}
-const layoutMode = ref<LayoutMode>(readLayout())
-watch(layoutMode, (v) => {
-  try {
-    localStorage.setItem(LAYOUT_KEY, v)
-  } catch {
-    /* 记不住也不影响 */
-  }
-})
+// 设置页卡片怎么排（所有页签共用，见 utils/settingsLayout.ts）
+
 api.isPortable().then((v) => (portable.value = v)).catch(() => {})
 
 function saveDomains() {
@@ -206,7 +190,7 @@ function insertVar(v: string) {
 
     <el-tabs v-model="app.settingsTab">
       <el-tab-pane label="下载" name="download">
-        <BalancedGrid class="groups" :mode="layoutMode">
+        <BalancedGrid class="groups">
           <section class="group card">
             <h3>保存</h3>
             <div class="field">
@@ -383,7 +367,7 @@ function insertVar(v: string) {
       </el-tab-pane>
 
       <el-tab-pane label="解析" name="parse">
-        <BalancedGrid class="groups" :mode="layoutMode">
+        <BalancedGrid class="groups">
           <section class="group card">
             <h3>剪贴板</h3>
             <div class="kv"><span>监听剪贴板</span><el-switch v-model="form.watchClipboard" /></div>
@@ -587,7 +571,7 @@ function insertVar(v: string) {
       </el-tab-pane>
 
       <el-tab-pane label="自动化" name="automation">
-        <BalancedGrid class="groups" :mode="layoutMode">
+        <BalancedGrid class="groups">
           <NotifyPanel v-model="form.notify" />
           <UploadPanel v-model="form.upload" />
           <RulesPanel v-model="form.rules" class="wide" />
@@ -611,7 +595,7 @@ function insertVar(v: string) {
       </el-tab-pane>
 
       <el-tab-pane label="诊断" name="diagnostics">
-        <BalancedGrid class="groups" :mode="layoutMode">
+        <BalancedGrid class="groups">
           <section class="group card">
             <h3>问题反馈</h3>
             <p class="mute small">诊断信息包含版本、系统、网页组件和 yt-dlp / ffmpeg 的版本、设置概要、失败任务和最近日志（连续重复的行合成一行）。“复制摘要”只带警告和错误，短得多。Cookie、令牌等敏感内容会自动隐去。</p>
@@ -650,7 +634,7 @@ function insertVar(v: string) {
       </el-tab-pane>
 
       <el-tab-pane label="通用" name="general">
-        <BalancedGrid class="groups" :mode="layoutMode">
+        <BalancedGrid class="groups">
           <section class="group card">
             <h3>外观与行为</h3>
             <div class="kv">
@@ -732,7 +716,6 @@ function insertVar(v: string) {
 }
 .page {
   padding: 20px 24px;
-  max-width: 1040px;
 }
 .head {
   display: flex;

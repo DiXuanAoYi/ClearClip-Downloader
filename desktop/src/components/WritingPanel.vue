@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BalancedGrid from './BalancedGrid.vue'
 import { computed, ref } from 'vue'
 import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
@@ -59,7 +60,7 @@ const paused = computed(() => form.value.pausedUntil * 1000 > Date.now())
 </script>
 
 <template>
-  <div class="groups">
+  <BalancedGrid class="groups">
     <section class="group card">
       <h3>写作浮窗（其他程序里）</h3>
       <div class="kv">
@@ -128,13 +129,12 @@ const paused = computed(() => form.value.pausedUntil * 1000 > Date.now())
         </div>
       </template>
     </section>
-  </div>
+  </BalancedGrid>
 </template>
 
 <style scoped>
 .mem { display: grid; grid-template-columns: 90px 1fr auto; gap: 8px; align-items: baseline; font-size: 12.5px }
 .mtx { word-break: break-word }
-.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; align-items: start; }
 .group { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 h3 { margin: 0; font-size: 12px; color: var(--cc-mute); font-weight: 500; letter-spacing: 0.08em; }
 .kv { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
