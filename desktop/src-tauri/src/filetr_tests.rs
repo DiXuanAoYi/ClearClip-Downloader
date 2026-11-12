@@ -104,7 +104,7 @@ fn epub_zip_roundtrip_keeps_other_entries() {
     let dst = dir.join("book.双语.epub");
     write_zip(&src, &dst, &rendered).unwrap();
     let mut z = zip::ZipArchive::new(std::fs::File::open(&dst).unwrap()).unwrap();
-    assert_eq!(z.by_index(0).unwrap().name(), "mimetype");
+    assert_eq!(z.by_index(0).unwrap().name().unwrap(), "mimetype");
     let ch = read_zip_entry(&mut z, "OEBPS/ch1.xhtml").unwrap();
     assert_eq!(ch, "<html><body><p>Hello there.</p>\n<p>你好。</p></body></html>");
     let mut jpg = vec![];

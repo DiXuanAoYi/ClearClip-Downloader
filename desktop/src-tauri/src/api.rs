@@ -143,6 +143,12 @@ pub fn handle(app: &AppHandle, req: &Request, peer: &SocketAddr) -> Option<Reply
             }
         }
         // 最近因“需要登录”失败的网站：浏览器扩展据此询问是否同步登录状态
+        // 平台健康检查（命令行 `clearclip health` 用）：提交 → 轮询
+        ("POST", "/api/v1/health/run") => ok(json!({"id": crate::healthjob::start(app)})),
+        ("GET", "/api/v1/health/job") => match req.query.get("id").and_then(|i| i.parse::<u64>().ok()).and_then(crate::healthjob::job_json) {
+            Some(v) => ok(v),
+            None => err("404 Not Found", "任务不存在或已过期"),
+        },
         ("GET", "/api/v1/login_needed") => ok(json!({"sites": crate::inbox::login_needed(app)})),
         ("GET", "/api/v1/library") => {
             let limit = req.query.get("limit").and_then(|l| l.parse::<i64>().ok()).unwrap_or(50).clamp(1, 500);
