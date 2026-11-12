@@ -731,6 +731,12 @@ const canAdd = (kind: EditTrackKind) => nextNo(P.value, kind) !== null
 const mixerOpen = ref(false)
 const audioTracks = computed(() => shownNos(P.value, 'audio').map((no) => ({ no, meta: metaOf('audio', no), n: audioOn(no).length })))
 const hasSolo = computed(() => P.value.tracks.some((t) => t.kind === 'audio' && t.solo))
+/** 电平表：dBFS 转成 0–100 的高度（−60 以下为 0，0 dBFS 为满）。 */
+const meterPct = (db: number | undefined) => Math.round(Math.max(0, Math.min(100, ((db ?? -90) + 60) * (100 / 60))))
+const meterClass = (key: string) => {
+  const db = ed.levels[key] ?? -90
+  return { hot: db >= -6 && db < 0, clip: Date.now() - (ed.clips[key] ?? 0) < 2000 }
+}
 const dB = (v: number) => (v < 0.001 ? '−∞' : `${(20 * Math.log10(v)).toFixed(1)} dB`)
 
 // ---------- 轨道模板 ----------
@@ -960,7 +966,7 @@ defineExpose({ reveal, targetAt, hover, fit })
 
     <div v-if="mixerOpen" class="mixer" role="group" aria-label="混音器">
       <div v-for="t in audioTracks" :key="t.no" class="ch" :class="{ off: t.meta.mute || (hasSolo && !t.meta.solo) }">
-        <div class="cn"><b>{{ trackCode('audio', t.no) }}</b><span class="ellipsis">{{ trackTitle(t.meta) }}</span></div>
+        <div class="cn"><b>{{ trackCode('audio', t.no) }}</b><span class="ellipsis">{{ trackTitle(t.meta) }}</span><span v-if="ed.meterOn.value" class="meter" :class="meterClass('a' + t.no)" role="meter" :aria-valuenow="Math.round(ed.levels['a' + t.no] ?? -90)" aria-valuemin="-90" aria-valuemax="0" :title="`${Math.round(ed.levels['a' + t.no] ?? -90)} dBFS`"><i :style="{ width: meterPct(ed.levels['a' + t.no]) + '%' }" /></span></div>
         <div class="cb">
           <button type="button" class="b" :class="{ on: t.meta.mute }" :aria-pressed="t.meta.mute" title="静音" @click="ed.patchTrack('audio', t.no, { mute: !t.meta.mute })">M</button>
           <button type="button" class="b solo" :class="{ on: t.meta.solo }" :aria-pressed="t.meta.solo" title="独奏（只影响预览）" @click="ed.patchTrack('audio', t.no, { solo: !t.meta.solo })">S</button>
@@ -969,6 +975,10 @@ defineExpose({ reveal, targetAt, hover, fit })
         <label class="sl"><span>声道</span><el-slider :model-value="t.meta.pan" :min="-1" :max="1" :step="0.01" :show-tooltip="false" size="small" @update:model-value="(v: number | number[]) => ed.patchTrack('audio', t.no, { pan: v as number }, `mp:${t.no}`)" /><em>{{ t.meta.pan === 0 ? '居中' : t.meta.pan < 0 ? `左 ${Math.round(-t.meta.pan * 100)}` : `右 ${Math.round(t.meta.pan * 100)}` }}</em></label>
         <el-checkbox :model-value="t.meta.duck" size="small" title="主轨有声音（人声）时，自动压低这条轨上的所有音频" @update:model-value="(v: unknown) => ed.patchTrack('audio', t.no, { duck: !!v })">自动避让</el-checkbox>
         <span class="cc">{{ t.n }} 段</span>
+      </div>
+      <div class="mout">
+        <el-checkbox v-model="ed.meterOn.value" size="small" title="实验功能：预览的声音先经过 Web Audio 量电平再出来。改动后要重新打开剪辑页才生效；如果读不到声音会自动关掉。">电平表（实验，重新打开剪辑页后生效）</el-checkbox>
+        <span v-if="ed.meterOn.value" class="mo"><b>主输出</b><span class="meter" :class="meterClass('out')" role="meter" :aria-valuenow="Math.round(ed.levels.out ?? -90)" aria-valuemin="-90" aria-valuemax="0"><i :style="{ width: meterPct(ed.levels.out) + '%' }" /></span><em>{{ Math.round(ed.levels.out ?? -90) <= -90 ? '−∞' : Math.round(ed.levels.out ?? -90) + ' dBFS' }}</em></span>
       </div>
       <p class="mnote">独奏只影响预览，导出不受影响；静音的轨道预览和导出都没有声音。整体响度在“输出”页的“响度标准化”里设。</p>
     </div>
@@ -1462,6 +1472,13 @@ defineExpose({ reveal, targetAt, hover, fit })
 .mixer .ch.off { opacity: 0.55 }
 .mixer .cn { display: flex; gap: 6px; align-items: center }
 .mixer .cn b { color: #b9812d }
+.mixer .meter { flex: 1; min-width: 40px; height: 6px; border-radius: 3px; background: var(--cc-line); overflow: hidden; display: inline-block }
+.mixer .meter i { display: block; height: 100%; background: #3a9d6e; transition: width 60ms linear }
+.mixer .meter.hot i { background: #d9a21a }
+.mixer .meter.clip i { background: #e5484d }
+.mixer .mout { flex-basis: 100%; display: flex; gap: 14px; align-items: center; flex-wrap: wrap }
+.mixer .mout .mo { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 220px }
+.mixer .mout .mo em { font-style: normal; color: var(--cc-sub, #888); font-size: 11px; min-width: 64px }
 .mixer .cb { display: flex; gap: 4px }
 .mixer .b { width: 22px; height: 20px; padding: 0; border: 1px solid var(--cc-line); border-radius: 4px; background: var(--cc-card); color: var(--cc-mute); font: 700 10px/1 system-ui, sans-serif; cursor: pointer }
 .mixer .b.on { background: color-mix(in srgb, var(--cc-acc) 18%, var(--cc-card)); color: var(--cc-acc); border-color: var(--cc-acc) }

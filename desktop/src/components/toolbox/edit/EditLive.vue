@@ -88,12 +88,16 @@ const epoch = reactive<Record<string, number>>({})
 const failed = reactive<Record<string, boolean>>({})
 
 function setEl(key: string, el: unknown) {
-  if (el) els.set(key, el as HTMLVideoElement)
-  else els.delete(key)
+  if (el) {
+    els.set(key, el as HTMLVideoElement)
+    if (ed.meterOn.value) corsOk.add(el as HTMLMediaElement)
+  } else els.delete(key)
 }
 function setAudio(id: number, el: unknown) {
-  if (el) aEls.set(id, el as HTMLAudioElement)
-  else aEls.delete(id)
+  if (el) {
+    aEls.set(id, el as HTMLAudioElement)
+    if (ed.meterOn.value) corsOk.add(el as HTMLMediaElement)
+  } else aEls.delete(id)
 }
 const isFailed = (it: Item) => !!failed[it.url]
 const onError = (it: Item) => {
@@ -306,6 +310,115 @@ watch(
   () => nextTick(() => sync(ed.playhead.value, false)),
   { flush: 'post' },
 )
+// ---------- 电平表（实验，默认关） ----------
+// 把预览的 <audio> / <video> 接进 Web Audio，用分析节点量每一路的峰值。声音接进去以后永远经过这个图再出来，
+// 所以：只在开关打开、并且元素是在开关打开以后才创建的（带了 crossorigin，本机媒体服务有跨域头）时才接；
+// AudioContext 没有真正跑起来（resume 不成功）就不接；接了以后如果长时间量不到声音，自动把开关关掉并提示。
+const METER_FLOOR = -90
+/** 创建时开关已经打开的元素（带 crossorigin 加载，才能被 Web Audio 读取） */
+const corsOk = new WeakSet<HTMLMediaElement>()
+let actx: AudioContext | null = null
+let masterAn: AnalyserNode | null = null
+const taps = new Map<HTMLMediaElement, { an: AnalyserNode; key: () => string; quiet: number; aud: boolean }>()
+const sample = new Float32Array(1024)
+let meterRaf = 0
+let lastTick = 0
+let lastLoud = 0
+
+function peakDb(an: AnalyserNode): number {
+  an.getFloatTimeDomainData(sample)
+  let p = 0
+  for (const v of sample) p = Math.max(p, Math.abs(v))
+  return p > 0 ? Math.max(METER_FLOOR, 20 * Math.log10(p)) : METER_FLOOR
+}
+function tapOf(el: HTMLMediaElement, key: () => string) {
+  const c = actx
+  if (!c || !masterAn || taps.has(el) || !corsOk.has(el)) return
+  try {
+    const src = c.createMediaElementSource(el)
+    const an = c.createAnalyser()
+    an.fftSize = 1024
+    src.connect(an)
+    an.connect(masterAn)
+    taps.set(el, { an, key, quiet: 0, aud: false })
+  } catch {
+    /* 已经接过或不能接：不影响播放 */
+  }
+}
+async function startMeters() {
+  if (!ed.meterOn.value || typeof AudioContext === 'undefined') return
+  try {
+    if (!actx) {
+      actx = new AudioContext()
+      masterAn = actx.createAnalyser()
+      masterAn.fftSize = 1024
+      masterAn.connect(actx.destination)
+    }
+    if (actx.state !== 'running') await actx.resume()
+  } catch {
+    return
+  }
+  // 没有真正跑起来就不接：接了以后声音要靠它才出得来
+  if (actx.state !== 'running') return
+  for (const [id, el] of aEls) tapOf(el, () => 'a' + (ed.audioOf(id)?.track ?? 1))
+  for (const el of els.values()) tapOf(el, () => 'v')
+  lastTick = performance.now()
+  lastLoud = lastTick
+  cancelAnimationFrame(meterRaf)
+  meterRaf = requestAnimationFrame(meterLoop)
+}
+function meterLoop(now: number) {
+  const dt = Math.min(100, now - lastTick)
+  lastTick = now
+  const fall = dt * 0.05 // 回落：每毫秒 0.05 dB（约 50 dB/秒）
+  const next: Record<string, number> = {}
+  let heardAny = false
+  for (const [el, t] of taps) {
+    const k = t.key()
+    const db = peakDb(t.an)
+    if (db > METER_FLOOR) heardAny = true
+    next[k] = Math.max(next[k] ?? METER_FLOOR, db)
+    // 在播、没静音、音量不小，却一直量不到任何声音
+    const audible = !el.paused && !el.muted && el.volume > 0.05
+    t.aud = audible
+    t.quiet = audible && db <= METER_FLOOR ? t.quiet + dt : 0
+  }
+  if (masterAn) next.out = peakDb(masterAn)
+  const keys = new Set([...Object.keys(ed.levels), ...Object.keys(next)])
+  for (const k of keys) {
+    const v = Math.max(next[k] ?? METER_FLOOR, (ed.levels[k] ?? METER_FLOOR) - fall)
+    ed.levels[k] = v
+    if (v >= 0 && (next[k] ?? METER_FLOOR) >= 0) ed.clips[k] = Date.now()
+  }
+  if (heardAny) lastLoud = now
+  // 所有在播的元素都连续 4 秒量不到声音：多半是读不了（跨域或系统限制），关掉电平表
+  const aud = [...taps.values()].filter((t) => t.aud)
+  const allQuiet = aud.length > 0 && aud.every((t) => t.quiet > 4000) && now - lastLoud > 4000
+  if (allQuiet) {
+    ed.meterOn.value = false
+    ElMessage.warning('电平表读不到声音，已关闭。如果现在预览没有声音，请重新打开剪辑页。')
+  }
+  if (ed.playing.value && ed.meterOn.value) meterRaf = requestAnimationFrame(meterLoop)
+  else stopMeters()
+}
+function stopMeters() {
+  cancelAnimationFrame(meterRaf)
+  meterRaf = 0
+  for (const k of Object.keys(ed.levels)) ed.levels[k] = METER_FLOOR
+}
+watch(
+  () => ed.playing.value,
+  (p) => {
+    if (p) void startMeters()
+    else stopMeters()
+  },
+)
+onBeforeUnmount(() => {
+  stopMeters()
+  void actx?.close().catch(() => undefined)
+  actx = null
+})
+
 onBeforeUnmount(pause)
 defineExpose({ sync, pause })
 </script>
@@ -317,6 +430,7 @@ defineExpose({ sync, pause })
         <video
           v-if="!it.still && !isFailed(it)"
           :ref="(el) => setEl(it.key, el)"
+          :crossorigin="ed.meterOn.value ? 'anonymous' : undefined"
           :src="it.url"
           :style="mediaStyle(it)"
           muted
@@ -334,7 +448,7 @@ defineExpose({ sync, pause })
       </filter>
     </svg>
     <div class="fxslot"><slot name="fx" /></div>
-    <audio v-for="a in ed.project.value.audio" :key="a.id" :ref="(el) => setAudio(a.id, el)" :src="ed.sources[a.path]?.url" preload="auto" />
+    <audio v-for="a in ed.project.value.audio" :key="a.id" :ref="(el) => setAudio(a.id, el)" :crossorigin="ed.meterOn.value ? 'anonymous' : undefined" :src="ed.sources[a.path]?.url" preload="auto" />
     <div v-if="proxied" class="proxytag" title="实时画面正在用预览用的小文件，画质比原素材低；导出用原素材">预览代理</div>
     <div v-if="problem" class="warn">
       有素材在实时画面里播不出来（系统不支持它的编码），先用静态画面代替；导出不受影响。

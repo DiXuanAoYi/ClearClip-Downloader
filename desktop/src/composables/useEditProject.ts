@@ -71,14 +71,18 @@ export interface Sel {
 }
 
 const PROXY_KEY = 'clearclip.edit.proxyBig'
+const METER_KEY = 'clearclip.edit.meters'
 const DRAFT_KEY = 'clearclip.edit.draft'
 const RECENT_KEY = 'clearclip.edit.recent'
 const RECENT_LIMIT = 8
 const HISTORY_LIMIT = 100
 
 function readProxyBig(): boolean {
+  return readFlag(PROXY_KEY)
+}
+function readFlag(key: string): boolean {
   try {
-    return localStorage.getItem(PROXY_KEY) === '1'
+    return localStorage.getItem(key) === '1'
   } catch {
     return false
   }
@@ -139,6 +143,19 @@ export function useEditProject() {
     }
   }
   watch([proxyBig, () => Object.keys(sources).length], () => void autoProxy())
+  /** 混音器里的电平表（实验）：默认关。开着时预览的声音会先经过 Web Audio 再出来，要重新打开剪辑页才生效。 */
+  const meterOn = ref(readFlag(METER_KEY))
+  watch(meterOn, (v) => {
+    try {
+      localStorage.setItem(METER_KEY, v ? '1' : '0')
+    } catch {
+      /* 记不住不影响使用 */
+    }
+  })
+  /** 各路电平（dBFS，没声音 −90）：a1、a2… 是音频轨，out 是主输出；只在播放时更新。 */
+  const levels = reactive<Record<string, number>>({})
+  /** 各路最近一次削波（超过 0 dBFS）的时刻，毫秒时间戳 */
+  const clips = reactive<Record<string, number>>({})
   /** 工程里用到、但现在找不到或读不出来的文件 */
   const broken = reactive<Record<string, string>>({})
   const sel = ref<Sel | null>(null)
@@ -1417,6 +1434,9 @@ export function useEditProject() {
     makeProxy,
     proxyBig,
     autoProxy,
+    meterOn,
+    levels,
+    clips,
     splitAtPlayhead,
     bladeAt,
     removeSelected,
