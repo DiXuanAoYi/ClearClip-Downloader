@@ -156,6 +156,9 @@ pub fn tone_changed(brightness: f64, contrast: f64, saturation: f64) -> bool {
 pub struct Clip {
     /// 界面里的编号，只用来在错误提示里区分
     pub id: u32,
+    /// 编组编号：同一个编号的片段是一组，选中、移动、删除时一起走；界面用，导出不看
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<u32>,
     pub path: String,
     pub kind: ClipKind,
     /// 取素材的哪一段（毫秒）。图片：`in_ms` 为 0，`out_ms` 是显示时长
@@ -208,6 +211,7 @@ impl Default for Clip {
     fn default() -> Self {
         Clip {
             id: 0,
+            group: None,
             path: String::new(),
             kind: ClipKind::Video,
             in_ms: 0,
@@ -266,6 +270,9 @@ impl Clip {
 #[serde(rename_all = "camelCase", default)]
 pub struct TextItem {
     pub id: u32,
+    /// 编组编号：同一个编号的片段是一组，选中、移动、删除时一起走；界面用，导出不看
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<u32>,
     pub text: String,
     /// 所在的文字轨编号 1–`MAX_TEXT_TRACKS`；编号大的画在上面
     pub track: u32,
@@ -318,6 +325,7 @@ impl Default for TextItem {
     fn default() -> Self {
         TextItem {
             id: 0,
+            group: None,
             text: String::new(),
             track: 1,
             start_ms: 0,
@@ -346,6 +354,9 @@ impl Default for TextItem {
 #[serde(rename_all = "camelCase", default)]
 pub struct AudioTrack {
     pub id: u32,
+    /// 编组编号：同一个编号的片段是一组，选中、移动、删除时一起走；界面用，导出不看
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<u32>,
     /// 所在的音频轨编号 1–`MAX_AUDIO_TRACKS`
     pub track: u32,
     pub path: String,
@@ -373,6 +384,7 @@ impl Default for AudioTrack {
     fn default() -> Self {
         AudioTrack {
             id: 0,
+            group: None,
             track: 1,
             path: String::new(),
             start_ms: 0,
@@ -499,6 +511,9 @@ impl Background {
 #[serde(rename_all = "camelCase", default)]
 pub struct Overlay {
     pub id: u32,
+    /// 编组编号：同一个编号的片段是一组，选中、移动、删除时一起走；界面用，导出不看
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<u32>,
     /// 调整图层：不放画面（没有素材文件），只把下面所有轨道在这段时间里的画面调色（亮度、对比度、饱和度）
     pub adjust: bool,
     pub path: String,
@@ -551,6 +566,7 @@ impl Default for Overlay {
     fn default() -> Self {
         Overlay {
             id: 0,
+            group: None,
             adjust: false,
             path: String::new(),
             kind: ClipKind::Video,
@@ -1214,6 +1230,19 @@ impl Project {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn group_is_kept_when_set_and_left_out_when_not() {
+        let mut c = Clip::default();
+        assert!(!serde_json::to_string(&c).unwrap().contains("group"), "没有编组时不写这个字段，旧工程文件不变");
+        c.group = Some(3);
+        let back: Clip = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back.group, Some(3));
+        // 旧工程没有 group：读出来是 None
+        assert_eq!(serde_json::from_str::<Overlay>("{}").unwrap().group, None);
+        assert_eq!(serde_json::from_str::<AudioTrack>(r#"{"group":7}"#).unwrap().group, Some(7));
+        assert_eq!(serde_json::from_str::<TextItem>(r#"{"group":2}"#).unwrap().group, Some(2));
+    }
+
     use super::*;
 
     fn clip(id: u32, dur: u64) -> Clip {

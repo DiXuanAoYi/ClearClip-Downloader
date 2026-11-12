@@ -32,6 +32,7 @@ node e2e/run.mjs parse-ui.cjs      # 只跑一个或几个脚本
 | `background.cjs` | 剪辑：换背景（自动识别绿幕、纯色 / 模糊 / 图片） |
 | `vocals.cjs` | 剪辑：人声分离 |
 | `tracks-ui.cjs` | 剪辑：多轨道、轨道头、调整图层、刀片、标记、混音器、轨道模板 |
+| `groups-ui.cjs` | 剪辑：Shift 多选、Ctrl+G 编组 / 拆组、拖动时组里的自由项一起走、同组一起选中、整组删除、撤销 |
 | `vsum-panel.cjs` | 扩展：视频摘要面板 |
 | `sublayer-session.cjs` | 扩展：摘要面板和字幕层共用字幕和译文、共用词卡 |
 | `video-dock.cjs` | 扩展：视频胶囊（下载、播放增强、字幕层、视频摘要的统一入口） |

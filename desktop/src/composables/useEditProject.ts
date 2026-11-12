@@ -109,6 +109,8 @@ export function useEditProject() {
   /** 工程里用到、但现在找不到或读不出来的文件 */
   const broken = reactive<Record<string, string>>({})
   const sel = ref<Sel | null>(null)
+  /** 和 sel 一起被选中的其他项（Shift 点选加进来的、同组的） */
+  const extra = ref<Sel[]>([])
   const playhead = ref(0)
   const playing = ref(false)
   const filePath = ref('')
@@ -176,6 +178,7 @@ export function useEditProject() {
     dirty.value = true
     lastKey = ''
     if (sel.value && !find(sel.value)) sel.value = null
+    extra.value = extra.value.filter((x) => find(x))
     playhead.value = clamp(playhead.value, 0, Math.max(0, total.value))
   }
   function undo() {
@@ -203,6 +206,93 @@ export function useEditProject() {
   const overlayOf = (id: number) => project.value.overlays.find((c) => c.id === id)
   const textOf = (id: number) => project.value.texts.find((c) => c.id === id)
   const audioOf = (id: number) => project.value.audio.find((c) => c.id === id)
+  // ---------- 多选与编组 ----------
+
+  const sameSel = (a: Sel, b: Sel) => a.kind === b.kind && a.id === b.id
+  const selection = computed<Sel[]>(() => (sel.value ? [sel.value, ...extra.value.filter((x) => !sameSel(x, sel.value as Sel))] : []))
+  const isSelected = (kind: Sel['kind'], id: number) => selection.value.some((x) => x.kind === kind && x.id === id)
+  const itemLists = (p: EditProject): [Sel['kind'], { id: number; group?: number }[]][] => [
+    ['clip', p.clips],
+    ['overlay', p.overlays],
+    ['text', p.texts],
+    ['audio', p.audio],
+  ]
+  /** 同一组的所有项 */
+  function groupMembers(g: number): Sel[] {
+    const out: Sel[] = []
+    for (const [kind, list] of itemLists(project.value)) for (const x of list) if (x.group === g) out.push({ kind, id: x.id })
+    return out
+  }
+  /** 和 s 同组的其他项（没有编组返回空） */
+  function groupMates(s: Sel): Sel[] {
+    const g = find(s)?.group
+    return g === undefined ? [] : groupMembers(g).filter((x) => !sameSel(x, s))
+  }
+  // 点选一项时，同组的一起选中（要同步更新，后面的 Shift 点选才能在它上面继续改）
+  watch(sel, (s) => (extra.value = s ? groupMates(s) : []), { flush: 'sync' })
+  /** Shift 点选：把一项加进选择，或从选择里去掉（同组的一起）。 */
+  function toggleSel(kind: Sel['kind'], id: number) {
+    const s: Sel = { kind, id }
+    const mates = [s, ...groupMates(s)]
+    if (!sel.value) {
+      sel.value = s
+      return
+    }
+    const cur = selection.value
+    if (cur.some((x) => sameSel(x, s))) {
+      const rest = cur.filter((x) => !mates.some((m) => sameSel(m, x)))
+      if (!rest.length) {
+        sel.value = null
+        return
+      }
+      sel.value = rest[0]
+      extra.value = rest.slice(1)
+    } else {
+      extra.value = [...cur.slice(1), ...mates]
+    }
+  }
+  /** 选中的几项编成一组；少于两项返回 false。 */
+  function groupSelected(): boolean {
+    const list = selection.value
+    if (list.length < 2) return false
+    let next = 1
+    for (const [, items] of itemLists(project.value)) for (const x of items) next = Math.max(next, (x.group ?? 0) + 1)
+    mutate((p) => {
+      for (const [kind, items] of itemLists(p)) for (const x of items) if (list.some((s) => s.kind === kind && s.id === x.id)) x.group = next
+    })
+    return true
+  }
+  /** 把选中的项所在的组拆开。没有编组返回 false。 */
+  function ungroupSelected(): boolean {
+    const gs = new Set(selection.value.map((s) => find(s)?.group).filter((g): g is number => g !== undefined))
+    if (!gs.size) return false
+    mutate((p) => {
+      for (const [, items] of itemLists(p)) for (const x of items) if (x.group !== undefined && gs.has(x.group)) delete x.group
+    })
+    return true
+  }
+  /** 选中的项里，除 anchor 以外在时间线上自由摆放的（叠加素材、文字、配乐）。主轨片段的位置由顺序决定，不跟着动。 */
+  function followersOf(p: EditProject, anchor: Sel): (EditOverlay | EditText | EditAudio)[] {
+    const out: (EditOverlay | EditText | EditAudio)[] = []
+    for (const s of selection.value) {
+      if (sameSel(s, anchor) || s.kind === 'clip') continue
+      const it = (s.kind === 'overlay' ? p.overlays : s.kind === 'text' ? p.texts : p.audio).find((x) => x.id === s.id)
+      if (it) out.push(it)
+    }
+    return out
+  }
+  /** 拖动 anchor 时，其余选中的自由项平移同样的时间（不会移到 0 之前）。 */
+  function shiftFollowers(p: EditProject, anchor: Sel, delta: number) {
+    if (!delta) return
+    const fs = followersOf(p, anchor)
+    if (!fs.length) return
+    const d = Math.max(delta, -Math.min(...fs.map((x) => x.startMs)))
+    for (const x of fs) {
+      x.startMs = Math.round(x.startMs + d)
+      if ('endMs' in x && 'text' in x) x.endMs = Math.round(x.endMs + d)
+    }
+  }
+
   const selectedClip = computed(() => (sel.value?.kind === 'clip' ? clipOf(sel.value.id) : undefined))
   const selectedOverlay = computed(() => (sel.value?.kind === 'overlay' ? overlayOf(sel.value.id) : undefined))
   const selectedText = computed(() => (sel.value?.kind === 'text' ? textOf(sel.value.id) : undefined))
@@ -355,7 +445,10 @@ export function useEditProject() {
   function patchOverlay(id: number, patch: Partial<EditOverlay>, key = '') {
     mutate((p) => {
       const c = p.overlays.find((x) => x.id === id)
-      if (c) Object.assign(c, patch)
+      if (!c) return
+      const before = c.startMs
+      Object.assign(c, patch)
+      if (key.startsWith('omove:') && patch.startMs !== undefined) shiftFollowers(p, { kind: 'overlay', id }, c.startMs - before)
     }, key)
   }
   /** 播放头相对这个素材 / 文字开头的位置（毫秒，收紧在它自己的时长里） */
@@ -412,13 +505,19 @@ export function useEditProject() {
   function patchText(id: number, patch: Partial<EditText>, key = '') {
     mutate((p) => {
       const c = p.texts.find((x) => x.id === id)
-      if (c) Object.assign(c, patch)
+      if (!c) return
+      const before = c.startMs
+      Object.assign(c, patch)
+      if (key.startsWith('tmove:') && patch.startMs !== undefined) shiftFollowers(p, { kind: 'text', id }, c.startMs - before)
     }, key)
   }
   function patchAudio(id: number, patch: Partial<EditAudio>, key = '') {
     mutate((p) => {
       const c = p.audio.find((x) => x.id === id)
-      if (c) Object.assign(c, patch)
+      if (!c) return
+      const before = c.startMs
+      Object.assign(c, patch)
+      if (key.startsWith('amove:') && patch.startMs !== undefined) shiftFollowers(p, { kind: 'audio', id }, c.startMs - before)
     }, key)
   }
 
@@ -914,13 +1013,14 @@ export function useEditProject() {
   }
 
   function removeSelected() {
-    const s = sel.value
-    if (!s) return
+    const list = selection.value
+    if (!list.length) return
+    const has = (kind: Sel['kind'], id: number) => list.some((s) => s.kind === kind && s.id === id)
     mutate((p) => {
-      if (s.kind === 'clip') p.clips = p.clips.filter((c) => c.id !== s.id)
-      else if (s.kind === 'overlay') p.overlays = p.overlays.filter((c) => c.id !== s.id)
-      else if (s.kind === 'text') p.texts = p.texts.filter((c) => c.id !== s.id)
-      else p.audio = p.audio.filter((c) => c.id !== s.id)
+      p.clips = p.clips.filter((c) => !has('clip', c.id))
+      p.overlays = p.overlays.filter((c) => !has('overlay', c.id))
+      p.texts = p.texts.filter((c) => !has('text', c.id))
+      p.audio = p.audio.filter((c) => !has('audio', c.id))
     })
     sel.value = null
     playhead.value = clamp(playhead.value, 0, total.value)
@@ -1205,6 +1305,13 @@ export function useEditProject() {
     sources,
     broken,
     sel,
+    extra,
+    selection,
+    isSelected,
+    toggleSel,
+    groupSelected,
+    ungroupSelected,
+    groupMates,
     playhead,
     playing,
     filePath,

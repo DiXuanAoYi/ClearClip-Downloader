@@ -96,7 +96,15 @@ function blurInput() {
   if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur()
 }
 
-const isSel = (kind: 'clip' | 'overlay' | 'text' | 'audio', id: number) => ed.sel.value?.kind === kind && ed.sel.value.id === id
+const isSel = (kind: 'clip' | 'overlay' | 'text' | 'audio', id: number) => ed.isSelected(kind, id)
+/** 在组里的项：编组编号（用来显示小标记）。 */
+const groupNo = (x: { group?: number }) => x.group
+/** Shift+点击：多选。返回 true 表示已处理，不再往下走（不拖动）。 */
+function shiftPick(e: PointerEvent, kind: 'clip' | 'overlay' | 'text' | 'audio', id: number): boolean {
+  if (!e.shiftKey) return false
+  ed.toggleSel(kind, id)
+  return true
+}
 const lockedNo = (kind: EditTrackKind, no: number) => metaOf(kind, no).lock
 
 // ---------- 拖动 ----------
@@ -230,6 +238,7 @@ function dropX(idx: number, from: number): number {
 function clipDown(e: PointerEvent, i: number) {
   const c = ed.project.value.clips[i]
   if (props.tool === 'blade' && !lockedNo('video', 0)) return blade('clip', c.id, e)
+  if (shiftPick(e, 'clip', c.id)) return
   ed.sel.value = { kind: 'clip', id: c.id }
   if (props.tool === 'slip' && c.kind === 'video' && !c.freeze && !lockedNo('video', 0)) return slip(e, c)
   const t0 = timeAt(e.clientX)
@@ -325,7 +334,8 @@ const isBroken = (path: string) => path in ed.broken
 
 function overlayDown(e: PointerEvent, o: EditOverlay) {
   if (props.tool === 'blade' && !lockedNo('video', o.track)) return blade('overlay', o.id, e)
-  ed.sel.value = { kind: 'overlay', id: o.id }
+  if (shiftPick(e, 'overlay', o.id)) return
+  if (!ed.isSelected('overlay', o.id) || !ed.extra.value.length) ed.sel.value = { kind: 'overlay', id: o.id }
   const t0 = timeAt(e.clientX)
   if (lockedNo('video', o.track)) return drag(e, () => {}, (moved) => !moved && seek(t0))
   const s0 = o.startMs
@@ -345,7 +355,11 @@ function overlayDown(e: PointerEvent, o: EditOverlay) {
       ed.patchOverlay(o.id, patch, `omove:${o.id}`)
     },
     (moved) => {
-      if (!moved) return seek(t0)
+      if (!moved) {
+        // 没拖动：多选时点一下就只选这一项（同组的仍一起选中）
+        if (ed.extra.value.length) ed.sel.value = { kind: 'overlay', id: o.id }
+        return seek(t0)
+      }
       settleDrag('overlay', o.id, hit, ed.overlayOf(o.id)?.track ?? o.track)
     },
   )
@@ -397,7 +411,8 @@ function cutW(o: EditOverlay): number {
 
 function textDown(e: PointerEvent, t: EditText) {
   if (props.tool === 'blade' && !lockedNo('text', t.track)) return blade('text', t.id, e)
-  ed.sel.value = { kind: 'text', id: t.id }
+  if (shiftPick(e, 'text', t.id)) return
+  if (!ed.isSelected('text', t.id) || !ed.extra.value.length) ed.sel.value = { kind: 'text', id: t.id }
   const t0 = timeAt(e.clientX)
   if (lockedNo('text', t.track)) return drag(e, () => {}, (moved) => !moved && seek(t0))
   const o = { s: t.startMs, e: t.endMs }
@@ -419,7 +434,11 @@ function textDown(e: PointerEvent, t: EditText) {
       ed.patchText(t.id, patch, `tmove:${t.id}`)
     },
     (moved) => {
-      if (!moved) return seek(t0)
+      if (!moved) {
+        // 没拖动：多选时点一下就只选这一项（同组的仍一起选中）
+        if (ed.extra.value.length) ed.sel.value = { kind: 'text', id: t.id }
+        return seek(t0)
+      }
       settleDrag('text', t.id, hit, ed.textOf(t.id)?.track ?? t.track)
     },
   )
@@ -442,7 +461,8 @@ const aSpan = (a: EditAudio) => audioSpan(a, ed.sources[a.path], ed.total.value)
 
 function audioDown(e: PointerEvent, a: EditAudio) {
   if (props.tool === 'blade' && !lockedNo('audio', a.track)) return blade('audio', a.id, e)
-  ed.sel.value = { kind: 'audio', id: a.id }
+  if (shiftPick(e, 'audio', a.id)) return
+  if (!ed.isSelected('audio', a.id) || !ed.extra.value.length) ed.sel.value = { kind: 'audio', id: a.id }
   const t0 = timeAt(e.clientX)
   if (lockedNo('audio', a.track)) return drag(e, () => {}, (moved) => !moved && seek(t0))
   const s0 = a.startMs
@@ -458,7 +478,11 @@ function audioDown(e: PointerEvent, a: EditAudio) {
       ed.patchAudio(a.id, patch, `amove:${a.id}`)
     },
     (moved) => {
-      if (!moved) return seek(t0)
+      if (!moved) {
+        // 没拖动：多选时点一下就只选这一项（同组的仍一起选中）
+        if (ed.extra.value.length) ed.sel.value = { kind: 'audio', id: a.id }
+        return seek(t0)
+      }
       settleDrag('audio', a.id, hit, ed.audioOf(a.id)?.track ?? a.track)
     },
   )
@@ -527,6 +551,7 @@ function volPoints(a: EditAudio, h: number): string {
 const volVisible = (r: Row) => props.showVol && r.meta.height !== 's'
 
 function volDown(e: PointerEvent, a: EditAudio, h: number) {
+  if (shiftPick(e, 'audio', a.id)) return
   // 点在线上：在这个时间加一个点，并且可以接着拖
   ed.sel.value = { kind: 'audio', id: a.id }
   if (lockedNo('audio', a.track)) return
@@ -974,7 +999,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="t in textsOn(r.no)"
               :key="t.id"
               class="blk txt"
-              :class="{ sel: isSel('text', t.id) }"
+              :class="{ sel: isSel('text', t.id), grouped: groupNo(t) !== undefined }"
               :style="{ left: px(t.startMs) + 'px', width: Math.max(8, px(t.endMs - t.startMs)) + 'px' }"
               :title="t.text"
               @pointerdown.stop.prevent="textDown($event, t)"
@@ -993,7 +1018,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="(c, i) in ed.project.value.clips"
               :key="c.id"
               class="blk clip"
-              :class="{ sel: isSel('clip', c.id), img: c.kind === 'image', bad: isBroken(c.path), moving: dragIdx === i }"
+              :class="{ sel: isSel('clip', c.id), grouped: groupNo(c) !== undefined, img: c.kind === 'image', bad: isBroken(c.path), moving: dragIdx === i }"
               :style="{
                 left: px(ed.placed.value[i].startMs) + 'px',
                 width: Math.max(10, px(ed.placed.value[i].durMs)) + 'px',
@@ -1019,7 +1044,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="x in byTrack.get(r.no) ?? []"
               :key="x.o.id"
               class="blk ovl"
-              :class="{ sel: isSel('overlay', x.o.id), img: x.o.kind === 'image', bad: isBroken(x.o.path), adj: x.o.adjust }"
+              :class="{ sel: isSel('overlay', x.o.id), grouped: groupNo(x.o) !== undefined, img: x.o.kind === 'image', bad: isBroken(x.o.path), adj: x.o.adjust }"
               :style="{
                 left: px(x.o.startMs) + 'px',
                 width: Math.max(10, px(overlayDuration(x.o))) + 'px',
@@ -1046,7 +1071,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               v-for="a in audioOn(r.no)"
               :key="a.id"
               class="blk aud"
-              :class="{ sel: isSel('audio', a.id), bad: isBroken(a.path), wave: !!waveUrl(a) }"
+              :class="{ sel: isSel('audio', a.id), grouped: groupNo(a) !== undefined, bad: isBroken(a.path), wave: !!waveUrl(a) }"
               :style="audioStyle(a)"
               :title="audioName(a)"
               @pointerdown.stop.prevent="audioDown($event, a)"
@@ -1160,6 +1185,9 @@ defineExpose({ reveal, targetAt, hover, fit })
   display: flex;
   align-items: center;
   min-width: 0;
+}
+.blk.grouped {
+  box-shadow: inset 0 -3px 0 #d98a1f;
 }
 .blk.sel {
   outline: 2px solid var(--cc-acc);

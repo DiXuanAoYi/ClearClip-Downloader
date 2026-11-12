@@ -424,6 +424,15 @@ async function exportNow(frame = false) {
 
 // ---------- 键盘 ----------
 
+/** Ctrl+G 编组，Ctrl+Shift+G 拆开。 */
+function toggleGroup(ungroup: boolean) {
+  if (ungroup) {
+    if (!ed.ungroupSelected()) ElMessage.info('选中的没有编组')
+  } else if (!ed.groupSelected()) {
+    ElMessage.info('先用 Shift+点击选中至少两个片段，再编组')
+  }
+}
+
 const SHORTCUTS: [string, string][] = [
   ['空格', '播放 / 暂停'],
   ['S', '在播放位置分割'],
@@ -433,6 +442,8 @@ const SHORTCUTS: [string, string][] = [
   ['Q / W', '向左 / 向右裁剪到播放位置'],
   ['Delete', '删除选中的'],
   ['Shift+Delete', '波纹删除（后面的叠加素材、文字、配乐一起前移）'],
+  ['Shift+点击', '多选（再点一次取消）；同一组的一起选中'],
+  ['Ctrl+G / Ctrl+Shift+G', '把选中的编成一组 / 拆开（组里的叠加素材、文字、配乐拖动时一起走，删除时一起删）'],
   ['Ctrl+D', '复制选中的'],
   ['Ctrl+Z / Ctrl+Y', '撤销 / 重做'],
   ['Ctrl+S', '保存工程'],
@@ -461,7 +472,10 @@ function onKey(e: KeyboardEvent) {
   }
   const mod = e.ctrlKey || e.metaKey
   const key = e.key.toLowerCase()
-  if (mod && key === 'd') {
+  if (mod && key === 'g') {
+    e.preventDefault()
+    toggleGroup(e.shiftKey)
+  } else if (mod && key === 'd') {
     e.preventDefault()
     duplicate()
   } else if (mod && key === 'z') {

@@ -1719,6 +1719,8 @@ export interface TrackResult {
 
 export interface EditClip {
   id: number
+  /** 编组编号：同编号的是一组，选中、移动、删除时一起走 */
+  group?: number
   path: string
   kind: 'video' | 'image'
   inMs: number
@@ -1767,6 +1769,8 @@ export type EditKeyframes = Record<string, EditKeyframe[]>
 
 export interface EditText {
   id: number
+  /** 编组编号：同编号的是一组，选中、移动、删除时一起走 */
+  group?: number
   /** 所在的文字轨编号 1–8；编号大的画在上面 */
   track: number
   text: string
@@ -1823,6 +1827,8 @@ export interface SttStatus {
 
 export interface EditAudio {
   id: number
+  /** 编组编号：同编号的是一组，选中、移动、删除时一起走 */
+  group?: number
   /** 所在的音频轨编号 1–12 */
   track: number
   path: string
@@ -1878,6 +1884,8 @@ export type OverlayAnim = 'none' | 'slide-left' | 'slide-right' | 'slide-up' | '
 
 export interface EditOverlay {
   id: number
+  /** 编组编号：同编号的是一组，选中、移动、删除时一起走 */
+  group?: number
   /** 调整图层：不放画面，只把下面所有轨道在这段时间里调色 */
   adjust: boolean
   path: string
