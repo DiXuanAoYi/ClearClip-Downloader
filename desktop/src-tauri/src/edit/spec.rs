@@ -159,6 +159,9 @@ pub struct Clip {
     /// 编组编号：同一个编号的片段是一组，选中、移动、删除时一起走；界面用，导出不看
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<u32>,
+    /// 复合片段：这个片段的内容是 `Project.compounds` 里这个编号的子时间线（导出时先渲染成一个临时视频）；`path` 留空
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compound: Option<u32>,
     pub path: String,
     pub kind: ClipKind,
     /// 取素材的哪一段（毫秒）。图片：`in_ms` 为 0，`out_ms` 是显示时长
@@ -212,6 +215,7 @@ impl Default for Clip {
         Clip {
             id: 0,
             group: None,
+            compound: None,
             path: String::new(),
             kind: ClipKind::Video,
             in_ms: 0,
@@ -704,7 +708,23 @@ pub struct Project {
     /// 时间线上的标记
     pub markers: Vec<Marker>,
     pub out: OutputSpec,
+    /// 复合片段的子时间线（主轨片段的 `compound` 指向这里）。只放在最外层的工程里；子时间线自己的 `compounds` 留空，
+    /// 它里面的片段也可以引用这张表（嵌套，最多 3 层）。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub compounds: Vec<Compound>,
 }
+
+/// 复合片段里的子时间线。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Compound {
+    pub id: u32,
+    pub name: String,
+    pub project: Project,
+}
+
+/// 复合片段最多嵌套几层。
+pub const MAX_COMPOUND_DEPTH: u32 = 3;
 
 /// 时间线上的一个标记。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -895,7 +915,14 @@ fn check_keys(map: &mut KeyframeMap, allowed: &[(&str, f64, f64)]) {
 
 impl Project {
     /// 校验并整理：超出范围的数值收紧，结构性的错误（没有片段、素材路径为空、起止颠倒）返回提示。
-    pub fn checked(mut self) -> Result<Project, String> {
+    pub fn checked(self) -> Result<Project, String> {
+        self.checked_depth(0)
+    }
+
+    fn checked_depth(mut self, depth: u32) -> Result<Project, String> {
+        if depth > MAX_COMPOUND_DEPTH {
+            return Err(format!("复合片段嵌套太深了（最多 {MAX_COMPOUND_DEPTH} 层）。"));
+        }
         if self.clips.is_empty() {
             return Err("时间线上还没有片段，请先添加视频或图片。".into());
         }
@@ -913,7 +940,13 @@ impl Project {
         }
         for (i, c) in self.clips.iter_mut().enumerate() {
             let n = i + 1;
-            if c.path.trim().is_empty() {
+            if let Some(id) = c.compound {
+                if !self.compounds.iter().any(|x| x.id == id) {
+                    return Err(format!("第 {n} 个片段是复合片段，但找不到它的内容（编号 {id}）。"));
+                }
+                c.kind = ClipKind::Video;
+                c.path.clear();
+            } else if c.path.trim().is_empty() {
                 return Err(format!("第 {n} 个片段没有素材文件。"));
             }
             match c.kind {
@@ -988,6 +1021,15 @@ impl Project {
                     c.transition = None;
                 }
             }
+        }
+        // 复合片段的子时间线：各自校验一遍（子时间线引用同一张表，这样嵌套的也能校验到）
+        let table = self.compounds.clone();
+        for comp in &mut self.compounds {
+            let mut inner = std::mem::take(&mut comp.project);
+            inner.compounds = table.iter().filter(|x| x.id != comp.id).cloned().collect();
+            let mut inner = inner.checked_depth(depth + 1).map_err(|e| format!("复合片段“{}”：{e}", comp.name))?;
+            inner.compounds.clear();
+            comp.project = inner;
         }
         for (i, o) in self.overlays.iter_mut().enumerate() {
             let n = i + 1;
@@ -1209,8 +1251,31 @@ impl Project {
     }
 
     /// 所有用到的素材文件（去重，保持顺序）。
+    /// 第一个有素材文件的片段（复合片段往里找）。用来给导出文件取名和定位文件夹。
+    pub fn first_media_path(&self) -> Option<String> {
+        self.first_media_path_in(&self.compounds, 0)
+    }
+
+    fn first_media_path_in(&self, table: &[Compound], depth: u32) -> Option<String> {
+        if depth > MAX_COMPOUND_DEPTH {
+            return None;
+        }
+        for c in &self.clips {
+            if !c.path.is_empty() {
+                return Some(c.path.clone());
+            }
+            if let Some(id) = c.compound {
+                if let Some(p) = table.iter().find(|x| x.id == id).and_then(|x| x.project.first_media_path_in(table, depth + 1)) {
+                    return Some(p);
+                }
+            }
+        }
+        None
+    }
+
     pub fn media_paths(&self) -> Vec<String> {
         let mut out: Vec<String> = vec![];
+
         let paths = self
             .clips
             .iter()
@@ -1222,6 +1287,14 @@ impl Project {
         for p in paths {
             if !p.is_empty() && !out.contains(p) {
                 out.push(p.clone());
+            }
+        }
+        // 复合片段里用到的素材放在最后（子时间线自己的复合片段表是空的，所以这里只递归一层）
+        for comp in &self.compounds {
+            for p in comp.project.media_paths() {
+                if !out.contains(&p) {
+                    out.push(p);
+                }
             }
         }
         out
