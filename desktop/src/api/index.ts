@@ -566,7 +566,8 @@ export const api = {
   safeboxExport: (id: string, dir: string) => invoke<number>('safebox_export', { id, dir }),
   safeboxRemove: (ids: string[]) => invoke<number>('safebox_remove', { ids }),
   testRoute: (url: string) => invoke<RouteTest>('test_route', { url }),
-  getDiagnostics: () => invoke<string>('get_diagnostics'),
+  /** summary：日志只保留警告和错误 */
+  getDiagnostics: (summary = false) => invoke<string>('get_diagnostics', { summary }),
   openLogDir: () => invoke<void>('open_log_dir'),
   openSamplesDir: () => invoke<void>('open_samples_dir'),
   checkUpdate: () => invoke<UpdateInfo>('check_update'),

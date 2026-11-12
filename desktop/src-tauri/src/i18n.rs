@@ -13,6 +13,7 @@ const TABLE: &[(&str, &str)] = &[
     ("监听剪贴板", "Watch clipboard"),
     ("锁定", "Lock"),
     ("退出清影", "Quit ClearClip"),
+    ("重启清影", "Restart ClearClip"),
     ("下载完成", "Download complete"),
     ("详情请打开清影查看", "Open ClearClip for details"),
     ("清影", "ClearClip"),

@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
 
-use super::{bilibili, pixiv, str_at, u64_at, ytdlp, Ctx};
-use crate::model::{AppError, AppResult, MediaKind};
+use super::bilibili_list::Target;
+use super::{bilibili, bilibili_list, pixiv, str_at, u64_at, ytdlp, Ctx};
+use crate::model::{AppError, AppResult, MediaInfo, MediaKind};
 
 /// 列表里的一条。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,9 +63,97 @@ pub fn normalize_url(url: &str) -> String {
     url.to_string()
 }
 
+/// 订阅一个 B站链接时跟的是哪个列表。
+#[derive(Debug, Clone, PartialEq)]
+pub enum BiliSub {
+    /// 全部投稿：用投稿接口（带发布时间，最新的在前）
+    Uploads(String),
+    /// 一个具体的列表（合集、视频列表、收藏夹、动态、稍后再看）。`reverse`：接口按旧到新排，要倒过来
+    List { reverse: bool },
+    /// 列表的列表（合集和系列总览、收藏夹总览）：里面每一项是个列表，不能直接订阅
+    Reject(&'static str),
+}
+
+pub fn bili_sub_route(t: &Target) -> BiliSub {
+    match t {
+        Target::Uploads { mid } => BiliSub::Uploads(mid.clone()),
+        // 合集（sort_reverse=false）和视频列表（sort=asc）都是旧的在前
+        Target::Season { .. } | Target::Series { .. } => BiliSub::List { reverse: true },
+        Target::Fav { .. } | Target::Dynamic { .. } | Target::WatchLater => BiliSub::List { reverse: false },
+        Target::SpaceLists { .. } => BiliSub::Reject("这是“合集和系列”总览，里面每一项是一个合集。请在解析页打开这个链接，在要订阅的合集那一行点“订阅”。"),
+        Target::FavFolders { .. } => BiliSub::Reject("这是收藏夹总览，里面每一项是一个收藏夹。请在解析页打开这个链接，在要订阅的收藏夹那一行点“订阅”。"),
+    }
+}
+
+/// 订阅这个地址时按哪种方式取列表。存进订阅里，取法变了（比如 1.14.1 起 B站合集跟合集本身，不再跟全部投稿）能认出来。
+pub fn route_id(url: &str) -> &'static str {
+    match bilibili_list::classify(url) {
+        Some(Target::Uploads { .. }) => "bili-uploads",
+        Some(Target::Season { .. }) => "bili-season",
+        Some(Target::Series { .. }) => "bili-series",
+        Some(Target::Fav { .. }) => "bili-fav",
+        Some(Target::Dynamic { .. }) => "bili-dynamic",
+        Some(Target::WatchLater) => "bili-watchlater",
+        Some(Target::SpaceLists { .. } | Target::FavFolders { .. }) => "bili-lists",
+        None => "default",
+    }
+}
+
+/// 1.14.1 之前的取法：B站空间下的任何地址都按全部投稿取，别的和现在一样。
+pub fn legacy_route_id(url: &str) -> &'static str {
+    if BILI_SPACE.is_match(url) {
+        "bili-uploads"
+    } else {
+        route_id(url)
+    }
+}
+
+/// 取法变了以后的第一次检查（不是新建订阅的第一次）：列表里已有的内容当成“订阅前已发布”，不自动下载，
+/// 免得把合集里以前的几十集一下子全加进下载队列。`stored` 为空表示 1.14.1 之前建的订阅。
+pub fn should_rebase(first: bool, stored: &str, url: &str) -> bool {
+    let now = route_id(url);
+    !first && if stored.is_empty() { legacy_route_id(url) != now } else { stored != now }
+}
+
+/// 解析出来的列表 → 订阅条目：只要视频（列表项跳过），最新的在前，最多 `limit` 条。
+pub fn list_from_playlist(info: &MediaInfo, limit: usize, reverse: bool) -> ListResult {
+    let mut entries: Vec<SubEntry> = info
+        .entries
+        .iter()
+        .filter(|e| !e.is_list)
+        .map(|e| SubEntry {
+            id: e.id.clone(),
+            title: e.title.clone(),
+            url: e.url.clone(),
+            thumbnail: e.thumbnail.clone(),
+            published_at: None,
+            duration_ms: e.duration_ms,
+        })
+        .collect();
+    if reverse {
+        entries.reverse();
+    }
+    entries.truncate(limit);
+    ListResult { title: info.title.clone(), platform: info.platform.clone(), platform_name: info.platform_name.clone(), avatar: None, entries }
+}
+
 /// 列出最新的条目（最多 `limit` 条）。
 pub async fn list(ctx: &Ctx<'_>, url: &str, limit: usize) -> AppResult<ListResult> {
-    if let Some(c) = BILI_SPACE.captures(url) {
+    // B站：合集、视频列表、收藏夹、动态各跟各的；以前空间下的任何地址订阅到的都是全部投稿
+    if let Some(t) = bilibili_list::classify(url) {
+        match bili_sub_route(&t) {
+            BiliSub::Uploads(mid) => match bili_space(ctx, &mid, limit).await {
+                Ok(r) => return Ok(r),
+                Err(e) if ctx.ytdlp.is_some() => log::info!("bilibili space api failed, falling back to yt-dlp: {e}"),
+                Err(e) => return Err(e),
+            },
+            BiliSub::List { reverse } => {
+                let info = bilibili_list::resolve(ctx, &t, url).await?;
+                return Ok(list_from_playlist(&info, limit, reverse));
+            }
+            BiliSub::Reject(msg) => return Err(AppError::invalid(msg)),
+        }
+    } else if let Some(c) = BILI_SPACE.captures(url) {
         match bili_space(ctx, &c[1], limit).await {
             Ok(r) => return Ok(r),
             Err(e) if ctx.ytdlp.is_some() => log::info!("bilibili space api failed, falling back to yt-dlp: {e}"),
@@ -109,10 +198,17 @@ pub fn from_ytdlp(v: &Value, url: &str) -> AppResult<ListResult> {
     if info.kind != MediaKind::Playlist {
         return Err(AppError::invalid("这个链接是单个作品，不是可以订阅的列表。请粘贴频道、UP 主空间、播放列表或合集的链接。"));
     }
+    // 频道的“播放列表”栏：每一项本身是个播放列表，订阅它检查更新时每一项都会被跳过
+    if !info.entries.is_empty() && info.entries.iter().all(|e| e.is_list) {
+        return Err(AppError::invalid(
+            "这一栏里每一项是一个播放列表，不能直接订阅。请在解析页展开要订阅的播放列表，在那一行点“订阅”；或者订阅频道的“视频”栏。",
+        ));
+    }
     let raw = v.get("entries").and_then(Value::as_array).cloned().unwrap_or_default();
     let entries = info
         .entries
         .iter()
+        .filter(|e| !e.is_list)
         .map(|e| {
             let src = raw.iter().find(|r| str_at(r, "/id") == Some(e.id.as_str()) || str_at(r, "/url").is_some_and(|u| u.starts_with(&e.url)));
             let published_at = src.and_then(|r| u64_at(r, "/timestamp").map(|t| t as i64).or_else(|| str_at(r, "/upload_date").and_then(parse_ymd)));
@@ -269,6 +365,91 @@ mod tests {
         let r = parse_pixiv_profile(&profile, Some(&user), "9", 2);
         assert_eq!(r.entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), vec!["300", "200"]);
         assert_eq!(r.title, "画师 的作品");
+    }
+
+    #[test]
+    fn bilibili_subscriptions_follow_the_list_itself() {
+        let route = |u: &str| bilibili_list::classify(u).map(|t| bili_sub_route(&t));
+        assert_eq!(route("https://space.bilibili.com/9"), Some(BiliSub::Uploads("9".into())));
+        assert_eq!(route("https://space.bilibili.com/9/upload/video"), Some(BiliSub::Uploads("9".into())));
+        assert_eq!(route("https://space.bilibili.com/9/lists/11?type=season"), Some(BiliSub::List { reverse: true }));
+        assert_eq!(route("https://space.bilibili.com/9/lists/22?type=series"), Some(BiliSub::List { reverse: true }));
+        assert_eq!(route("https://space.bilibili.com/9/favlist?fid=33"), Some(BiliSub::List { reverse: false }));
+        assert_eq!(route("https://space.bilibili.com/9/dynamic"), Some(BiliSub::List { reverse: false }));
+        assert!(matches!(route("https://space.bilibili.com/9/lists"), Some(BiliSub::Reject(m)) if m.contains("合集")));
+        assert!(matches!(route("https://space.bilibili.com/9/favlist"), Some(BiliSub::Reject(m)) if m.contains("收藏夹")));
+        assert_eq!(route("https://www.bilibili.com/video/BV1x"), None);
+    }
+
+    #[test]
+    fn route_changes_are_noticed_once() {
+        let season = "https://space.bilibili.com/9/lists/11?type=season";
+        let home = "https://space.bilibili.com/9";
+        let yt = "https://www.youtube.com/@ch/videos";
+        assert_eq!(route_id(season), "bili-season");
+        assert_eq!(legacy_route_id(season), "bili-uploads", "以前空间下的地址都按全部投稿取");
+        assert_eq!(route_id(home), "bili-uploads");
+        assert_eq!(route_id(yt), "default");
+        // 1.14.1 之前建的订阅（没记取法）：合集要重新对一次，主页和别的网站不用
+        assert!(should_rebase(false, "", season));
+        assert!(!should_rebase(false, "", home));
+        assert!(!should_rebase(false, "", yt));
+        // 记过取法：一样就不用，不一样才要
+        assert!(!should_rebase(false, "bili-season", season));
+        assert!(should_rebase(false, "bili-uploads", season));
+        // 新建订阅的第一次检查按“首次订阅”的设置处理，不在这里管
+        assert!(!should_rebase(true, "", season));
+    }
+
+    #[test]
+    fn playlist_to_subscription_entries() {
+        let e = |id: &str, i: u32, is_list: bool| crate::model::PlaylistEntry {
+            id: id.into(),
+            title: id.into(),
+            url: format!("https://x/{id}"),
+            duration_ms: Some(1000),
+            thumbnail: None,
+            index: i,
+            is_list,
+            count: None,
+        };
+        let info = MediaInfo {
+            platform: "bilibili".into(),
+            platform_name: "B站".into(),
+            id: "season-1".into(),
+            source_url: "https://space.bilibili.com/9/lists/1?type=season".into(),
+            title: "合集甲".into(),
+            author: String::new(),
+            cover: None,
+            duration_ms: None,
+            kind: MediaKind::Playlist,
+            width: None,
+            height: None,
+            published_at: None,
+            assets: vec![],
+            entries: vec![e("BV1", 1, false), e("BV2", 2, false), e("sub", 3, true), e("BV3", 4, false)],
+            series: None,
+            extractor: None,
+            chapters: vec![],
+        };
+        // 合集是旧的在前：倒过来以后最新的（BV3）在前；列表项跳过；最多 2 条
+        let r = list_from_playlist(&info, 2, true);
+        assert_eq!(r.entries.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), vec!["BV3", "BV2"]);
+        assert_eq!(r.title, "合集甲");
+        let r = list_from_playlist(&info, 10, false);
+        assert_eq!(r.entries.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), vec!["BV1", "BV2", "BV3"]);
+    }
+
+    #[test]
+    fn channel_playlists_tab_cannot_be_subscribed() {
+        let pl = |id: &str| serde_json::json!({"_type": "url", "ie_key": "YoutubeTab", "id": id, "title": id, "url": format!("https://www.youtube.com/playlist?list={id}")});
+        let tab = serde_json::json!({"_type": "playlist", "id": "UC1", "title": "Ch - Playlists", "uploader": "Ch", "entries": [pl("PL1"), pl("PL2")]});
+        let err = from_ytdlp(&tab, "https://www.youtube.com/@ch/playlists").unwrap_err();
+        assert!(err.message.contains("播放列表"), "{err}");
+        // 混着视频和列表：只留视频
+        let mixed = serde_json::json!({"_type": "playlist", "id": "X", "title": "X", "entries": [pl("PL1"), {"id": "v1", "title": "V1", "url": "https://www.youtube.com/watch?v=v1"}]});
+        let r = from_ytdlp(&mixed, "https://www.youtube.com/playlist?list=X").unwrap();
+        assert_eq!(r.entries.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), vec!["v1"]);
     }
 
     #[test]

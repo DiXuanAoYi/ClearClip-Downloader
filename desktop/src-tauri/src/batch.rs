@@ -650,6 +650,17 @@ pub fn enqueue_quick(app: &AppHandle, urls: Vec<String>, source: &str) -> AppRes
     enqueue(app, items, opts, source.to_string())
 }
 
+/// 列表链接里的视频：只取直接能下载的条目（不含再套一层的列表），序号从 `first_seq` 接着排，最多 `cap` 条。
+pub fn expand_list_links(entries: &[PlaylistEntry], first_seq: u32, cap: usize) -> Vec<PendingLink> {
+    entries
+        .iter()
+        .filter(|e| !e.is_list && !e.url.trim().is_empty())
+        .take(cap)
+        .enumerate()
+        .map(|(i, e)| PendingLink { url: e.url.clone(), title: e.title.clone(), seq: first_seq + i as u32 })
+        .collect()
+}
+
 /// 后台逐条解析批次里还没处理的链接并加入队列：同一网站两条之间按批次的间隔等待。
 fn spawn_worker(app: &AppHandle, id: String) {
     let st = state(app);
@@ -674,15 +685,28 @@ fn spawn_worker(app: &AppHandle, id: String) {
             let ctx = st.parse_ctx(&s);
             let outcome = providers::resolve_url(&ctx, &next.url).await;
             let mut acc = BatchResult { id: id.clone(), name: rec.name.clone(), queued: 0, already_downloaded: 0, already_queued: 0, pending: 0 };
+            let mut expanded: Option<Vec<PendingLink>> = None;
             let failure = match outcome {
                 Ok(info) if info.kind == MediaKind::Playlist => {
-                    Some(format!("这个链接是个列表（{} 个视频），请在“解析”页单独打开，再选择要下载的视频", info.entries.len()))
+                    // 列表链接：里面的视频接着排在批次后面，逐条解析下载；列表里再套列表的不展开
+                    let first_seq = st.batches.with_rec(&id, |r| r.total as u32 + 1).unwrap_or(next.seq);
+                    let links = expand_list_links(&info.entries, first_seq, MAX_LINKS);
+                    if links.is_empty() {
+                        Some("这个链接是个列表，里面没有能直接下载的视频，请在“解析”页单独打开，再选择要下载的内容".to_string())
+                    } else {
+                        expanded = Some(links);
+                        None
+                    }
                 }
                 Ok(info) => enqueue_media(&app, &rec, next.seq, info, &settings, &mut acc).err(),
                 Err(e) => Some(e.message),
             };
             let snapshot = st.batches.with_rec(&id, |r| {
                 r.pending.retain(|p| !(p.url == next.url && p.seq == next.seq));
+                if let Some(links) = expanded.take() {
+                    r.total += links.len();
+                    r.pending.extend(links);
+                }
                 if let Some(error) = failure {
                     r.failed.push(FailedLink { url: next.url.clone(), title: next.title.clone(), error });
                 }
@@ -1014,5 +1038,25 @@ mod tests {
         assert_eq!(store.task_limit(Some(&tag), &s, 0, 0), 1000);
         assert!(store.limiter_for("b1", &s).is_some());
         assert!(store.limiter_for("nope", &s).is_none());
+    }
+
+    #[test]
+    fn list_links_expand_into_pending_with_following_seq() {
+        let entry = |i: u32, url: &str, is_list: bool| PlaylistEntry {
+            id: i.to_string(),
+            title: format!("t{i}"),
+            url: url.into(),
+            duration_ms: None,
+            thumbnail: None,
+            index: i,
+            is_list,
+            count: None,
+        };
+        let mut entries = vec![entry(1, "https://a/1", false), entry(2, "https://a/list", true), entry(3, "", false), entry(4, "https://a/4", false)];
+        let links = expand_list_links(&entries, 10, 500);
+        assert_eq!(links.iter().map(|l| (l.url.as_str(), l.seq)).collect::<Vec<_>>(), vec![("https://a/1", 10), ("https://a/4", 11)]);
+        assert_eq!(expand_list_links(&entries, 1, 1).len(), 1, "受 cap 限制");
+        entries = vec![entry(1, "https://a/list", true)];
+        assert!(expand_list_links(&entries, 1, 500).is_empty());
     }
 }

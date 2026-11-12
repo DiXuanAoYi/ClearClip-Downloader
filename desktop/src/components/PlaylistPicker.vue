@@ -16,6 +16,8 @@ const emit = defineEmits<{
   /** 展开过、并且只勾了其中一部分的列表：列表项 id → 勾选的视频 id */
   'update:only': [only: Record<string, string[]>]
   'update:total': [t: { videos: number; lists: number; approx: boolean }]
+  /** 订阅列表里的某一个列表（播放列表、合集） */
+  subscribe: [e: PlaylistEntry]
 }>()
 
 interface Kid {
@@ -238,6 +240,7 @@ const rowKey = (r: Row) => (r.kind === 'entry' ? `e:${r.e.id}` : r.kind === 'kid
           <span class="tags">
             <span v-if="r.e.isList" class="pz-tag acc">列表{{ r.e.count != null ? ` · ${r.e.count} 个视频` : '' }}</span>
             <span v-if="downloaded.has(r.e.id)" class="pz-tag ok">已下载</span>
+            <button v-if="r.e.isList" type="button" class="pz-link" title="以后这个列表有新视频时自动下载" @click.prevent="emit('subscribe', r.e)">订阅</button>
           </span>
           <button v-if="r.e.isList" type="button" class="pz-link open" :aria-expanded="!!kids[r.e.id]?.open" @click.prevent="expand(r.e)">
             {{ kids[r.e.id]?.status === 'loading' ? '读取中…' : kids[r.e.id]?.open ? '收起 ▴' : '展开 ▾' }}
@@ -327,6 +330,7 @@ const rowKey = (r: Row) => (r.kind === 'entry' ? `e:${r.e.id}` : r.kind === 'kid
 }
 .tags {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 .open {
