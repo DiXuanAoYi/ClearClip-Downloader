@@ -8,6 +8,7 @@
 |---|---|---|
 | `phone.rs`（手机互传 / 控制台 / 扩展接口的局域网服务） | 监听地址、令牌校验、限频、请求体上限、上传下载的授权顺序 | 没发现问题（见下） |
 | `media_server.rs`（内置播放器的本机媒体服务） | 监听地址、Host 校验、路径 | 没发现问题 |
+| 浏览器扩展的消息入口（`manifest.json`、`background.js`、`bg-actions.js`、内容脚本里的监听） | 谁能给后台脚本发消息、页面能不能直接触发 | 没发现问题，但只做了“找入口”这一步（见下） |
 | 依赖 | `npm audit --audit-level=high` | 0 个漏洞；`cargo audit` 本机没装，已加每周的 `desktop-audit.yml`，合并后手动跑一次确认 |
 
 ## 确认没问题的点
@@ -22,9 +23,19 @@
 - 手机页的令牌放在地址的 `?t=` 里（扫码方便）。局域网内、令牌可重置，风险低；如果以后要给不受信任的网络用，应改成只用 `X-Token` 头。
 - 媒体服务的响应带 `Access-Control-Allow-Origin: *`。它只绑本机、地址里有随机令牌，所以不暴露任何东西；记在这里是因为改动这个服务时容易忘。
 
+## 扩展消息入口（第二轮）
+
+只做了找入口和看守卫，没有逐个读 `bg-actions.js` 里每个处理函数的细节：
+
+- `manifest.json` 里**没有** `externally_connectable`，所以网页和别的扩展不能直接给后台脚本发消息；后台脚本里只有一个 `runtime.onMessage` 监听（`bg-actions.js`）加一个只处理 `cc-bypass` 的小监听（`background.js`），没有 `onMessageExternal` / `onConnect`。
+- `bg-actions.js` 的监听对来自内容脚本的 14 类消息（`cc-sniffed`、`cc-send-*`、`cc-ai-run`、`cc-note`、`cc-capture` 等）要求发送者带标签页（`sender.tab`），扩展页面发的消息不受这条限制。
+- 内容脚本里**没有** `window.addEventListener('message', …)` 一类能被网页直接触发的监听（我 grep 了 `content/*.js` 和根目录的脚本），所以没找到网页脚本能直接驱动这些消息的路径。内容脚本运行在隔离的世界里，网页脚本调用不到 `chrome.runtime`。
+- 仍然要注意：扩展有 `<all_urls>` 的主机权限；`cc-send-media` 这类消息的 `url` 来自页面内容（用户点了扩展自己的按钮之后才发出），桌面端对来自扩展的“下载”还会再让用户确认一次，这一层在 `phone.rs`（上一轮已看过令牌和限频）。
+- **没看的**：每个处理函数对参数的校验（`cc-save`、`cc-area`、`cc-shot`、`cc-ai-run` 的参数范围）、弹窗页和选项页的输入处理、内容脚本注入的界面里有没有把页面文字当 HTML 插入（`innerHTML`）的地方。
+
 ## 没看的（下次要看）
 
-- 浏览器扩展的消息入口（`background.js` 对页面消息的来源校验、`externally_connectable`）。
+- 扩展各个处理函数的参数校验、内容脚本里有没有 `innerHTML` 插入页面文字（消息入口本身第二轮已经看过，见上）。
 - `api.rs` 本机接口、`console.rs` 控制台页的各个写操作。
 - `safebox.rs` / `vault.rs` 的加密保险箱实现。
 - 日志和“复制诊断信息”的脱敏覆盖面（规则在 `diagnostics.rs::SECRET_RE`，新平台加了之后要复查一遍字段名）。
