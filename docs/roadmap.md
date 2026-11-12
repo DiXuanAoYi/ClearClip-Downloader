@@ -168,7 +168,7 @@
 
 | 状态 | 事项 | 依据 | 大小 |
 |---|---|---|---|
-| 🟡 | Rust 和界面之间的类型自动生成（试点已做：ts-rs 生成 `PlaylistEntry`、`SeriesInfo`，CI 检查生成结果是最新的，说明见 [types-generation.md](types-generation.md)；其余结构一个一个接入，命令绑定未评估）：先只生成数据结构（ts-rs，可以一个结构一个结构地接入），命令的调用绑定以后再评估（tauri-specta） | `types.ts` 有 2636 行，是照着 Rust 结构手抄的；约 390 个命令靠字符串名字调用，界面测试的假后端也按名字写。1.14.0 里同一个字段要改三处（Rust、`types.ts`、测试） | 大 |
+| 🟡 | Rust 和界面之间的类型自动生成（已接入 `model.rs` 的 9 个类型：ts-rs 生成，CI 检查生成结果是最新的，说明见 [types-generation.md](types-generation.md)；其余结构一个一个接入，命令绑定未评估）：先只生成数据结构（ts-rs，可以一个结构一个结构地接入），命令的调用绑定以后再评估（tauri-specta） | `types.ts` 有 2636 行，是照着 Rust 结构手抄的；约 390 个命令靠字符串名字调用，界面测试的假后端也按名字写。1.14.0 里同一个字段要改三处（Rust、`types.ts`、测试） | 大 |
 | ⬜ | 大文件随改随拆，不做专门的大重构 | `download.rs` 2482 行、`filetr.rs` 2237、`edit/build.rs` 2229、`vsum.rs` 2077、`ParseView.vue` 1884 | 持续 |
 | ⬜ | 解析规则远程下发：签名的规则包（接口地址、字段路径、正则）。先评估有多少次解析失效真能只靠规则修好 | [desktop-plan.md](desktop-plan.md) 里一直列为未做；平台改版是那份文档里排第一的风险，现在改一个正则也要发完整版本。依赖 D1 的密钥 | 大 |
 | 🟡 | 例行检查（依赖审计已做：`desktop-audit.yml` 每周一跑 `npm audit` 和 `cargo audit`，合并后手动跑一次确认；安全复查未做）：每周跑 `cargo audit` 和 `npm audit`；每个大版本对局域网服务（手机发送、控制台、HTTP 接口）和扩展的消息入口做一次安全复查 | 目前没有这类例行检查。说明：我没有发现具体问题，这是例行项 | 小 |

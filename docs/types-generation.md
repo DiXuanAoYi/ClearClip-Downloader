@@ -20,9 +20,10 @@
 
 ## 现状
 
-已接入：`PlaylistEntry`、`SeriesInfo`（试点）。其余仍是手写，对应关系记在 `types.ts` 顶部的注释里。
+已接入：`model.rs` 里的 `MediaKind`、`Protocol`、`AssetKind`、`Asset`、`PlaylistEntry`、`SeriesInfo`、`MediaInfo`、`Clip`、`Chapter`（共 9 个）。其余仍是手写，对应关系记在 `types.ts` 顶部的注释里。
 
 ## 已知的限制
 
 - 生成的字段是“必有”的：Rust 里 `#[serde(default)]` 的字段在 TypeScript 里是 `T`，不是 `T?`。界面代码里构造这类对象时要把字段写全（试点的两个类型 `vue-tsc` 没有报错）。
 - 只生成数据结构，不生成命令的调用绑定（约 390 个命令仍按字符串名字调用）。命令绑定要不要用 tauri-specta 以后再评估。
+- `serde_json::Value` 字段不要直接生成（会带出一个放在 `src-tauri/bindings/` 的依赖文件），用 `#[ts(type = "Record<string, unknown> | null")]` 之类指定（`Asset.extra` 就是这样）。
