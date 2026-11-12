@@ -12,4 +12,11 @@ ignore = [
   # tract-nnef 解析 NNEF 张量时整数溢出：清影只加载 ONNX 模型（来自设置里下载的固定组件），不会解析 NNEF 文件；
   # 修复版本是 0.21.16，但 `cargo update` 没能把它升上去（tract-onnx 0.21 的依赖解析里还是 0.21.10），需要再查原因或升 tract。
   "RUSTSEC-2026-0217",
+  # zip 4.6.1 的 4 条（RUSTSEC-2026-0367 / 0368 / 0369 / 0429，都是 `ZipArchive::extract` 的问题）：这个 zip 只来自 tauri-plugin-updater，
+  # 它解压的是用更新签名密钥签过名、并且验过签的更新包，攻击者拿不到私钥就送不进恶意的包；清影自己的 zip 已经升到 9，
+  # 自己的解压也不用 extract。要等 tauri-plugin-updater 换到新版 zip。
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+  "RUSTSEC-2026-0429",
 ]

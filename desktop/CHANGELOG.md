@@ -30,7 +30,7 @@
 
 ### 依赖安全更新
 - 每周依赖审计第一次完整跑出了 20 个已公开的漏洞（Rust 依赖），这一版处理了其中能升级的：`zip` 2 → 9（修了 `ZipArchive::extract` 的 5 条，其中一条评分 9.1。清影自己的解压（互传的 zip、备份、文件翻译）没有用 `extract`，是自己写的，不受影响，但仍然升了；升级后“绝对路径的条目直接跳过”这条规则改成自己判断，保持原来的行为）、`lopdf` 0.36 → 0.42（深层嵌套 PDF 栈溢出）、`rustls` / `rustls-webpki` / `webpki-roots` / `tokio` / `rustix` 的补丁版本、`rusqlite` 0.32 → 0.41（带上新版 SQLite）。
-- 还剩 3 条暂时放着（`.cargo/audit.toml` 里逐条写了原因）：`ringbuf`（BT 下载库内部用）、`rsa`（SFTP 的 russh 内部用）、`tract-nnef`（清影只加载 ONNX，不解析 NNEF）。
+- 还剩几条暂时放着（`.cargo/audit.toml` 里逐条写了原因）：`ringbuf`（BT 下载库内部用）、`rsa`（SFTP 的 russh 内部用）、`tract-nnef`（清影只加载 ONNX，不解析 NNEF）、另一个旧版 `zip` 4（只在更新插件里，解压的是验过签名的更新包）。
 - 前端的 `vite` 7.3.6 → 7.3.8 已经单独合并过。
 
 ### 没做
