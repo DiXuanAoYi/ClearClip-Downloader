@@ -31,11 +31,12 @@
 - `bg-actions.js` 的监听对来自内容脚本的 14 类消息（`cc-sniffed`、`cc-send-*`、`cc-ai-run`、`cc-note`、`cc-capture` 等）要求发送者带标签页（`sender.tab`），扩展页面发的消息不受这条限制。
 - 内容脚本里**没有** `window.addEventListener('message', …)` 一类能被网页直接触发的监听（我 grep 了 `content/*.js` 和根目录的脚本），所以没找到网页脚本能直接驱动这些消息的路径。内容脚本运行在隔离的世界里，网页脚本调用不到 `chrome.runtime`。
 - 仍然要注意：扩展有 `<all_urls>` 的主机权限；`cc-send-media` 这类消息的 `url` 来自页面内容（用户点了扩展自己的按钮之后才发出），桌面端对来自扩展的“下载”还会再让用户确认一次，这一层在 `phone.rs`（上一轮已看过令牌和限频）。
-- **没看的**：每个处理函数对参数的校验（`cc-save`、`cc-area`、`cc-shot`、`cc-ai-run` 的参数范围）、弹窗页和选项页的输入处理、内容脚本注入的界面里有没有把页面文字当 HTML 插入（`innerHTML`）的地方。
+- `innerHTML`：内容脚本里只有 1 处（`content/unlock.js`，一段固定的提示条，没有拼进页面文字）；弹窗页和总览页里的 14 处全是 `innerHTML = ''` 清空，没有往里写内容。
+- **没看的**：每个处理函数对参数的校验（`cc-save`、`cc-area`、`cc-shot`、`cc-ai-run` 的参数范围）、弹窗页和选项页对输入的处理。
 
 ## 没看的（下次要看）
 
-- 扩展各个处理函数的参数校验、内容脚本里有没有 `innerHTML` 插入页面文字（消息入口本身第二轮已经看过，见上）。
+- 扩展各个处理函数的参数校验、弹窗页和选项页对输入的处理（消息入口本身和 `innerHTML` 第二轮已经看过，见上）。
 - `api.rs` 本机接口、`console.rs` 控制台页的各个写操作。
 - `safebox.rs` / `vault.rs` 的加密保险箱实现。
 - 日志和“复制诊断信息”的脱敏覆盖面（规则在 `diagnostics.rs::SECRET_RE`，新平台加了之后要复查一遍字段名）。
