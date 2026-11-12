@@ -293,6 +293,7 @@ pub async fn enqueue(app: AppHandle, st: std::sync::Arc<AppState>, playlist: Med
                         }),
                         seq_label: Some(format!("{:0width$}", e.index)),
                         origin: Some("list".into()),
+                        list: Some(g.name.clone()),
                         ..Default::default()
                     };
                     match download::enqueue_ext(&app, info, &ids, post, extra) {

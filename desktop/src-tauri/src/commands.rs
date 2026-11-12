@@ -744,13 +744,13 @@ pub async fn redownload(app: AppHandle, state: St<'_>, id: i64) -> AppResult<Enq
     download::enqueue_with(&app, info, &ids, post)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthResult {
     platform: String,
     name: String,
     sample: Option<String>,
-    ok: bool,
+    pub ok: bool,
     millis: u64,
     message: String,
     kind: Option<crate::error::ErrorKind>,
@@ -809,6 +809,11 @@ pub async fn site_rule_test(state: St<'_>, rule: crate::settings::SiteRule, url:
 
 #[tauri::command]
 pub async fn health_check(state: St<'_>) -> AppResult<Vec<HealthResult>> {
+    run_health(&state).await
+}
+
+/// 平台健康检查：每个平台一条示例链接 + 列表页。界面和命令行（`clearclip health`）共用。
+pub async fn run_health(state: &crate::AppState) -> AppResult<Vec<HealthResult>> {
     let settings = state.settings();
     let mut targets: Vec<(String, String)> = providers::all().iter().map(|p| (p.id().to_string(), p.name().to_string())).collect();
     targets.push(("yt-dlp".into(), "yt-dlp（其他网站）".into()));

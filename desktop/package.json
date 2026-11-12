@@ -12,6 +12,7 @@
     "release:version": "node scripts/version.mjs",
     "release:check": "node scripts/version.mjs --check",
     "tauri": "tauri",
+    "gen:types": "node scripts/gen-types.mjs",
     "test:unit": "node --experimental-strip-types --no-warnings --test \"e2e/unit/*.test.mjs\"",
     "test:e2e": "node e2e/run.mjs",
     "test:ext": "node e2e/ext/writing-smoke.mjs",
