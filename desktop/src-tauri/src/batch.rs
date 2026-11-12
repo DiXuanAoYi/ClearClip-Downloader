@@ -1042,7 +1042,16 @@ mod tests {
 
     #[test]
     fn list_links_expand_into_pending_with_following_seq() {
-        let entry = |i: u32, url: &str, is_list: bool| PlaylistEntry { id: i.to_string(), title: format!("t{i}"), url: url.into(), duration_ms: None, thumbnail: None, index: i, is_list, count: None };
+        let entry = |i: u32, url: &str, is_list: bool| PlaylistEntry {
+            id: i.to_string(),
+            title: format!("t{i}"),
+            url: url.into(),
+            duration_ms: None,
+            thumbnail: None,
+            index: i,
+            is_list,
+            count: None,
+        };
         let mut entries = vec![entry(1, "https://a/1", false), entry(2, "https://a/list", true), entry(3, "", false), entry(4, "https://a/4", false)];
         let links = expand_list_links(&entries, 10, 500);
         assert_eq!(links.iter().map(|l| (l.url.as_str(), l.seq)).collect::<Vec<_>>(), vec![("https://a/1", 10), ("https://a/4", 11)]);
