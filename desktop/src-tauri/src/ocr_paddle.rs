@@ -462,7 +462,8 @@ pub fn extract_models(zip_bytes: &[u8], dest: &Path) -> AppResult<()> {
     let mut got = 0;
     for i in 0..z.len() {
         let mut f = z.by_index(i).map_err(|e| AppError::msg(e.to_string()))?;
-        let name = f.name().rsplit('/').next().unwrap_or("").to_string();
+        let full = f.name().map(|n| n.into_owned()).unwrap_or_default();
+        let name = full.rsplit('/').next().unwrap_or("").to_string();
         let target = match name.as_str() {
             ZIP_DET => DET_FILE,
             ZIP_REC => REC_FILE,
