@@ -2,12 +2,11 @@
 
 版本号与 `tauri.conf.json` 一致；每个版本对应一个 `desktop-v<版本>` 的 Release。
 
-<<<<<<< HEAD
 ## 1.15.0（开发中，未发版）
 
 ### MCP 服务
 - 新增 `clearclip mcp`：标准的 MCP 服务（标准输入输出），让 Claude Code、Claude Desktop、Codex、Cursor 等智能体直接调用清影——提交下载、看任务进度、搜索媒体库、生成 / 纠错字幕。复用本机接口和访问令牌，不监听新端口、不暴露到局域网。`--read-only` 只开放查询；没有删除文件的工具。配置方法见 `docs/mcp.md`。
-=======
+
 ## 1.14.1（开发中，未发版）
 
 ### 修复：订阅跟错了列表
@@ -36,7 +35,6 @@
 
 ### 没做
 - 在系统更新 WebView2 运行时的那一刻就提醒重启：WebView2 有“新版本可用”的事件（`NewBrowserVersionAvailable`），要在 Windows 上通过窗口拿到它的运行环境才能监听，需要加一个只在 Windows 上编译的依赖，这边没法编译和验证，先不做。
->>>>>>> origin/main
 
 ## 1.14.0（扩展 1.24.0）
 
