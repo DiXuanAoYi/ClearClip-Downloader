@@ -11,6 +11,8 @@ import AccountsPanel from '../components/AccountsPanel.vue'
 import NetworkPanel from '../components/NetworkPanel.vue'
 import ComponentsPanel from '../components/ComponentsPanel.vue'
 import PhonePanel from '../components/PhonePanel.vue'
+import BalancedGrid from '../components/BalancedGrid.vue'
+import type { LayoutMode } from '../utils/balance'
 import AiPanel from '../components/AiPanel.vue'
 import SiteRulesPanel from '../components/SiteRulesPanel.vue'
 import NotifyPanel from '../components/NotifyPanel.vue'
@@ -59,6 +61,25 @@ function addSpeedWindow() {
 const health = ref<HealthResult[] | null>(null)
 const checkingHealth = ref(false)
 const portable = ref(false)
+
+// 设置页卡片怎么排：自动平衡（默认）/ 按顺序 / 单列。只是这台电脑上的界面偏好，记在本机。
+const LAYOUT_KEY = 'cc-settings-layout'
+function readLayout(): LayoutMode {
+  try {
+    const v = localStorage.getItem(LAYOUT_KEY)
+    return v === 'order' || v === 'single' ? v : 'balance'
+  } catch {
+    return 'balance'
+  }
+}
+const layoutMode = ref<LayoutMode>(readLayout())
+watch(layoutMode, (v) => {
+  try {
+    localStorage.setItem(LAYOUT_KEY, v)
+  } catch {
+    /* 记不住也不影响 */
+  }
+})
 api.isPortable().then((v) => (portable.value = v)).catch(() => {})
 
 function saveDomains() {
@@ -185,7 +206,7 @@ function insertVar(v: string) {
 
     <el-tabs v-model="app.settingsTab">
       <el-tab-pane label="下载" name="download">
-        <div class="groups">
+        <BalancedGrid class="groups" :mode="layoutMode">
           <section class="group card">
             <h3>保存</h3>
             <div class="field">
@@ -358,11 +379,11 @@ function insertVar(v: string) {
             </div>
             <small class="mute">“全部完成后睡眠 / 关机”在下载队列页面设置，只对本次运行有效。</small>
           </section>
-        </div>
+        </BalancedGrid>
       </el-tab-pane>
 
       <el-tab-pane label="解析" name="parse">
-        <div class="groups">
+        <BalancedGrid class="groups" :mode="layoutMode">
           <section class="group card">
             <h3>剪贴板</h3>
             <div class="kv"><span>监听剪贴板</span><el-switch v-model="form.watchClipboard" /></div>
@@ -546,7 +567,7 @@ function insertVar(v: string) {
               <el-switch v-model="form.hlsSkipAds" />
             </div>
           </section>
-        </div>
+        </BalancedGrid>
       </el-tab-pane>
 
       <el-tab-pane label="BT 与 ed2k" name="p2p">
@@ -566,11 +587,11 @@ function insertVar(v: string) {
       </el-tab-pane>
 
       <el-tab-pane label="自动化" name="automation">
-        <div class="groups">
+        <BalancedGrid class="groups" :mode="layoutMode">
           <NotifyPanel v-model="form.notify" />
           <UploadPanel v-model="form.upload" />
           <RulesPanel v-model="form.rules" class="wide" />
-        </div>
+        </BalancedGrid>
       </el-tab-pane>
 
       <el-tab-pane label="AI" name="ai">
@@ -590,7 +611,7 @@ function insertVar(v: string) {
       </el-tab-pane>
 
       <el-tab-pane label="诊断" name="diagnostics">
-        <div class="groups">
+        <BalancedGrid class="groups" :mode="layoutMode">
           <section class="group card">
             <h3>问题反馈</h3>
             <p class="mute small">诊断信息包含版本、系统、网页组件和 yt-dlp / ffmpeg 的版本、设置概要、失败任务和最近日志（连续重复的行合成一行）。“复制摘要”只带警告和错误，短得多。Cookie、令牌等敏感内容会自动隐去。</p>
@@ -625,11 +646,11 @@ function insertVar(v: string) {
               </div>
             </div>
           </section>
-        </div>
+        </BalancedGrid>
       </el-tab-pane>
 
       <el-tab-pane label="通用" name="general">
-        <div class="groups">
+        <BalancedGrid class="groups" :mode="layoutMode">
           <section class="group card">
             <h3>外观与行为</h3>
             <div class="kv">
@@ -638,6 +659,14 @@ function insertVar(v: string) {
                 <el-radio-button value="system">跟随系统</el-radio-button>
                 <el-radio-button value="dark">深色</el-radio-button>
                 <el-radio-button value="light">浅色</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div class="kv">
+              <span>设置页排布<small class="mute block">卡片怎么排：自动平衡会让各列一样高、不留空白；按顺序严格按先后放；单列最简单</small></span>
+              <el-radio-group v-model="layoutMode" size="small">
+                <el-radio-button value="balance">自动平衡</el-radio-button>
+                <el-radio-button value="order">按顺序</el-radio-button>
+                <el-radio-button value="single">单列</el-radio-button>
               </el-radio-group>
             </div>
             <div class="kv">
@@ -688,7 +717,7 @@ function insertVar(v: string) {
               仅用于下载你有权保存的内容。项目地址：<a href="#" @click.prevent="api.openUrl(`https://github.com/${app.info?.repo}`)">github.com/{{ app.info?.repo }}</a>
             </p>
           </section>
-        </div>
+        </BalancedGrid>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -717,12 +746,6 @@ h2 {
 }
 .saving {
   font-size: 11.5px;
-}
-.groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 12px;
-  align-items: start;
 }
 .group {
   padding: 14px 16px;
