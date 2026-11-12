@@ -158,3 +158,21 @@ console.log('edit ops ok')
   assert.equal(left({ ...o, animMs: 3000 }, 1000).in, 0.25, '时长最多取素材的一半')
   assert.deepEqual(left({ ...o, animIn: 'none', animOut: 'none' }, 0), { in: 0, out: 0 })
 }
+
+// ---- movePairBy（滚动 / 滑动共用）
+{
+  const a = { inMs: 1000, outMs: 6000, speed: 1 }
+  const b = { inMs: 2000, outMs: 9000, speed: 1 }
+  const o = { ao: 6000, bi: 2000 }
+  // 右移 500：前一个出点后移、后一个入点后移，两个的总长不变
+  assert.deepEqual(E.movePairBy(a, b, o, 500, 20000), { aOut: 6500, bIn: 2500 })
+  // 左移不能让后一个的入点低于 0
+  assert.deepEqual(E.movePairBy(a, b, o, -5000, 20000), { aOut: 4000, bIn: 0 })
+  // 前一个出点不能超过素材总长
+  assert.deepEqual(E.movePairBy(a, b, o, 5000, 7000), { aOut: 7000, bIn: 3000 })
+  // 前一个至少留 MIN_MS；后一个也是
+  assert.equal(E.movePairBy({ ...a, outMs: 1500 }, b, { ao: 1500, bi: 2000 }, -9000, 20000).aOut, 1000 + E.MIN_MS)
+  assert.equal(E.movePairBy(a, { inMs: 2000, outMs: 2300, speed: 1 }, o, 9000, 20000).bIn, 2300 - E.MIN_MS)
+  // 倍速：时间线上的 d 毫秒对应素材里 d * speed
+  assert.deepEqual(E.movePairBy({ inMs: 0, outMs: 8000, speed: 2 }, { inMs: 0, outMs: 8000, speed: 1 }, { ao: 8000, bi: 0 }, 1000, 20000), { aOut: 10000, bIn: 1000 })
+}

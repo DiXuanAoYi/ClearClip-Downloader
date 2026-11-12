@@ -7,13 +7,13 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { api } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { EditAudio, EditClip, EditMarker, EditOverlay, EditText, EditTrack, EditTrackKind, EditTrackRole } from '../../../types'
-import { beatSnapPoints, beatsOnTimeline, kfEval, MIN_MS, audioSpan, clamp, editPoints, overlayDuration, overlayEnd, overlaySourceLimit, snap, tickStep } from '../../../utils/edit'
+import { beatSnapPoints, beatsOnTimeline, kfEval, MIN_MS, movePairBy, audioSpan, clamp, editPoints, overlayDuration, overlayEnd, overlaySourceLimit, snap, tickStep } from '../../../utils/edit'
 import { maxNo, nextNo, roomFor, shownNos, swapTracks, TRACK_ROLES, trackCode, trackOf, trackTitle } from '../../../utils/tracks'
 import { BUILTIN_TEMPLATES, loadTemplates, saveTemplates, templateFrom } from '../../../utils/trackTemplates'
 import TrackHead from './TrackHead.vue'
 import TrackMenu, { type MenuItem } from './TrackMenu.vue'
 
-const props = withDefaults(defineProps<{ ed: EditApi; pps: number; snapOn?: boolean; tool?: 'select' | 'blade' | 'slip' | 'roll'; showWave?: boolean; showVol?: boolean }>(), { snapOn: true, tool: 'select', showWave: true, showVol: true })
+const props = withDefaults(defineProps<{ ed: EditApi; pps: number; snapOn?: boolean; tool?: 'select' | 'blade' | 'slip' | 'roll' | 'slide'; showWave?: boolean; showVol?: boolean }>(), { snapOn: true, tool: 'select', showWave: true, showVol: true })
 const emit = defineEmits<{ zoom: [pps: number] }>()
 const ed = props.ed
 
@@ -241,6 +241,7 @@ function clipDown(e: PointerEvent, i: number) {
   if (shiftPick(e, 'clip', c.id)) return
   ed.sel.value = { kind: 'clip', id: c.id }
   if (props.tool === 'slip' && c.kind === 'video' && !c.freeze && !lockedNo('video', 0)) return slip(e, c)
+  if (props.tool === 'slide' && !lockedNo('video', 0) && slide(e, c)) return
   const t0 = timeAt(e.clientX)
   if (lockedNo('video', 0)) return drag(e, () => {}, (moved) => !moved && seek(t0))
   drag(
@@ -273,25 +274,38 @@ function slip(e: PointerEvent, c: EditClip) {
   })
 }
 
+/** 拖动一对相邻的视频片段 a、b 之间的切点：a 的出点和 b 的入点一起前后挪，前一个多一点，后一个就少一点，总长不变。 */
+function movePair(e: PointerEvent, a: EditClip, b: EditClip, selId: number) {
+  const o = { ao: a.outMs, bi: b.inMs }
+  const limitA = ed.sources[a.path]?.durationMs ?? Infinity
+  ed.sel.value = { kind: 'clip', id: selId }
+  drag(e, (dx) => {
+    const r = movePairBy(a, b, o, msOf(dx), limitA)
+    ed.patchClip(a.id, { outMs: r.aOut }, `roll:${a.id}`)
+    ed.patchClip(b.id, { inMs: r.bIn }, `roll:${a.id}`)
+  })
+}
+const rollable = (a: EditClip | undefined, b: EditClip | undefined): a is EditClip => !!a && !!b && a.kind === 'video' && b.kind === 'video' && !a.freeze && !b.freeze && !a.reverse && !b.reverse
+
 /** 滚动：拖两个相邻片段之间的切点——前一个多一点，后一个就少一点，总长不变。 */
 function roll(e: PointerEvent, c: EditClip, side: 'l' | 'r') {
   const list = ed.project.value.clips
   const i = list.findIndex((x) => x.id === c.id)
   const a = side === 'l' ? list[i - 1] : c
   const b = side === 'l' ? c : list[i + 1]
-  if (!a || !b || a.kind !== 'video' || b.kind !== 'video' || a.freeze || b.freeze || a.reverse || b.reverse) return false
-  const o = { ao: a.outMs, bi: b.inMs }
-  const limitA = ed.sources[a.path]?.durationMs ?? Infinity
-  ed.sel.value = { kind: 'clip', id: c.id }
-  drag(e, (dx) => {
-    const d = msOf(dx)
-    // 切点往右（d > 0）：前一个的出点后移，后一个的入点后移
-    const lo = Math.max(-(a.outMs - a.inMs - MIN_MS * a.speed) / a.speed, -o.bi / b.speed)
-    const hi = Math.min((limitA - o.ao) / a.speed, (b.outMs - b.inMs - MIN_MS * b.speed) / b.speed)
-    const dd = clamp(d, lo, hi)
-    ed.patchClip(a.id, { outMs: Math.round(o.ao + dd * a.speed) }, `roll:${a.id}`)
-    ed.patchClip(b.id, { inMs: Math.round(o.bi + dd * b.speed) }, `roll:${a.id}`)
-  })
+  if (!rollable(a, b)) return false
+  movePair(e, a, b!, c.id)
+  return true
+}
+
+/** 滑动：片段自己不变，在前后两个片段之间挪——前一个的出点和后一个的入点一起动，总长不变。头尾的片段（没有两个邻居）不能滑动。 */
+function slide(e: PointerEvent, c: EditClip): boolean {
+  const list = ed.project.value.clips
+  const i = list.findIndex((x) => x.id === c.id)
+  const a = list[i - 1]
+  const b = list[i + 1]
+  if (!rollable(a, b)) return false
+  movePair(e, a, b, c.id)
   return true
 }
 

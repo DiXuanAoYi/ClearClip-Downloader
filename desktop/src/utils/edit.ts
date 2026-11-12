@@ -1916,3 +1916,15 @@ export function chromaMatrix(c: EditChroma): number[] {
   const k = (mid + w / 2) / w
   return [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, -d[0] / w, -d[1] / w, -d[2] / w, 0, k]
 }
+
+
+/**
+ * 相邻两个视频片段 a、b 之间的切点移动 `d`（时间线上的毫秒，右为正）：a 的出点后移、b 的入点后移，总长不变。
+ * `o` 是开始拖动时的 a 出点和 b 入点，`limitA` 是 a 的素材总长。滚动和滑动共用这一套，返回新的出点 / 入点（已收紧在素材范围内、两边至少留 MIN_MS）。
+ */
+export function movePairBy(a: Pick<EditClip, 'inMs' | 'outMs' | 'speed'>, b: Pick<EditClip, 'inMs' | 'outMs' | 'speed'>, o: { ao: number; bi: number }, d: number, limitA = Infinity): { aOut: number; bIn: number } {
+  const lo = Math.max(-(a.outMs - a.inMs - MIN_MS * a.speed) / a.speed, -o.bi / b.speed)
+  const hi = Math.min((limitA - o.ao) / a.speed, (b.outMs - b.inMs - MIN_MS * b.speed) / b.speed)
+  const dd = clamp(d, lo, hi)
+  return { aOut: Math.round(o.ao + dd * a.speed), bIn: Math.round(o.bi + dd * b.speed) }
+}

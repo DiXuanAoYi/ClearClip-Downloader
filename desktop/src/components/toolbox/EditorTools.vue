@@ -33,12 +33,13 @@ const outDir = ref('')
 const monitorMode = ref<'live' | 'preview'>('live')
 
 const SNAP_KEY = 'clearclip.edit.snap'
-type Tool = 'select' | 'blade' | 'slip' | 'roll'
+type Tool = 'select' | 'blade' | 'slip' | 'roll' | 'slide'
 const TOOLS: { id: Tool; name: string; key: string; tip: string }[] = [
   { id: 'select', name: '选择', key: 'A', tip: '点选、拖动、拖边缘裁剪' },
   { id: 'blade', name: '刀片', key: 'B', tip: '点哪，就在哪把素材切开' },
   { id: 'slip', name: '滑移', key: 'Y', tip: '在主轨片段上拖：画面在片段里前后挪，位置和长度不变' },
   { id: 'roll', name: '滚动', key: 'N', tip: '拖主轨两个相邻片段之间的边缘：一个多一点，另一个少一点，总长不变' },
+  { id: 'slide', name: '滑动', key: 'U', tip: '在主轨片段上拖：它自己不变，在前后两个片段之间左右挪，前一个变长（短）多少，后一个就变短（长）多少，总长不变' },
 ]
 const tool = ref<Tool>('select')
 const showWave = ref(true)
@@ -436,7 +437,7 @@ function toggleGroup(ungroup: boolean) {
 const SHORTCUTS: [string, string][] = [
   ['空格', '播放 / 暂停'],
   ['S', '在播放位置分割'],
-  ['A / B / Y / N', '工具：选择 / 刀片 / 滑移 / 滚动'],
+  ['A / B / Y / N / U', '工具：选择 / 刀片 / 滑移 / 滚动 / 滑动'],
   ['M', '在播放位置打标记'],
   ['I / O', '设入点 / 出点（只导出这一段）'],
   ['Q / W', '向左 / 向右裁剪到播放位置'],
@@ -500,6 +501,8 @@ function onKey(e: KeyboardEvent) {
     tool.value = tool.value === 'slip' ? 'select' : 'slip'
   } else if (key === 'n') {
     tool.value = tool.value === 'roll' ? 'select' : 'roll'
+  } else if (key === 'u') {
+    tool.value = tool.value === 'slide' ? 'select' : 'slide'
   } else if (key === 'm') {
     ed.addMarker()
   } else if (key === 'i') {
