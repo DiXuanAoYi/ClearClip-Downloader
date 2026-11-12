@@ -1,0 +1,22 @@
+# cargo audit 的例外：这几条目前没法靠升级解决，每条写明为什么可以先放着。
+# 每周的依赖审计（.github/workflows/desktop-audit.yml）会照常跑，这里没列的一律算新问题、让工作流变红。
+# 上游修好之后把对应的行删掉。
+
+[advisories]
+ignore = [
+  # ringbuf 0.4.8 的双重释放：只在元素的 Drop 里 panic 时才触发。依赖它的是 BT 下载库 librqbit-utp（元素是普通字节），
+  # 我们的代码不直接用 ringbuf；要等 librqbit 升到 ringbuf 0.5。
+  "RUSTSEC-2026-0293",
+  # rsa 的 Marvin 时序侧信道：来自 SFTP 用的 russh，需要攻击者能精确测量本机的计时；上游还没有修复版本。
+  "RUSTSEC-2023-0071",
+  # tract-nnef 解析 NNEF 张量时整数溢出：清影只加载 ONNX 模型（来自设置里下载的固定组件），不会解析 NNEF 文件；
+  # 修复版本是 0.21.16，但 `cargo update` 没能把它升上去（tract-onnx 0.21 的依赖解析里还是 0.21.10），需要再查原因或升 tract。
+  "RUSTSEC-2026-0217",
+  # zip 4.6.1 的 4 条（RUSTSEC-2026-0367 / 0368 / 0369 / 0429，都是 `ZipArchive::extract` 的问题）：这个 zip 只来自 tauri-plugin-updater，
+  # 它解压的是用更新签名密钥签过名、并且验过签的更新包，攻击者拿不到私钥就送不进恶意的包；清影自己的 zip 已经升到 9，
+  # 自己的解压也不用 extract。要等 tauri-plugin-updater 换到新版 zip。
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+  "RUSTSEC-2026-0429",
+]

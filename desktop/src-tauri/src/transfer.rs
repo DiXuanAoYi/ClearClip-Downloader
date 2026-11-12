@@ -592,6 +592,12 @@ pub fn extract_zip(zip_path: &Path, into: &Path) -> Result<(PathBuf, usize), Str
     let mut files = 0usize;
     for i in 0..ar.len() {
         let mut e = ar.by_index(i).map_err(|e| e.to_string())?;
+        // 绝对路径（/x、\x、C:\x）的条目直接跳过。新版 zip 的 enclosed_name 会把前导的斜杠去掉、当成相对路径，
+        // 那样虽然还在目标文件夹里，但和以前“跳过”的行为不一样，所以这里自己判断。
+        let raw = e.name().map(|n| n.into_owned()).unwrap_or_default();
+        if raw.starts_with('/') || raw.starts_with('\\') || raw.chars().nth(1) == Some(':') {
+            continue;
+        }
         let Some(rel) = e.enclosed_name() else { continue };
         if e.unix_mode().is_some_and(|m| m & 0o170000 == 0o120000) {
             continue;
