@@ -709,6 +709,7 @@ onBeforeUnmount(() => releaseDrop?.())
           </el-button-group>
           <span class="mono time">{{ timeText }}</span>
           <span class="sp" />
+          <el-checkbox v-model="ed.proxyBig.value" size="small" title="高过 1080p 的视频自动生成画质较低的预览用小文件，实时画面更流畅；导出永远用原素材。系统播放器解不了的素材不受这个开关影响，需要时点预览区的提示生成。">大素材用小文件预览</el-checkbox>
           <el-radio-group :model-value="monitorMode" size="small" @update:model-value="setMode">
             <el-radio-button value="live" title="随改随看的近似效果（转场的形状、变速、降噪等细节以导出为准）">实时画面</el-radio-button>
             <el-radio-button value="preview" :disabled="!hasClips || building" title="和导出同一套流程渲染一遍再播放，用来逐帧核对；改过工程后需要重新生成">精确预览</el-radio-button>

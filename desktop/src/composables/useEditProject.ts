@@ -70,10 +70,19 @@ export interface Sel {
   id: number
 }
 
+const PROXY_KEY = 'clearclip.edit.proxyBig'
 const DRAFT_KEY = 'clearclip.edit.draft'
 const RECENT_KEY = 'clearclip.edit.recent'
 const RECENT_LIMIT = 8
 const HISTORY_LIMIT = 100
+
+function readProxyBig(): boolean {
+  try {
+    return localStorage.getItem(PROXY_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 
 function readRecent(): string[] {
   try {
@@ -106,6 +115,30 @@ export function useEditProject() {
       delete proxying[path]
     }
   }
+  /** 大素材（高过 1080 行）自动生成预览用的小文件。关着时只有系统播放器解不了的素材才需要手动生成。 */
+  const proxyBig = ref(readProxyBig())
+  watch(proxyBig, (v) => {
+    try {
+      localStorage.setItem(PROXY_KEY, v ? '1' : '0')
+    } catch {
+      /* 记不住不影响使用 */
+    }
+  })
+  /** 值得换成小文件预览的素材：视频，且分辨率高过 1080p（HDR 的不在这里处理，它另有转换流程）。 */
+  const needsProxy = (s: EditSource) => s.kind === 'video' && s.hasVideo && !s.hdr && Math.max(s.width, s.height) > 1920
+  async function autoProxy() {
+    if (!proxyBig.value) return
+    for (const path of Object.keys(sources)) {
+      const s = sources[path]
+      if (!s || !needsProxy(s) || proxies[path] || proxying[path] || !proxyBig.value) continue
+      try {
+        await makeProxy(path)
+      } catch {
+        /* 生成不了就继续用原素材预览，不打扰 */
+      }
+    }
+  }
+  watch([proxyBig, () => Object.keys(sources).length], () => void autoProxy())
   /** 工程里用到、但现在找不到或读不出来的文件 */
   const broken = reactive<Record<string, string>>({})
   const sel = ref<Sel | null>(null)
@@ -1382,6 +1415,8 @@ export function useEditProject() {
     proxies,
     proxying,
     makeProxy,
+    proxyBig,
+    autoProxy,
     splitAtPlayhead,
     bladeAt,
     removeSelected,

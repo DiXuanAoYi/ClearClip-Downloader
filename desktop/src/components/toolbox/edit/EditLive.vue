@@ -109,6 +109,8 @@ function stillSrc(it: Item): string | undefined {
   if (it.gif) return isLive(it) && ed.playing.value ? `${it.url}?r=${epoch[it.key] ?? 0}` : thumbOf(it) || it.url
   return it.url
 }
+/** 现在显示的素材里有没有正在用预览小文件的 */
+const proxied = computed(() => items.value.some((it) => !it.still && !!ed.proxies[it.path]))
 const problem = computed(() => items.value.some((it) => isLive(it) && isFailed(it)))
 const stuck = computed(() => [...new Set(items.value.filter((it) => !it.still && isFailed(it) && !ed.proxies[it.path]).map((it) => it.path))])
 const proxyBusy = computed(() => stuck.value.some((p) => ed.proxying[p]))
@@ -333,6 +335,7 @@ defineExpose({ sync, pause })
     </svg>
     <div class="fxslot"><slot name="fx" /></div>
     <audio v-for="a in ed.project.value.audio" :key="a.id" :ref="(el) => setAudio(a.id, el)" :src="ed.sources[a.path]?.url" preload="auto" />
+    <div v-if="proxied" class="proxytag" title="实时画面正在用预览用的小文件，画质比原素材低；导出用原素材">预览代理</div>
     <div v-if="problem" class="warn">
       有素材在实时画面里播不出来（系统不支持它的编码），先用静态画面代替；导出不受影响。
       <button v-if="stuck.length" class="lnk" :disabled="proxyBusy" @click="makeProxies">{{ proxyBusy ? '正在生成…' : '生成预览用的小文件' }}</button>
@@ -405,5 +408,17 @@ audio {
 .warn .lnk:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.proxytag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 20;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  pointer-events: none;
 }
 </style>
