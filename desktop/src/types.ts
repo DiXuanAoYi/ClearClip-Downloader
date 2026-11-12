@@ -1,86 +1,16 @@
 // 与 Rust 端 model.rs / download.rs / db.rs / settings.rs 的结构一一对应。
 
-export type MediaKind = 'video' | 'images' | 'audio' | 'file' | 'playlist'
-export type Protocol = 'http' | 'hls' | 'ytdlp' | 'ftp' | 'sftp' | 'stream' | 'ed2k' | 'bt'
-export type AssetKind = 'video' | 'image' | 'audio' | 'cover' | 'subtitle' | 'file'
-
-export interface Asset {
-  id: string
-  kind: AssetKind
-  url: string
-  label: string
-  ext: string
-  width: number | null
-  height: number | null
-  index: number | null
-  protocol: Protocol
-  headers: [string, string][]
-  quality: string | null
-  vcodec: string | null
-  acodec: string | null
-  bitrate: number | null
-  filesize: number | null
-  fps: number | null
-  hasAudio: boolean | null
-  pairAudio: string | null
-  formatId: string | null
-  /** 期望的文件哈希，如 sha256:…；下载完成后校验 */
-  checksum?: string | null
-  extra: Record<string, unknown> | null
-}
-
-export interface PlaylistEntry {
-  id: string
-  title: string
-  url: string
-  durationMs: number | null
-  thumbnail: string | null
-  index: number
-  /** 这一项本身是个列表（播放列表、合集），要展开才有视频 */
-  isList?: boolean
-  /** 列表项里大约有多少个视频 */
-  count?: number | null
-}
-
-export interface SeriesInfo {
-  name: string
-  season: number | null
-  episode: number | null
-}
-
-export interface MediaInfo {
-  platform: string
-  platformName: string
-  id: string
-  sourceUrl: string
-  title: string
-  author: string
-  cover: string | null
-  durationMs: number | null
-  kind: MediaKind
-  width: number | null
-  height: number | null
-  publishedAt: number | null
-  assets: Asset[]
-  entries: PlaylistEntry[]
-  series: SeriesInfo | null
-  extractor: string | null
-  chapters: Chapter[]
-}
-
-export interface Chapter {
-  title: string
-  startMs: number
-  endMs: number
-}
-
-/** 只下载 / 保留的时间段 */
-export interface Clip {
-  startMs: number
-  endMs: number | null
-  /** 重新编码，起点精确到帧 */
-  precise: boolean
-}
+// 下面这些类型由 Rust 生成（npm run gen:types），不要手改；见 docs/types-generation.md
+import type { Asset } from './generated/Asset'
+import type { AssetKind } from './generated/AssetKind'
+import type { Chapter } from './generated/Chapter'
+import type { Clip } from './generated/Clip'
+import type { MediaInfo } from './generated/MediaInfo'
+import type { MediaKind } from './generated/MediaKind'
+import type { PlaylistEntry } from './generated/PlaylistEntry'
+import type { Protocol } from './generated/Protocol'
+import type { SeriesInfo } from './generated/SeriesInfo'
+export type { Asset, AssetKind, Chapter, Clip, MediaInfo, MediaKind, PlaylistEntry, Protocol, SeriesInfo }
 
 export type TaskStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'canceled'
 

@@ -15,6 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+ts-rs = { version = "10", default-features = false, features = ["serde-compat"] }
 tauri = { version = "2", features = ["tray-icon", "image-png", "protocol-asset"] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-notification = "2"

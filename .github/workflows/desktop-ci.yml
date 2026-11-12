@@ -76,6 +76,10 @@ jobs:
         working-directory: desktop/src-tauri
         run: cargo test
 
+      - name: Generated TypeScript types are up to date
+        working-directory: desktop
+        run: node scripts/gen-types.mjs --check
+
       # PDF 原处排版要加载 PDFium 动态库：下载官方预编译包，跑那条平时被忽略的集成测试（读块 → 写回译文 → 再读出来核对）
       - name: PDF layout integration test (PDFium)
         working-directory: desktop/src-tauri

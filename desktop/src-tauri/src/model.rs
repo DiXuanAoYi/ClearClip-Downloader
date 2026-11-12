@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 /// 解析结果里的内容类型。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum MediaKind {
     Video,
     Images,
@@ -14,8 +15,9 @@ pub enum MediaKind {
 }
 
 /// 资源的下载方式。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum Protocol {
     /// 普通 HTTP 文件
     #[default]
@@ -37,8 +39,9 @@ pub enum Protocol {
 }
 
 /// 单个可下载资源的类型。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub enum AssetKind {
     Video,
     Image,
@@ -50,8 +53,9 @@ pub enum AssetKind {
     Subtitle,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct Asset {
     /// 在同一条作品内唯一，例如 `video`、`image-3`、`music`、`cover`。
     pub id: String,
@@ -100,12 +104,14 @@ pub struct Asset {
     pub mirrors: Vec<String>,
     /// 平台特有的附加数据（如 Pixiv 动图的帧时长）
     #[serde(default)]
+    #[ts(type = "Record<string, unknown> | null")]
     pub extra: Option<serde_json::Value>,
 }
 
 /// 合集 / 播放列表里的一个条目。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct PlaylistEntry {
     pub id: String,
     pub title: String,
@@ -123,8 +129,9 @@ pub struct PlaylistEntry {
 }
 
 /// 剧集信息，用于 `{series}` `{episode}` 等命名变量。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct SeriesInfo {
     pub name: String,
     pub season: Option<u32>,
@@ -239,8 +246,9 @@ fn guess_image_ext(url: &str) -> String {
 }
 
 /// 一条作品的统一解析结果，所有平台都转换成这个结构。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct MediaInfo {
     /// 平台标识：`douyin` / `kuaishou` / `remote`。
     pub platform: String,
@@ -273,8 +281,9 @@ pub struct MediaInfo {
 }
 
 /// 只下载 / 保留的时间段（毫秒）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, ts_rs::TS)]
 #[serde(rename_all = "camelCase", default)]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct Clip {
     pub start_ms: u64,
     /// 为空表示到结尾
@@ -290,8 +299,9 @@ impl Clip {
 }
 
 /// 视频章节（时间单位毫秒）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/generated/")]
 pub struct Chapter {
     pub title: String,
     pub start_ms: u64,
