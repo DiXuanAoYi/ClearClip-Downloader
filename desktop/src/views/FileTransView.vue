@@ -5,15 +5,15 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
 import { useAppStore } from '../stores/app'
-import type { AiExpert, FileTransView, FtOpts, FtRecent, JobSnap, OcrStatus, PdfxStatus } from '../types'
+import type { AiExpert, FileTransView, FtOpts, FtPlan, FtRecent, JobSnap, OcrStatus, PdfxStatus } from '../types'
 import { registerDrop } from '../utils/dropHub'
 import { TARGET_LANGS } from '../utils/langs'
 import FtReader from '../components/filetrans/FtReader.vue'
 import FtTasks from '../components/filetrans/FtTasks.vue'
 import FtStartDialog from '../components/filetrans/FtStartDialog.vue'
-import { baseName, countView, etaSeconds, etaText, filterTasks, mergeTasks, taskKey, type Task, type TaskFilter } from '../utils/ft'
+import { baseName, countView, etaSeconds, etaText, filterTasks, mergeTasks, rangesValid, sizeText, taskKey, type Task, type TaskFilter } from '../utils/ft'
 
-/** 文件翻译：拖入文件 →（开始前确认）→ 一页一页翻 → 左原文右译文 / 版面阅读 → 导出。任务能停、能续、重启后还在。 */
+/** 文件翻译：拖入文件 →（在“翻译设置”里确认页范围和设置）→ 一页一页翻 → 左原文右译文 / 版面阅读 → 导出。任务能停、能续、重启后还在。 */
 const app = useAppStore()
 const EXTS = ['png', 'jpg', 'jpeg', 'webp', 'pdf', 'epub', 'txt', 'md', 'markdown', 'srt', 'vtt', 'ass', 'ssa', 'docx', 'pptx', 'xlsx']
 const FORMATS = ['PDF', 'Word', 'PPT', 'Excel', 'EPUB', 'TXT', 'MD', 'SRT / ASS', '图片']
@@ -212,15 +212,69 @@ async function choose() {
 async function addFiles(paths: string[]) {
   const ok = paths.filter((p) => EXTS.includes((p.split('.').pop() || '').toLowerCase()))
   if (!ok.length) return ElMessage.warning('支持 PDF、Word、PPT、Excel、EPUB、TXT、Markdown、SRT / VTT / ASS 字幕，以及 PNG / JPG / WebP 图片。')
-  if (confirmStart.value) dlg.value = { paths: ok, opts: { ...o.value, pages: '' }, title: '开始前确认', ok: '开始翻译' }
-  else for (const p of ok) await start(p, { ...o.value, pages: '' })
+  if (confirmStart.value) return stage(ok)
+  for (const p of ok) await start(p, { ...o.value, pages: '' })
 }
-async function onConfirm(opts: FtOpts, remember: boolean) {
+
+// ---------- 开始前确认：在“翻译设置”里 ----------
+// 拖入文件后先放进“待开始”，页范围、语言、排除项都在下面的设置里改，估算跟着变，确认后再开始。
+const staged = ref<string[]>([])
+const stagedPages = ref('')
+const plan = ref<FtPlan | null>(null)
+const planBusy = ref(false)
+const planErr = ref('')
+const stagedIsPdf = computed(() => /\.pdf$/i.test(staged.value[0] ?? ''))
+const pagesOk = computed(() => rangesValid(stagedPages.value))
+const planSummary = computed(() => (plan.value ? sizeText(plan.value.pages, plan.value.segments, plan.value.chars) : planBusy.value ? '正在读取…' : ''))
+const planRest = computed(() => (plan.value ? Math.max(0, plan.value.segments - plan.value.cached - plan.value.skipped) : 0))
+let planTimer: ReturnType<typeof setTimeout> | null = null
+let planSeq = 0
+function stage(paths: string[]) {
+  if (!staged.value.length) {
+    stagedPages.value = ''
+    plan.value = null
+  }
+  staged.value = [...new Set([...staged.value, ...paths])]
+  leftOpen.value = true
+}
+async function refreshPlan() {
+  const first = staged.value[0]
+  if (!first || !pagesOk.value) return
+  const my = ++planSeq
+  planBusy.value = true
+  planErr.value = ''
+  try {
+    const p = await api.filetrPlan(first, { ...o.value, pages: stagedPages.value })
+    if (my === planSeq) plan.value = p
+  } catch (e) {
+    if (my === planSeq) {
+      plan.value = null
+      planErr.value = errorText(e)
+    }
+  } finally {
+    if (my === planSeq) planBusy.value = false
+  }
+}
+watch([staged, stagedPages, o], () => {
+  if (planTimer) clearTimeout(planTimer)
+  if (!staged.value.length) return
+  planTimer = setTimeout(() => void refreshPlan(), 250)
+}, { deep: true })
+function cancelStaged() {
+  staged.value = []
+  plan.value = null
+}
+async function startStaged() {
+  const paths = staged.value
+  const pages = stagedPages.value
+  cancelStaged()
+  for (const p of paths) await start(p, { ...o.value, pages })
+}
+async function onConfirm(opts: FtOpts) {
+  // 只有“换设置重新生成”还用弹窗：它针对某一个已有任务，设置不能套用全局的
   const d = dlg.value
   dlg.value = null
   if (!d) return
-  confirmStart.value = remember
-  o.value = { ...o.value, ...opts, pages: '' }
   for (const p of d.paths) await start(p, opts)
 }
 async function start(path: string, opts: Partial<FtOpts>) {
@@ -386,6 +440,31 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 
         <div class="card">
           <h3>翻译设置</h3>
+          <div v-if="staged.length" class="stage" role="region" aria-label="开始前确认">
+            <div class="sfile">
+              <b :title="staged[0]">待开始：{{ baseName(staged[0]) }}</b>
+              <span v-if="staged.length > 1" class="mute">等 {{ staged.length }} 个文件，下面的设置对它们都生效</span>
+              <span class="mute">{{ planSummary }}</span>
+              <span v-if="planErr" class="bad">{{ planErr }}</span>
+            </div>
+            <div v-if="stagedIsPdf" class="fld">
+              <span>页范围</span>
+              <el-input v-model="stagedPages" size="small" clearable placeholder="全部。如 3-12, 15 或 5-" :class="{ badin: !pagesOk }" />
+            </div>
+            <div v-if="!pagesOk" class="bad">页范围没看懂，写法如 3-12, 15。</div>
+            <div class="est">
+              <template v-if="plan">
+                要译 <b>{{ plan.selectedPages }}</b> 页 · <b>{{ planRest }}</b> 段<span v-if="plan.cached">（已有缓存 {{ plan.cached }} 段，不重翻）</span><span v-if="plan.skipped">，跳过 {{ plan.skipped }} 段</span>
+                <br />预计约 <b>{{ plan.requests }}</b> 次请求<span class="mute">（估算，实际随内容长短浮动）</span>
+                <br v-if="plan.scanned" /><span v-if="plan.scanned" class="warn">这份 PDF 有扫描页，要先识字，请求会更多。</span>
+              </template>
+              <span v-else class="mute">{{ planBusy ? '正在估算…' : '' }}</span>
+            </div>
+            <div class="srow">
+              <el-button size="small" @click="cancelStaged">取消</el-button>
+              <el-button size="small" type="primary" :disabled="!pagesOk" @click="startStaged">开始翻译</el-button>
+            </div>
+          </div>
           <div class="fld">
             <span>语言</span>
             <el-select v-model="o.target" size="small" filterable allow-create default-first-option class="grow">
@@ -407,7 +486,10 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
               <span :class="{ on: o.pdfMode === 'txt' }" title="只取出文字，输出 TXT" @click="o.pdfMode = 'txt'">只要文字</span>
             </div>
           </div>
-          <div class="fld"><span>开始前</span><el-switch v-model="confirmStart" size="small" /><small class="mute">先确认页范围、跳过哪些内容和请求数</small></div>
+          <div class="fld"><span>开始前</span><el-switch v-model="confirmStart" size="small" /><small class="mute">拖入文件后先在这里确认页范围和请求数，再开始</small></div>
+          <div class="fld"><span>预览</span><el-switch v-model="o.preview" size="small" /><small class="mute">先译完在右边检查、改译文，再点“生成文件”</small></div>
+          <div class="fld"><span>排除</span><div class="chk"><el-checkbox v-model="o.skipHeaders" size="small">页眉页脚页码</el-checkbox><el-checkbox v-model="o.skipCode" size="small">公式代码网址</el-checkbox><el-checkbox v-model="o.skipRefs" size="small">参考文献</el-checkbox></div></div>
+          <div class="fld"><span>扫描页</span><div class="chk"><el-checkbox v-model="o.scanAuto" size="small" title="有文字层的 PDF 里夹着扫描页时，自动识字并一起翻译">自动识别扫描页</el-checkbox></div></div>
           <div class="adv" role="button" tabindex="0" @click="advanced = !advanced" @keydown.enter="advanced = !advanced">{{ advanced ? '▾' : '▸' }} 高级：专家、术语库、先预览、识字</div>
           <template v-if="advanced">
             <div class="fld">
@@ -419,7 +501,6 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
               </el-select>
             </div>
             <div class="fld"><span>术语库</span><el-switch v-model="glossaryOn" size="small" /><small class="mute">按内容自动带入相关术语</small></div>
-            <div class="fld"><span>预览</span><el-switch v-model="o.preview" size="small" /><small class="mute">先译完在右边检查、改译文，再点“生成文件”</small></div>
             <div class="fld">
               <span>换行</span>
               <el-select v-model="o.lineBreaks" size="small" class="grow">
@@ -428,8 +509,6 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
                 <el-option value="merge" label="全部并成一段" />
               </el-select>
             </div>
-            <div class="fld"><span>排除</span><div class="chk"><el-checkbox v-model="o.skipHeaders" size="small">页眉页脚页码</el-checkbox><el-checkbox v-model="o.skipCode" size="small">公式代码网址</el-checkbox><el-checkbox v-model="o.skipRefs" size="small">参考文献</el-checkbox></div></div>
-            <div class="fld"><span>扫描页</span><div class="chk"><el-checkbox v-model="o.scanAuto" size="small" title="有文字层的 PDF 里夹着扫描页时，自动识字并一起翻译">自动识别扫描页</el-checkbox></div></div>
 <div class="fld">
             <span>识字</span>
             <el-select v-model="o.ocr" size="small" class="grow">
@@ -547,6 +626,14 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 .pdfx .row1 { display: flex; justify-content: space-between; gap: 8px; align-items: baseline }
 .pdfx .row2 { display: flex; gap: 6px; flex-wrap: wrap }
 .pdfx .okc { color: var(--el-color-success); font-size: 12.5px }
+.stage { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; border: 1px solid var(--el-color-primary); background: color-mix(in srgb, var(--el-color-primary) 8%, var(--el-bg-color)) }
+.stage .sfile { display: flex; flex-direction: column; gap: 2px }
+.stage .sfile b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.stage .est { font-size: 12.5px; line-height: 1.7 }
+.stage .srow { display: flex; justify-content: flex-end; gap: 8px }
+.stage .mute { color: var(--el-text-color-secondary); font-size: 12.5px }
+.stage .bad { color: var(--el-color-danger); font-size: 12.5px }
+.stage .warn { color: var(--el-color-warning-dark-2) }
 .adv { font-size: 12.5px; color: var(--el-color-primary); cursor: pointer; user-select: none }
 .chk { display: flex; flex-direction: column }
 </style>

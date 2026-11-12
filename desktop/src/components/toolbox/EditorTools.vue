@@ -33,12 +33,13 @@ const outDir = ref('')
 const monitorMode = ref<'live' | 'preview'>('live')
 
 const SNAP_KEY = 'clearclip.edit.snap'
-type Tool = 'select' | 'blade' | 'slip' | 'roll'
+type Tool = 'select' | 'blade' | 'slip' | 'roll' | 'slide'
 const TOOLS: { id: Tool; name: string; key: string; tip: string }[] = [
   { id: 'select', name: '选择', key: 'A', tip: '点选、拖动、拖边缘裁剪' },
   { id: 'blade', name: '刀片', key: 'B', tip: '点哪，就在哪把素材切开' },
   { id: 'slip', name: '滑移', key: 'Y', tip: '在主轨片段上拖：画面在片段里前后挪，位置和长度不变' },
   { id: 'roll', name: '滚动', key: 'N', tip: '拖主轨两个相邻片段之间的边缘：一个多一点，另一个少一点，总长不变' },
+  { id: 'slide', name: '滑动', key: 'U', tip: '在主轨片段上拖：它自己不变，在前后两个片段之间左右挪，前一个变长（短）多少，后一个就变短（长）多少，总长不变' },
 ]
 const tool = ref<Tool>('select')
 const showWave = ref(true)
@@ -322,7 +323,8 @@ watch(hasContent, (v) => {
 
 // ---------- 精确预览（可选：和导出同一套流程渲染，实时画面是近似效果） ----------
 
-const projectKey = computed(() => JSON.stringify(ed.project.value))
+// 正在编辑复合片段里面时，导出、预览用的是把子时间线放回去以后的最外层工程
+const projectKey = computed(() => ed.rootJson.value)
 const preview = ref<{ url: string; key: string } | null>(null)
 const previewJob = ref<JobSnap | null>(null)
 const previewId = ref<number | null>(null)
@@ -424,15 +426,33 @@ async function exportNow(frame = false) {
 
 // ---------- 键盘 ----------
 
+/** 把选中的合成复合片段。 */
+function makeCompound() {
+  const why = ed.makeCompound()
+  if (why) ElMessage.info(why)
+  else ElMessage.success('已合成复合片段：双击它可以进去继续剪；实时画面里不显示它，用“精确预览”查看')
+}
+
+/** Ctrl+G 编组，Ctrl+Shift+G 拆开。 */
+function toggleGroup(ungroup: boolean) {
+  if (ungroup) {
+    if (!ed.ungroupSelected()) ElMessage.info('选中的没有编组')
+  } else if (!ed.groupSelected()) {
+    ElMessage.info('先用 Shift+点击选中至少两个片段，再编组')
+  }
+}
+
 const SHORTCUTS: [string, string][] = [
   ['空格', '播放 / 暂停'],
   ['S', '在播放位置分割'],
-  ['A / B / Y / N', '工具：选择 / 刀片 / 滑移 / 滚动'],
+  ['A / B / Y / N / U', '工具：选择 / 刀片 / 滑移 / 滚动 / 滑动'],
   ['M', '在播放位置打标记'],
   ['I / O', '设入点 / 出点（只导出这一段）'],
   ['Q / W', '向左 / 向右裁剪到播放位置'],
   ['Delete', '删除选中的'],
   ['Shift+Delete', '波纹删除（后面的叠加素材、文字、配乐一起前移）'],
+  ['Shift+点击', '多选（再点一次取消）；同一组的一起选中'],
+  ['Ctrl+G / Ctrl+Shift+G', '把选中的编成一组 / 拆开（组里的叠加素材、文字、配乐拖动时一起走，删除时一起删）'],
   ['Ctrl+D', '复制选中的'],
   ['Ctrl+Z / Ctrl+Y', '撤销 / 重做'],
   ['Ctrl+S', '保存工程'],
@@ -461,7 +481,10 @@ function onKey(e: KeyboardEvent) {
   }
   const mod = e.ctrlKey || e.metaKey
   const key = e.key.toLowerCase()
-  if (mod && key === 'd') {
+  if (mod && key === 'g') {
+    e.preventDefault()
+    toggleGroup(e.shiftKey)
+  } else if (mod && key === 'd') {
     e.preventDefault()
     duplicate()
   } else if (mod && key === 'z') {
@@ -486,6 +509,8 @@ function onKey(e: KeyboardEvent) {
     tool.value = tool.value === 'slip' ? 'select' : 'slip'
   } else if (key === 'n') {
     tool.value = tool.value === 'roll' ? 'select' : 'roll'
+  } else if (key === 'u') {
+    tool.value = tool.value === 'slide' ? 'select' : 'slide'
   } else if (key === 'm') {
     ed.addMarker()
   } else if (key === 'i') {
@@ -695,6 +720,7 @@ onBeforeUnmount(() => releaseDrop?.())
           </el-button-group>
           <span class="mono time">{{ timeText }}</span>
           <span class="sp" />
+          <el-checkbox v-model="ed.proxyBig.value" size="small" title="高过 1080p 的视频自动生成画质较低的预览用小文件，实时画面更流畅；导出永远用原素材。系统播放器解不了的素材不受这个开关影响，需要时点预览区的提示生成。">大素材用小文件预览</el-checkbox>
           <el-radio-group :model-value="monitorMode" size="small" @update:model-value="setMode">
             <el-radio-button value="live" title="随改随看的近似效果（转场的形状、变速、降噪等细节以导出为准）">实时画面</el-radio-button>
             <el-radio-button value="preview" :disabled="!hasClips || building" title="和导出同一套流程渲染一遍再播放，用来逐帧核对；改过工程后需要重新生成">精确预览</el-radio-button>
@@ -729,6 +755,7 @@ onBeforeUnmount(() => releaseDrop?.())
         <el-button size="small" :disabled="!canDetach" title="把这段素材的声音单独放到配乐轨，原来的画面静音" @click="detachAudio">分离音频</el-button>
         <el-button size="small" :disabled="!ed.sel.value" title="（Ctrl+D）" @click="duplicate">复制{{ selectedLabel }}</el-button>
         <el-button size="small" :disabled="!ed.sel.value" title="（Delete）" @click="ed.removeSelected">删除{{ selectedLabel }}</el-button>
+        <el-button size="small" :disabled="!ed.selection.value.some((x) => x.kind === 'clip')" title="把选中的主轨片段（要连着，Shift+点击多选；选中的叠加素材、文字、配乐也一起进去）合成一个复合片段；双击它可以进去继续剪" @click="makeCompound">合成复合片段</el-button>
         <el-button v-if="ed.sel.value?.kind === 'clip'" size="small" title="删除片段，并把它后面才开始的叠加素材、文字、配乐一起前移（Shift+Delete）" @click="rippleDelete">波纹删除</el-button>
         <el-button size="small" :disabled="!hasClips" title="在播放位置打一个标记（M）" @click="ed.addMarker()">标记</el-button>
         <el-button size="small" :disabled="!hasClips" title="把播放位置设为入点（I）：只导出、预览入点到出点这一段" @click="ed.setIn()">入点</el-button>

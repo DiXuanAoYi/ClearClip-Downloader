@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use super::build::{build, EditPlan, Mode, Source};
 use super::fonts;
-use super::job::{bake_lut_strength, fit_to_sources};
+use super::job::{apply_rendered, bake_lut_strength, compound_jobs, fit_to_sources};
 use super::region::render_mask;
-use super::spec::{AudioTrack, Clip, ClipKind, Project, TextItem, Transition, TRANSITIONS};
+use super::spec::{AudioTrack, Clip, ClipKind, Compound, Project, TextItem, Transition, TRANSITIONS};
 use crate::media_tools::muxer_args;
 use crate::postprocess::{base_args, run_ffmpeg_capture};
 use crate::vidcaps::{self, Caps};
@@ -183,6 +183,61 @@ macro_rules! need {
             None => return,
         }
     };
+}
+
+#[tokio::test]
+async fn compound_clip_is_rendered_first_and_then_used_like_a_clip() {
+    let (ff, d, caps, m) = need!(setup("compound").await);
+    // 子时间线：红 1 秒 + 绿 1 秒 = 2 秒
+    let inner = Project { clips: vec![clip(&m.red, 0, 1000), clip(&m.green, 0, 1000)], ..Default::default() };
+    let comp = Clip { id: 2, compound: Some(7), out_ms: 2000, ..Default::default() };
+    let mut outer = Project { clips: vec![clip(&m.blue, 0, 1000), comp, image(&m.yellow, 1000)], ..Default::default() };
+    outer.compounds = vec![Compound { id: 7, name: "片头".into(), project: inner }];
+    // 工程能通过校验，素材清单里有子时间线用到的文件，没有空路径
+    let checked = outer.clone().checked().expect("带复合片段的工程能通过校验");
+    let paths = checked.media_paths();
+    assert!(paths.contains(&m.red.to_string_lossy().into_owned()) && paths.contains(&m.green.to_string_lossy().into_owned()), "{paths:?}");
+    assert!(paths.iter().all(|p| !p.is_empty()));
+    // 先渲染复合片段，再换成普通片段（和任务里的流程一样）
+    let jobs = compound_jobs(&outer).unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!((jobs[0].index, jobs[0].id), (1, 7));
+    assert_eq!(jobs[0].inner.out.quality, "high");
+    for j in jobs {
+        let (file, plan) = render(&ff, &caps, &d, j.inner, Mode::Export).await;
+        assert!(close(Some(plan.out_ms), 2000, 100), "{}", plan.out_ms);
+        apply_rendered(&mut outer, j.index, &file, plan.out_ms);
+    }
+    assert!(outer.clips[1].compound.is_none() && !outer.clips[1].path.is_empty());
+    let (out, _plan) = render(&ff, &caps, &d, outer, Mode::Export).await;
+    let f = facts_of(&ff, &out).await;
+    assert!(close(f.duration_ms, 4000, 200), "时长 {:?}", f.duration_ms);
+    assert!(is_blue(rgb_at(&ff, &out, 0.5).await));
+    assert!(is_red(rgb_at(&ff, &out, 1.5).await), "{:?}", rgb_at(&ff, &out, 1.5).await);
+    assert!(is_green(rgb_at(&ff, &out, 2.5).await), "{:?}", rgb_at(&ff, &out, 2.5).await);
+    assert!(is_yellow(rgb_at(&ff, &out, 3.6).await));
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[test]
+fn compound_clips_are_validated() {
+    let c = |compound: Option<u32>| Clip { id: 1, compound, out_ms: 1000, ..Default::default() };
+    // 指向不存在的子时间线
+    let e = Project { clips: vec![c(Some(5))], ..Default::default() }.checked().unwrap_err();
+    assert!(e.contains("复合片段"), "{e}");
+    // 子时间线是空的
+    let mut p = Project { clips: vec![c(Some(5))], ..Default::default() };
+    p.compounds = vec![Compound { id: 5, name: "空".into(), project: Project::default() }];
+    assert!(p.checked().unwrap_err().contains("空"));
+    // 自己引用自己（环）：校验会因为嵌套太深而拒绝
+    let mut looped = Project { clips: vec![c(Some(5))], ..Default::default() };
+    looped.compounds = vec![Compound { id: 5, name: "环".into(), project: Project { clips: vec![c(Some(5))], ..Default::default() } }];
+    assert!(looped.checked().is_err());
+    // 第一个有素材的片段：复合片段往里找
+    let mut q = Project { clips: vec![c(Some(5))], ..Default::default() };
+    q.compounds = vec![Compound { id: 5, name: "里面".into(), project: Project { clips: vec![clip(Path::new("/m/a.mp4"), 0, 1000)], ..Default::default() } }];
+    assert_eq!(q.first_media_path().as_deref(), Some("/m/a.mp4"));
+    assert_eq!(q.media_paths(), vec!["/m/a.mp4".to_string()]);
 }
 
 #[tokio::test]

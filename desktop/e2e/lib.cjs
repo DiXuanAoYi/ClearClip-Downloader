@@ -165,7 +165,10 @@ async function launch() {
   })
   await page.exposeFunction('__probe', (p) => {
     try {
-      return probe(p)
+      const r = probe(p)
+      // 测试用：把指定文件报成 4K，用来测“大素材自动用小文件预览”
+      if (globalThis.__bigFiles?.includes(p) && r && typeof r === 'object') return { ...r, width: 3840, height: 2160 }
+      return r
     } catch (e) {
       throw { kind: 'invalid', message: String(e.message || e) }
     }

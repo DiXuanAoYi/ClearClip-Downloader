@@ -155,8 +155,8 @@ pub fn terms_version(st: &crate::AppState) -> String {
 /// 统计（设置页显示）。
 pub fn count(data_dir: &Path) -> (u64, u64) {
     let Ok(c) = conn(data_dir) else { return (0, 0) };
-    let all: u64 = c.query_row("SELECT COUNT(*) FROM tm", [], |r| r.get(0)).unwrap_or(0);
-    let edited: u64 = c.query_row("SELECT COUNT(*) FROM tm WHERE edited = 1", [], |r| r.get(0)).unwrap_or(0);
+    let all: u64 = c.query_row("SELECT COUNT(*) FROM tm", [], |r| r.get::<_, i64>(0)).map_or(0, |n| n.max(0) as u64);
+    let edited: u64 = c.query_row("SELECT COUNT(*) FROM tm WHERE edited = 1", [], |r| r.get::<_, i64>(0)).map_or(0, |n| n.max(0) as u64);
     (all, edited)
 }
 

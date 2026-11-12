@@ -227,8 +227,15 @@ pub fn parse_season_series(data: &Value) -> (Vec<ListRef>, bool) {
     (out, more)
 }
 
+/// 翻页之间的间隔：每次在 400 ~ 1200 毫秒之间随机，别让一整串请求按固定节奏打过去（1000 条要翻几十页，容易被限流）。
+fn jitter_ms() -> u64 {
+    let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0) as u64;
+    // 纳秒数的低位很随机；乘一个大奇数再取高位，避免相邻两次调用得到相近的值
+    400 + (n.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 40) % 801
+}
+
 async fn pause() {
-    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(jitter_ms())).await;
 }
 
 async fn api(ctx: &Ctx<'_>, url: &str) -> AppResult<Value> {
@@ -597,5 +604,17 @@ mod tests {
         assert_eq!(e[1].url, "https://space.bilibili.com/9/lists/22?type=series");
         assert_eq!(e[1].index, 2);
         assert!(more);
+    }
+
+    #[test]
+    fn page_pause_is_random_between_400_and_1200_ms() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..200 {
+            let ms = jitter_ms();
+            assert!((400..=1200).contains(&ms), "{ms}");
+            seen.insert(ms);
+            std::thread::sleep(std::time::Duration::from_micros(137));
+        }
+        assert!(seen.len() > 20, "间隔几乎不变：{}", seen.len());
     }
 }

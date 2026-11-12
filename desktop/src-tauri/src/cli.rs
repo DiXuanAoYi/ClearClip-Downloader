@@ -24,6 +24,7 @@ pub const HELP: &str = "清影 ClearClip 命令行
   clearclip cancel <编号>      取消任务
   clearclip remove <编号>      从列表移除任务
   clearclip search <关键词>    搜索媒体库
+  clearclip health             检查各平台解析是否正常（最多等 5 分钟；有不正常的平台退出码为 2）
   clearclip subtitle generate <文件> [--lang 语言] [--translate zh,en] [--display orig|trans|orig-top|trans-top]
                                [--format srt,vtt,ass,lrc,txt,json] [--correct auto|conservative|aggressive|rules|off] [--no-resegment] [--semantic] [--reflect] [--word-timing]
                                给没有字幕的视频 / 音频生成字幕（识别 → 纠错 → 断句 → 翻译 → 导出）
@@ -77,6 +78,8 @@ pub enum Cmd {
     Cancel(i64),
     Remove(i64),
     Search(String),
+    /// 平台健康检查：提交以后每 2 秒查一次，最多等 5 分钟；有平台不正常时退出码是 2
+    Health,
     /// 字幕工坊：(接口路径, 请求体 JSON)
     Subtitle(&'static str, String),
 }
@@ -96,6 +99,7 @@ pub fn parse(args: &[String]) -> Option<Result<Cmd, String>> {
         "help" | "--help" | "-h" => Ok(Cmd::Help),
         "status" => Ok(Cmd::Status),
         "list" | "ls" => Ok(Cmd::List),
+        "health" => Ok(Cmd::Health),
         "pause" => all_or_id("暂停").map(Cmd::Pause),
         "resume" => all_or_id("继续").map(Cmd::Resume),
         "cancel" => id(rest.first()).map(Cmd::Cancel).ok_or_else(|| "用法：clearclip cancel <任务编号>".to_string()),
@@ -310,6 +314,61 @@ pub fn call(method: &str, path: &str, body: Option<&str>) -> Result<Value, Strin
     Ok(v)
 }
 
+/// 提交一次平台健康检查并等结果。返回的文字里每个平台一行；有不正常的平台时返回 `Err("…")` 不合适（那样会丢掉输出），
+/// 所以全部通过与否写在最后一行，退出码由 `try_run` 看 `HEALTH_FAILED` 决定。
+static HEALTH_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn run_health_cmd(port: u16, token: &str, json: bool) -> Result<String, String> {
+    let call = |method: &str, path: &str| -> Result<Value, String> {
+        let (code, body) = http(port, token, method, path, None)?;
+        let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+        if code != 200 {
+            return Err(v["error"].as_str().map(str::to_string).unwrap_or_else(|| format!("接口返回 {code}")));
+        }
+        Ok(v)
+    };
+    let id = call("POST", "/api/v1/health/run")?["id"].as_u64().ok_or("接口没有返回任务编号")?;
+    let started = std::time::Instant::now();
+    loop {
+        let v = call("GET", &format!("/api/v1/health/job?id={id}"))?;
+        match v["state"].as_str() {
+            Some("done") => {
+                if v["allOk"].as_bool() != Some(true) {
+                    HEALTH_FAILED.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                return Ok(if json { serde_json::to_string_pretty(&v).unwrap_or_default() } else { render_health(&v) });
+            }
+            Some("failed") => return Err(v["error"].as_str().unwrap_or("体检失败").to_string()),
+            _ => {}
+        }
+        if started.elapsed() > Duration::from_secs(300) {
+            return Err("等了 5 分钟还没有结果，体检仍在后台进行；稍后再运行 clearclip health".into());
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+/// 体检结果的文字版：每个平台一行，最后一行是汇总。
+pub fn render_health(v: &Value) -> String {
+    let rows = v["results"].as_array().cloned().unwrap_or_default();
+    let mut lines: Vec<String> = rows
+        .iter()
+        .map(|r| {
+            let ok = r["ok"].as_bool() == Some(true);
+            format!(
+                "{} {}  {} 毫秒  {}",
+                if ok { "✓" } else { "✗" },
+                r["name"].as_str().unwrap_or(""),
+                r["millis"].as_u64().unwrap_or(0),
+                r["message"].as_str().unwrap_or("")
+            )
+        })
+        .collect();
+    let bad = rows.iter().filter(|r| r["ok"].as_bool() != Some(true)).count();
+    lines.push(if bad == 0 { format!("全部正常（{} 项）", rows.len()) } else { format!("{bad} 项不正常（共 {} 项）", rows.len()) });
+    lines.join("\n")
+}
+
 fn run_cmd(cmd: &Cmd, json: bool) -> Result<String, String> {
     let (port, token) = connection()?;
     let token = token.as_str();
@@ -320,6 +379,7 @@ fn run_cmd(cmd: &Cmd, json: bool) -> Result<String, String> {
             ("POST", (*p).to_string())
         }
         Cmd::Help => return Ok(HELP.into()),
+        Cmd::Health => return run_health_cmd(port, token, json),
         Cmd::Status => ("GET", "/api/v1/status".into()),
         Cmd::List => ("GET", "/api/v1/tasks".into()),
         Cmd::Pause(None) => ("POST", "/api/v1/tasks/pause_all".into()),
@@ -361,7 +421,11 @@ pub fn try_run() -> Option<i32> {
     Some(match parsed.and_then(|cmd| run_cmd(&cmd, json)) {
         Ok(out) => {
             println!("{out}");
-            0
+            if HEALTH_FAILED.load(std::sync::atomic::Ordering::SeqCst) {
+                2
+            } else {
+                0
+            }
         }
         Err(e) => {
             eprintln!("{e}");
@@ -388,6 +452,8 @@ mod tests {
         assert_eq!(parse(&a(&["cancel", "3", "--json"])), Some(Ok(Cmd::Cancel(3))));
         assert!(matches!(parse(&a(&["cancel"])), Some(Err(_))));
         assert_eq!(parse(&a(&["search", "rust", "入门"])), Some(Ok(Cmd::Search("rust 入门".into()))));
+        assert_eq!(parse(&a(&["health"])), Some(Ok(Cmd::Health)));
+        assert_eq!(parse(&a(&["health", "--json"])), Some(Ok(Cmd::Health)));
         assert_eq!(parse(&a(&["--help"])), Some(Ok(Cmd::Help)));
         // 字幕命令：文件转绝对路径，选项进 JSON
         let f = std::env::temp_dir().join("cli-sub-test.mp4");
@@ -444,5 +510,18 @@ mod tests {
             &serde_json::json!({"items": [{"title": "T", "platform": "B站", "kind": "video", "size": 1024, "favorite": true, "tags": ["学习"]}]}),
         );
         assert_eq!(s, "★ T  [B站] video · 1.0 KB #学习");
+    }
+
+    #[test]
+    fn health_results_are_rendered_one_line_per_platform_with_a_summary() {
+        let v = serde_json::json!({"state": "done", "allOk": false, "results": [
+            {"name": "B站", "ok": true, "millis": 820, "message": "正常：某视频（3 个资源）"},
+            {"name": "抖音", "ok": false, "millis": 30000, "message": "超时"}]});
+        let t = render_health(&v);
+        assert_eq!(t.lines().count(), 3);
+        assert!(t.contains("✓ B站  820 毫秒") && t.contains("✗ 抖音  30000 毫秒  超时"), "{t}");
+        assert!(t.ends_with("1 项不正常（共 2 项）"), "{t}");
+        let ok = serde_json::json!({"results": [{"name": "A", "ok": true, "millis": 1, "message": "好"}]});
+        assert!(render_health(&ok).ends_with("全部正常（1 项）"));
     }
 }

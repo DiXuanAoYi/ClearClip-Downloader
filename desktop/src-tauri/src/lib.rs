@@ -32,6 +32,7 @@ pub mod fmtmark;
 pub mod glossary;
 pub mod glossary_cmds;
 pub mod grab;
+pub mod healthjob;
 pub mod i18n;
 pub mod imagetext;
 pub mod imgtrans;
