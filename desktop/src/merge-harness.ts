@@ -15,6 +15,7 @@ import ParseView from './views/ParseView.vue'
 import FileTransView from './views/FileTransView.vue'
 import WriteApp from './WriteApp.vue'
 import TransferPanel from './components/TransferPanel.vue'
+import SettingsView from './views/SettingsView.vue'
 import ToolboxView from './views/ToolboxView.vue'
 import App from './App.vue'
 import SecurityPanel from './components/SecurityPanel.vue'
@@ -26,7 +27,7 @@ import { setLanguage } from './i18n'
 setLanguage('zh')
 const pinia = createPinia()
 const which = location.hash.slice(1)
-const C: Record<string, Component> = { write: WriteApp, parse: ParseView, float: FloatApp, excerpts: ExcerptsPanel, screen: ScreenView, ai: AiTools, glossary: GlossaryPanel, filetr: FileTransView, transfer: TransferPanel, tools: ToolboxView, app: App }
+const C: Record<string, Component> = { write: WriteApp, parse: ParseView, float: FloatApp, excerpts: ExcerptsPanel, screen: ScreenView, ai: AiTools, glossary: GlossaryPanel, filetr: FileTransView, transfer: TransferPanel, settings: SettingsView, tools: ToolboxView, app: App }
 const store = useAppStore(pinia)
 store.settings = (await api.getSettings()) as never
 ;(window as unknown as { __app: typeof store }).__app = store
