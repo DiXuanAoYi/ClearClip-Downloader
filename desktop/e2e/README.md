@@ -39,6 +39,7 @@ node e2e/run.mjs parse-ui.cjs      # 只跑一个或几个脚本
 | `bili-sub.cjs` | 扩展：B站字幕跨域读取 |
 | `audio.cjs` | 扩展：实时音效（用正弦波当视频声音，量处理后的输出） |
 | `overview-naming.cjs` | 扩展：页面媒体总览的命名栏 |
+| `ext-smoke.cjs` | 扩展：把真正的 `extension/` 加载进 Chromium（真的后台脚本和内容脚本，假的清影后端）：后台脚本启动、整页翻译出现译文、弹窗音效页默认“奥懿”并能存多个自定义预设 |
 | `merge-ui.cjs` | 桌面：悬浮窗、摘录 |
 | `parse-ui.cjs` | 桌面：解析结果页、合集、创作者主页分栏和列表展开 |
 | `home-batch.cjs` | 桌面：主页的单个解析 / 批量下载切换 |
@@ -52,7 +53,7 @@ node e2e/run.mjs parse-ui.cjs      # 只跑一个或几个脚本
 
 ## 不在默认套件里的
 
-- `ext-real.cjs`：把整个 `extension/` 加载进 Chromium，用假的清影后端验证整页翻译。需要显示环境：`xvfb-run -a node e2e/ext-real.cjs`。
+- `ext-real.cjs`：排查整页翻译用的，只打印、不判断对错（有判断的版本是默认套件里的 `ext-smoke.cjs`）。需要显示环境：`xvfb-run -a node e2e/ext-real.cjs`。
 
 ## 写新用例
 
