@@ -356,6 +356,16 @@ pub fn phone_set_options(app: AppHandle, options: phone::PhoneOptions) -> AppRes
     phone::set_options(&app, options)
 }
 
+#[tauri::command]
+pub fn phone_chat_list(app: AppHandle, since: Option<u64>) -> Vec<phone::ChatMsg> {
+    phone::chat_list(&app, since.unwrap_or(0))
+}
+
+#[tauri::command]
+pub fn phone_chat_clear(app: AppHandle) {
+    phone::chat_clear(&app)
+}
+
 // ---------- 手机与电脑互传 ----------
 
 #[tauri::command]

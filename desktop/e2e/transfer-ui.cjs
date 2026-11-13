@@ -47,6 +47,8 @@ const init = `
         case 'get_settings': return ${JSON.stringify(settings)}
         case 'transfer_list': return ${JSON.stringify(list)}
         case 'phone_info': return ${JSON.stringify(info)}
+        case 'phone_set_options': return Object.assign({}, ${JSON.stringify(info)}, { peerChat: !!args.options.peerChat })
+        case 'phone_chat_list': return [{ id: 1, device: 'd1', name: 'iPhone', text: '到了吗', ts: Math.floor(Date.now() / 1000) - 60 }, { id: 2, device: 'd2', name: 'Android 手机', text: '马上到', ts: Math.floor(Date.now() / 1000) - 30 }]
         case 'transfer_send_text': return 5
         case 'transfer_send_files': return { added: 1, skipped: [] }
         case 'transfer_thumb': return /\\.jpg$/i.test(args.path) ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' : null
@@ -114,6 +116,20 @@ const init = `
   await pend.waitForTimeout(150)
   const resp = await pend.evaluate(() => window.__calls.filter((c) => c.cmd === 'phone_pair_respond').at(-1)?.args)
   ok('点“允许”调用配对接口', resp && resp.deviceId === 'p1' && resp.accept === true, JSON.stringify(resp))
+  // 手机互聊：开关在左栏，打开后右侧出现“手机互聊”页，只读显示全部消息
+  ok('互聊没开时没有“手机互聊”页签', (await page.locator('.vtabs').count()) === 0)
+  await page.locator('[data-testid=chat-switch]').click()
+  await page.waitForSelector('[data-testid=chat-feed]')
+  const opt = await page.evaluate(() => window.__calls.filter((c) => c.cmd === 'phone_set_options').at(-1)?.args)
+  ok('打开开关调用设置接口，并带上 peerChat', opt && opt.options.peerChat === true, JSON.stringify(opt))
+  const cm = await page.locator('.cmsg').allInnerTexts()
+  ok('显示两台手机的聊天内容和名字', cm.length === 2 && /iPhone/.test(cm[0]) && /到了吗/.test(cm[0]) && /Android 手机/.test(cm[1]), cm.join('|'))
+  ok('聊天页是只读的：不显示发送输入条', !(await page.locator('.composer').isVisible()))
+  ok('聊天页写明只读', /只读/.test(await page.locator('.ctail').innerText()))
+  await page.screenshot({ path: (process.env.SHOT || '/tmp/transfer-desktop.png').replace('.png', '-chat.png') })
+  await page.locator('[data-testid=chat-switch]').click()
+  await page.waitForTimeout(150)
+  ok('关闭开关后聊天页消失、回到传输记录', (await page.locator('.vtabs').count()) === 0 && (await page.locator('.msg').count()) === 5)
   ok('没有页面错误', errors.length === 0, errors.join(';'))
   console.log(`\n${pass} 通过，${fail} 失败`)
   await browser.close()

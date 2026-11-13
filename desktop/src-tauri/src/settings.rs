@@ -1256,6 +1256,8 @@ pub struct PhoneSettings {
     pub auto_extract: bool,
     /// 电脑发给手机的文件多久后自动撤回（小时）；0 表示不自动撤回
     pub outbox_hours: u32,
+    /// 手机互聊：开启后，已配对的手机可以在网页里互相发文字（消息经电脑上的服务转发，电脑端可查看）
+    pub peer_chat: bool,
 }
 
 impl Default for PhoneSettings {
@@ -1270,6 +1272,7 @@ impl Default for PhoneSettings {
             max_upload_mb: 4096,
             auto_extract: false,
             outbox_hours: 24,
+            peer_chat: false,
         }
     }
 }

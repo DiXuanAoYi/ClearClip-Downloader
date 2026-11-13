@@ -4,7 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../api'
-import type { PhoneInfo, TransferItem, TransferList } from '../types'
+import type { ChatMsg, PhoneInfo, TransferItem, TransferList } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import { registerDrop } from '../utils/dropHub'
 import { useAppStore } from '../stores/app'
@@ -305,9 +305,64 @@ function expiry(it: TransferItem): string {
   return left >= 3600 ? `${Math.ceil(left / 3600)} 小时后撤回` : `${Math.max(1, Math.ceil(left / 60))} 分钟后撤回`
 }
 
+/** 手机互聊：手机之间的消息经电脑上的服务转发，开关打开时这里能看到全部内容（只读） */
+const view = ref<'files' | 'chat'>('files')
+const chat = ref<ChatMsg[]>([])
+const chatEl = ref<HTMLElement | null>(null)
+const chatOn = computed(() => !!info.value?.peerChat)
+async function setChat(on: boolean) {
+  if (!info.value) return
+  try {
+    const i = info.value
+    info.value = await api.phoneSetOptions({ host: i.host, receiveDir: i.receiveDir, maxUploadMb: i.maxUploadMb, autoExtract: i.autoExtract, outboxHours: i.outboxHours, peerChat: on })
+    if (on) {
+      chat.value = await api.phoneChatList()
+      view.value = 'chat'
+    } else {
+      chat.value = []
+      view.value = 'files'
+    }
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+async function clearChat() {
+  try {
+    await ElMessageBox.confirm('清空后，电脑上看不到之前的聊天内容；手机网页里的记录也会消失。', '清空手机互聊记录', { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning' })
+    await api.phoneChatClear()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(errorText(e))
+  }
+}
+function onChatMsg(m: ChatMsg & { cleared?: boolean }) {
+  if (m.cleared) {
+    chat.value = []
+    return
+  }
+  if (!chat.value.some((x) => x.id === m.id)) chat.value.push(m)
+}
+const chatRows = computed(() => {
+  let last = ''
+  return chat.value.map((m) => {
+    const key = new Date(m.ts * 1000).toDateString() + Math.floor(m.ts / 1800)
+    const day = key !== last ? dayLabel(m.ts) : ''
+    last = key
+    return { m, day }
+  })
+})
+watch(
+  () => chat.value.length,
+  async () => {
+    await nextTick()
+    if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight
+  },
+)
+
 onMounted(async () => {
   await Promise.all([load(), loadInfo()])
+  if (info.value?.peerChat) chat.value = await api.phoneChatList().catch(() => [])
   unlisten = [
+    await events.onChat(onChatMsg),
     await events.onTransferChanged(scheduleLoad),
     await events.onTransferProgress((p) => onProgress(p.id, p.done)),
     await events.onPairRequest(loadInfo),
@@ -389,6 +444,14 @@ onUnmounted(() => {
           <small v-if="info?.devices.length" class="mute hint2">勾选的设备才会收到你发出的文件和文字。浏览器扩展默认不勾：它收到的内容会再交回主程序，造成来回传。</small>
         </div>
 
+        <div class="box chatbox">
+          <div class="chead">
+            <b>手机互聊</b>
+            <el-switch :model-value="chatOn" size="small" :disabled="!info?.running" aria-label="手机互聊" data-testid="chat-switch" @change="(v: string | number | boolean) => setChat(!!v)" />
+          </div>
+          <small class="mute">开启后，已配对的手机能在网页里互相发文字，不用经过你操作。消息只在局域网内流转，但要经过这台电脑上的清影转发，所以你在这里能看到全部内容。关闭或退出清影后记录清空。</small>
+        </div>
+
         <div class="box dirbox">
           <small class="mute">收到的文件保存在</small>
           <b class="dir selectable">{{ list.receiveDir || info?.receiveDir }}</b>
@@ -400,7 +463,31 @@ onUnmounted(() => {
       </aside>
 
       <section class="main">
-        <div ref="feedEl" class="feed">
+        <div v-if="chatOn" class="vtabs" role="tablist">
+          <button role="tab" :aria-selected="view === 'files'" :class="{ on: view === 'files' }" @click="view = 'files'">传输记录</button>
+          <button role="tab" :aria-selected="view === 'chat'" :class="{ on: view === 'chat' }" data-testid="chat-tab" @click="view = 'chat'">手机互聊<em v-if="chat.length">{{ chat.length }}</em></button>
+        </div>
+        <div v-if="chatOn && view === 'chat'" ref="chatEl" class="feed chatfeed" data-testid="chat-feed">
+          <div v-if="!chat.length" class="empty mute">
+            <b>还没有聊天内容</b>
+            <span>手机网页里会多一个“手机互聊”页，扫码连上的手机在那里发的消息会实时出现在这里。</span>
+          </div>
+          <template v-for="r in chatRows" :key="r.m.id">
+            <div v-if="r.day" class="day">{{ r.day }}</div>
+            <div class="cmsg">
+              <span class="avatar"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2.5" /><path d="M11 18h2" /></svg></span>
+              <div class="cbody">
+                <div class="cwho">{{ r.m.name || '手机' }}</div>
+                <div class="cbub selectable">{{ r.m.text }}</div>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div v-if="chatOn && view === 'chat'" class="ctail">
+          <small class="mute">只读：这里显示手机之间的对话，不会发给手机。</small>
+          <a v-if="chat.length" class="link" @click="clearChat">清空聊天记录</a>
+        </div>
+        <div v-show="!(chatOn && view === 'chat')" ref="feedEl" class="feed">
           <div v-if="!rows.length" class="empty mute">
             <b>还没有传输记录</b>
             <span>手机扫码后，发来的文件、图片、链接和文字会出现在这里；<br>把文件拖进窗口，或点下面的“选择文件”，就能发给手机。</span>
@@ -454,8 +541,8 @@ onUnmounted(() => {
           </template>
         </div>
 
-        <div v-if="over" class="dropmask"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>松开鼠标，发送给 {{ targetText.replace('发给 ', '') }}</div>
-        <div class="composer">
+        <div v-if="over && !(chatOn && view === 'chat')" class="dropmask"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>松开鼠标，发送给 {{ targetText.replace('发给 ', '') }}</div>
+        <div v-show="!(chatOn && view === 'chat')" class="composer">
           <div class="cbar">
             <span class="tchip" :class="{ none: !targets.size }" :title="'在左侧“发送对象”里勾选'">{{ targetText }}</span>
             <el-button class="clip" text :loading="sending" aria-label="选择文件" title="选择文件…" @click="pick">
@@ -936,6 +1023,76 @@ onUnmounted(() => {
 }
 .main {
   position: relative;
+}
+.chatbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.vtabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 22px 0;
+  border-bottom: 1px solid var(--cc-line);
+  background: var(--cc-card);
+}
+.vtabs button {
+  border: 0;
+  background: none;
+  padding: 8px 14px 10px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--cc-text-2, inherit);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+}
+.vtabs button.on {
+  color: var(--x-acc);
+  border-bottom-color: var(--x-acc);
+}
+.vtabs em {
+  font-style: normal;
+  margin-left: 6px;
+  font-size: 11.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--x-chip);
+  color: var(--x-chipfg);
+}
+.cmsg {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.cbody {
+  min-width: 0;
+  max-width: min(560px, 80%);
+}
+.cwho {
+  font-size: 12px;
+  color: var(--cc-muted, #7a8aa5);
+  margin-bottom: 3px;
+}
+.cbub {
+  background: var(--cc-card);
+  border: 1px solid var(--cc-line);
+  color: var(--x-chipfg);
+  border-radius: 4px 16px 16px 16px;
+  padding: 9px 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.ctail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 22px 12px;
 }
 .dropmask {
   position: absolute;

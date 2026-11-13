@@ -818,6 +818,8 @@ export interface PhoneInfo {
   maxUploadMb: number
   autoExtract: boolean
   outboxHours: number
+  /** 手机互聊开关 */
+  peerChat: boolean
 }
 
 export interface LanAddr {
@@ -832,6 +834,16 @@ export interface PhoneOptions {
   maxUploadMb: number
   autoExtract: boolean
   outboxHours: number
+  /** 不传表示保持原值 */
+  peerChat?: boolean
+}
+
+export interface ChatMsg {
+  id: number
+  device: string
+  name: string
+  text: string
+  ts: number
 }
 
 export type TransferKind = 'text' | 'image' | 'video' | 'audio' | 'archive' | 'file'

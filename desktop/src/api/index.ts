@@ -139,6 +139,7 @@ import type {
   HealthResult,
   LibraryFilter,
   PairRequest,
+  ChatMsg,
   PhoneInfo,
   PhoneOptions,
   TransferList,
@@ -265,6 +266,8 @@ export const api = {
   phoneRevoke: (deviceId: string) => invoke<PhoneInfo>('phone_revoke', { deviceId }),
   phonePairRespond: (deviceId: string, accept: boolean) => invoke<PhoneInfo>('phone_pair_respond', { deviceId, accept }),
   phoneSetOptions: (options: PhoneOptions) => invoke<PhoneInfo>('phone_set_options', { options }),
+  phoneChatList: (since = 0) => invoke<ChatMsg[]>('phone_chat_list', { since }),
+  phoneChatClear: () => invoke<void>('phone_chat_clear'),
   transferList: () => invoke<TransferList>('transfer_list'),
   transferSendFiles: (paths: string[], targets?: string[]) => invoke<{ added: number; skipped: string[] }>('transfer_send_files', { paths, targets }),
   /** 把粘贴的图片 / 文件字节存成临时文件，返回路径 */
@@ -599,6 +602,7 @@ export const events = {
   /** 窗口组件（WebView2）断开：新窗口打不开，需要重启清影 */
   onWebviewBroken: (cb: (msg: string) => void): Promise<UnlistenFn> => listen<string>('webview://broken', (e) => cb(e.payload)),
   onPairRequest: (cb: (p: PairRequest) => void): Promise<UnlistenFn> => listen<PairRequest>('phone://pair-request', (e) => cb(e.payload)),
+  onChat: (cb: (m: ChatMsg & { cleared?: boolean }) => void): Promise<UnlistenFn> => listen<ChatMsg & { cleared?: boolean }>('phone://chat', (e) => cb(e.payload)),
   onTransferChanged: (cb: () => void): Promise<UnlistenFn> => listen('transfer://changed', () => cb()),
   onTransferProgress: (cb: (p: TransferProgress) => void): Promise<UnlistenFn> => listen<TransferProgress>('transfer://progress', (e) => cb(e.payload)),
   onTransferReceived: (cb: (p: TransferReceived) => void): Promise<UnlistenFn> => listen<TransferReceived>('transfer://received', (e) => cb(e.payload)),

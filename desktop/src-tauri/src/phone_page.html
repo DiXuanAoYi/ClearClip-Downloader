@@ -80,11 +80,18 @@ pre{margin:0;white-space:pre-wrap;word-break:break-all;font:15px/1.55 inherit;fo
 .code{background:var(--sf);border:1px solid var(--ln);border-radius:14px;padding:10px 18px;display:flex;flex-direction:column;gap:2px}
 .code span{font-size:11.5px;color:var(--mt)}.code strong{font-size:30px;letter-spacing:8px;color:var(--ac)}
 body.pairing #pairV{display:flex}
-body.pairing .tabs,body.pairing #vSend,body.pairing #vGet,body.pairing .comp,body.pairing .foot{display:none}
+/* 手机互聊 */
+.cm{display:flex;flex-direction:column;gap:3px;max-width:82%}
+.cm.me{align-self:flex-end;align-items:flex-end}
+.cm .who{font-size:11.5px;color:var(--mt);padding:0 4px}
+.cm .tx{background:var(--sf);border:1px solid var(--ln);border-radius:4px 18px 18px 18px;padding:9px 13px;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.cm.me .tx{background:var(--ac);color:var(--acfg);border-color:transparent;border-radius:18px 4px 18px 18px}
+.cnote{align-self:center;font-size:11.5px;color:var(--mt);text-align:center;max-width:90%;line-height:1.5}
+body.pairing .tabs,body.pairing #vChat,body.pairing #cComp,body.pairing #vSend,body.pairing #vGet,body.pairing .comp,body.pairing .foot{display:none}
 </style></head><body>
 <header>
 <div class="brand"><div class="logo">清</div><div><b>隔空传送</b><div class="st" id="st"><i></i><span id="stT">连接中…</span></div></div></div>
-<div class="tabs"><button id="tabSend" class="on">发送到电脑</button><button id="tabGet">电脑发来的<span id="badge" class="badge" hidden></span></button></div>
+<div class="tabs"><button id="tabSend" class="on">发送到电脑</button><button id="tabGet">电脑发来的<span id="badge" class="badge" hidden></span></button><button id="tabChat" hidden>手机互聊<span id="cbadge" class="badge" hidden></span></button></div>
 </header>
 
 <div id="pairV">
@@ -103,6 +110,9 @@ body.pairing .tabs,body.pairing #vSend,body.pairing #vGet,body.pairing .comp,bod
 <div id="outs" style="display:contents"></div>
 <div id="outEmpty" class="empty" hidden>电脑上还没有发给手机的内容。<br>在电脑的清影里点“发送到手机”，或把文件拖进窗口。</div>
 </section>
+<section class="view" id="vChat" hidden>
+<div id="cfeed" style="display:contents"></div>
+</section>
 <div class="foot" id="foot" hidden>只能下载电脑上“明确发给手机”的内容，无法浏览电脑里的其他文件</div>
 
 <div class="comp" id="comp">
@@ -114,6 +124,14 @@ body.pairing .tabs,body.pairing #vSend,body.pairing #vGet,body.pairing .comp,bod
 </div>
 <input id="inMedia" type="file" accept="image/*,video/*" multiple hidden>
 <input id="inFile" type="file" multiple hidden>
+</div>
+
+<div class="comp" id="cComp" hidden>
+<div id="cmsg" style="font-size:12.5px;color:var(--er);text-align:center"></div>
+<div class="in">
+<textarea id="ctext" rows="1" placeholder="发给其他手机…（电脑上能看到这里的内容）"></textarea>
+<button id="csend" class="go" aria-label="发送"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
+</div>
 </div>
 
 <div id="sheetBg" hidden><div id="sheet" role="dialog" aria-label="添加内容">
@@ -209,8 +227,8 @@ if(keep)v.scrollTop=v.scrollHeight}
 
 // ---------- 电脑发来的 ----------
 let timer,seen=null,tab="send";
-function setTab(t){tab=t;$("vSend").hidden=t!=="send";$("vGet").hidden=t!=="get";$("comp").hidden=t!=="send";$("foot").hidden=t!=="get";$("tabSend").classList.toggle("on",t==="send");$("tabGet").classList.toggle("on",t==="get");refresh()}
-$("tabSend").onclick=()=>setTab("send");$("tabGet").onclick=()=>setTab("get");
+function setTab(t){tab=t;$("vSend").hidden=t!=="send";$("vGet").hidden=t!=="get";$("vChat").hidden=t!=="chat";$("comp").hidden=t!=="send";$("cComp").hidden=t!=="chat";$("foot").hidden=t!=="get";$("tabSend").classList.toggle("on",t==="send");$("tabGet").classList.toggle("on",t==="get");$("tabChat").classList.toggle("on",t==="chat");if(t==="chat"){cUnread=0;cbadge();chatPoll()}refresh()}
+$("tabChat").onclick=()=>setTab("chat");$("tabSend").onclick=()=>setTab("send");$("tabGet").onclick=()=>setTab("get");
 async function copy(t){try{await navigator.clipboard.writeText(t);return true}catch(e){const ta=document.createElement("textarea");ta.value=t;document.body.append(ta);ta.select();let ok=false;try{ok=document.execCommand("copy")}catch(_){}ta.remove();return ok}}
 function dlUrl(it,inl){return "/dl/"+enc(it.key)+"?t="+enc(TOKEN)+"&d="+enc(dev)+(inl?"&inline=1":"")}
 function btn(cls,icon,text){const b=h(cls==="dl"?"a":"button",cls);b.append(ic(icon),text);return b}
@@ -235,5 +253,25 @@ hist={links:r.links,in:r.in};
 for(const it of r.links)if(!["done","failed","rejected","ignored","playlist","confirm"].includes(it.state))busy=true;
 renderFeed();
 timer=setTimeout(refresh,busy||running?1500:6000)}catch(e){timer=setTimeout(refresh,8000)}}
+
+// ---------- 手机互聊（消息经电脑转发，电脑上能看到） ----------
+let cSince=0,cTimer,cUnread=0,cOn=false;const cMsgs=[];
+function cbadge(){$("cbadge").textContent=cUnread;$("cbadge").hidden=!cUnread}
+function cRender(){const f=$("cfeed"),v=$("vChat");const keep=v.scrollHeight-v.scrollTop-v.clientHeight<80;f.innerHTML="";
+f.append(h("div","cnote","手机互聊已由电脑开启：同一个二维码连进来的手机都能在这里互发文字。消息会经过电脑上的清影，电脑端能看到全部内容。"));
+if(!cMsgs.length)f.append(h("div","empty","还没有消息，发一句试试。"));
+for(const m of cMsgs){const me=m.device===dev;const c=h("div","cm"+(me?" me":""));if(!me)c.append(h("div","who",m.name||"手机"));c.append(h("div","tx",m.text));f.append(c)}
+if(keep)v.scrollTop=v.scrollHeight}
+async function chatPoll(){clearTimeout(cTimer);if(!paired){cTimer=setTimeout(chatPoll,3000);return}
+try{const r=await api("/api/chat?device="+enc(dev)+"&since="+cSince);
+if(r.enabled!==cOn){cOn=r.enabled;$("tabChat").hidden=!cOn;if(!cOn){cMsgs.length=0;cSince=0;cUnread=0;cbadge();if(tab==="chat")setTab("send")}}
+if(cOn&&r.messages.length){for(const m of r.messages){cSince=Math.max(cSince,m.id);if(!cMsgs.some(x=>x.id===m.id)){cMsgs.push(m);if(tab!=="chat"&&m.device!==dev)cUnread++}}if(cMsgs.length>500)cMsgs.splice(0,cMsgs.length-500);cbadge();if(tab==="chat")cRender()}
+else if(cOn&&tab==="chat"&&!$("cfeed").children.length)cRender();
+cTimer=setTimeout(chatPoll,tab==="chat"?1500:6000)}catch(e){cTimer=setTimeout(chatPoll,8000)}}
+async function chatSend(){const t=$("ctext").value.trim();if(!t)return;$("cmsg").textContent="";$("csend").disabled=true;
+try{const r=await api("/api/chat",{method:"POST",body:JSON.stringify({text:t,device:dev})});$("ctext").value="";$("ctext").style.height="";cSince=Math.max(cSince,r.message.id-1);chatPoll()}catch(e){$("cmsg").textContent=e.message}$("csend").disabled=false}
+$("csend").onclick=chatSend;
+$("ctext").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&matchMedia("(hover:hover)").matches){e.preventDefault();chatSend()}});
+setTimeout(chatPoll,800);
 setStatus();renderFeed();hello();
 </script></body></html>
