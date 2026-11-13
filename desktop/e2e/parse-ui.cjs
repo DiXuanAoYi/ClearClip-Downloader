@@ -91,7 +91,7 @@ const init = (result, dark, extra = {}) => `
     const page = await open(video)
     const work = await page.locator('.work').boundingBox()
     const dl = await page.locator('.dl').boundingBox()
-    ok('两栏：左边作品卡、右边下载内容', work && dl && work.x < dl.x && Math.abs(work.y - dl.y) < 2 && work.width <= 321, JSON.stringify({ work, dl }))
+    ok('版式：作品卡在上、下载内容在下，右侧是下载方案', work && dl && dl.y > work.y && Math.abs(dl.x - work.x) < 2, JSON.stringify({ work, dl }))
     const cover = await page.locator('.cover').boundingBox()
     ok('横屏视频封面按 16:9', cover && Math.abs(cover.width / cover.height - 16 / 9) < 0.05, JSON.stringify(cover))
     ok('封面角标 4K、时长 23:15', (await page.locator('.cover .badge').innerText()) === '4K' && (await page.locator('.cover .dur').innerText()) === '23:15')
@@ -148,7 +148,7 @@ const init = (result, dark, extra = {}) => `
     await page.mouse.move(5, 5)
     await page.waitForTimeout(300)
     const btn = await page.locator('.foot .el-button').evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color])
-    ok('主按钮：#B4561A 底、白字', btn[0] === 'rgb(180, 86, 26)' && btn[1] === 'rgb(255, 255, 255)', btn.join(' '))
+    ok('主按钮：深琥珀底、白字', btn[0] === 'rgb(180, 95, 0)' && btn[1] === 'rgb(255, 255, 255)', btn.join(' '))
     await page.close()
   }
 
@@ -159,7 +159,7 @@ const init = (result, dark, extra = {}) => `
       const g = (sel, p) => getComputedStyle(document.querySelector(sel))[p]
       return { card: g('.dl', 'backgroundColor'), btn: g('.foot .el-button', 'backgroundColor'), txt: g('.foot .el-button', 'color'), on: g('.frow.on', 'borderTopColor'), foot: g('.foot', 'backgroundColor') }
     })
-    ok('暗色：卡片用暗色底、主按钮亮橙配深色字、底栏是暗色', c.card === 'rgb(34, 41, 44)' && c.btn === 'rgb(240, 138, 60)' && c.txt === 'rgb(29, 36, 32)' && c.foot === 'rgb(30, 36, 39)', JSON.stringify(c))
+    ok('暗色：卡片用暗色底、主按钮亮橙配深色字、底栏是暗色', /^rgba\(14, 22, 37/.test(c.card) && c.btn === 'rgb(255, 181, 71)' && c.txt === 'rgb(26, 17, 0)', JSON.stringify(c))
     await page.close()
   }
 

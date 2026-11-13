@@ -579,3 +579,17 @@ fn a_running_job_exposes_its_partial_result_until_it_finishes() {
     assert_eq!(v["state"], "done");
     assert!(v["partial"].is_null(), "完成后只给最终结果");
 }
+
+#[test]
+fn streamed_segments_are_placed_at_their_real_start_time() {
+    // 90 秒一段；split_audio 返回的起点已经是毫秒。第二段的第一句要落在 90 秒之后，不能差 1000 倍
+    let cue = |a: u64, b: u64| crate::subtitle::Cue { start: a, end: b, lines: vec!["x".into()] };
+    let mut all = vec![];
+    append_segment(&mut all, vec![cue(0, 4_000), cue(80_000, 85_000)], 0);
+    append_segment(&mut all, vec![cue(1_000, 5_000)], 90_000);
+    append_segment(&mut all, vec![cue(2_000, 6_000)], 180_000);
+    assert_eq!(all[2].start, 91_000);
+    assert_eq!(all[3].start, 182_000);
+    assert!(all.windows(2).all(|w| w[0].start <= w[1].start), "时间必须随段落单调递增");
+    assert!(all.last().unwrap().end < 3 * 90_000 + 10_000);
+}

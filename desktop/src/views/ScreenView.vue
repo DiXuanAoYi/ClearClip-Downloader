@@ -396,17 +396,13 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 </script>
 
 <template>
-  <div class="scr">
-    <header class="head">
-      <div>
-        <h2>屏幕翻译</h2>
-        <p class="sub">翻译别的软件和游戏画面上的文字。译文贴在原位，不挡鼠标，也不会被自己再识别一遍。</p>
-      </div>
-      <div class="state">
-        <span class="dot" :class="{ on: st.running }" />
-        {{ st.running ? `运行中 · ${modeName(st.mode)}` : '未运行' }}<span v-if="st.msg" class="mute"> · {{ st.msg }}</span>
-      </div>
+  <div class="scr dpage">
+    <header class="head dtop">
+      <h1>屏幕翻译</h1>
+      <span class="dspacer" />
+      <span class="chip" :class="{ cyan: st.running }"><i v-if="st.running" class="ddot" />{{ st.running ? `运行中 · ${modeName(st.mode)}` : '未运行' }}<template v-if="st.msg"> · {{ st.msg }}</template></span>
     </header>
+    <p class="sub dnote">翻译别的软件和游戏画面上的文字。译文贴在原位，不挡鼠标，也不会被自己再识别一遍。</p>
 
     <el-alert v-if="!st.supported" type="info" :closable="false" show-icon title="屏幕翻译目前只支持 Windows。其他系统暂时不能用。" />
 
@@ -435,27 +431,36 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         </el-select>
         <el-button :disabled="!winPick || !st.supported" @click="startWindow">翻译这个窗口</el-button>
       </div>
-      <div class="row">
-        <span class="mute">取景方式</span>
-        <el-button-group>
-          <el-button :disabled="!st.supported" @click="pick">框选区域</el-button>
-          <el-button :disabled="!winPick || !st.supported" @click="startWindow">跟随窗口</el-button>
-          <el-button :disabled="!st.supported" @click="startScreen">整个屏幕</el-button>
-        </el-button-group>
-        <small class="mute">“跟随窗口”先在上面的下拉框里选窗口；框选后译文会盖在原处。</small>
+      <div class="drow">
+        <div class="t"><b>取景方式</b><small>“跟随窗口”先在上面的下拉框里选窗口；框选后译文会盖在原处。</small></div>
+        <div class="ctl">
+          <el-button-group>
+            <el-button :disabled="!st.supported" @click="pick">框选区域</el-button>
+            <el-button :disabled="!winPick || !st.supported" @click="startWindow">跟随窗口</el-button>
+            <el-button :disabled="!st.supported" @click="startScreen">整个屏幕</el-button>
+          </el-button-group>
+        </div>
       </div>
-      <div class="row">
-        <span class="mute">刷新速度</span>
-        <el-radio-group v-model="form.fps">
-          <el-radio-button v-for="[n, t] in SPEEDS" :key="n" :value="n">{{ t }}</el-radio-button>
-        </el-radio-group>
-        <span class="mute">术语库</span>
-        <el-switch v-model="glossaryOn" />
-        <span class="mute">专家</span>
-        <el-select v-model="expertId" style="width: 180px" placeholder="自动匹配">
-          <el-option value="__auto" label="自动匹配" />
-          <el-option v-for="e in experts" :key="e.id" :value="e.id" :label="e.name" />
-        </el-select>
+      <div class="drow">
+        <div class="t"><b>刷新速度</b><small>越快越灵敏，也越费资源。</small></div>
+        <div class="ctl">
+          <el-radio-group v-model="form.fps">
+            <el-radio-button v-for="[n, t] in SPEEDS" :key="n" :value="n">{{ t }}</el-radio-button>
+          </el-radio-group>
+        </div>
+      </div>
+      <div class="drow">
+        <div class="t"><b>术语库</b><small>翻译时带上你的术语库，译法统一。</small></div>
+        <div class="ctl"><el-switch v-model="glossaryOn" /></div>
+      </div>
+      <div class="drow">
+        <div class="t"><b>专家</b><small>按场景选翻译风格；默认自动匹配。</small></div>
+        <div class="ctl">
+          <el-select v-model="expertId" style="width: 180px" placeholder="自动匹配">
+            <el-option value="__auto" label="自动匹配" />
+            <el-option v-for="e in experts" :key="e.id" :value="e.id" :label="e.name" />
+          </el-select>
+        </div>
       </div>
       <div class="row">
         <el-button v-if="!st.running" type="success" :disabled="!st.supported || !st.target" @click="start()">开始（{{ form.hotkey }}）</el-button>
@@ -524,7 +529,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           <small class="mute">只能识别 Windows 已安装的语言。没有想要的语言就到 Windows 设置里添加对应语言包，或改用“增强识字组件”。</small>
         </div>
         <div v-if="form.ocr === 'enhanced' || ocr?.installed" class="field">
-          <label>增强识字组件（PaddleOCR，中英文及数字，竖排也能认）</label>
+          <label>增强识字组件</label><small class="mute block">PaddleOCR，中英文及数字，竖排也能认</small>
           <div class="row">
             <span v-if="ocr?.installed" class="ok">已安装 · {{ formatBytes(ocr.size) }}</span>
             <span v-else class="mute">未安装</span>
@@ -540,7 +545,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           </div>
         </div>
         <div v-if="form.ocr === 'enhanced' || ocr?.installed" class="field">
-          <label>语言包（默认的中英文模型认不了日文假名、韩文、俄文、阿拉伯文、带重音的拉丁字母）</label>
+          <label>语言包</label><small class="mute block">默认的中英文模型认不了日文假名、韩文、俄文、阿拉伯文、带重音的拉丁字母</small>
           <div class="row">
             <el-select v-model="form.ocrPack" size="small" style="width: 260px">
               <el-option value="auto" label="自动（按识字语言选，没装就用默认）" />
@@ -648,14 +653,19 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
             <label>语音识别</label>
             <el-radio-group v-model="form.audioStt">
               <el-radio value="local">本机（SenseVoice）</el-radio>
-              <el-radio value="cloud">云端</el-radio>
+              <el-radio value="cloud">云端（OpenAI 兼容接口）</el-radio>
+              <el-radio value="volc">火山引擎（豆包）</el-radio>
+              <el-radio value="xfyun">讯飞</el-radio>
             </el-radio-group>
           </div>
         </div>
         <div class="kv"><span>字幕条里同时显示原文</span><el-switch v-model="form.audioBilingual" /></div>
-        <div class="kv"><span>边说边出字（先显示原文草稿，说完再换成译文；只在本机识别时）</span><el-switch v-model="form.audioDraft" :disabled="form.audioStt === 'cloud'" /></div>
+        <div class="kv"><span>边说边出字<small class="mute block">先显示原文草稿，说完再换成译文；只在本机识别时</small></span><el-switch v-model="form.audioDraft" :disabled="form.audioStt === 'cloud'" /></div>
         <div class="field"><label>翻译时带上最近几句当上文：{{ form.audioContext || '不带' }}</label><el-slider v-model="form.audioContext" :min="0" :max="10" /></div>
         <small class="mute">带上文能让同一场对话里的人名、称呼、语气保持一致；会多发一点字给翻译模型。</small>
+        <small v-if="form.audioStt === 'volc' || form.audioStt === 'xfyun'" class="mute">火山引擎 / 讯飞是说完一句就把这一句发到云端识别（不是逐字流式），密钥和“测试连接”在“设置 → AI → 语音转文字”里；“边说边出字”草稿只在本机识别时有。</small>
+        <div class="kv"><span>语音字幕实时存到本地<small class="mute block">边听边把字幕写进一个 .srt 文件（每次“开始听”新建一个），停下来、关机、崩溃都不会丢。保存时同样做“设置 → AI”里的字幕预处理（去非语音说明和口水词），清理前的原文另存为 .srt.raw</small></span><el-switch v-model="form.audioAutosave" data-testid="audio-autosave" /></div>
+        <div v-if="form.audioAutosave" class="field"><label>保存到</label><el-input v-model="form.audioSaveDir" size="small" class="mono" placeholder="留空 = 下载文件夹里的“语音字幕”" /></div>
         <div class="row">
           <el-button type="primary" :disabled="!st.supported || st.audio" @click="audioOn">开始听</el-button>
           <el-button :disabled="!st.audio" @click="audioOff">停止</el-button>
@@ -734,42 +744,50 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 </template>
 
 <style scoped>
-.scr { display: flex; flex-direction: column; gap: 14px; padding: 20px 24px; height: 100%; overflow-y: auto; box-sizing: border-box }
+.scr { height: 100%; overflow-y: auto; box-sizing: border-box }
 .head { display: flex; align-items: center; gap: 20px; flex-wrap: wrap }
 .head h2 { margin: 0 }
-.sub { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px }
+.sub { margin: 4px 0 0; color: var(--cc-mute); font-size: 13px }
 .state { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 13px }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--el-text-color-placeholder) }
-.dot.on { background: var(--el-color-success) }
-.mute { color: var(--el-text-color-secondary); font-size: 12.5px }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cc-faint) }
+.dot.on { background: var(--cc-cyan) }
+.mute { color: var(--cc-mute); font-size: 12.5px }
 .block { display: block }
-.card { border: 1px solid var(--el-border-color); border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--el-bg-color) }
-.card h3 { margin: 0; font-size: 14px }
+.card { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px }
+.card h3 { margin: 0; font-size: 15px; font-weight: 700 }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
 .modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px }
-.mode { text-align: left; border: 1px solid var(--el-border-color); background: var(--el-fill-color-blank); border-radius: 8px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; color: var(--el-text-color-primary) }
-.mode small { color: var(--el-text-color-secondary); line-height: 1.5 }
-.mode.sel { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9) }
+.mode { text-align: left; border: 1px solid var(--cc-line); background: var(--cc-panel2); border-radius: 12px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; color: var(--cc-fg) }
+.mode small { color: var(--cc-mute); line-height: 1.5 }
+.mode.sel { border-color: var(--cc-amber); background: var(--cc-acc-soft) }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 6px 24px }
 .field { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 }
-.field label { font-size: 13px; font-weight: 600 }
+.field label { font-size: 13.5px; font-weight: 700 }
+.field > small, .field .mute { line-height: 1.5 }
 .vert { display: flex; flex-direction: column; align-items: flex-start }
-.kv { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--el-border-color-extra-light) }
+.kv { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid var(--cc-line) }
+.kv > span { min-width: 0; display: block; font-weight: 500 }
+.kv small.block, .field small.block, .block { display: block; margin-top: 2px; font-weight: 400; line-height: 1.5 }
+.drow { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 0; border-top: 1px solid var(--cc-line) }
+.drow .t { min-width: 0 }
+.drow .t b { display: block; font-weight: 500 }
+.drow .t small { display: block; color: var(--cc-mute); font-size: 12.5px; line-height: 1.5 }
+.drow .ctl { flex: none; display: flex; align-items: center; gap: 10px }
 .mono :deep(input) { font-family: ui-monospace, Consolas, monospace }
-.ok { color: var(--el-color-success); font-size: 13px }
-.try { padding: 8px 10px; border-radius: 6px; background: var(--el-fill-color-light); display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto }
+.ok { color: var(--cc-cyan); font-size: 13px }
+.try { padding: 8px 10px; border-radius: 6px; background: var(--cc-hover); display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto }
 .tl { font-size: 13px }
-.prof { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--el-border-color-extra-light) }
+.prof { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--cc-line-soft) }
 .hrow { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; font-size: 13px }
-.hrow:hover { background: var(--el-fill-color-light) }
-.hs { color: var(--el-text-color-secondary); font-size: 12px }
+.hrow:hover { background: var(--cc-hover) }
+.hs { color: var(--cc-mute); font-size: 12px }
 .pack { align-items: center }
 .pname { width: 330px; flex: none; font-size: 13px }
 .vbox { margin-top: 12px; display: flex; flex-direction: column; gap: 8px }
-.vlist { max-height: 260px; overflow-y: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px }
+.vlist { max-height: 260px; overflow-y: auto; border: 1px solid var(--cc-line-soft); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px }
 .vrow { display: grid; grid-template-columns: 52px 1fr 1fr; gap: 8px; font-size: 12.5px }
-.vt { color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums }
-.vs { color: var(--el-text-color-regular) }
+.vt { color: var(--cc-mute); font-variant-numeric: tabular-nums }
+.vs { color: var(--cc-fg2) }
 .vx { font-weight: 600 }
-.vsum pre { white-space: pre-wrap; font: inherit; margin: 4px 0 0; padding: 8px 10px; background: var(--el-fill-color-lighter); border-radius: 8px; max-height: 320px; overflow: auto }
+.vsum pre { white-space: pre-wrap; font: inherit; margin: 4px 0 0; padding: 8px 10px; background: var(--cc-fill); border-radius: 8px; max-height: 320px; overflow: auto }
 </style>

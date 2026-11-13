@@ -121,7 +121,7 @@ pub fn translate_with(app: &AppHandle, texts: &[String], lang: &str, title: &str
 
 /// 给翻译任务的背景说明：屏幕上抓到的短文字；有上文（语音翻译的前几句）时一并给出，只翻译新的那一句。
 fn context_text(history: &str) -> String {
-    let base = "Short user-interface strings, menu items, buttons, dialogue lines or captions captured from the screen of an application or game. Keep them concise; keep names, numbers and key labels intact. OCR may contain small recognition errors; read through them.";
+    let base = "Short user-interface strings, menu items, buttons, dialogue lines or captions captured from the screen of an application or game. Each numbered item is a separate UI element or paragraph: translate every item on its own, never merge two items, never move words from one item into another, and keep the same number of items. A short title or label stays short. Keep them concise; keep names, numbers and key labels intact. OCR may contain small recognition errors; read through them.";
     if history.trim().is_empty() {
         return base.to_string();
     }

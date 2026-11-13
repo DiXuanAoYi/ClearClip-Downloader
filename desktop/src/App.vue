@@ -93,9 +93,9 @@ const navs: { id: ViewName; label: string; icon: string }[] = [
   { id: 'tools', label: '工具箱', icon: 'M4 8h16v11H4zM9 8V5h6v3M4 13h16' },
   { id: 'settings', label: '设置', icon: 'M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4' },
 ]
-/** 在工具箱里，主导航默认收成图标条（点最上面的“≡”展开，记住选择） */
-const railMode = computed(() => app.view === 'tools' || (app.view === 'filetr' && app.layoutWork))
-const compact = computed(() => railMode.value && !app.navOpen)
+/** 设置放在导航栏最下面，和上面的页面隔开 */
+const mainNavs = computed(() => navs.filter((n) => n.id !== 'settings'))
+const settingsNav = navs.find((n) => n.id === 'settings')!
 
 const footer = computed(() => {
   if (queue.active > 0) return `下载中 ${queue.counts.running} · 等待 ${queue.counts.queued}`
@@ -295,36 +295,34 @@ onMounted(async () => {
     <h2>启动失败</h2>
     <p class="selectable">{{ loadError }}</p>
   </div>
-  <div v-else-if="ready && app.settings" class="shell" :class="{ compact }" :inert="app.lock.locked" @dragover.prevent="dragging = true" @dragleave.self="dragging = false" @drop.prevent="onHtmlDrop">
-    <aside class="side" :class="{ compact }">
-      <div v-if="railMode" class="railtop">
-        <button type="button" class="burger" :aria-label="app.navOpen ? '收起主导航' : '展开主导航'" :aria-expanded="app.navOpen" @click="app.setNavOpen(!app.navOpen)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
-        </button>
-        <div v-if="!compact" class="brand">清<i>影</i></div>
+  <div v-else-if="ready && app.settings" class="shell" :inert="app.lock.locked" @dragover.prevent="dragging = true" @dragleave.self="dragging = false" @drop.prevent="onHtmlDrop">
+    <nav class="side" aria-label="主导航">
+      <div class="logo" role="img" aria-label="清影">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 3l3.5 6.1M20.2 8.2l-6.8 1M20.2 15.8 15 11M12 21l-3.5-6.1M3.8 15.8l6.8-1M3.8 8.2 9 13" /></svg>
       </div>
-      <div v-else class="brand">清<i>影</i></div>
       <button
-        v-for="n in navs"
-        :key="n.id"
-        class="nav"
-        :class="{ on: app.view === n.id }"
-        :title="compact ? n.label : undefined"
-        :aria-label="n.label"
+        v-for="n in [...mainNavs, null, settingsNav]"
+        :key="n ? n.id : 'gap'"
+        :class="n ? ['nav', { on: app.view === n.id }] : 'nav-gap'"
+        :disabled="!n"
+        :aria-current="n && app.view === n.id ? 'page' : undefined"
+        :aria-label="n?.label"
         type="button"
-        @click="n.id === 'library' && app.inboxUnhandled > 0 ? app.goLibrary('inbox') : (app.view = n.id)"
+        @click="n && (n.id === 'library' && app.inboxUnhandled > 0 ? app.goLibrary('inbox') : (app.view = n.id))"
       >
-        <svg v-if="railMode" class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="n.icon" /></svg>
-        <span v-if="!compact">{{ n.label }}</span>
-        <em v-if="!compact && n.id === 'queue' && queue.active > 0">{{ queue.active }}</em>
-        <em v-if="!compact && n.id === 'library' && app.inboxUnhandled > 0" class="warn" :title="`收到的链接里有 ${app.inboxUnhandled} 条需要处理`">{{ app.inboxUnhandled }}</em>
+        <template v-if="n">
+          <svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="n.icon" /></svg>
+          <span>{{ n.label }}</span>
+          <em v-if="n.id === 'queue' && queue.active > 0">{{ queue.active }}</em>
+          <em v-if="n.id === 'library' && app.inboxUnhandled > 0" class="warn" :title="`收到的链接里有 ${app.inboxUnhandled} 条需要处理`">{{ app.inboxUnhandled }}</em>
+        </template>
       </button>
-      <div v-if="!compact" class="foot">
-        <button v-if="app.settings.security.privacyMode" class="priv" type="button" title="点击关闭隐私模式" @click="togglePrivacy">● 隐私模式</button>
-        <div>{{ footer }}</div>
-        <div v-if="app.settings.watchClipboard" class="watch">● 剪贴板监听中</div>
+      <div class="foot">
+        <button v-if="app.settings.security.privacyMode" class="priv" type="button" title="点击关闭隐私模式" @click="togglePrivacy">● 隐私</button>
+        <div v-if="app.settings.watchClipboard" class="watch" title="剪贴板监听中">● 监听</div>
+        <div class="ver" :title="footer">{{ footer }}</div>
       </div>
-    </aside>
+    </nav>
     <main class="main">
       <ParseView v-show="app.view === 'parse'" />
       <QueueView v-if="app.view === 'queue'" />
@@ -342,7 +340,7 @@ onMounted(async () => {
     <CommandPalette />
     <PlayerDialog />
     <div v-if="dragging" class="dropzone">松开以导入链接（支持链接文本和 .txt 文件）</div>
-    <el-dialog :model-value="!!countdown" :title="countdown?.action === 'shutdown' ? '即将关机' : '即将睡眠'" width="360px" :close-on-click-modal="false" :show-close="false">
+    <el-dialog append-to-body :model-value="!!countdown" :title="countdown?.action === 'shutdown' ? '即将关机' : '即将睡眠'" width="360px" :close-on-click-modal="false" :show-close="false">
       <p>全部下载已完成，将在 <b class="mono">{{ countdown?.left }}</b> 秒后{{ countdown?.action === 'shutdown' ? '关机' : '睡眠' }}。</p>
       <template #footer>
         <el-button type="primary" @click="cancelPower">取消</el-button>
@@ -361,119 +359,115 @@ onMounted(async () => {
 }
 .shell {
   display: grid;
-  grid-template-columns: 184px 1fr;
+  grid-template-columns: 88px minmax(0, 1fr);
   height: 100%;
-}
-.shell.compact {
-  grid-template-columns: 56px 1fr;
-}
-.side.compact {
-  padding: 12px 8px;
-}
-.railtop {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-.railtop .brand {
-  padding: 0 4px;
-}
-.burger {
-  all: unset;
-  cursor: pointer;
-  box-sizing: border-box;
-  width: 40px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--cc-mute);
-}
-.burger:hover {
-  background: var(--cc-acc-soft);
-  color: var(--cc-fg);
-}
-.burger:focus-visible {
-  outline: 2px solid var(--cc-acc);
-}
-.nav .ico {
-  flex: none;
-}
-.side.compact .nav {
-  justify-content: center;
-  padding: 9px 0;
-}
-.side:not(.compact) .nav:has(.ico) {
-  justify-content: flex-start;
-  gap: 12px;
-}
-.side:not(.compact) .nav:has(.ico) em {
-  margin-left: auto;
+  background: var(--cc-page-bg);
 }
 .side {
-  background: var(--cc-side);
-  border-right: 1px solid var(--cc-line);
-  padding: 16px 10px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 0 12px;
+  background: var(--cc-rail);
+  border-right: 1px solid var(--cc-line);
+  backdrop-filter: blur(12px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
 }
-.brand {
-  font-weight: 900;
-  font-size: 18px;
-  padding: 2px 12px 16px;
-  letter-spacing: 0.06em;
+.side::-webkit-scrollbar {
+  display: none;
 }
-.brand i {
-  font-style: normal;
-  color: var(--cc-acc);
+.logo {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--cc-amber);
+  flex: none;
 }
 .nav {
   all: unset;
+  box-sizing: border-box;
+  position: relative;
   cursor: pointer;
-  padding: 8px 12px;
-  border-radius: 7px;
-  color: var(--cc-mute);
+  width: 64px;
+  padding: 10px 0 8px;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  font-size: 13px;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--cc-mute);
+  border-radius: 12px;
+  flex: none;
 }
 .nav:hover {
   color: var(--cc-fg);
+  background: var(--cc-inset);
 }
 .nav.on {
+  color: var(--cc-amber);
   background: var(--cc-acc-soft);
-  color: var(--cc-fg);
-  font-weight: 600;
+  box-shadow:
+    inset 0 0 0 1px var(--cc-amber-line),
+    0 0 22px -8px var(--cc-amber-glow);
+}
+.nav .ico {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+.nav:focus-visible {
+  outline: 2px solid var(--cc-cyan);
+  outline-offset: 2px;
 }
 .nav em {
+  position: absolute;
+  top: 4px;
+  right: 6px;
   font-style: normal;
   font-family: var(--cc-mono);
-  font-size: 11px;
-  background: var(--cc-acc);
-  color: #1a1208;
-  border-radius: 9px;
-  padding: 0 7px;
+  font-size: 10px;
+  line-height: 15px;
+  min-width: 15px;
+  text-align: center;
+  background: var(--cc-amber);
+  color: var(--cc-on-acc);
+  border-radius: 8px;
+  padding: 0 4px;
+  font-weight: 700;
 }
 .nav em.warn {
   background: var(--cc-err);
   color: #fff;
 }
-.nav:focus-visible {
-  outline: 2px solid var(--cc-acc);
+.nav-gap {
+  all: unset;
+  flex: 1;
+  min-height: 8px;
 }
 .foot {
-  margin-top: auto;
-  font-size: 11px;
-  color: var(--cc-mute);
-  padding: 10px 12px 0;
-  border-top: 1px solid var(--cc-line);
+  flex: none;
+  width: 100%;
+  padding: 8px 4px 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
+  font-size: 10px;
+  color: var(--cc-faint);
+  text-align: center;
+}
+.foot .ver {
+  font-family: var(--cc-mono);
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .watch {
   color: var(--cc-ok);
@@ -497,5 +491,28 @@ onMounted(async () => {
 }
 .fatal {
   padding: 40px;
+}
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .side {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    border-right: 0;
+    border-bottom: 1px solid var(--cc-line);
+    padding: 10px;
+  }
+  .logo {
+    margin: 0 8px 0 0;
+    width: 36px;
+    height: 36px;
+  }
+  .nav-gap,
+  .foot {
+    display: none;
+  }
 }
 </style>

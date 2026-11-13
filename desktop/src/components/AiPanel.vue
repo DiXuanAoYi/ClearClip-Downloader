@@ -13,6 +13,22 @@ import ExpertsPanel from './ExpertsPanel.vue'
 const ai = defineModel<AiSettings>({ required: true })
 const status = ref<AiStatus | null>(null)
 const sttKey = ref('')
+const volcKey = ref('')
+const xfKey = ref('')
+const xfRtKey = ref('')
+const has = ref({ volc: false, xfyun: false, xfyunRt: false })
+const testing = ref('')
+const testMsg = ref<Record<string, { ok: boolean; text: string }>>({})
+async function testCloud(engine: 'volc' | 'xfyun' | 'xfyun_rt') {
+  testing.value = engine
+  try {
+    testMsg.value[engine] = { ok: true, text: await api.sttCloudTest(engine) }
+  } catch (e) {
+    testMsg.value[engine] = { ok: false, text: errorText(e) }
+  } finally {
+    testing.value = ''
+  }
+}
 
 const STT_PRESETS = [
   { name: 'OpenAI', url: '', model: 'whisper-1' },
@@ -24,14 +40,27 @@ const LANGS = TARGET_LANGS
 async function refresh() {
   status.value = await api.aiStatus().catch(() => null)
 }
-onMounted(refresh)
+async function refreshHas() {
+  has.value = {
+    volc: await api.secretHas('stt.volc_key').catch(() => false),
+    xfyun: await api.secretHas('stt.xfyun_secret').catch(() => false),
+    xfyunRt: await api.secretHas('stt.xfyun_rt_key').catch(() => false),
+  }
+}
+onMounted(() => {
+  void refresh()
+  void refreshHas()
+})
 
-async function saveKey(name: 'stt.api_key', value: string) {
+async function saveKey(name: 'stt.api_key' | 'stt.volc_key' | 'stt.xfyun_secret' | 'stt.xfyun_rt_key', value: string) {
   try {
-    await api.secretSet(name, value)
+    await api.secretSet(name, value.trim())
     ElMessage.success(value ? '密钥已加密保存' : '密钥已清除')
     sttKey.value = ''
-    await refresh()
+    volcKey.value = ''
+    xfKey.value = ''
+    xfRtKey.value = ''
+    await Promise.all([refresh(), refreshHas()])
   } catch (e) {
     ElMessage.error(errorText(e))
   }
@@ -63,6 +92,27 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <el-input-number v-model="ai.batchSize" size="small" :min="5" :max="100" :step="5" controls-position="right" />
       </div>
       <div class="kv">
+        <span>送给 AI 前去掉非语音说明<small class="mute block">[Music]、♪、(laughs)、&gt;&gt; 换人标记、说话人前缀。只影响送给模型的文字（摘要、导图、翻译等），文稿的显示和导出不变</small></span>
+        <el-switch v-model="ai.subCleanHearing" />
+      </div>
+      <div class="kv">
+        <span>送给 AI 前去掉口水词<small class="mute block">保守：嗯、呃、um、uh、结巴和叠词；标准：再加成串的口头禅（you know、那个那个）；激进：再加被逗号隔开的单个口头禅（like、就是）。只影响送给模型的文字，文稿的显示和导出不变</small></span>
+        <el-select v-model="ai.subCleanFiller" size="small" class="sel" data-testid="sub-clean-filler">
+          <el-option value="off" label="不去" />
+          <el-option value="conservative" label="保守（推荐）" />
+          <el-option value="standard" label="标准" />
+          <el-option value="aggressive" label="激进" />
+        </el-select>
+      </div>
+      <div class="kv">
+        <span>预处理后自动补标点<small class="mute block">自动识别出来的字幕通常没有标点：读到文稿、做完上面的清理后，如果大部分句子没有标点，就自动用 AI 补标点并改同音错字（多一次模型调用，结果缓存）。可以在文稿栏点“还原顺句前”撤销</small></span>
+        <el-switch v-model="ai.subCleanPunct" />
+      </div>
+      <div class="kv">
+        <span>语音转文字的结果也做预处理<small class="mute block">本机 / 在线 / 火山引擎 / 讯飞识别出来的字幕，同样去掉非语音说明和口水词再保存；清理前的原文另存为 .raw.srt</small></span>
+        <el-switch v-model="ai.subCleanOutput" />
+      </div>
+      <div class="kv">
         <span>下载到外语字幕时自动翻译<small class="mute block">作品里已经有目标语言的字幕就不再翻译；弹幕不翻译</small></span>
         <el-switch v-model="ai.autoTranslate" />
       </div>
@@ -75,9 +125,57 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <el-radio-group v-model="ai.sttEngine" size="small">
           <el-radio-button value="api">在线接口</el-radio-button>
           <el-radio-button value="local">本机识别（离线）</el-radio-button>
+          <el-radio-button value="volc">火山引擎（豆包）</el-radio-button>
+          <el-radio-button value="xfyun">讯飞</el-radio-button>
         </el-radio-group>
       </div>
-      <template v-if="ai.sttEngine === 'api'">
+      <template v-if="ai.sttEngine === 'volc'">
+        <small class="mute">豆包语音“大模型录音文件极速版识别”：整段上传、接近说话速度出结果，中文很准。音频会先在本机转成 16 kHz 单声道 WAV，每 10 分钟一段上传到火山引擎。需要在火山引擎控制台开通该资源。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先拿一小段音频试。</small>
+        <div class="field"><label>AppId（用新版控制台的 API Key 时留空）</label><el-input v-model="ai.sttVolcAppId" size="small" class="mono" placeholder="旧版控制台的 AppId，没有就留空" /></div>
+        <div class="field">
+          <label>密钥（Access Token / API Key） <span v-if="has.volc" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://console.volcengine.com/speech/app')">打开火山引擎控制台</a></label>
+          <div class="keyrow">
+            <el-input v-model="volcKey" size="small" type="password" show-password placeholder="Access Token 或 API Key" />
+            <el-button size="small" :disabled="!volcKey.trim()" @click="saveKey('stt.volc_key', volcKey)">保存</el-button>
+            <el-button size="small" @click="saveKey('stt.volc_key', '')">清除</el-button>
+          </div>
+        </div>
+        <div class="kv"><span>用火山自带的“语义顺滑”去口水词<small class="mute block">默认关：口水词统一交给“字幕预处理”，几种引擎行为一致。打开后由火山在识别时就去掉</small></span><el-switch v-model="ai.sttCloudSmooth" /></div>
+        <div class="keyrow">
+          <el-button size="small" :loading="testing === 'volc'" :disabled="!has.volc" @click="testCloud('volc')">测试连接</el-button>
+          <span v-if="testMsg.volc" :class="testMsg.volc.ok ? 'ok' : 'bad'" class="mute">{{ testMsg.volc.text }}</span>
+        </div>
+      </template>
+      <template v-else-if="ai.sttEngine === 'xfyun'">
+        <small class="mute">讯飞开放平台“录音文件转写”：整个文件上传到讯飞，转写完成后取回带时间的句子。需要在讯飞控制台开通该服务并拿到 AppID 和 SecretKey。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先拿一小段音频试。</small>
+        <div class="field"><label>AppID</label><el-input v-model="ai.sttXfyunAppId" size="small" class="mono" placeholder="例如 595f23df" /></div>
+        <div class="field">
+          <label>SecretKey <span v-if="has.xfyun" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://console.xfyun.cn/services/lfasr')">打开讯飞控制台</a></label>
+          <div class="keyrow">
+            <el-input v-model="xfKey" size="small" type="password" show-password placeholder="录音文件转写的 SecretKey" />
+            <el-button size="small" :disabled="!xfKey.trim()" @click="saveKey('stt.xfyun_secret', xfKey)">保存</el-button>
+            <el-button size="small" @click="saveKey('stt.xfyun_secret', '')">清除</el-button>
+          </div>
+        </div>
+        <div class="keyrow">
+          <el-button size="small" :loading="testing === 'xfyun'" :disabled="!has.xfyun || !ai.sttXfyunAppId" @click="testCloud('xfyun')">测试连接</el-button>
+          <span v-if="testMsg.xfyun" :class="testMsg.xfyun.ok ? 'ok' : 'bad'" class="mute">{{ testMsg.xfyun.text }}</span>
+        </div>
+        <div class="field">
+          <label>实时转写 APIKey（“屏幕翻译 → 语音翻译”用讯飞时需要，和上面的 SecretKey 不是同一个） <span v-if="has.xfyunRt" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://console.xfyun.cn/services/rta')">打开讯飞控制台</a></label>
+          <div class="keyrow">
+            <el-input v-model="xfRtKey" size="small" type="password" show-password placeholder="实时语音转写的 APIKey" />
+            <el-button size="small" :disabled="!xfRtKey.trim()" @click="saveKey('stt.xfyun_rt_key', xfRtKey)">保存</el-button>
+            <el-button size="small" @click="saveKey('stt.xfyun_rt_key', '')">清除</el-button>
+          </div>
+        </div>
+        <div class="keyrow">
+          <el-button size="small" :loading="testing === 'xfyun_rt'" :disabled="!has.xfyunRt || !ai.sttXfyunAppId" @click="testCloud('xfyun_rt')">测试实时转写连接</el-button>
+          <span v-if="testMsg.xfyun_rt" :class="testMsg.xfyun_rt.ok ? 'ok' : 'bad'" class="mute">{{ testMsg.xfyun_rt.text }}</span>
+        </div>
+        <div class="kv"><span>用讯飞的“顺滑词”标记去口水词<small class="mute block">默认关：口水词统一交给“字幕预处理”。打开后识别结果里讯飞标成顺滑词的字直接不要</small></span><el-switch v-model="ai.sttCloudSmooth" /></div>
+      </template>
+      <template v-else-if="ai.sttEngine === 'api'">
         <small class="mute">使用兼容 OpenAI 的 <span class="mono">/audio/transcriptions</span> 接口。音频会先在本机转成小体积的单声道再分段上传。</small>
         <div class="presets">
           <el-button v-for="p in STT_PRESETS" :key="p.name" size="small" link type="primary" @click="ai.sttBaseUrl = p.url; ai.sttModel = p.model">{{ p.name }}</el-button>

@@ -681,7 +681,7 @@ function hostOf(u: string) {
   gap: 8px;
   padding: 12px 4px 4px;
   margin: 0 -4px;
-  background: var(--cc-bg, var(--el-bg-color-page));
+  background: var(--cc-bg, var(--cc-bg));
   border-top: 1px solid var(--cc-line);
 }
 @media (max-width: 900px) {

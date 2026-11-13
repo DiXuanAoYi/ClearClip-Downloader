@@ -4,10 +4,10 @@
   const { mount, h, send, toast } = globalThis.ccUI
 
   const CSS = `
-    .box { position: fixed; pointer-events: none; border: 2px solid #d9762b; background: #d9762b22; border-radius: 3px; }
-    .box.sel { border-color: #2f8a57; background: #2f8a5733; }
-    .box.sel::after { content: "✓"; position: absolute; right: 2px; top: 2px; background: #2f8a57; color: #fff; border-radius: 50%; width: 18px; height: 18px; text-align: center; line-height: 18px; font-size: 12px; }
-    .bar { left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: #1d2420; color: #fff; border-radius: 12px; padding: 8px 12px; box-shadow: 0 8px 24px #0006; }
+    .box { position: fixed; pointer-events: none; border: 2px solid #b45f00; background: #b45f0022; border-radius: 3px; }
+    .box.sel { border-color: #007a70; background: #2f8a5733; }
+    .box.sel::after { content: "✓"; position: absolute; right: 2px; top: 2px; background: #007a70; color: #fff; border-radius: 50%; width: 18px; height: 18px; text-align: center; line-height: 18px; font-size: 12px; }
+    .bar { left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: #0b1424; color: #fff; border-radius: 12px; padding: 8px 12px; box-shadow: 0 8px 24px #0006; }
     .bar button.sec { background: transparent; color: #fff; border-color: #ffffff66; }
   `
   const ui = mount(CSS)

@@ -26,11 +26,11 @@
 
   const CSS = `
     .flash { background: #14181acc; color: #fff; border-radius: 8px; padding: 4px 12px; font-size: 16px; font-weight: 700; transform: translateX(-50%); pointer-events: none; }
-    .pnl { background: #fff; color: #1d2420; border: 1px solid #cfd5d1; border-radius: 10px; box-shadow: 0 10px 28px #0004; padding: 10px 12px; width: 280px; font-size: 12px; }
+    .pnl { background: #fff; color: #0b1424; border: 1px solid #aebfd8; border-radius: 10px; box-shadow: 0 10px 28px #0004; padding: 10px 12px; width: 280px; font-size: 12px; }
     .pnl .r { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-    .pnl .r > span { flex: 0 0 84px; color: #5d6862; }
+    .pnl .r > span { flex: 0 0 84px; color: #4d5f7b; }
     .pnl input[type=range] { flex: 1; min-width: 0; }
-    .pnl input[type=number] { width: 64px; padding: 2px 4px; border: 1px solid #cfd5d1; border-radius: 4px; }
+    .pnl input[type=number] { width: 64px; padding: 2px 4px; border: 1px solid #aebfd8; border-radius: 4px; }
     .pnl .hd { font-weight: 700; margin-bottom: 4px; }
     .pnl button { font-size: 12px; padding: 3px 10px; }
   `

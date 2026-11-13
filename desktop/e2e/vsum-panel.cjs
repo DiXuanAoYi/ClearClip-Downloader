@@ -54,6 +54,18 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
           if (m.type === 'cc-tr') return { ok: true, texts: (m.texts || []).map((t) => '译:' + t), cached: 0 }
           if (m.type === 'cc-vocab') return { ok: true, words: [], stats: {} }
           if (m.type === 'cc-ai-status') return { ok: true, ready: o.ready !== false, model: 'm', lang: '中文', transcribe: true, subtitles: true, maxChars: 600000 }
+          if (m.type === 'cc-ai-run' && m.req.kind === 'preclean') {
+            // 预处理（清影只做字符串清理）：不算进“请求了几次清影”
+            window.__calls.pop()
+            window.__pre = m.req
+            ;(window.__preCalls = window.__preCalls || []).push(m.req)
+            return { ok: true, id: 99 }
+          }
+          if (m.type === 'cc-ai-job' && m.id === 99) {
+            const lines = window.__pre.lines
+            if (o.cleanDemo) return { ok: true, state: 'done', done: 1, total: 1, note: '', result: { lines: lines.slice(1), report: { hearing: 1, filler: 1, emptied: 1 }, punct: false } }
+            return { ok: true, state: 'done', done: 1, total: 1, note: '', result: { lines, report: { hearing: 0, filler: 0, emptied: 0 }, punct: false } }
+          }
           if (m.type === 'cc-ai-run') {
             window.__job = m.req
             return { ok: true, id: 7 }
@@ -331,7 +343,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       sel.dispatchEvent(new Event('change'))
     })
     await settle(page, 300)
-    ok('外观：选“深色”后面板用深色样式', await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('style')].some((st) => /@media|#1d2420/.test(st.textContent) && st.textContent.includes('.src') && !st.textContent.includes('@media'))) ))
+    ok('外观：选“深色”后面板用深色样式', await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('style')].some((st) => /@media|#0b1424/.test(st.textContent) && st.textContent.includes('.src') && !st.textContent.includes('@media'))) ))
     ok('笔记流程无页面错误', errors.length === 0, errors.join('|'))
     await page.close()
   }
@@ -348,6 +360,27 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('切换视频后自动去读新视频的字幕', seen.some((u) => u.includes('v=second12345')), seen.join('|'))
     ok('切换后面板重新显示文稿', /段/.test(await text(page, '.meta')))
     ok('切换视频流程无页面错误', errors.length === 0, errors.join('|'))
+    await page.close()
+  }
+
+  // ---- 预处理：已清理 N 处 + 显示原始
+  {
+    const { page, errors } = await open(YT, { cleanDemo: true })
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '文稿')
+    await page.waitForSelector('#cleanbar', { state: 'attached' }).catch(() => {})
+    await page.waitForFunction(() => window.__roots.some((r) => r.querySelector('#cleanbar')), null, { timeout: 8000 })
+    const n1 = await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))
+    const bar = await text(page, '#cleanbar')
+    ok('文稿显示清理后的（少了一行），并提示“已清理 3 处”', n1 === 2 && /已清理 3 处/.test(bar) && /非语音说明 1 行/.test(bar) && /口水词 1 行/.test(bar), n1 + ' ' + bar)
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('#cleantoggle')).find(Boolean).click())
+    await settle(page, 300)
+    const n2 = await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))
+    ok('点“显示原始”换回原始文稿（3 行），按钮变成“显示清理后”', n2 === 3 && /显示清理后/.test(await text(page, '#cleantoggle')), String(n2))
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('#cleantoggle')).find(Boolean).click())
+    await settle(page, 300)
+    ok('再点一下回到清理后的', (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 2)
+    ok('预处理没有页面错误', errors.length === 0, errors.join('|'))
     await page.close()
   }
 

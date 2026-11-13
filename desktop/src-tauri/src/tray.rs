@@ -13,10 +13,11 @@ use crate::{clipboard, AppState};
 const MINI_W: f64 = 320.0;
 const MINI_H: f64 = 196.0;
 /// 悬浮拖拽窗的尺寸（逻辑像素）
-const FLOAT_W: f64 = 156.0;
-const FLOAT_H: f64 = 64.0;
+/// 窗口比胶囊四周多 10px，留给阴影（窗口本身是透明的；阴影超出窗口会被切成方框，所以必须在 10px 内淡出）
+const FLOAT_W: f64 = 252.0;
+const FLOAT_H: f64 = 68.0;
 /// 点开屏幕翻译控制后的宽度
-const FLOAT_W_OPEN: f64 = 780.0;
+const FLOAT_W_OPEN: f64 = 840.0;
 
 pub struct TrayWatchItem(pub CheckMenuItem<Wry>);
 
@@ -303,6 +304,8 @@ fn build_small_window(app: &AppHandle, spec: &SmallWindow) -> tauri::Result<()> 
         .resizable(spec.resizable)
         .decorations(false)
         .shadow(false)
+        // 悬浮窗的胶囊自己带圆角和阴影，窗口要透明，不然在浅色桌面上圆角外面会露出一块方底
+        .transparent(spec.label == FLOAT.label)
         .always_on_top(true)
         .skip_taskbar(true)
         .focused(false)
@@ -347,6 +350,23 @@ pub fn float_expand(app: AppHandle, expanded: bool) {
     let (Ok(p), Ok(sz)) = (w.outer_position(), w.inner_size()) else { return };
     let cur_w = sz.width as f64 / scale;
     let want = if expanded { FLOAT_W_OPEN } else { FLOAT_W };
+    if (cur_w - want).abs() < 1.0 {
+        return;
+    }
+    let x = (p.x as f64 / scale + cur_w - want).max(0.0);
+    let _ = w.set_size(Size::Logical(LogicalSize::new(want, FLOAT_H)));
+    let _ = w.set_position(Position::Logical(LogicalPosition::new(x, p.y as f64 / scale)));
+}
+
+/// 悬浮窗宽度跟着内容走：页面量出胶囊（展开时加上控制条）的宽度，传一个逻辑像素宽度过来；保持右边缘不动。
+#[tauri::command]
+pub fn float_fit(app: AppHandle, width: f64) {
+    use tauri::{LogicalPosition, Position, Size};
+    let Some(w) = app.get_webview_window(FLOAT.label) else { return };
+    let scale = w.scale_factor().unwrap_or(1.0);
+    let (Ok(p), Ok(sz)) = (w.outer_position(), w.inner_size()) else { return };
+    let cur_w = sz.width as f64 / scale;
+    let want = width.clamp(120.0, 1600.0);
     if (cur_w - want).abs() < 1.0 {
         return;
     }

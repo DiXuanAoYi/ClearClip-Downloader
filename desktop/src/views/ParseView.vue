@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../api'
+import { healthAt, healthResults } from '../utils/health'
 import { useAppStore, useParseStore } from '../stores/app'
 import type { Asset, BatchProgress, Settings, Clip, CreatorTabs, DetectedLink, HistoryItem, ListOptions, MediaInfo, PlaylistEntry } from '../types'
 import { formatBytes, formatDate, formatDuration } from '../utils/format'
@@ -18,6 +19,32 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 
 const app = useAppStore()
 const parse = useParseStore()
+const checkingHealth = ref(false)
+const healthRows = computed(() =>
+  (healthResults.value ?? []).slice(0, 5).map((h) => ({
+    platform: h.platform,
+    name: h.name,
+    ok: h.ok,
+    message: h.message,
+    pct: h.ok ? Math.max(12, Math.min(100, 100 - h.millis / 40)) : 38,
+    label: h.ok ? (h.millis >= 1000 ? `${(h.millis / 1000).toFixed(1)} s` : `${h.millis} ms`) : h.sample ? '异常' : '未测',
+  })),
+)
+const healthAgo = computed(() => {
+  const m = Math.round((Date.now() - (healthAt.value ?? 0)) / 60000)
+  return m < 1 ? '刚刚' : m < 60 ? `${m} 分钟前` : `${Math.round(m / 60)} 小时前`
+})
+async function runHealth() {
+  checkingHealth.value = true
+  try {
+    healthResults.value = await api.healthCheck()
+    healthAt.value = Date.now()
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    checkingHealth.value = false
+  }
+}
 
 const selected = ref<Set<string>>(new Set())
 const links = ref<DetectedLink[]>([])
@@ -743,7 +770,13 @@ function recentKind(r: HistoryItem) {
 </script>
 
 <template>
-  <div class="page">
+  <div class="dpage page">
+    <div class="dtop">
+      <h1>解析</h1>
+      <span class="dspacer" />
+      <span v-if="app.settings?.watchClipboard" class="chip cyan"><i class="ddot" />剪贴板监听中</span>
+      <span v-else class="chip">剪贴板监听已关闭</span>
+    </div>
     <!-- 单个解析 / 批量下载 -->
     <div class="modes" role="tablist">
       <button type="button" role="tab" :class="{ on: app.homeMode === 'single' }" :aria-selected="app.homeMode === 'single'" @click="setMode('single')">单个解析</button>
@@ -753,6 +786,7 @@ function recentKind(r: HistoryItem) {
 
     <!-- 粘贴栏 -->
     <template v-if="app.homeMode === 'single'">
+    <section class="dpanel cmdpanel">
     <div class="paste">
       <div class="pastebox">
         <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>
@@ -782,6 +816,7 @@ function recentKind(r: HistoryItem) {
         <div class="sites">{{ supported || '读取中…' }}</div>
       </el-popover>
     </div>
+    </section>
     </template>
 
     <template v-else>
@@ -794,14 +829,15 @@ function recentKind(r: HistoryItem) {
 
     <ErrorAlert v-if="parse.error && app.homeMode === 'single'" :message="parse.error" :kind="parse.errorKind" :site="parse.errorSite" />
 
-    <div v-if="app.homeMode === 'single' && parse.loading && !result" class="layout">
-      <div class="work card skeleton"><el-skeleton animated :rows="6" /></div>
-      <div class="dl card skeleton"><el-skeleton animated :rows="8" /></div>
+    <div v-if="app.homeMode === 'single' && parse.loading && !result" class="layout dsplit">
+      <div class="dl dpanel skeleton"><el-skeleton animated :rows="8" /></div>
+      <div class="work dpanel skeleton"><el-skeleton animated :rows="6" /></div>
     </div>
 
-    <div v-if="app.homeMode === 'single' && result" class="layout">
+    <div v-if="app.homeMode === 'single' && result" class="layout dsplit">
+     <div class="lcol">
       <!-- 左：作品 -->
-      <section class="work card" aria-label="作品信息">
+      <section class="work dpanel" aria-label="作品信息">
         <button type="button" class="cover" :class="{ portrait }" :aria-label="result.kind === 'images' ? '大图预览' : '预览'" @click="preview = true" @dblclick.stop>
           <img v-if="result.cover" :src="result.cover" referrerpolicy="no-referrer" alt="" />
           <span v-else class="nocover">没有封面</span>
@@ -844,7 +880,7 @@ function recentKind(r: HistoryItem) {
       </section>
 
       <!-- 右：下载内容 -->
-      <section class="dl card" :aria-label="isPlaylist ? '选择要下载的视频' : '下载内容'">
+      <section class="dl dpanel" :aria-label="isPlaylist ? '选择要下载的视频' : '下载内容'">
         <div class="dhead">
           <h2>{{ isPlaylist ? '选择要下载的视频' : '下载内容' }}</h2>
           <span class="pz-note">{{ isPlaylist ? (downloadedEntries.size && app.settings?.skipExisting ? '默认选中没下载过的' : '默认全选') : result.kind === 'images' ? '点图片取消 / 选中，双击看大图' : '按设置默认选好了，改完点“下载所选”' }}</span>
@@ -1100,6 +1136,11 @@ function recentKind(r: HistoryItem) {
           </div>
         </template>
 
+      </section>
+     </div>
+     <aside class="plan dsticky" aria-label="下载方案">
+      <section class="dpanel planbox">
+        <div class="eyebrow">下载方案</div>
         <!-- 底部操作栏 -->
         <div class="foot">
           <div class="sum">
@@ -1120,9 +1161,28 @@ function recentKind(r: HistoryItem) {
           </el-button>
         </div>
       </section>
+      <section v-if="parse.recent.length" class="dpanel">
+        <div class="dpanel-h"><h2>最近解析</h2><span class="dspacer" /><button type="button" class="pz-link" @click="clearRecent">清空</button></div>
+        <button v-for="r in parse.recent.slice(0, 4)" :key="r.id" type="button" class="rec" @click="openRecent(r)">
+          <span class="pz-tag">{{ r.info.platformName }}</span><span class="ellipsis">{{ r.title }}</span>
+        </button>
+      </section>
+      <section class="dpanel" aria-label="平台健康">
+        <div class="dpanel-h"><h2>平台健康</h2><span class="dspacer" /><span class="eyebrow">{{ healthAt ? healthAgo : '还没检查过' }}</span></div>
+        <div v-for="h in healthRows" :key="h.platform" class="hp">
+          <span class="ellipsis" :title="h.name">{{ h.name }}</span>
+          <span class="meter"><i :class="{ warn: !h.ok }" :style="{ width: h.pct + '%' }" /></span>
+          <span class="ms mono ellipsis" :title="h.message">{{ h.label }}</span>
+        </div>
+        <div class="dtoolbar hpbar">
+          <el-button size="small" :loading="checkingHealth" @click="runHealth">{{ healthResults ? '重新检查' : '立即检查' }}</el-button>
+          <button type="button" class="pz-link" @click="app.goSettings('parse')">在设置里看详情</button>
+        </div>
+      </section>
+     </aside>
     </div>
 
-    <section v-if="app.homeMode === 'single' && !result && !parse.loading && parse.recent.length" class="recent card">
+    <section v-if="app.homeMode === 'single' && !result && !parse.loading && parse.recent.length" class="recent dpanel">
       <div class="pz-sh rhead">
         <span class="pz-st">最近解析</span>
         <span class="pz-sa"><button type="button" class="pz-link" @click="clearRecent">清空</button></span>
@@ -1135,7 +1195,7 @@ function recentKind(r: HistoryItem) {
       </button>
     </section>
 
-    <section v-if="app.homeMode === 'single' && !result && !parse.loading && !parse.recent.length && !parse.error" class="empty card">
+    <section v-if="app.homeMode === 'single' && !result && !parse.loading && !parse.recent.length && !parse.error" class="empty dpanel">
       <h3>复制分享链接，就能保存无水印作品</h3>
       <ol>
         <li>在 App 里点“分享 → 复制链接”。</li>
@@ -1144,7 +1204,7 @@ function recentKind(r: HistoryItem) {
       </ol>
     </section>
 
-    <el-dialog v-model="preview" :title="result?.title" width="720px" align-center destroy-on-close>
+    <el-dialog append-to-body v-model="preview" :title="result?.title" width="720px" align-center destroy-on-close>
       <div v-if="result" class="preview">
         <template v-if="previewAsset">
           <p v-if="previewError" class="selectable mute">{{ previewError }}</p>
@@ -1630,8 +1690,8 @@ function recentKind(r: HistoryItem) {
   cursor: pointer;
 }
 .tab.on {
-  color: var(--cc-accent, #2457e6);
-  border-bottom-color: var(--cc-accent, #2457e6);
+  color: var(--cc-amber);
+  border-bottom-color: var(--cc-amber);
   font-weight: 600;
 }
 .tab:disabled {
@@ -1676,8 +1736,8 @@ function recentKind(r: HistoryItem) {
   color: var(--cc-mute);
 }
 .chip.on {
-  border-color: var(--cc-accent, #2457e6);
-  background: var(--cc-accent-soft, rgba(36, 87, 230, 0.1));
+  border-color: var(--cc-amber);
+  background: var(--cc-acc-soft);
   font-weight: 600;
 }
 .chip.lay {
@@ -1895,5 +1955,304 @@ function recentKind(r: HistoryItem) {
 }
 .bimp {
   height: 54px;
+}
+
+/* ===== 新主题版式（设计图：解析） ===== */
+.page {
+  max-width: none;
+  margin: 0;
+  padding: 22px 28px 32px;
+  gap: 18px;
+}
+.modes {
+  gap: 0;
+}
+.modes button {
+  background: var(--cc-inset);
+  border: 1px solid var(--cc-line);
+}
+.cmdpanel {
+  padding: 18px 20px;
+}
+.pastebox {
+  min-height: 52px;
+  border-radius: 10px;
+  border-color: var(--cc-line-strong);
+  background: var(--cc-inset);
+}
+.pastebox:focus-within {
+  border-color: var(--cc-amber-line);
+  box-shadow: 0 0 0 3px var(--cc-acc-soft);
+}
+.pastebox .ico {
+  margin-top: 17px;
+}
+.paste-input :deep(.el-textarea__inner) {
+  padding: 15px 0;
+  font-size: 15px;
+  min-height: 50px !important;
+}
+.paste .go {
+  height: 52px;
+  min-width: 108px;
+  font-size: 15px;
+  padding: 0 26px;
+}
+.paste .clr {
+  height: 52px;
+}
+.hint {
+  margin-top: 12px;
+}
+.layout {
+  align-items: start;
+}
+.lcol {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.layout.dsplit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 372px;
+}
+.work {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 20px;
+  max-width: none;
+  position: relative;
+  top: auto;
+  overflow: visible;
+  padding: 18px 20px;
+}
+.cover {
+  border-radius: 12px;
+  border: 1px solid var(--cc-line-strong);
+  align-self: start;
+}
+.play {
+  background: #060a128c;
+  border: 1px solid #ffffff80;
+  color: #fff;
+  backdrop-filter: blur(6px);
+}
+.info {
+  padding: 0;
+  gap: 12px;
+  min-width: 0;
+}
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.acts {
+  margin-top: auto;
+  border-top: 1px dashed var(--cc-line-strong);
+}
+.dl {
+  flex: none;
+  overflow: visible;
+  padding: 0;
+}
+.dhead {
+  padding: 18px 20px 12px;
+}
+.sec {
+  padding: 16px 20px;
+  border-top: 1px solid var(--cc-line);
+}
+.dl .pz-st {
+  font-size: 15px;
+}
+/* 清晰度：一格一格的卡片，选中＝琥珀描边 */
+.rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.frow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--cc-line);
+  border-radius: 12px;
+  background: var(--cc-panel2);
+  position: relative;
+}
+.frow:hover:not(:disabled) {
+  background: var(--cc-panel2);
+  border-color: var(--cc-line-strong);
+}
+.frow.on {
+  background: var(--cc-panel2);
+  border-color: var(--cc-amber);
+  box-shadow:
+    0 0 0 3px var(--cc-acc-soft),
+    0 0 28px -8px var(--cc-amber-glow);
+}
+.frow .dot {
+  display: none;
+}
+.rows > .frow {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.fname {
+  flex-wrap: wrap;
+  max-width: 100%;
+  font-family: var(--cc-disp);
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+.fname .ellipsis,
+.spec.ellipsis {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.fname .pz-tag {
+  font-family: var(--cc-font);
+  font-size: 11.5px;
+}
+.spec {
+  font-size: 12.5px;
+  color: var(--cc-mute);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.size {
+  margin-top: 4px;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--cc-cyan);
+}
+.chip.on {
+  border-color: var(--cc-amber);
+  background: var(--cc-acc-soft);
+  color: var(--cc-amber);
+}
+.chip {
+  display: inline-block;
+  gap: 0;
+  font-family: inherit;
+  line-height: 1.5;
+  border-color: var(--cc-line-strong);
+  background: var(--cc-inset);
+}
+/* 右侧下载方案：粘性，底部操作栏改成方案卡里的汇总和按钮 */
+.planbox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.foot {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.sum {
+  flex: none;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--cc-line);
+  border-bottom: 1px solid var(--cc-line);
+  font-size: 13px;
+}
+.sum b {
+  font-family: var(--cc-disp);
+  font-size: 20px;
+  font-weight: 700;
+}
+.where {
+  flex-wrap: wrap;
+}
+.where .path {
+  max-width: 200px;
+}
+.big {
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  font-size: 15px;
+}
+.rec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 0;
+  border: 0;
+  border-top: 1px solid var(--cc-line);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rec:first-of-type {
+  border-top: 0;
+}
+@media (max-width: 1100px) {
+  .layout.dsplit {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .work {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.hp {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 62px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 12.5px;
+}
+.hp .meter {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--cc-inset);
+  overflow: hidden;
+}
+.hp .meter i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--cc-cyan);
+  box-shadow: 0 0 10px var(--cc-cyan);
+}
+.hp .meter i.warn {
+  background: var(--cc-amber);
+  box-shadow: 0 0 10px var(--cc-amber);
+}
+.hp .ms {
+  text-align: right;
+  color: var(--cc-mute);
+}
+.hpbar {
+  margin-top: 8px;
+  justify-content: space-between;
 }
 </style>

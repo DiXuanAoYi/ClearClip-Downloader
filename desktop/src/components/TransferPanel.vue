@@ -4,7 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../api'
-import type { PhoneInfo, TransferItem, TransferList } from '../types'
+import type { ChatMsg, PhoneInfo, TransferItem, TransferList } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import { registerDrop } from '../utils/dropHub'
 import { useAppStore } from '../stores/app'
@@ -74,7 +74,7 @@ const ICONS: Record<string, string> = {
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
   text: '<path d="M4 6h16M4 12h16M4 18h10"/>',
 }
-const COLORS: Record<string, string> = { image: '#c98a3b', video: '#4b7bb5', audio: '#7a8f6a', archive: '#8a6d3b', file: '#d9772f', text: '#7a62b5' }
+const COLORS: Record<string, string> = { image: '#c98a3b', video: '#4b7bb5', audio: '#7a8f6a', archive: '#8a6d3b', file: '#b45f00', text: '#7a62b5' }
 const iconOf = (k: string) => ICONS[k] ?? ICONS.file
 const colorOf = (k: string) => COLORS[k] ?? COLORS.file
 /** 日期分隔：同一天只显示一次 */
@@ -176,14 +176,79 @@ async function enable() {
   }
 }
 
-async function sendPaths(paths: string[]) {
+/**
+ * 微信式输入框：粘贴 / 选择 / 拖入的文件先“放进输入框”（草稿），点“发送”才发出，不会自动发。
+ * 草稿是按放入顺序排的一串：文字和文件交错时，先打的文字会在放文件的那一刻固定成一条，
+ * 发送时严格按这个顺序发（输入框里还没固定的文字排在最后）。
+ */
+type Seg = { id: number; kind: 'text'; text: string } | { id: number; kind: 'file'; path: string; name: string }
+const draft = ref<Seg[]>([])
+let segSeq = 0
+const baseName = (p: string) => p.split(/[\\/]/).pop() || p
+const canSend = computed(() => (draft.value.length > 0 || !!text.value.trim()) && targets.value.size > 0)
+/** 把输入框里正在打的文字固定成草稿里的一条（保持顺序） */
+function commitText() {
+  const t = text.value.trim()
+  if (t) draft.value.push({ id: ++segSeq, kind: 'text', text: t })
+  text.value = ''
+}
+function stagePaths(paths: string[]) {
   if (!paths.length) return
+  commitText()
+  for (const path of paths.slice(0, 50)) {
+    draft.value.push({ id: ++segSeq, kind: 'file', path, name: baseName(path) })
+    void ensureThumb(path)
+  }
+}
+const isImageName = (n: string) => THUMB_EXT.test(n)
+async function ensureThumb(path: string) {
+  if (!THUMB_EXT.test(path) || path in thumbs.value) return
+  thumbs.value[path] = ''
+  try {
+    const u = await api.transferThumb(path)
+    if (u) thumbs.value[path] = u
+  } catch {
+    /* 没有缩略图就显示文件图标 */
+  }
+}
+/** 输入框是空的时候按退格：删掉草稿里最后一项（和微信一样） */
+function onBackspace(e: KeyboardEvent) {
+  if (text.value === '' && draft.value.length && !e.isComposing) {
+    e.preventDefault()
+    draft.value.pop()
+  }
+}
+function dropSeg(id: number) {
+  draft.value = draft.value.filter((x) => x.id !== id)
+}
+
+async function pick() {
+  const r = await open({ multiple: true })
+  if (!r) return
+  stagePaths(Array.isArray(r) ? r : [r])
+}
+
+/** 剪贴板里的图片 / 文件（截图、在资源管理器里复制的文件）：存成临时文件，放进输入框（不发送） */
+async function pasteFiles(files: File[]) {
+  if (!files.length) return
   sending.value = true
   try {
-    const r = await api.transferSendFiles(paths, targetList())
-    if (r.added) ElMessage.success(`已加入 ${r.added} 个文件，在手机网页的“电脑发来的”里下载`)
-    for (const s of r.skipped.slice(0, 3)) ElMessage.warning(s)
-    await load()
+    const stamp = () => {
+      const d = new Date()
+      const z = (n: number) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`
+    }
+    const paths: string[] = []
+    let i = 0
+    for (const f of files.slice(0, 20)) {
+      // 截图粘贴过来叫 image.png，换成带时间的名字
+      const generic = /^image\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)
+      const ext = f.name.includes('.') ? f.name.slice(f.name.lastIndexOf('.')) : f.type === 'image/png' ? '.png' : ''
+      const name = generic || !f.name ? `粘贴的图片-${stamp()}${i ? '-' + i : ''}${ext || '.png'}` : f.name
+      i++
+      paths.push(await api.transferStageFile(name, await f.arrayBuffer()))
+    }
+    stagePaths(paths)
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -191,22 +256,51 @@ async function sendPaths(paths: string[]) {
   }
 }
 
-async function pick() {
-  const r = await open({ multiple: true })
-  if (!r) return
-  await sendPaths(Array.isArray(r) ? r : [r])
+function onPaste(e: ClipboardEvent) {
+  const files = [...(e.clipboardData?.files ?? [])]
+  if (!files.length) return // 只有文字：交给输入框自己粘贴
+  e.preventDefault()
+  void pasteFiles(files)
 }
 
-async function sendText() {
-  const t = text.value.trim()
-  if (!t) return
+/** 发送整个草稿：按顺序一条一条发；输入框里没固定的文字排在最后。 */
+async function sendAll() {
+  if (!canSend.value || sending.value) return
+  commitText()
+  // 只发点击这一刻的草稿：发送过程中新放进来的，要等下一次点发送
+  const batchAll = draft.value.splice(0)
+  sending.value = true
   try {
-    await api.transferSendText(t, targetList())
-    text.value = ''
-    ElMessage.success('已加入，手机网页里可以一键复制')
+    let sentText = 0
+    let sentFiles = 0
+    // 连续的文件合成一批发，文字单独发；批与批之间按顺序等前一个完成
+    while (batchAll.length) {
+      const first = batchAll[0]
+      if (first.kind === 'text') {
+        await api.transferSendText(first.text, targetList())
+        sentText++
+        batchAll.shift()
+      } else {
+        const batch: string[] = []
+        let n = 0
+        while (n < batchAll.length && batchAll[n].kind === 'file') {
+          batch.push((batchAll[n] as Extract<Seg, { kind: 'file' }>).path)
+          n++
+        }
+        const r = await api.transferSendFiles(batch, targetList())
+        sentFiles += r.added
+        for (const w of r.skipped.slice(0, 3)) ElMessage.warning(w)
+        batchAll.splice(0, n)
+      }
+    }
+    ElMessage.success(sentFiles ? `已发送，手机网页的“电脑发来的”里可以下载${sentText ? '、复制' : ''}` : '已加入，手机网页里可以一键复制')
     await load()
   } catch (e) {
+    // 已发出的已经去掉，没发的放回草稿最前面，改好再点发送
+    draft.value.unshift(...batchAll)
     ElMessage.error(errorText(e))
+  } finally {
+    sending.value = false
   }
 }
 
@@ -269,9 +363,64 @@ function expiry(it: TransferItem): string {
   return left >= 3600 ? `${Math.ceil(left / 3600)} 小时后撤回` : `${Math.max(1, Math.ceil(left / 60))} 分钟后撤回`
 }
 
+/** 手机互聊：手机之间的消息经电脑上的服务转发，开关打开时这里能看到全部内容（只读） */
+const view = ref<'files' | 'chat'>('files')
+const chat = ref<ChatMsg[]>([])
+const chatEl = ref<HTMLElement | null>(null)
+const chatOn = computed(() => !!info.value?.peerChat)
+async function setChat(on: boolean) {
+  if (!info.value) return
+  try {
+    const i = info.value
+    info.value = await api.phoneSetOptions({ host: i.host, receiveDir: i.receiveDir, maxUploadMb: i.maxUploadMb, autoExtract: i.autoExtract, outboxHours: i.outboxHours, peerChat: on })
+    if (on) {
+      chat.value = await api.phoneChatList()
+      view.value = 'chat'
+    } else {
+      chat.value = []
+      view.value = 'files'
+    }
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  }
+}
+async function clearChat() {
+  try {
+    await ElMessageBox.confirm('清空后，电脑上看不到之前的聊天内容；手机网页里的记录也会消失。', '清空手机互聊记录', { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning' })
+    await api.phoneChatClear()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(errorText(e))
+  }
+}
+function onChatMsg(m: ChatMsg & { cleared?: boolean }) {
+  if (m.cleared) {
+    chat.value = []
+    return
+  }
+  if (!chat.value.some((x) => x.id === m.id)) chat.value.push(m)
+}
+const chatRows = computed(() => {
+  let last = ''
+  return chat.value.map((m) => {
+    const key = new Date(m.ts * 1000).toDateString() + Math.floor(m.ts / 1800)
+    const day = key !== last ? dayLabel(m.ts) : ''
+    last = key
+    return { m, day }
+  })
+})
+watch(
+  () => chat.value.length,
+  async () => {
+    await nextTick()
+    if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight
+  },
+)
+
 onMounted(async () => {
   await Promise.all([load(), loadInfo()])
+  if (info.value?.peerChat) chat.value = await api.phoneChatList().catch(() => [])
   unlisten = [
+    await events.onChat(onChatMsg),
     await events.onTransferChanged(scheduleLoad),
     await events.onTransferProgress((p) => onProgress(p.id, p.done)),
     await events.onPairRequest(loadInfo),
@@ -283,7 +432,7 @@ onMounted(async () => {
     leave: () => (over.value = false),
     drop: (paths) => {
       over.value = false
-      sendPaths(paths)
+      stagePaths(paths)
     },
   })
 })
@@ -353,6 +502,14 @@ onUnmounted(() => {
           <small v-if="info?.devices.length" class="mute hint2">勾选的设备才会收到你发出的文件和文字。浏览器扩展默认不勾：它收到的内容会再交回主程序，造成来回传。</small>
         </div>
 
+        <div class="box chatbox">
+          <div class="chead">
+            <b>手机互聊</b>
+            <el-switch :model-value="chatOn" size="small" :disabled="!info?.running" aria-label="手机互聊" data-testid="chat-switch" @change="(v: string | number | boolean) => setChat(!!v)" />
+          </div>
+          <small class="mute">开启后，已配对的手机能在网页里互相发文字，不用经过你操作。消息只在局域网内流转，但要经过这台电脑上的清影转发，所以你在这里能看到全部内容。关闭或退出清影后记录清空。</small>
+        </div>
+
         <div class="box dirbox">
           <small class="mute">收到的文件保存在</small>
           <b class="dir selectable">{{ list.receiveDir || info?.receiveDir }}</b>
@@ -364,7 +521,31 @@ onUnmounted(() => {
       </aside>
 
       <section class="main">
-        <div ref="feedEl" class="feed">
+        <div v-if="chatOn" class="vtabs" role="tablist">
+          <button role="tab" :aria-selected="view === 'files'" :class="{ on: view === 'files' }" @click="view = 'files'">传输记录</button>
+          <button role="tab" :aria-selected="view === 'chat'" :class="{ on: view === 'chat' }" data-testid="chat-tab" @click="view = 'chat'">手机互聊<em v-if="chat.length">{{ chat.length }}</em></button>
+        </div>
+        <div v-if="chatOn && view === 'chat'" ref="chatEl" class="feed chatfeed" data-testid="chat-feed">
+          <div v-if="!chat.length" class="empty mute">
+            <b>还没有聊天内容</b>
+            <span>手机网页里会多一个“手机互聊”页，扫码连上的手机在那里发的消息会实时出现在这里。</span>
+          </div>
+          <template v-for="r in chatRows" :key="r.m.id">
+            <div v-if="r.day" class="day">{{ r.day }}</div>
+            <div class="cmsg">
+              <span class="avatar"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2.5" /><path d="M11 18h2" /></svg></span>
+              <div class="cbody">
+                <div class="cwho">{{ r.m.name || '手机' }}</div>
+                <div class="cbub selectable">{{ r.m.text }}</div>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div v-if="chatOn && view === 'chat'" class="ctail">
+          <small class="mute">只读：这里显示手机之间的对话，不会发给手机。</small>
+          <a v-if="chat.length" class="link" @click="clearChat">清空聊天记录</a>
+        </div>
+        <div v-show="!(chatOn && view === 'chat')" ref="feedEl" class="feed">
           <div v-if="!rows.length" class="empty mute">
             <b>还没有传输记录</b>
             <span>手机扫码后，发来的文件、图片、链接和文字会出现在这里；<br>把文件拖进窗口，或点下面的“选择文件”，就能发给手机。</span>
@@ -398,8 +579,9 @@ onUnmounted(() => {
                   </span>
                 </div>
                 <el-progress v-if="r.it.status === 'receiving' || (r.it.direction === 'out' && r.it.active)" :percentage="pct(r.it)" :stroke-width="5" :show-text="false" />
-                <small v-if="r.it.kind === 'text'" class="mute">文字{{ r.it.direction === 'out' ? ' · 手机上可一键复制' : '' }}</small>
                 <small v-if="r.it.extra" class="mute">解压到 <a class="link" @click="reveal(r.it.extra!)">{{ r.it.extra }}</a></small>
+                <div class="brow">
+                <small v-if="r.it.kind === 'text'" class="mute kind">文字{{ r.it.direction === 'out' ? ' · 手机上可一键复制' : '' }}</small>
                 <div class="acts">
                   <template v-if="r.it.direction === 'in' && r.it.status === 'done' && r.it.kind === 'text'">
                     <a class="link" @click="copy(r.it.text)">复制</a>
@@ -411,20 +593,33 @@ onUnmounted(() => {
                   <a v-if="r.it.kind === 'text' && r.it.direction === 'out'" class="link" @click="copy(r.it.text)">复制</a>
                   <a class="link" @click="remove(r.it)">{{ r.it.direction === 'out' ? '撤回' : r.it.status === 'receiving' ? '取消' : '删除' }}</a>
                 </div>
+                </div>
               </div>
             </div>
           </template>
         </div>
 
-        <div v-if="over" class="dropmask"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>松开鼠标，发送给 {{ targetText.replace('发给 ', '') }}</div>
-        <div class="composer">
+        <div v-if="over && !(chatOn && view === 'chat')" class="dropmask"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>松开鼠标，放进输入框（点“发送”才会发给 {{ targetText.replace('发给 ', '') }}）</div>
+        <div v-show="!(chatOn && view === 'chat')" class="composer">
+          <div v-if="draft.length" class="tray" data-testid="draft" aria-label="待发送的内容（按这个顺序发出）">
+            <div v-for="(d, n) in draft" :key="d.id" class="dchip" :class="d.kind" :data-kind="d.kind">
+              <span class="no">{{ n + 1 }}</span>
+              <template v-if="d.kind === 'text'"><span class="dtext" :title="d.text">{{ d.text }}</span></template>
+              <template v-else>
+                <img v-if="thumbs[d.path]" class="dthumb" :src="thumbs[d.path]" alt="" />
+                <span v-else class="dicon"><svg viewBox="0 0 24 24" v-html="iconOf(isImageName(d.name) ? 'image' : 'file')" /></span>
+                <span class="dtext" :title="d.path">{{ d.name }}</span>
+              </template>
+              <button type="button" class="dx" :aria-label="`移除第 ${n + 1} 项`" @click="dropSeg(d.id)">×</button>
+            </div>
+          </div>
           <div class="cbar">
             <span class="tchip" :class="{ none: !targets.size }" :title="'在左侧“发送对象”里勾选'">{{ targetText }}</span>
             <el-button class="clip" text :loading="sending" aria-label="选择文件" title="选择文件…" @click="pick">
               <svg viewBox="0 0 24 24"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.4-2.4L15 8.6" /></svg>
             </el-button>
-            <input v-model="text" class="tin" type="text" maxlength="20000" placeholder="输入文字，或把文件拖进窗口…" @keydown.enter.exact.prevent="sendText" />
-            <el-button type="primary" class="sendb" :disabled="!text.trim() || !targets.size" @click="sendText">发送</el-button>
+            <input v-model="text" class="tin" type="text" maxlength="20000" placeholder="输入文字，或把文件拖进窗口，或直接粘贴图片 / 文件（点“发送”才会发出）…" @keydown.enter.exact.prevent="sendAll" @keydown.backspace="onBackspace" @paste="onPaste" />
+            <el-button type="primary" class="sendb" :disabled="!canSend" :loading="sending" @click="sendAll">发送{{ draft.length ? `（${draft.length + (text.trim() ? 1 : 0)}）` : '' }}</el-button>
           </div>
           <div class="tail">
             <small class="mute">收到的文件不会被自动运行，打开前请确认来源可信。</small>
@@ -438,26 +633,26 @@ onUnmounted(() => {
 
 <style scoped>
 .xfer {
-  --x-acc: #d9772f;
+  --x-acc: #b45f00;
   --x-acfg: #fff;
-  --x-ob: #fbe9d9;
-  --x-obl: #f1d0b2;
-  --x-obfg: #3a2a1c;
-  --x-obmt: #85684c;
-  --x-ok: #23703f;
-  --x-chip: #efe9e0;
-  --x-chipfg: #1a1510;
+  --x-ob: #fbf1e2;
+  --x-obl: #e3b475;
+  --x-obfg: #3a2500;
+  --x-obmt: #8a5a1a;
+  --x-ok: #007a70;
+  --x-chip: #e4ebf5;
+  --x-chipfg: #0b1424;
 }
-:global(html.dark) .xfer {
-  --x-acc: #f08c3e;
-  --x-acfg: #1b1207;
-  --x-ob: #4a2f1b;
-  --x-obl: #6a4426;
-  --x-obfg: #fdf0e3;
+:global(html.dark .xfer) {
+  --x-acc: #ffb547;
+  --x-acfg: #1a1100;
+  --x-ob: #2a2016;
+  --x-obl: #8a6328;
+  --x-obfg: #ffe9c4;
   --x-obmt: #d7b793;
-  --x-ok: #6fd49a;
-  --x-chip: #3a342d;
-  --x-chipfg: #f5efe7;
+  --x-ok: #4be3d0;
+  --x-chip: #131f33;
+  --x-chipfg: #e8f0fd;
 }
 .xfer {
     display: flex;
@@ -468,7 +663,7 @@ onUnmounted(() => {
   border: 1px solid var(--cc-line);
   border-radius: 14px;
   overflow: hidden;
-  background: var(--el-bg-color);
+  background: var(--cc-card);
 }
 .topbar {
   display: flex;
@@ -496,7 +691,7 @@ onUnmounted(() => {
   background: currentColor;
 }
 .pill.ok {
-  background: color-mix(in srgb, #2f9d5b 14%, transparent);
+  background: color-mix(in srgb, #4be3d0 14%, transparent);
   color: var(--x-ok);
 }
 .pill.off {
@@ -532,7 +727,7 @@ onUnmounted(() => {
   border: 1px solid var(--cc-line);
   border-radius: 16px;
   padding: 14px;
-  background: var(--el-fill-color-blank);
+  background: var(--cc-inset);
 }
 .qrbox {
   display: flex;
@@ -547,7 +742,7 @@ onUnmounted(() => {
   border-radius: 12px;
   padding: 10px;
   box-sizing: border-box;
-  border: 1px solid #efe9e0;
+  border: 1px solid var(--cc-line);
 }
 .qr :deep(svg) {
   width: 100%;
@@ -572,7 +767,7 @@ onUnmounted(() => {
   gap: 8px;
 }
 .warn {
-  color: var(--el-color-warning);
+  color: var(--cc-amber);
   line-height: 1.5;
 }
 .devs {
@@ -661,7 +856,7 @@ onUnmounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--el-fill-color-light);
+  background: var(--cc-hover);
 }
 .feed {
   flex: 1;
@@ -712,7 +907,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--el-bg-color);
+  background: var(--cc-card);
   border: 1px solid var(--cc-line);
   border-top-left-radius: 4px;
 }
@@ -774,7 +969,7 @@ onUnmounted(() => {
   color: var(--x-ok);
 }
 .bad {
-  color: var(--el-color-danger);
+  color: var(--cc-err);
 }
 .ellipsis {
   overflow: hidden;
@@ -823,7 +1018,7 @@ onUnmounted(() => {
   padding: 0 6px 0 8px;
   border: 1px solid var(--cc-line);
   border-radius: 14px;
-  background: var(--el-bg-color);
+  background: var(--cc-card);
 }
 .tchip {
   flex: none;
@@ -841,7 +1036,7 @@ onUnmounted(() => {
   font-weight: 600;
 }
 .tchip.none {
-  color: var(--el-color-danger);
+  color: var(--cc-err);
 }
 .clip {
   flex: none;
@@ -863,7 +1058,7 @@ onUnmounted(() => {
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--el-text-color-primary);
+  color: var(--cc-fg);
   font-size: 13.5px;
 }
 .tin::placeholder {
@@ -882,22 +1077,182 @@ onUnmounted(() => {
   --el-button-hover-text-color: #1a1208;
   --el-button-active-bg-color: #e86a08;
   --el-button-active-border-color: #e86a08;
-  --el-button-disabled-bg-color: color-mix(in srgb, #ff7a14 38%, var(--el-bg-color));
-  --el-button-disabled-border-color: color-mix(in srgb, #ff7a14 38%, var(--el-bg-color));
-  --el-button-disabled-text-color: color-mix(in srgb, #1a1208 70%, var(--el-bg-color));
+  --el-button-disabled-bg-color: color-mix(in srgb, #ff7a14 38%, var(--cc-card));
+  --el-button-disabled-border-color: color-mix(in srgb, #ff7a14 38%, var(--cc-card));
+  --el-button-disabled-text-color: color-mix(in srgb, #1a1208 70%, var(--cc-card));
   font-weight: 700;
 }
 .dev.pend {
   border-color: var(--x-acc);
-  background: color-mix(in srgb, var(--x-acc) 10%, var(--el-bg-color));
+  background: color-mix(in srgb, var(--x-acc) 10%, var(--cc-card));
 }
 .code {
   font-family: var(--el-font-family-mono, monospace);
   letter-spacing: 1px;
-  color: var(--el-text-color-primary);
+  color: var(--cc-fg);
 }
 .main {
   position: relative;
+}
+.chatbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.vtabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 22px 0;
+  border-bottom: 1px solid var(--cc-line);
+  background: var(--cc-card);
+}
+.vtabs button {
+  border: 0;
+  background: none;
+  padding: 8px 14px 10px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--cc-text-2, inherit);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+}
+.vtabs button.on {
+  color: var(--x-acc);
+  border-bottom-color: var(--x-acc);
+}
+.vtabs em {
+  font-style: normal;
+  margin-left: 6px;
+  font-size: 11.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--x-chip);
+  color: var(--x-chipfg);
+}
+.cmsg {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.cbody {
+  min-width: 0;
+  max-width: min(560px, 80%);
+}
+.cwho {
+  font-size: 12px;
+  color: var(--cc-muted, #7a8aa5);
+  margin-bottom: 3px;
+}
+.cbub {
+  background: var(--cc-card);
+  border: 1px solid var(--cc-line);
+  color: var(--x-chipfg);
+  border-radius: 4px 16px 16px 16px;
+  padding: 9px 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.ctail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 22px 12px;
+}
+.tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px 0;
+  max-height: 156px;
+  overflow: auto;
+}
+.dchip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  min-width: 0;
+  padding: 5px 24px 5px 6px;
+  border-radius: 10px;
+  background: var(--x-chip);
+  color: var(--x-chipfg);
+  border: 1px solid var(--cc-line);
+  font-size: 12.5px;
+}
+.dchip.text {
+  background: var(--x-ob);
+  border-color: var(--x-obl);
+  color: var(--x-obfg);
+}
+.dchip .no {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--x-acc);
+  color: var(--x-acfg);
+}
+.dthumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  object-fit: cover;
+  flex: none;
+}
+.dicon {
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--cc-hover);
+  flex: none;
+}
+.dicon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dtext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dx {
+  all: unset;
+  cursor: pointer;
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.6;
+}
+.dx:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.18);
 }
 .dropmask {
   position: absolute;
@@ -905,7 +1260,7 @@ onUnmounted(() => {
   z-index: 5;
   border: 2px dashed var(--x-acc);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--x-acc) 12%, var(--el-bg-color));
+  background: color-mix(in srgb, var(--x-acc) 12%, var(--cc-card));
   color: var(--x-acc);
   font-weight: 700;
   font-size: 15px;
@@ -923,5 +1278,17 @@ onUnmounted(() => {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.brow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.brow .kind {
+  min-width: 0;
+}
+.brow .acts {
+  margin-left: auto;
 }
 </style>

@@ -89,6 +89,7 @@ const singleFile = computed(() => ['tags', 'subtitle', 'lut'].includes(cur.value
   <div class="tb">
     <ToolboxSidebar :model-value="cur" :recent="recent" @update:model-value="select" @back="back" />
     <div class="content" :class="{ wide: cur === 'edit' }">
+      <div class="dtop"><h1>工具箱</h1><span class="dspacer" /><span class="chip">{{ def.name }}</span></div>
       <p class="mute note">所有处理都在本机完成，会生成新文件并登记到媒体库，不会修改原文件。需要 ffmpeg（在“设置 → 组件”里安装）。</p>
       <FileBasket v-if="cur !== 'edit'" v-model="app.toolFiles" :accepts="accepts" :note="singleFile ? (usable > 1 ? '这个工具一次处理一个文件，用篮里的第一个。' : '') : note" />
       <div class="row">
@@ -124,10 +125,10 @@ const singleFile = computed(() => ['tags', 'subtitle', 'lut'].includes(cur.value
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
-  padding: 18px 24px;
+  padding: 22px 28px 32px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
   max-width: 1360px;
 }
 .content.wide {

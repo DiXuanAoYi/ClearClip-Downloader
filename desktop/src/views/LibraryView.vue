@@ -311,9 +311,10 @@ async function clearHistory() {
 </script>
 
 <template>
-  <div class="page">
+  <div class="dpage page">
+    <div class="dtop"><h1>媒体库</h1></div>
     <div class="head">
-      <el-radio-group v-model="tab" size="small">
+      <el-radio-group v-model="tab" class="dtabs">
         <el-radio-button value="files">已下载</el-radio-button>
         <el-radio-button value="inbox">收到的链接<template v-if="app.inboxUnhandled"> ({{ app.inboxUnhandled }})</template></el-radio-button>
         <el-radio-button value="transfer">手机互传</el-radio-button>
@@ -480,11 +481,6 @@ async function clearHistory() {
 
 <style scoped>
 .page {
-  padding: 20px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 1080px;
   height: 100%;
   box-sizing: border-box;
 }

@@ -33,7 +33,7 @@ html, body { margin: 0; overflow: hidden; background: transparent !important; }
 #app { width: 100vw; height: 100vh; }
 </style>
 <style scoped>
-.pin { position: fixed; inset: 0; border: 2px solid #f0a064; box-sizing: border-box; border-radius: 4px; overflow: hidden; background: #14181a; }
+.pin { position: fixed; inset: 0; border: 2px solid #ffb547; box-sizing: border-box; border-radius: 4px; overflow: hidden; background: #060a12; }
 img { width: 100%; height: 100%; object-fit: fill; display: block; pointer-events: none; }
 .x { position: absolute; right: 2px; top: 2px; width: 20px; height: 20px; border: 0; border-radius: 50%; background: #000a; color: #fff; cursor: pointer; display: none; line-height: 1; }
 .pin:hover .x { display: block; }

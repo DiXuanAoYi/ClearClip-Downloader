@@ -676,7 +676,15 @@ export interface AiSettings {
   targetLang: string
   bilingual: boolean
   batchSize: number
-  sttEngine: 'api' | 'local'
+  /** 送给 AI 前去掉非语音说明 / 口水词（不影响文稿显示和导出） */
+  subCleanHearing: boolean
+  subCleanFiller: 'off' | 'conservative' | 'standard' | 'aggressive'
+  subCleanPunct: boolean
+  subCleanOutput: boolean
+  sttEngine: 'api' | 'local' | 'volc' | 'xfyun'
+  sttVolcAppId: string
+  sttXfyunAppId: string
+  sttCloudSmooth: boolean
   sttBaseUrl: string
   sttModel: string
   sttLanguage: string
@@ -818,6 +826,8 @@ export interface PhoneInfo {
   maxUploadMb: number
   autoExtract: boolean
   outboxHours: number
+  /** 手机互聊开关 */
+  peerChat: boolean
 }
 
 export interface LanAddr {
@@ -832,6 +842,16 @@ export interface PhoneOptions {
   maxUploadMb: number
   autoExtract: boolean
   outboxHours: number
+  /** 不传表示保持原值 */
+  peerChat?: boolean
+}
+
+export interface ChatMsg {
+  id: number
+  device: string
+  name: string
+  text: string
+  ts: number
 }
 
 export type TransferKind = 'text' | 'image' | 'video' | 'audio' | 'archive' | 'file'
@@ -2248,7 +2268,7 @@ export interface ScreenSettings {
   /** 增强识字用哪个语言包：auto 按识字语言选 / default 默认 / 指定包名 */
   ocrPack: string
   audioLang: string
-  audioStt: 'local' | 'cloud'
+  audioStt: 'local' | 'cloud' | 'volc' | 'xfyun'
   audioBilingual: boolean
   /** 听什么：电脑正在播放的声音 / 麦克风 */
   audioSource: 'system' | 'mic'
@@ -2256,6 +2276,9 @@ export interface ScreenSettings {
   audioDraft: boolean
   /** 翻译时带上最近几句当上文（0 = 不带） */
   audioContext: number
+  /** 语音字幕实时存到本地 */
+  audioAutosave: boolean
+  audioSaveDir: string
   profiles: ScreenProfile[]
   history: boolean
 }

@@ -208,7 +208,7 @@ pub fn start_audio(app: &tauri::AppHandle, state: &std::sync::Arc<crate::AppStat
     }
     let st = state.clone();
     let live = st.settings_raw().live;
-    if live.audio_stt != "cloud" && !crate::ml::DATA_DIR.get().is_some_and(|d| crate::ml::sensevoice::find_files(d).is_some()) {
+    if live.audio_stt == "local" && !crate::ml::DATA_DIR.get().is_some_and(|d| crate::ml::sensevoice::find_files(d).is_some()) {
         return Err(AppError::invalid("本机语音识别还没装好。请在“设置 → AI”或“设置 → 组件”里安装 SenseVoice，或把语音识别改成云端。"));
     }
     #[cfg(windows)]
@@ -254,9 +254,14 @@ async fn recognize(
     st: &std::sync::Arc<crate::AppState>,
     wav: &std::path::Path,
     lang: &str,
-    cloud: bool,
+    engine: &str,
     stop: &std::sync::Arc<AtomicBool>,
 ) -> AppResult<String> {
+    // 火山引擎 / 讯飞：一句一句发给云端，说完一句很快就出字
+    if matches!(engine, "volc" | "xfyun") {
+        return recognize_cloud(st, wav, engine).await;
+    }
+    let cloud = engine == "cloud";
     if !cloud {
         let files = crate::ml::DATA_DIR.get().and_then(|d| crate::ml::sensevoice::find_files(d)).ok_or_else(|| AppError::invalid("本机语音识别还没装好。"))?;
         let stop2 = stop.clone();
@@ -275,6 +280,25 @@ async fn recognize(
     };
     let srt = crate::ai::transcribe_rotating(&ep, &model, lang, wav).await?;
     Ok(text_of(&crate::subtitle::parse_srt(&srt)))
+}
+
+/// 火山引擎（极速版，整句 WAV）/ 讯飞（实时转写，整句 PCM）识别一句话。
+async fn recognize_cloud(st: &std::sync::Arc<crate::AppState>, wav: &std::path::Path, engine: &str) -> AppResult<String> {
+    let settings = st.settings_raw();
+    let bytes = std::fs::read(wav)?;
+    if engine == "volc" {
+        let key = st.vault.get(crate::stt_cloud::KEY_VOLC).ok_or_else(|| AppError::invalid("请先在“设置 → AI → 语音转文字”里填写火山引擎的密钥。"))?;
+        let client = st.net.clients_for(&settings.network, crate::stt_cloud::VOLC_URL)?.download;
+        let cues = crate::stt_cloud::volc_recognize(&client, &settings.ai.stt_volc_app_id, &key, &bytes, 10_000, settings.ai.stt_cloud_smooth).await?;
+        Ok(text_of(&cues))
+    } else {
+        let key = st
+            .vault
+            .get(crate::stt_cloud::KEY_XFYUN_RT)
+            .ok_or_else(|| AppError::invalid("请先在“设置 → AI → 语音转文字”里填写讯飞“实时语音转写”的 APIKey。"))?;
+        let pcm = bytes.get(44..).unwrap_or(&[]);
+        crate::stt_cloud::xfyun_rt_text(&settings.ai.stt_xfyun_app_id, &key, pcm, settings.ai.stt_cloud_smooth).await
+    }
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -330,7 +354,7 @@ fn run_loop(
                     ready.remove(0);
                 }
                 let live = st.settings_raw().live;
-                let cloud = live.audio_stt == "cloud";
+                let cloud = live.audio_stt != "local";
                 // 边说边出字：这一句还没说完，隔一阵先识别已经说出的部分当草稿（只在本机识别时做，云端按次计费）
                 if ready.is_empty() && live.audio_draft && !cloud {
                     if let Some(cur) = seg.current() {
@@ -340,7 +364,7 @@ fn run_loop(
                             let wav = st.data_dir.join("live_audio_draft.wav");
                             if std::fs::write(&wav, wav_bytes(cur)).is_ok() {
                                 let began = Instant::now();
-                                let heard = tauri::async_runtime::block_on(recognize(st, &wav, &live.audio_lang, false, stop));
+                                let heard = tauri::async_runtime::block_on(recognize(st, &wav, &live.audio_lang, "local", stop));
                                 let _ = std::fs::remove_file(&wav);
                                 gate.cost_ms = began.elapsed().as_millis() as u64;
                                 if let Ok(t) = heard {
@@ -374,7 +398,7 @@ fn run_loop(
                     if std::fs::write(&wav, wav_bytes(&s)).is_err() {
                         continue;
                     }
-                    let heard = tauri::async_runtime::block_on(recognize(st, &wav, &live.audio_lang, cloud, stop));
+                    let heard = tauri::async_runtime::block_on(recognize(st, &wav, &live.audio_lang, &live.audio_stt, stop));
                     let _ = std::fs::remove_file(&wav);
                     let text = match heard {
                         Ok(t) => clean(&t),
@@ -397,6 +421,19 @@ fn run_loop(
                     let end_ms = t0.elapsed().as_millis() as u64;
                     let start_ms = end_ms.saturating_sub((s.len() as u64 * 1000) / u64::from(RATE));
                     crate::livevoice::push(start_ms, end_ms, &text, &tr);
+                    if live.audio_autosave {
+                        let settings = st.settings_raw();
+                        let dir = if live.audio_save_dir.trim().is_empty() {
+                            settings.download_root().join("语音字幕")
+                        } else {
+                            std::path::PathBuf::from(live.audio_save_dir.trim())
+                        };
+                        let pre = crate::subclean::Opts {
+                            hearing: settings.ai.sub_clean_hearing,
+                            filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler),
+                        };
+                        let _ = crate::livevoice::autosave(&dir, if settings.ai.sub_clean_output { Some(&pre) } else { None }, live.audio_bilingual);
+                    }
                     emit_sub(
                         app,
                         SubPayload {

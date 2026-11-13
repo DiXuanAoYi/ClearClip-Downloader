@@ -155,7 +155,7 @@ p {
   font-size: 12px;
 }
 .err {
-  color: var(--el-color-danger);
+  color: var(--cc-err);
   margin-top: 6px;
 }
 .row {

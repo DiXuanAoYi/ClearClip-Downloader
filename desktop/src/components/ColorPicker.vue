@@ -598,16 +598,16 @@ const safeNote = computed(() => (safeOn.value ? (safe.value.clamped ? `超出广
 <style scoped>
 .ccp { display: flex; flex-direction: column; gap: 10px; min-height: 420px }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace }
-.mute { color: var(--el-text-color-secondary); font-size: 12.5px }
-.warn { color: var(--el-color-warning-dark-2); font-size: 12.5px }
+.mute { color: var(--cc-mute); font-size: 12.5px }
+.warn { color: var(--cc-amber); font-size: 12.5px }
 .sp { flex: 1 }
 .top { display: flex; align-items: center; gap: 10px }
-.cmp { display: flex; width: 74px; height: 38px; border-radius: 8px; overflow: hidden; border: 1px solid var(--el-border-color) }
+.cmp { display: flex; width: 74px; height: 38px; border-radius: 8px; overflow: hidden; border: 1px solid var(--cc-line) }
 .cmp i { flex: 1 }
 .tinfo { display: flex; flex-direction: column; line-height: 1.3 }
-.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--el-border-color) }
-.tabs button { border: 0; background: none; padding: 7px 14px; cursor: pointer; font: inherit; color: var(--el-text-color-secondary); border-bottom: 2px solid transparent }
-.tabs button.on { color: var(--el-color-primary); border-bottom-color: var(--el-color-primary); font-weight: 700 }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--cc-line) }
+.tabs button { border: 0; background: none; padding: 7px 14px; cursor: pointer; font: inherit; color: var(--cc-mute); border-bottom: 2px solid transparent }
+.tabs button.on { color: var(--cc-amber); border-bottom-color: var(--cc-amber); font-weight: 700 }
 .tabs button:disabled { opacity: .4; cursor: not-allowed }
 .pane { display: flex; gap: 18px; min-height: 0 }
 .pane .l { width: 300px; flex: none; display: flex; flex-direction: column; gap: 10px }
@@ -620,28 +620,28 @@ const safeNote = computed(() => (safeOn.value ? (safe.value.clamped ? `超出广
 .hue { position: relative; height: 14px; border-radius: 7px; cursor: pointer; touch-action: none; background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00) }
 .hue .dot { top: 50% }
 .bas { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px }
-.bas button, .cus button { height: 22px; border: 1px solid var(--el-border-color); border-radius: 4px; cursor: pointer; padding: 0 }
-.bas button.on, .cus button.on { outline: 2px solid var(--el-color-primary); outline-offset: 1px }
+.bas button, .cus button { height: 22px; border: 1px solid var(--cc-line); border-radius: 4px; cursor: pointer; padding: 0 }
+.bas button.on, .cus button.on { outline: 2px solid var(--cc-amber); outline-offset: 1px }
 .cus { display: flex; flex-wrap: wrap; gap: 4px }
 .cus button { width: 24px }
 .f2 { display: flex; align-items: center; gap: 8px }
-.f2 label { width: 34px; color: var(--el-text-color-secondary); font-size: 12.5px }
+.f2 label { width: 34px; color: var(--cc-mute); font-size: 12.5px }
 .nums { display: grid; grid-template-columns: 44px 1fr 44px 1fr 44px 1fr; gap: 6px 6px; align-items: center }
-.nums label { color: var(--el-text-color-secondary); font-size: 12px }
+.nums label { color: var(--cc-mute); font-size: 12px }
 .nums :deep(.el-input-number) { width: 100% }
 .nums .lab { grid-column: 2 / 7; font-size: 12.5px }
 .sec { display: flex; align-items: center; justify-content: space-between; margin-top: 4px }
-.adv { color: var(--el-color-primary); cursor: pointer; font-size: 12.5px; margin-top: 6px; user-select: none }
-.advbox { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-lighter) }
+.adv { color: var(--cc-amber); cursor: pointer; font-size: 12.5px; margin-top: 6px; user-select: none }
+.advbox { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--cc-line); border-radius: 8px; background: var(--cc-fill) }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
-.seg { display: flex; background: var(--el-fill-color-blank); border: 1px solid var(--el-border-color); border-radius: 8px; padding: 2px; gap: 2px; flex-wrap: wrap }
-.seg span { padding: 2px 10px; border-radius: 6px; cursor: pointer; font-size: 12.5px; color: var(--el-text-color-secondary) }
-.seg .on { background: var(--el-color-primary); color: #fff; font-weight: 700 }
+.seg { display: flex; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px; flex-wrap: wrap }
+.seg span { padding: 2px 10px; border-radius: 6px; cursor: pointer; font-size: 12.5px; color: var(--cc-mute) }
+.seg .on { background: var(--cc-amber); color: var(--cc-on-acc); font-weight: 700 }
 .sl { flex: 1; min-width: 120px }
 .tools { display: flex; gap: 4px }
-.tools button { border: 1px solid var(--el-border-color); background: var(--el-bg-color); border-radius: 6px; padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12.5px; color: var(--el-text-color-primary) }
-.tools button.on { background: var(--el-color-primary); color: #fff; border-color: var(--el-color-primary) }
-.pimg { position: relative; border: 1px solid var(--el-border-color); line-height: 0; touch-action: none; user-select: none; max-height: 380px; overflow: hidden }
+.tools button { border: 1px solid var(--cc-line); background: var(--cc-card); border-radius: 6px; padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12.5px; color: var(--cc-fg) }
+.tools button.on { background: var(--cc-amber); color: var(--cc-on-acc); border-color: var(--cc-amber) }
+.pimg { position: relative; border: 1px solid var(--cc-line); line-height: 0; touch-action: none; user-select: none; max-height: 380px; overflow: hidden }
 .pimg.pick { cursor: crosshair }
 .pimg.box, .pimg.line { cursor: copy }
 .pimg img { width: 100%; height: auto; display: block }
@@ -653,33 +653,33 @@ const safeNote = computed(() => (safeOn.value ? (safe.value.clamped ? `超出广
 .pimg .tip i { width: 12px; height: 12px; border: 1px solid #fff; border-radius: 3px }
 .sw5 { display: flex; gap: 8px; flex-wrap: wrap }
 .sw { width: 78px; display: flex; flex-direction: column; gap: 3px; text-align: center; font-size: 12px }
-.sw .chip { position: relative; height: 54px; border-radius: 8px; border: 1px solid var(--el-border-color) }
+.sw .chip { position: relative; height: 54px; border-radius: 8px; border: 1px solid var(--cc-line) }
 .sw .chip em { position: absolute; left: 4px; top: 4px; width: 16px; height: 16px; border-radius: 8px; background: #1d2433; color: #fff; font-size: 10px; font-style: normal; display: flex; align-items: center; justify-content: center }
 .sw .sh { font-size: 11px }
-.sw button { height: 22px; border: 1px solid var(--el-border-color); border-radius: 6px; background: var(--el-bg-color); cursor: pointer; font: inherit; font-size: 12px; color: var(--el-text-color-primary) }
-.sw button:hover { border-color: var(--el-color-primary); color: var(--el-color-primary) }
-.gbar { position: relative; height: 40px; border-radius: 8px; border: 1px solid var(--el-border-color); margin-bottom: 8px }
+.sw button { height: 22px; border: 1px solid var(--cc-line); border-radius: 6px; background: var(--cc-card); cursor: pointer; font: inherit; font-size: 12px; color: var(--cc-fg) }
+.sw button:hover { border-color: var(--cc-amber); color: var(--cc-amber) }
+.gbar { position: relative; height: 40px; border-radius: 8px; border: 1px solid var(--cc-line); margin-bottom: 8px }
 .gbar b { position: absolute; bottom: -8px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #1d2433; box-sizing: border-box; cursor: ew-resize; touch-action: none }
-.wheel { position: relative; width: 240px; height: 240px; margin: 0 auto; border-radius: 50%; background: radial-gradient(circle, #fff 0, rgba(255, 255, 255, 0) 70%), conic-gradient(from 0deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); border: 1px solid var(--el-border-color) }
+.wheel { position: relative; width: 240px; height: 240px; margin: 0 auto; border-radius: 50%; background: radial-gradient(circle, #fff 0, rgba(255, 255, 255, 0) 70%), conic-gradient(from 0deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); border: 1px solid var(--cc-line) }
 .wheel b { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1px #1d2433, 0 2px 6px rgba(0, 0, 0, .4); box-sizing: border-box }
 .wheel b.cen { width: 28px; height: 28px; margin: -14px 0 0 -14px }
 .pair { display: flex; align-items: center; gap: 4px }
-.pair span { width: 64px; font-size: 12.5px; color: var(--el-text-color-secondary) }
-.pair button { width: 28px; height: 20px; border: 1px solid var(--el-border-color); border-radius: 4px; cursor: pointer; padding: 0 }
+.pair span { width: 64px; font-size: 12.5px; color: var(--cc-mute) }
+.pair button { width: 28px; height: 20px; border: 1px solid var(--cc-line); border-radius: 4px; cursor: pointer; padding: 0 }
 .big { display: flex; align-items: baseline; gap: 4px; padding: 4px 0 }
 .big b { font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums }
-.big span { color: var(--el-text-color-secondary) }
-.big.ok b { color: var(--el-color-success) }
-.big.mid b { color: var(--el-color-warning) }
-.big.bad b { color: var(--el-color-danger) }
-.sample { border: 1px solid var(--el-border-color); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px }
+.big span { color: var(--cc-mute) }
+.big.ok b { color: var(--cc-cyan) }
+.big.mid b { color: var(--cc-amber) }
+.big.bad b { color: var(--cc-err) }
+.sample { border: 1px solid var(--cc-line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px }
 .sample small { font-size: 11px }
 .lv { display: flex; flex-wrap: wrap; gap: 6px }
-.lv span { font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--el-border-color); color: var(--el-text-color-secondary) }
-.lv span.y { background: var(--el-color-success-light-9); border-color: var(--el-color-success-light-5); color: var(--el-color-success) }
+.lv span { font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--cc-line); color: var(--cc-mute) }
+.lv span.y { background: var(--cc-cyan-soft); border-color: var(--cc-cyan-line); color: var(--cc-cyan) }
 .cb { display: flex; flex-direction: column; gap: 8px }
 .cbr { display: flex; align-items: center; gap: 10px }
-.cbr .s { width: 64px; height: 38px; border-radius: 8px; border: 1px solid var(--el-border-color); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px }
+.cbr .s { width: 64px; height: 38px; border-radius: 8px; border: 1px solid var(--cc-line); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px }
 .cbr .t { display: flex; flex-direction: column; flex: 1 }
 .cbr em { font-style: normal; font-size: 12px }
 .foot { display: flex; align-items: center; gap: 8px }

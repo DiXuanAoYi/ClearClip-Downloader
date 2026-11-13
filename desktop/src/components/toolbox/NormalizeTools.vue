@@ -968,7 +968,7 @@ h5 {
   padding: 0 6px;
   border-radius: 8px;
   background: var(--cc-acc);
-  color: #fff;
+  color: var(--cc-on-acc);
 }
 .pd {
   font-size: 11.5px;

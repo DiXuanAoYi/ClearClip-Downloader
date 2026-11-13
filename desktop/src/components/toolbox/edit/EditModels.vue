@@ -96,8 +96,8 @@ onBeforeUnmount(() => un?.())
 <style scoped>
 .pick { max-width: 360px; }
 .models { display: flex; flex-direction: column; gap: 10px; width: 100%; }
-.model { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+.model { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--cc-line-soft); border-radius: 6px; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.muted { color: var(--el-text-color-secondary); font-size: 12px; }
+.muted { color: var(--cc-mute); font-size: 12px; }
 .note { line-height: 1.4; }
 </style>

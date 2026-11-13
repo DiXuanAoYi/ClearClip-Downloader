@@ -36,6 +36,45 @@ pub fn push(start_ms: u64, end_ms: u64, src: &str, text: &str) {
 
 pub fn clear() {
     lock().entries.clear();
+    *SESSION_FILE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// 本次会话自动保存到的文件（第一次保存时按时间命名，`clear` 开始新会话时重置）。
+static SESSION_FILE: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+
+/// 把本次会话的字幕实时存到本地：每来一句重写一遍 `.srt`（几千句也只是几百 KB）。`pre` 有值时做字幕预处理（去非语音说明和口水词），
+/// 清理前的原文另存为 `.srt.raw`。返回写入的文件；写不进去（文件夹没权限等）返回 `None`，不打断识别。
+pub fn autosave(dir: &std::path::Path, pre: Option<&crate::subclean::Opts>, bilingual: bool) -> Option<std::path::PathBuf> {
+    let t = lock();
+    if t.entries.is_empty() {
+        return None;
+    }
+    let raw_srt = t.to_srt(bilingual);
+    let (srt, cleaned) = match pre {
+        Some(o) => {
+            let mut c = Transcript::default();
+            for e in &t.entries {
+                let src = crate::subclean::clean_line(&e.src, o);
+                if !src.is_empty() {
+                    c.entries.push(Entry { src, ..e.clone() });
+                }
+            }
+            let s = c.to_srt(bilingual);
+            let changed = s != raw_srt;
+            (s, changed)
+        }
+        None => (raw_srt.clone(), false),
+    };
+    drop(t);
+    std::fs::create_dir_all(dir).ok()?;
+    let mut slot = SESSION_FILE.lock().unwrap_or_else(|e| e.into_inner());
+    let path = slot.get_or_insert_with(|| dir.join(format!("语音字幕-{}.srt", chrono::Local::now().format("%Y%m%d-%H%M%S")))).clone();
+    drop(slot);
+    std::fs::write(&path, srt).ok()?;
+    if cleaned {
+        let _ = std::fs::write(path.with_extension("srt.raw"), raw_srt);
+    }
+    Some(path)
 }
 
 pub fn entries() -> Vec<Entry> {
@@ -294,5 +333,31 @@ mod tests {
     fn summary_prompt_asks_for_faithful_markdown_in_the_target_language() {
         let s = summary_system("简体中文");
         assert!(s.contains("简体中文") && s.contains("do not invent") && s.contains("## Action items"));
+    }
+
+    #[test]
+    fn autosave_writes_cleaned_srt_and_keeps_the_raw_one() {
+        let dir = std::env::temp_dir().join(format!("cc-autosave-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        clear();
+        push(0, 1500, "[Music]", "");
+        push(2000, 3500, "Um, hello everyone", "大家好");
+        let o = crate::subclean::Opts { hearing: true, filler: crate::subclean::Level::Conservative };
+        let p = autosave(&dir, Some(&o), false).expect("saved");
+        let srt = std::fs::read_to_string(&p).unwrap();
+        assert!(srt.contains("大家好") && !srt.contains("Music") && !srt.contains("Um"), "{srt}");
+        let raw = std::fs::read_to_string(p.with_extension("srt.raw")).unwrap();
+        assert!(raw.contains("[Music]") && raw.contains("大家好"));
+        // 同一会话继续写同一个文件
+        push(4000, 5000, "second", "第二句");
+        assert_eq!(autosave(&dir, Some(&o), false).unwrap(), p);
+        assert!(std::fs::read_to_string(&p).unwrap().contains("第二句"));
+        // 新会话换新文件
+        clear();
+        push(0, 1000, "new", "新的");
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert_ne!(autosave(&dir, None, false).unwrap(), p);
+        clear();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

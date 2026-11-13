@@ -181,7 +181,7 @@ async function wipe() {
       </div>
     </section>
 
-    <el-dialog :model-value="dialog !== null" :title="dialog === 'set' ? (app.lock.enabled ? '修改应用锁密码' : '设置应用锁密码') : '关闭应用锁'" width="380px" @close="dialog = null">
+    <el-dialog append-to-body :model-value="dialog !== null" :title="dialog === 'set' ? (app.lock.enabled ? '修改应用锁密码' : '设置应用锁密码') : '关闭应用锁'" width="380px" @close="dialog = null">
       <div class="col">
         <el-input v-if="app.lock.enabled" v-model="current" type="password" show-password placeholder="当前密码" autocomplete="off" />
         <template v-if="dialog === 'set'">
@@ -197,7 +197,7 @@ async function wipe() {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="wipeOpen" title="一键清除" width="480px" top="4vh">
+    <el-dialog append-to-body v-model="wipeOpen" title="一键清除" width="480px" top="4vh">
       <div class="col wipe-body">
         <div v-for="i in ITEMS" :key="i.key" class="wipe-row">
           <el-checkbox v-model="opts[i.key]">{{ i.label }}</el-checkbox>

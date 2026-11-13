@@ -356,6 +356,16 @@ pub fn phone_set_options(app: AppHandle, options: phone::PhoneOptions) -> AppRes
     phone::set_options(&app, options)
 }
 
+#[tauri::command]
+pub fn phone_chat_list(app: AppHandle, since: Option<u64>) -> Vec<phone::ChatMsg> {
+    phone::chat_list(&app, since.unwrap_or(0))
+}
+
+#[tauri::command]
+pub fn phone_chat_clear(app: AppHandle) {
+    phone::chat_clear(&app)
+}
+
 // ---------- 手机与电脑互传 ----------
 
 #[tauri::command]
@@ -374,6 +384,40 @@ pub struct SendResult {
 pub fn transfer_send_files(app: AppHandle, paths: Vec<String>, targets: Option<Vec<String>>) -> AppResult<SendResult> {
     let (added, skipped) = crate::transfer::send_files(&app, &paths, targets.as_deref())?;
     Ok(SendResult { added, skipped })
+}
+
+/// 粘贴进互传输入框的图片 / 文件：前端把原始字节发来（请求正文），存成临时文件，返回路径，再按普通文件发给手机。
+/// 文件名放在请求头 `x-name`（网址编码）。单个最大 512 MB；一周前粘贴的临时文件顺手清掉。
+#[tauri::command]
+pub fn transfer_stage_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> AppResult<String> {
+    const MAX: usize = 512 * 1024 * 1024;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(crate::error::AppError::msg("没有收到文件内容"));
+    };
+    if bytes.is_empty() {
+        return Err(crate::error::AppError::msg("剪贴板里的文件是空的"));
+    }
+    if bytes.len() > MAX {
+        return Err(crate::error::AppError::msg("粘贴的文件超过 512 MB，请直接拖进窗口，或点“选择文件”"));
+    }
+    let raw = request.headers().get("x-name").and_then(|v| v.to_str().ok()).unwrap_or("file");
+    let decoded: String =
+        url::form_urlencoded::parse(format!("n={}", raw.replace('+', "%2B")).as_bytes()).next().map(|(_, v)| v.into_owned()).unwrap_or_else(|| "file".into());
+    let name = crate::transfer::safe_name(&decoded);
+    let dir = app.state::<std::sync::Arc<crate::AppState>>().data_dir.join("transfer-paste");
+    std::fs::create_dir_all(&dir)?;
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        let week = std::time::Duration::from_secs(7 * 24 * 3600);
+        for e in rd.flatten() {
+            if e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > week) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let path = dir.join(format!("{stamp}-{name}"));
+    std::fs::write(&path, bytes)?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

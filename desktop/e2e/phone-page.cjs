@@ -15,12 +15,26 @@ const html = fs.readFileSync(path.join(__dirname, '../src-tauri/src/phone_page.h
   page.on('pageerror', (e) => errors.push(e.message))
   let paired = false
   const sent = []
+  let chatOn = false
+  const uploads = []
+  const chatMsgs = []
   await page.route('http://phone.test/**', async (route) => {
     const u = new URL(route.request().url())
     const j = (o) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(o) })
     if (u.pathname === '/') return route.fulfill({ contentType: 'text/html', body: html })
     if (u.pathname === '/api/hello') return j({ paired, code: paired ? '' : '472913', pcName: '办公室电脑', maxMb: 2048 })
     if (u.pathname === '/api/thumb') return route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') })
+    if (u.pathname === '/api/chat') {
+      if (route.request().method() === 'POST') {
+        const b = JSON.parse(route.request().postData())
+        const m = { id: chatMsgs.length + 1, device: b.device, name: 'iPhone', text: b.text, ts: 1 }
+        chatMsgs.push(m)
+        return j({ message: m })
+      }
+      const since = Number(u.searchParams.get('since') || 0)
+      return j({ enabled: chatOn, messages: chatOn ? chatMsgs.filter((m) => m.id > since) : [] })
+    }
+    if (u.pathname === '/api/upload') return (uploads.push(u.searchParams.get('name')), j({ id: 1, name: u.searchParams.get('name') }))
     if (u.pathname === '/api/send') return (sent.push(route.request().postData()), j({ state: 'queued' }))
     if (u.pathname === '/api/box')
       return j({
@@ -64,10 +78,21 @@ const html = fs.readFileSync(path.join(__dirname, '../src-tauri/src/phone_page.h
   await page.waitForFunction(() => document.getElementById('text').value === '')
   ok(sent.length === 1 && sent[0].includes('bilibili'), '发送链接')
 
-  // 上传：选一个小文件（接口没有实现 /api/upload，会失败，用来看错误气泡与移除）
+  // 微信式输入框：选的 / 粘贴的文件先放进输入框，点发送才发；先打的文字、文件、后打的文字按顺序发
+  sent.length = 0
+  await page.fill('#text', '这是合同')
   await page.setInputFiles('#inFile', { name: 'a.zip', mimeType: 'application/zip', buffer: Buffer.alloc(100) })
+  await page.waitForSelector('#tray .dc')
+  ok((await page.locator('#tray .dc').count()) === 2 && (await page.locator('#tray .dc').first().getAttribute('class')).includes('tx'), '选了文件后，先打的文字固定成第 1 项，文件是第 2 项')
+  ok(uploads.length === 0 && sent.length === 0, '没点发送不会自动发')
+  ok((await page.inputValue('#text')) === '', '输入框清空可以接着打字')
+  await page.fill('#text', '请签收')
+  await page.click('#send')
+  // 点发送时草稿立刻移走、按顺序在后台发：等到发完（文字、文件、文字）
+  for (let i = 0; i < 80 && !(uploads.length === 1 && sent.length === 2); i++) await page.waitForTimeout(100)
+  ok((await page.locator('#tray .dc').count()) === 0, '点发送后草稿区清空')
+  ok(uploads.join() === 'a.zip' && sent.length === 2 && sent[0].includes('这是合同') && sent[1].includes('请签收'), '点发送后按顺序发出：文字、文件、文字 → ' + JSON.stringify({ uploads, sent }))
   await page.waitForFunction(() => /a\.zip/.test(document.getElementById('feed').textContent))
-  ok(true, '上传条目出现在对话流')
   // 同一个文件只留一条：上传的这条（名字、大小都和电脑记录里的 a.zip 一样）和记录里的不重复显示
   await page.waitForTimeout(300)
   const zips = await page.locator('#feed .bub', { hasText: 'a.zip' }).count()
@@ -86,6 +111,25 @@ const html = fs.readFileSync(path.join(__dirname, '../src-tauri/src/phone_page.h
   await page.screenshot({ path: process.env.SHOT || '/tmp/phone-get.png' })
   await page.click('#tabSend')
   await page.screenshot({ path: (process.env.SHOT || '/tmp/phone-get.png').replace('get', 'send') })
+  // 手机互聊：电脑端开关关闭时没有这个页；打开后出现，别的手机的消息会显示，自己发的靠右
+  ok(await page.locator('#tabChat').isHidden(), '互聊没开时不显示“手机互聊”页')
+  chatOn = true
+  chatMsgs.push({ id: 1, device: 'other', name: '小米手机', text: '到了吗', ts: 1 })
+  await page.waitForSelector('#tabChat:not([hidden])', { timeout: 9000 })
+  ok(await page.locator('#tabChat').isVisible(), '电脑端打开互聊后出现“手机互聊”页')
+  ok((await page.textContent('#cbadge')) === '1', '别的手机发来消息时标签上有未读数')
+  await page.click('#tabChat')
+  await page.waitForSelector('#cfeed .cm')
+  ok((await page.locator('#cfeed .cm').count()) === 1 && (await page.textContent('#cfeed')).includes('小米手机'), '显示别的手机的名字和内容')
+  ok(await page.locator('#cComp').isVisible() && !(await page.locator('#comp').isVisible()), '互聊页用自己的输入框')
+  ok((await page.textContent('#cfeed')).includes('电脑端能看到全部内容'), '页面里明确写明电脑能看到')
+  await page.fill('#ctext', '马上到')
+  await page.click('#csend')
+  await page.waitForSelector('#cfeed .cm.me')
+  ok((await page.textContent('#cfeed .cm.me')).includes('马上到'), '自己发的消息靠右显示')
+  chatOn = false
+  await page.waitForSelector('#tabChat', { state: 'hidden', timeout: 9000 })
+  ok((await page.locator('#vSend').isVisible()), '电脑端关闭互聊后回到发送页')
   ok(errors.length === 0, '没有页面错误' + (errors.length ? '：' + errors.join(';') : ''))
   console.log(`\n${pass} 通过，${fail} 失败`)
   await browser.close()

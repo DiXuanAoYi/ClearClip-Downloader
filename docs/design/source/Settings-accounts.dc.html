@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影 · 设置</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="clearclip.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body { margin: 0; }
+.shell{min-height:900px}
+
+</style>
+</helmet>
+<div class="cc" data-theme="{{theme}}">
+<div class="shell">
+<nav class="rail" aria-label="主导航">
+<div class="logo" role="img" aria-label="清影"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3.5 6.1M20.2 8.2l-6.8 1M20.2 15.8 15 11M12 21l-3.5-6.1M3.8 15.8l6.8-1M3.8 8.2 9 13"/></svg></div>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>解析</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>下载队列</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>订阅</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.5 7.5a6 6 0 0 0 0 9M16.5 7.5a6 6 0 0 1 0 9"/></svg><span>直播</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H4zM8 20h8M9 9h6M9 12h4"/></svg><span>屏幕翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5"/></svg><span>媒体库</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4"/></svg><span>文件翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v17l-5-4-5 4z"/></svg><span>生词与摘录</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/></svg><span>工具箱</span></button>
+<div class="nav-gap"></div>
+<button class="nav-i" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4"/></svg><span>设置</span></button>
+</nav>
+<main class="main">
+<header class="topbar">
+<h1>设置</h1>
+<span class="spacer"></span><span class="chip cyan"><i class="dot "></i>已自动保存</span>
+</header>
+<div class="split">
+<aside class="cats sticky" aria-label="设置分类">
+<label class="field" style="margin-bottom:10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-4-4"/></svg><input type="text" placeholder="搜索设置" aria-label="搜索设置"><span class="kbd">Ctrl K</span></label>
+<button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>下载</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>解析</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4v9a6 6 0 0 0 12 0V4h-4v9a2 2 0 0 1-4 0V4zM6 8h4M14 8h4"/></svg><span>BT 与 ed2k</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18M12 3a9 9 0 1 0 0 18"/></svg><span>网络</span></button><button class="cat" aria-current="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 20a8 8 0 0 1 16 0"/></svg><span>账号与 Cookie</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM11 18h2"/></svg><span>手机与浏览器扩展</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 14h6l-1 7 8-11h-6z"/></svg><span>自动化</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></svg><span>AI</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16zM14 6l3 3"/></svg><span>写作</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.500 3 8 7 10 4-2 7-5.500 7-10V6l-7-3Z"/></svg><span>安全与隐私</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 7.500v9L12 21l8-4.500v-9L12 3ZM4 7.500 12 12l8-4.500M12 12v9"/></svg><span>组件</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg><span>诊断</span></button><button class="cat" aria-current="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4"/></svg><span>通用</span></button>
+</aside>
+<section aria-label="账号与 Cookie设置">
+<div class="toolbar" style="margin-bottom:14px"><h2 style="font-size:18px">账号与 Cookie</h2><span class="spacer"></span><span class="eyebrow">设置页排布</span><span class="seg" role="radiogroup" aria-label="设置页排布"><label><input type="radio" name="g37" checked><span>自动平衡</span></label><label><input type="radio" name="g37"><span>按顺序</span></label><label><input type="radio" name="g37"><span>单列</span></label></span></div>
+
+<div class="masonry" style="column-count:2">
+<article class="panel "><div class="panel-h"><h2>账号登录</h2><span class="spacer"></span></div><div class="list"><div class="item"><div style="width:36px;height:36px;border-radius:50%;flex:none" class="thumb t1"></div><div class="grow"><div class="ttl">B站 · 光影漫游者</div><div class="meta"><span>已登录 · 大会员</span></div></div><button class="btn sm ghost" >退出登录</button></div><div class="item"><div style="width:36px;height:36px;border-radius:50%;flex:none" class="thumb t1"></div><div class="grow"><div class="ttl">YouTube</div><div class="meta"><span>已登录</span></div></div><button class="btn sm ghost" >退出登录</button></div><div class="item"><div style="width:36px;height:36px;border-radius:50%;flex:none" class="thumb t1"></div><div class="grow"><div class="ttl">抖音</div><div class="meta"><span>未登录</span></div></div><button class="btn sm" >登录</button></div><div class="item"><div style="width:36px;height:36px;border-radius:50%;flex:none" class="thumb t1"></div><div class="grow"><div class="ttl">小红书</div><div class="meta"><span>未登录</span></div></div><button class="btn sm" >登录</button></div><div class="item"><div style="width:36px;height:36px;border-radius:50%;flex:none" class="thumb t1"></div><div class="grow"><div class="ttl">微博</div><div class="meta"><span>已登录</span></div></div><button class="btn sm ghost" >退出登录</button></div></div></article><article class="panel "><div class="panel-h"><h2>Cookie</h2><span class="spacer"></span></div><div class="row"><div class="t"><b>Cookie 来源</b></div><div class="ctl"><span class="seg" role="radiogroup" aria-label="来源"><label><input type="radio" name="g36" checked><span>内置登录</span></label><label><input type="radio" name="g36"><span>浏览器导入</span></label><label><input type="radio" name="g36"><span>文件</span></label></span></div></div><div class="row"><div class="t"><b>从浏览器导入</b><small>Chrome / Edge / Firefox</small></div><div class="ctl"><button class="btn sm" >选择浏览器</button></div></div><div class="row"><div class="t"><b>Cookie 文件</b><small>Netscape 格式</small></div><div class="ctl"><button class="btn sm" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>导入</button></div></div><p class="note">密钥与 Cookie 只存在本机设置里，不会上传。</p></article><article class="panel "><div class="panel-h"><h2>登录状态</h2><span class="spacer"></span></div><div class="row"><div class="t"><b>自动刷新登录</b><small>过期前尝试续期</small></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="刷新"><span></span></label></div></div><div class="row"><div class="t"><b>登录失效时提醒</b></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="提醒"><span></span></label></div></div></article>
+</div>
+<div class="toolbar"><span class="mono" style="color:var(--faint);font-size:12px">修改即时生效，无需手动保存</span><span class="spacer"></span><button class="btn sm" >恢复默认</button></div>
+</section>
+</div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"],"section":"外观"},"$preview":{"width":1360,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return { theme: this.props.theme ?? 'dark' }; }
+}
+</script>
+</body>
+</html>

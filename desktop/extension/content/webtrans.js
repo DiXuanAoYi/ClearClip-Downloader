@@ -38,43 +38,43 @@
       [${ATTR}][data-style="card"] { background: rgba(37,99,235,.13); border-left: 3px solid rgba(37,99,235,.75); border-radius: 4px; padding: .3em .6em; margin: .35em 0 .45em; }
       [${ATTR}][data-style="dim"] { opacity: .78; }
       [${ATTR}][data-style="underline"] { text-decoration: underline dashed; text-underline-offset: 3px; text-decoration-color: #b4561a99; }
-      [${ATTR}][data-style="highlight"] { background: #ffe9a8; color: #1d2420 !important; border-radius: 3px; padding: 0 .25em; }
+      [${ATTR}][data-style="highlight"] { background: #ffe9a8; color: #0b1424 !important; border-radius: 3px; padding: 0 .25em; }
       [${ATTR}][data-blur] { filter: blur(6px); transition: filter .12s ease; }
       [${ATTR}][data-blur]:hover, :hover > [${ATTR}][data-blur] { filter: none; }
       [${ATTR}][data-state="busy"] { opacity: .5; }
       [${ATTR}][data-state="busy"]::after { content: " …"; }
-      [${ATTR}][data-state="fail"] { color: #a8362d; cursor: pointer; }
+      [${ATTR}][data-state="fail"] { color: #c4283d; cursor: pointer; }
       [data-cc-tr-hide] { display: none !important; }
     `
     ;(document.head || document.documentElement).append(st)
   }
 
   const uiRoot = () => (S.ui ||= mount(`
-    .card { position: fixed; z-index: 2147483647; width: min(380px, calc(100vw - 24px)); max-height: 60vh; overflow: auto; background: #fff; color: #1d2420;
-      border: 1px solid #cfd5d1; border-radius: 10px; box-shadow: 0 12px 32px #0003; padding: 10px 12px; }
-    .card .src { color: #5d6862; font-size: 12px; max-height: 4.5em; overflow: hidden; margin-bottom: 6px; }
+    .card { position: fixed; z-index: 2147483647; width: min(380px, calc(100vw - 24px)); max-height: 60vh; overflow: auto; background: #fff; color: #0b1424;
+      border: 1px solid #aebfd8; border-radius: 10px; box-shadow: 0 12px 32px #0003; padding: 10px 12px; }
+    .card .src { color: #4d5f7b; font-size: 12px; max-height: 4.5em; overflow: hidden; margin-bottom: 6px; }
     .card .out { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.6; }
     .card .cmpRow + .cmpRow { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #c9d2cd; }
-    .card .eng { font-size: 11px; color: #5d6862; margin-bottom: 2px; }
+    .card .eng { font-size: 11px; color: #4d5f7b; margin-bottom: 2px; }
     .card .bar { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
-    .card .bar .grow { flex: 1; color: #5d6862; font-size: 12px; }
-    .bar-pill { position: fixed; z-index: 2147483647; right: 16px; bottom: 16px; display: flex; gap: 8px; align-items: center; background: #1d2420; color: #fff;
+    .card .bar .grow { flex: 1; color: #4d5f7b; font-size: 12px; }
+    .bar-pill { position: fixed; z-index: 2147483647; right: 16px; bottom: 16px; display: flex; gap: 8px; align-items: center; background: #0b1424; color: #fff;
       border-radius: 999px; padding: 6px 12px; box-shadow: 0 6px 20px #0004; }
     .bar-pill button { padding: 2px 8px; font-size: 12px; }
-    .tbox { position: fixed; z-index: 2147483647; width: min(460px, calc(100vw - 24px)); max-height: 80vh; display: flex; flex-direction: column; background: #fff; color: #1d2420;
-      border: 1px solid #cfd5d1; border-radius: 12px; box-shadow: 0 16px 40px #0004; overflow: hidden; }
-    .tbox .hd { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: grab; background: #f3f1ec; border-bottom: 1px solid #e1e5e2; user-select: none; touch-action: none; font-weight: 600; }
+    .tbox { position: fixed; z-index: 2147483647; width: min(460px, calc(100vw - 24px)); max-height: 80vh; display: flex; flex-direction: column; background: #fff; color: #0b1424;
+      border: 1px solid #aebfd8; border-radius: 12px; box-shadow: 0 16px 40px #0004; overflow: hidden; }
+    .tbox .hd { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: grab; background: #e4ebf5; border-bottom: 1px solid #d3deec; user-select: none; touch-action: none; font-weight: 600; }
     .tbox .hd .grow { flex: 1; }
     .tbox .bd { padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow: auto; }
-    .tbox textarea { width: 100%; min-height: 70px; resize: vertical; font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; padding: 6px 8px; border: 1px solid #cfd5d1; border-radius: 6px; background: #fff; color: #1d2420; }
+    .tbox textarea { width: 100%; min-height: 70px; resize: vertical; font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; padding: 6px 8px; border: 1px solid #aebfd8; border-radius: 6px; background: #fff; color: #0b1424; }
     .tbox .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .tbox select { padding: 4px 6px; border: 1px solid #cfd5d1; border-radius: 6px; background: #fff; color: #1d2420; }
-    .tbox .res { border: 1px solid #e1e5e2; border-radius: 8px; padding: 8px 10px; }
-    .tbox .res .eng { font-size: 11px; color: #5d6862; display: flex; gap: 6px; align-items: center; margin-bottom: 2px; }
+    .tbox select { padding: 4px 6px; border: 1px solid #aebfd8; border-radius: 6px; background: #fff; color: #0b1424; }
+    .tbox .res { border: 1px solid #d3deec; border-radius: 8px; padding: 8px 10px; }
+    .tbox .res .eng { font-size: 11px; color: #4d5f7b; display: flex; gap: 6px; align-items: center; margin-bottom: 2px; }
     .tbox .res .txt { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.6; }
-    .tbox .res.err .txt { color: #a8362d; }
-    @media (prefers-color-scheme: dark) { .tbox { background: #1d2420; color: #eef1ee; border-color: #3a443f } .tbox .hd { background: #262f2a; border-color: #3a443f } .tbox textarea, .tbox select { background: #262f2a; color: #eef1ee; border-color: #3a443f } .tbox .res { border-color: #3a443f } }
-    @media (prefers-color-scheme: dark) { .card { background: #1d2420; color: #eef1ee; border-color: #3a443f } .card .src { color: #a3aea8 } }
+    .tbox .res.err .txt { color: #c4283d; }
+    @media (prefers-color-scheme: dark) { .tbox { background: #0b1424; color: #e8f0fd; border-color: #2c4366 } .tbox .hd { background: #0e1625; border-color: #2c4366 } .tbox textarea, .tbox select { background: #0e1625; color: #e8f0fd; border-color: #2c4366 } .tbox .res { border-color: #2c4366 } }
+    @media (prefers-color-scheme: dark) { .card { background: #0b1424; color: #e8f0fd; border-color: #2c4366 } .card .src { color: #a3aea8 } }
   `))
 
   // ---------- 找段落 ----------

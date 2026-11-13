@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影 · 解析</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="clearclip.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap">
+<style>
+body { margin: 0; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 18px; align-items: start; }
+.stack { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.sticky { position: sticky; top: 18px; }
+.cmd { display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; }
+.cmd .field { flex: 1 1 420px; height: 52px; }
+.cmd .field input { height: 50px; font-size: 15px; }
+.cmd .btn { height: 52px; padding: 0 26px; font-size: 15px; }
+.plat { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+.media { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 20px; }
+.cover { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, #0b1830 0%, #1c2f5c 46%, #e58a3c 92%, #ffcf86 100%); }
+.cover::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0 1px, transparent 1px 3px); }
+.cover .sky { position: absolute; left: 0; right: 0; bottom: 0; height: 62%; background: #050a14;
+  clip-path: polygon(0 100%, 0 70%, 6% 70%, 6% 50%, 10% 50%, 10% 62%, 15% 62%, 15% 38%, 18% 38%, 18% 20%, 20% 20%, 20% 38%, 24% 38%, 24% 58%, 30% 58%, 30% 44%, 36% 44%, 36% 64%, 42% 64%, 42% 30%, 44% 30%, 44% 8%, 45% 8%, 45% 30%, 47% 30%, 47% 52%, 53% 52%, 53% 66%, 60% 66%, 60% 46%, 66% 46%, 66% 60%, 72% 60%, 72% 36%, 76% 36%, 76% 56%, 83% 56%, 83% 68%, 90% 68%, 90% 48%, 95% 48%, 95% 64%, 100% 64%, 100% 100%); }
+.cover .play { position: absolute; left: 50%; top: 46%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(6, 10, 18, 0.55); border: 1px solid rgba(255, 255, 255, 0.5); color: #fff;  }
+.cover .play svg { width: 22px; height: 22px; margin-left: 3px; fill: currentColor; }
+.cover .dur { position: absolute; right: 10px; bottom: 10px; padding: 2px 8px; border-radius: 6px; background: rgba(6, 10, 18, 0.72); color: #fff; font-size: 12px; }
+.info { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.info h2 { font-size: 20px; line-height: 1.35; font-weight: 700; }
+.who { display: flex; align-items: center; gap: 10px; color: var(--mute); }
+.avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #1a1100; background: linear-gradient(135deg, #ffc760, #4be3d0); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font-size: 12.5px; color: var(--mute); margin-top: auto; padding-top: 12px; border-top: 1px dashed var(--line-strong); }
+.kv b { color: var(--text); font-weight: 500; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; }
+.plan-big { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 2px; }
+.plan-big .n { font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 46px; line-height: 1; letter-spacing: -0.01em; }
+.plan-big .u { color: var(--mute); font-size: 14px; }
+.bar { height: 6px; border-radius: 999px; background: var(--inset); border: 1px solid var(--line); overflow: hidden; margin: 10px 0 4px; }
+.bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--cyan), var(--amber)); opacity: 0.85; }
+.lines { display: flex; flex-direction: column; gap: 7px; margin: 14px 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 13px; }
+.lines div { display: flex; justify-content: space-between; gap: 10px; color: var(--mute); }
+.lines b { color: var(--text); font-weight: 500; text-align: right; }
+.btns { display: flex; flex-direction: column; gap: 10px; }
+.rec { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; min-width: 0; }
+.rec:first-of-type { border-top: 0; }
+.rec .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec .tm { color: var(--faint); font-size: 11.5px; flex: none; }
+.hp { display: grid; grid-template-columns: 70px minmax(0, 1fr) 62px; align-items: center; gap: 10px; padding: 6px 0; font-size: 12.5px; }
+.hp .meter { height: 6px; border-radius: 999px; background: var(--inset); overflow: hidden; }
+.hp .meter i { display: block; height: 100%; border-radius: 999px; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+.hp .meter i.warn { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+.hp .ms { text-align: right; color: var(--mute); }
+@media (max-width: 1100px) { .cols { grid-template-columns: minmax(0, 1fr); } .sticky { position: static; } }
+@media (max-width: 700px) { .media { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</helmet>
+<div class="cc" data-theme="{{theme}}">
+<div class="shell">
+
+<nav class="rail" aria-label="主导航">
+<div class="logo" role="img" aria-label="清影"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3.5 6.1M20.2 8.2l-6.8 1M20.2 15.8 15 11M12 21l-3.5-6.1M3.8 15.8l6.8-1M3.8 8.2 9 13"/></svg></div>
+<button class="nav-i" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>解析</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>下载队列</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>订阅</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.5 7.5a6 6 0 0 0 0 9M16.5 7.5a6 6 0 0 1 0 9"/></svg><span>直播</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H4zM8 20h8M9 9h6M9 12h4"/></svg><span>屏幕翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5"/></svg><span>媒体库</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4"/></svg><span>文件翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v17l-5-4-5 4z"/></svg><span>生词与摘录</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/></svg><span>工具箱</span></button>
+<div class="nav-gap"></div>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4"/></svg><span>设置</span></button>
+</nav>
+
+<main class="main">
+<header class="topbar">
+<h1>解析</h1>
+<span class="sub mono">PARSE · 01</span>
+<span class="spacer"></span>
+<span class="chip cyan"><i class="dot"></i>本机服务 已开启</span>
+<span class="chip">yt-dlp 2026.11.02</span>
+<span class="chip">ffmpeg 7.1</span>
+</header>
+
+<section class="panel" aria-label="粘贴链接">
+<div class="eyebrow" style="margin-bottom:12px">链接</div>
+<div class="cmd">
+<label class="field">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 18.7l1-1"></path></svg>
+<input type="text" value="https://www.bilibili.com/video/BV1Zt4y1c7Qe" aria-label="视频或列表链接">
+<span class="chip cyan"><i class="dot"></i>B站 · 已识别</span>
+</label>
+<button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>解析</button>
+</div>
+<div class="plat">
+<span class="chip">批量粘贴多条链接</span>
+<span class="chip amber">已登录 · 可解析会员清晰度</span>
+<span class="spacer"></span>
+<span class="mono" style="color:var(--faint);font-size:11.5px">B站 · YouTube · 抖音 · 快手 · 小红书 · 微博 · 直链 · m3u8 · 磁力</span>
+</div>
+</section>
+
+<div class="cols">
+<div class="stack">
+
+<section class="panel" aria-label="资源信息">
+<div class="media">
+<div class="cover" role="img" aria-label="视频封面">
+<div class="sky"></div>
+<div class="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"></path></svg></div>
+<span class="dur mono">12:48</span>
+</div>
+<div class="info">
+<div class="eyebrow">资源</div>
+<h2>【4K 延时】上海 · 夜未央：从外滩到陆家嘴的 24 小时</h2>
+<div class="who"><span class="avatar" aria-hidden="true">光</span><span>光影漫游者</span><span class="chip">UP 主</span></div>
+<div class="chips">
+<span class="chip">时长 12:48</span>
+<span class="chip">发布 2026-11-08</span>
+<span class="chip">1 个分 P</span>
+<span class="chip">播放 128.4 万</span>
+<span class="chip">弹幕 3.2 万</span>
+</div>
+<div class="kv mono">
+<span>来源</span><b>BV1Zt4y1c7Qe</b>
+<span>引擎</span><b>B站专用解析器</b>
+<span>用时</span><b>820 ms</b>
+</div>
+</div>
+</div>
+</section>
+
+<section class="panel" aria-label="清晰度与格式">
+<div class="panel-h"><h2>清晰度与格式</h2><span class="eyebrow">5 个可选</span><span class="spacer"></span>
+<span class="seg" role="radiogroup" aria-label="内容"><label><input type="radio" name="kind" checked=""><span>视频 + 音频</span></label><label><input type="radio" name="kind"><span>仅视频</span></label><label><input type="radio" name="kind"><span>仅音频</span></label></span>
+</div>
+<div class="tiles">
+<sc-for list="{{tiles}}" as="t" hint-placeholder-count="5">
+<label class="tile">
+<input type="radio" name="fmt" checked="{{t.checked}}" onChange="{{t.pick}}">
+<span class="ring"></span>
+<span class="res">{{t.res}}</span>
+<span class="sub">{{t.sub}}</span>
+<span class="size">{{t.size}}</span>
+<sc-if value="{{t.lock}}" hint-placeholder-val="{{false}}">
+<span class="chip amber lock"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="11" width="12" height="9" rx="2"></rect><path d="M9 11V8a3 3 0 0 1 6 0v3"></path></svg>大会员</span>
+</sc-if>
+</label>
+</sc-for>
+</div>
+</section>
+
+<section class="panel" aria-label="字幕与弹幕">
+<div class="panel-h"><h2>字幕与弹幕</h2><span class="eyebrow">3 条轨道</span></div>
+<sc-for list="{{subs}}" as="s" hint-placeholder-count="3">
+<div class="row">
+<div class="t"><b>{{s.name}}</b><small>{{s.note}}</small></div>
+<div class="ctl"><span class="chip">{{s.fmt}}</span>
+<label class="sw"><input type="checkbox" checked="{{s.on}}" onChange="{{s.toggle}}" aria-label="{{s.label}}"><span></span></label></div>
+</div>
+</sc-for>
+</section>
+
+</div>
+
+<aside class="stack sticky" aria-label="下载方案">
+<section class="panel">
+<div class="eyebrow">下载方案</div>
+<div class="plan-big"><span class="n">{{plan.mb}}</span><span class="u">MB · 预计 {{plan.eta}}</span></div>
+<div class="bar" aria-hidden="true"><i></i></div>
+<div class="mono" style="color:var(--faint);font-size:11.5px">按当前网速 6.0 MB/s 估算</div>
+<div class="lines">
+<div><span>清晰度</span><b>{{plan.res}} · MP4</b></div>
+<div><span>字幕与弹幕</span><b>{{plan.subs}}</b></div>
+<div><span>保存到</span><b class="mono">D:\清影\B站\光影漫游者</b></div>
+<div><span>文件名</span><b class="mono">光影漫游者_上海夜未央_20261112.mp4</b></div>
+</div>
+<div class="btns">
+<button class="btn primary block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"></path></svg>加入下载队列</button>
+<button class="btn block">立即下载并打开文件夹</button>
+</div>
+<div class="row" style="margin-top:12px"><div class="t"><b>完成后整理到子文件夹</b><small>按平台 / UP 主归档</small></div><div class="ctl"><label class="sw"><input type="checkbox" checked="" aria-label="完成后整理到子文件夹"><span></span></label></div></div>
+<div class="row"><div class="t"><b>响度标准化</b><small>统一为 −16 LUFS</small></div><div class="ctl"><label class="sw"><input type="checkbox" aria-label="响度标准化"><span></span></label></div></div>
+</section>
+
+<section class="panel">
+<div class="panel-h"><h2>最近解析</h2><span class="spacer"></span><span class="eyebrow">4</span></div>
+<div class="rec"><i class="dot"></i><span class="chip">B站</span><span class="tt">【4K 延时】上海 · 夜未央</span><span class="tm mono">刚刚</span></div>
+<div class="rec"><i class="dot"></i><span class="chip">YT</span><span class="tt">How rockets land themselves</span><span class="tm mono">12 分钟前</span></div>
+<div class="rec"><i class="dot amber"></i><span class="chip">抖音</span><span class="tt">需要登录后才能解析</span><span class="tm mono">昨天</span></div>
+<div class="rec"><i class="dot"></i><span class="chip">列表</span><span class="tt">播放列表 · 38 个视频</span><span class="tm mono">昨天</span></div>
+</section>
+
+<section class="panel">
+<div class="panel-h"><h2>平台健康</h2><span class="spacer"></span><span class="eyebrow">上次 2 小时前</span></div>
+<div class="hp"><span>B站</span><span class="meter"><i style="width:92%"></i></span><span class="ms mono">820 ms</span></div>
+<div class="hp"><span>YouTube</span><span class="meter"><i style="width:74%"></i></span><span class="ms mono">1.2 s</span></div>
+<div class="hp"><span>抖音</span><span class="meter"><i class="warn" style="width:38%"></i></span><span class="ms mono">需登录</span></div>
+</section>
+</aside>
+</div>
+
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"],"section":"外观"},"$preview":{"width":1360,"height":940}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { fmt: '4k', zh: true, en: false, dm: true };
+  }
+  renderVals() {
+    const s = this.state;
+    const defs = [
+      { id: '4k', res: '4K', sub: '60 帧 · HDR · AV1', mb: 218, lock: true },
+      { id: '1080p60', res: '1080P 60', sub: '60 帧 · 高码率 · HEVC', mb: 96, lock: true },
+      { id: '1080p', res: '1080P', sub: '30 帧 · AVC', mb: 71, lock: false },
+      { id: '720p', res: '720P', sub: '30 帧 · AVC', mb: 38, lock: false },
+      { id: 'audio', res: '仅音频', sub: 'AAC 192 kbps', mb: 12, lock: false }
+    ];
+    const tiles = defs.map((d) => ({
+      id: d.id, res: d.res, sub: d.sub, lock: d.lock,
+      size: d.mb + ' MB',
+      checked: s.fmt === d.id,
+      pick: () => this.setState({ fmt: d.id })
+    }));
+    const cur = defs.find((d) => d.id === s.fmt) || defs[0];
+    const subs = [
+      { name: '中文（简体）', note: 'UP 主上传 · 人工字幕', fmt: 'SRT', on: s.zh, label: '下载中文字幕', toggle: () => this.setState({ zh: !s.zh }) },
+      { name: 'English', note: '自动生成 · 质量一般', fmt: 'SRT', on: s.en, label: '下载英文字幕', toggle: () => this.setState({ en: !s.en }) },
+      { name: '弹幕', note: '3.2 万条 · 滚动弹幕，字号 40，不透明度 80%', fmt: 'ASS', on: s.dm, label: '下载弹幕', toggle: () => this.setState({ dm: !s.dm }) }
+    ];
+    const names = [];
+    if (s.zh) names.push('中文');
+    if (s.en) names.push('English');
+    if (s.dm) names.push('弹幕');
+    const eta = Math.max(1, Math.round(cur.mb / 6));
+    return {
+      theme: this.props.theme ?? 'dark',
+      tiles,
+      subs,
+      plan: {
+        res: cur.res,
+        mb: cur.mb,
+        eta: eta + ' 秒',
+        subs: names.length ? names.join(' · ') : '不下载'
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

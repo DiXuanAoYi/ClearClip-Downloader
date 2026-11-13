@@ -273,7 +273,7 @@ const noteClass = computed(() => (rg.note.value ? `note ${rg.note.value.kind}` :
   background: var(--cc-acc-soft);
 }
 .item.on {
-  border-color: var(--el-color-primary);
+  border-color: var(--cc-amber);
   background: var(--cc-acc-soft);
 }
 .nm {

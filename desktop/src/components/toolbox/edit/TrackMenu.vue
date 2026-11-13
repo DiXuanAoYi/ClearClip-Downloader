@@ -83,7 +83,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
   font-size: 13px;
 }
-.ttl { padding: 5px 10px; font-size: 11.5px; font-weight: 700; color: var(--el-text-color-secondary) }
+.ttl { padding: 5px 10px; font-size: 11.5px; font-weight: 700; color: var(--cc-mute) }
 .sep { height: 1px; margin: 4px 6px; background: var(--el-border-color-lighter, #e4e7ec) }
 .it {
   display: flex;
@@ -95,12 +95,12 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 6px;
   background: none;
-  color: var(--el-text-color-primary);
+  color: var(--cc-fg);
   font: inherit;
   cursor: pointer;
 }
-.it small { color: var(--el-text-color-secondary); font-size: 11.5px; line-height: 1.35 }
-.it:hover:not(:disabled), .it.on:not(:disabled) { background: var(--el-fill-color) }
+.it small { color: var(--cc-mute); font-size: 11.5px; line-height: 1.35 }
+.it:hover:not(:disabled), .it.on:not(:disabled) { background: var(--cc-fill) }
 .it:disabled { opacity: 0.45; cursor: not-allowed }
-.it.danger b { color: var(--el-color-danger) }
+.it.danger b { color: var(--cc-err) }
 </style>

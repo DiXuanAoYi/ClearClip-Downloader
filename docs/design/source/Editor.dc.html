@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影 · 剪辑</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="clearclip.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body { margin: 0; }
+.shell{min-height:1160px}
+
+</style>
+</helmet>
+<div class="cc" data-theme="{{theme}}">
+<div class="shell">
+<nav class="rail" aria-label="主导航">
+<div class="logo" role="img" aria-label="清影"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3.5 6.1M20.2 8.2l-6.8 1M20.2 15.8 15 11M12 21l-3.5-6.1M3.8 15.8l6.8-1M3.8 8.2 9 13"/></svg></div>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>解析</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>下载队列</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>订阅</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.5 7.5a6 6 0 0 0 0 9M16.5 7.5a6 6 0 0 1 0 9"/></svg><span>直播</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H4zM8 20h8M9 9h6M9 12h4"/></svg><span>屏幕翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5"/></svg><span>媒体库</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4"/></svg><span>文件翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v17l-5-4-5 4z"/></svg><span>生词与摘录</span></button>
+<button class="nav-i" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/></svg><span>工具箱</span></button>
+<div class="nav-gap"></div>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4"/></svg><span>设置</span></button>
+</nav>
+<main class="main">
+<header class="topbar">
+<h1>剪辑</h1>
+<span class="spacer"></span><span class="chip ">工具箱 · 剪辑（时间线）</span>
+</header>
+<div class="toolbar"><span class="mono" style="font-size:18px;color:var(--amber)">00:00:15.4</span><button class="btn sm" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg></button><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 7a2.5 2.5 0 1 0 0 .01M6 17a2.5 2.5 0 1 0 0 .01M8 8.500 20 18M8 15.500 20 6"/></svg></button><span class="sub-c">选择 / 刀片 / 修剪 / 标记 / 入出点</span><span class="spacer"></span><span class="chip ">联动</span><span class="chip cyan">吸附</span><button class="btn primary sm" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>导出</button></div>
+<div class="split" style="grid-template-columns:minmax(0,1fr) 320px"><div style="display:flex;flex-direction:column;gap:18px">
+<section class="panel"><div class="g2" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)"><div><div class="thumb t1"></div><div class="toolbar" style="margin-top:10px"><button class="btn sm" >监视器</button><button class="btn sm" >电平表</button><button class="btn sm" >波形</button><span class="chip cyan">代理素材 已启用</span></div></div>
+<div><div class="sec-t" style="margin-top:0">转写文稿</div><div class="list" style="gap:6px"><div class="item" style="padding:8px"><span class="mono sub-c">00:12</span><span class="grow">夜里的外滩，像一台缓慢运转的巨大钟表。</span></div><div class="item" style="padding:8px;border-color:var(--amber-line)"><span class="mono sub-c">00:15</span><span class="grow">潮水退去，城市亮起。</span></div><div class="item" style="padding:8px"><span class="mono sub-c">00:19</span><span class="grow">凌晨三点，菜市场醒了。</span></div></div></div></div></section>
+<section class="panel"><div class="panel-h"><h2>时间线</h2><span class="eyebrow">多轨 · 5 条轨道</span><span class="spacer"></span><button class="btn sm" >+ 视频轨</button><button class="btn sm" >+ 音频轨</button><button class="btn sm" >+ 文字轨</button><button class="btn sm ghost" >轨道模板</button><button class="btn sm ghost" >混音器</button></div>
+<div class="tl2" style="height:252px"><div class="lane" style="background:var(--panel)"><div class="lh"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></div><span class="mono" style="position:absolute;left:100px;top:11px;font-size:11px;color:var(--faint)">00:00 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;00:10 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;00:20 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;00:30 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;00:40</span></div>
+<div class="lane"><div class="lh">文字 T1</div><span class="clip t" style="left:260px;width:200px">标题：夜未央</span></div>
+<div class="lane"><div class="lh">视频 V2</div><span class="clip v" style="left:360px;width:240px">叠加 · 星空</span></div>
+<div class="lane"><div class="lh">视频 V1</div><span class="clip v" style="left:100px;width:260px">外滩 · 延时</span><span class="clip v" style="left:362px;width:300px">陆家嘴 · 延时</span></div>
+<div class="lane"><div class="lh">音频 A1</div><span class="clip a" style="left:100px;width:560px"><div class="wave"></div></span></div>
+<div class="lane"><div class="lh">音乐 A2</div><span class="clip a" style="left:200px;width:460px">Lo-fi bed · −18 dB</span></div>
+<div class="playhead" style="left:420px"></div></div></section></div>
+<aside style="display:flex;flex-direction:column;gap:18px" class="sticky"><section class="panel"><div class="panel-h"><h2>检查器</h2><span class="spacer"></span><span class="chip ">陆家嘴 · 延时</span></div>
+<div class="sec-t" style="margin-top:0">画面</div>
+<div class="row"><div class="t"><b>速度</b><small>曲线 / 关键帧</small></div><div class="ctl"><span class="step"><button aria-label="减少">−</button><b>1.0×</b><button aria-label="增加">+</button></span></div></div><div class="row"><div class="t"><b>LUT</b><small>Teal & Orange</small></div><div class="ctl"><select aria-label="LUT" style="width:130px"><option>无</option><option selected>Teal & Orange</option><option>Film 400</option></select></div></div><div class="row"><div class="t"><b>防抖</b></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="防抖"><span></span></label></div></div>
+<div class="sec-t">声音</div>
+<div class="row"><div class="t"><b>音量</b><small>−2.0 dB</small></div><div class="ctl"><label class="field" style="width:80px;flex:none"><input type="text" value="−2.0" placeholder="" aria-label="音量"></label></div></div><div class="row"><div class="t"><b>混响</b><small>人声 / 大厅</small></div><div class="ctl"><label class="sw"><input type="checkbox" aria-label="混响"><span></span></label></div></div><div class="row"><div class="t"><b>响度标准化</b><small>−16 LUFS</small></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="响度"><span></span></label></div></div>
+<div class="sec-t">复合片段 / 调整图层</div><div class="row"><div class="t"><b>复合片段</b><small>把选中的片段合成一个</small></div><div class="ctl"><button class="btn sm" >合成</button></div></div><div class="row"><div class="t"><b>调整图层</b><small>对下方所有轨道生效</small></div><div class="ctl"><button class="btn sm" >添加</button></div></div></section>
+<section class="panel"><div class="panel-h"><h2>导出</h2></div><div class="row"><div class="t"><b>格式</b></div><div class="ctl"><select aria-label="格式" style="width:130px"><option selected>MP4 H.264</option><option>MKV</option><option>GIF</option><option>仅声音</option></select></div></div><div class="row"><div class="t"><b>响度</b></div><div class="ctl"><select aria-label="响度" style="width:120px"><option selected>−16 LUFS</option><option>−14 LUFS</option><option>不处理</option></select></div></div><div class="toolbar" style="margin-top:12px"><button class="btn primary block" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>导出视频</button></div></section></aside></div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"],"section":"外观"},"$preview":{"width":1360,"height":1160}}'>
+class Component extends DCLogic {
+  renderVals() { return { theme: this.props.theme ?? 'dark' }; }
+}
+</script>
+</body>
+</html>

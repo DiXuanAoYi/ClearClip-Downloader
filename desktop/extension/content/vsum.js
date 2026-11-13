@@ -270,13 +270,13 @@
       // 关掉面板不取消：清影继续跑，重新打开后接上（keepOnStop）
       return await globalThis.ccUI.aiRun(req, {
         id,
-        interval: 700,
+        interval: kind === 'preclean' ? 80 : 700,
         keepOnStop: true,
         stop: () => S.closed,
         onSubmit: async (x) => {
           job.id = x
           if (tag) await setJobRec(tag, { id: x, kind, page, ts: Date.now() })
-          if (!S.job) S.job = job // 同时有多个后台任务时，进度条只显示最先开始的那个
+          if (!S.job && kind !== 'preclean') S.job = job // 预处理很快，不显示进度也不弹“处理好了”；同时有多个后台任务时，进度条只显示最先开始的那个
           renderProgress()
         },
         onProgress: (j) => {
@@ -327,7 +327,7 @@
     const audio = v === 'audio'
     if (audio && S.status?.transcribe === false) return toast(ui, '清影里还没有配置语音转文字：到“设置 → AI”选择本机 whisper.cpp 或填写接口', true, 6000)
     const url = S.data.url
-    const key = audio ? `stt:${url}` : `sub:${url}:${v}`
+    const key = audio ? `stt:${url}` : `sub2:${url}:${v}`
     S.busy = true
     render()
     try {
@@ -385,7 +385,7 @@
     S.busy = true
     render()
     try {
-      const key = `tr:${url}`
+      const key = `tr2:${url}`
       let r = await cached(key)
       if (!r) {
         // 识别出多少先显示多少；全部识别完后用完整结果覆盖，保证每句都有
@@ -518,7 +518,7 @@
     }
     if (!d.url || !/^https?:/.test(d.url) || d.site === 'article' || !(d.noSubtitle || d.fetchFailed)) return
     // 以前转写 / 取到过的文稿直接用，不再请求清影
-    for (const [key, name] of [[`tr:${d.url}`, '清影转写'], [`sub:${d.url}`, null]]) {
+    for (const [key, name] of [[`tr2:${d.url}`, '清影转写'], [`sub2:${d.url}`, null]]) {
       const old = await cached(key)
       if (S.data !== d) return
       if (old?.lines?.length) {
@@ -533,7 +533,7 @@
       S.busy = true
       render()
       try {
-        const skey = `sub:${d.url}`
+        const skey = `sub2:${d.url}`
         let r = await cached(skey)
         if (!r) {
           r = await submit({ kind: 'subtitles', url: d.url, title: d.title, lang: spokenHint(d) }, 'subtitles', skey)
@@ -853,7 +853,7 @@
         d.lines.length ? `${d.lines.length} 段` : '无文稿',
         d.track && `· ${d.track}`,
         d.durationMs > 0 && `· ${V.fmtClock(d.durationMs)}`,
-        S.status && !S.status.ready && h('span', { style: 'color:#a8362d', text: '· 清影里未设置大模型' })))
+        S.status && !S.status.ready && h('span', { style: 'color:#c4283d', text: '· 清影里未设置大模型' })))
       children.push(h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([id, n]) => h('button', { class: S.tab === id ? 'on' : '', role: 'tab', 'aria-selected': S.tab === id, text: id === 'vocab' && VOCAB.list ? `${n} ${VOCAB.list.length}` : n, onclick: () => ((S.tab = id), savePrefs(), id === 'vocab' && void loadVocab(), render()) }))))
     }
     const body = h('div', { class: 'body' }, h('div', { id: 'prog' }))
@@ -979,6 +979,39 @@
     }
   })
 
+  /** 没有标点的自动字幕：大部分行不是以标点结尾 */
+  const looksUnpunctuated = (lines) => lines.length >= 8 && lines.filter((l) => /[.!?。！？…，,、;；:：]["')”’）]?$/.test(l.text)).length < lines.length * 0.15
+
+  /**
+   * 预处理：读到文稿后先让清影清理一遍（去非语音说明、口水词；设置 → AI 里可调），文稿里显示清理后的，
+   * 清理前的存在 d.orig，文稿栏上有“显示原始”开关；清影没开 / 没连上就原样显示。设置里开了“预处理后自动补标点”的话，
+   * 没有标点的自动字幕接着自动补标点。送给模型的文字不管显示哪份，清影那边始终会再清理一遍。
+   */
+  async function autoClean(d) {
+    if (d.cleanDone || d.streaming || !d.lines.length || S.closed) return
+    d.cleanDone = true
+    try {
+      const st = await send({ type: 'cc-ai-status' })
+      if (!st.ok) return
+      const r = await submit({ kind: 'preclean', title: d.title, lines: d.lines.map((l) => ({ t: l.t, text: l.text })) }, 'preclean')
+      if (S.data !== d || !Array.isArray(r?.lines)) return
+      const rep = r.report || {}
+      if ((rep.hearing || 0) + (rep.filler || 0) + (rep.emptied || 0) > 0 && r.lines.length) {
+        d.orig = d.lines
+        d.cleaned = rep
+        d.lines = r.lines.map((l) => ({ t: l.t, text: l.text }))
+        S.showOrig = false
+        render()
+        syncSubLayer(d)
+      }
+      if (r.punct && !d.raw && looksUnpunctuated(d.lines) && S.status?.ready) {
+        S.pendingPunct = true
+      }
+    } catch {
+      // 清影没开或不支持：保持原样
+    }
+  }
+
   function setData(d) {
     S.data = d
     S.res = {}
@@ -986,11 +1019,14 @@
     S.query = ''
     S.preview = null
     S.restored = 0
+    S.showOrig = false
     render()
     if (!d.lines.length) return
     syncSubLayer(d)
+    // 先预处理，再带出以前生成的结果（缓存键按清理后的行算）
     // 同一份文稿以前生成的所有结果和对话直接带出来（不需要大模型）；会话里没有的摘要再去缓存里找
-    restoreSession(d)
+    autoClean(d)
+      .then(() => (S.data === d ? restoreSession(d) : null))
       .then(async () => {
         if (S.data !== d) return
         if (!S.res.summary) {
@@ -1000,8 +1036,13 @@
             S.restored ||= Date.now()
           }
         }
-        render()
+        // 有东西带出来才重画（没有就不动，免得打断正在做的选择）
+        if (S.restored || Object.keys(S.res).length) render()
         resumeJobs(d)
+        if (S.pendingPunct && S.data === d && !S.busy) {
+          S.pendingPunct = false
+          punctuateDoc()
+        }
       })
       .catch(() => {})
   }
@@ -1081,7 +1122,7 @@
   // ---------- 各标签页（vsum-*.js）：依赖从这里传进去 ----------
 
   const TABS_ = globalThis.ccVsumTabs
-  const { getSel, tabTranscript } = TABS_.transcript({
+  const { getSel, tabTranscript, punctuate: punctuateDoc } = TABS_.transcript({
     S, V, actsBar, addNote, copy, h, isVideo, langSelect, onSelect, outLabel, render, saveFile, savePrefs, seek,
     sel, send, setData, syncSubLayer, task, tick, toast, trackBar, translateDoc, ui, video
   })

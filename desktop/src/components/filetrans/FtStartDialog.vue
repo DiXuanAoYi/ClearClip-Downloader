@@ -123,19 +123,19 @@ const rest = computed(() => (plan.value ? Math.max(0, plan.value.segments - plan
 
 <style scoped>
 .sd { display: flex; flex-direction: column; gap: 12px }
-.file { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 9px; background: var(--el-fill-color-lighter) }
+.file { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 9px; background: var(--cc-fill) }
 .file b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.mute { color: var(--el-text-color-secondary); font-size: 12.5px }
-.bad { color: var(--el-color-danger); font-size: 12.5px }
-.warn { color: var(--el-color-warning-dark-2); font-size: 12.5px }
+.mute { color: var(--cc-mute); font-size: 12.5px }
+.bad { color: var(--cc-err); font-size: 12.5px }
+.warn { color: var(--cc-amber); font-size: 12.5px }
 .ind { margin-top: -6px; padding-left: 66px }
 .fld { display: flex; align-items: center; gap: 8px }
-.fld > span { width: 58px; color: var(--el-text-color-secondary); font-size: 12.5px; flex: none }
+.fld > span { width: 58px; color: var(--cc-mute); font-size: 12.5px; flex: none }
 .grow { flex: 1 }
-.seg { display: flex; flex: 1; background: var(--el-fill-color-blank); border: 1px solid var(--el-border-color); border-radius: 8px; padding: 2px; gap: 2px }
-.seg span { flex: 1; text-align: center; padding: 3px 0; border-radius: 6px; color: var(--el-text-color-secondary); font-size: 13px; cursor: pointer }
-.seg .on { background: var(--el-color-primary); color: #fff; font-weight: 700 }
+.seg { display: flex; flex: 1; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px }
+.seg span { flex: 1; text-align: center; padding: 3px 0; border-radius: 6px; color: var(--cc-mute); font-size: 13px; cursor: pointer }
+.seg .on { background: var(--cc-amber); color: var(--cc-on-acc); font-weight: 700 }
 .chk { display: flex; flex-direction: column; gap: 0 }
-.est { font-size: 13px; line-height: 1.7; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--el-border-color) }
+.est { font-size: 13px; line-height: 1.7; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--cc-line) }
 .ask { margin-right: auto; float: left }
 </style>

@@ -8,7 +8,7 @@
   globalThis.ccSelbarRun = true
 
   const CSS = `
-    .bar { display: flex; gap: 2px; align-items: center; background: #10201a; border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px #0006; }
+    .bar { display: flex; gap: 2px; align-items: center; background: #0b1424; border: 1px solid #2c4366; border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px #0006; }
     .bar button { background: transparent; color: #fff; border: 0; font-weight: 500; padding: 4px 9px; border-radius: 7px; white-space: nowrap; }
     .bar button:hover { background: #ffffff26; }
     .bar .sep { width: 1px; align-self: stretch; background: #ffffff33; margin: 4px 2px; }
@@ -28,7 +28,7 @@
     .card .body.wcard .hd { font-weight: 400; align-items: baseline }
     .menu2 { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px #0003; padding: 4px; min-width: 140px; }
     .menu2 button { display: block; width: 100%; text-align: left; background: transparent; color: inherit; font-weight: 400; }
-    .menu2 button:hover { background: #d9762b24; }
+    .menu2 button:hover { background: #b45f0024; }
   ` + (globalThis.ccWordCard?.CSS || '')
   let ui = null
   const uiRoot = () => (ui ||= mount(CSS))

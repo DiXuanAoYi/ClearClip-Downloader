@@ -4,26 +4,26 @@
   const api = globalThis.browser ?? globalThis.chrome
 
   // 主题令牌：跟随系统，也跟随摘要面板里选的 浅色 / 深色（host 的 data-theme）
-  const LIGHT = '--bg:#fff;--card:#fff;--soft:#f3f1ec;--line:#cfd5d1;--fg:#1d2420;--mute:#5d6862;--acc:#b4561a;--accsoft:#f6e6da;--onacc:#fff;--bad:#b3261e;--shade:#0005;'
-  const DARKV = '--bg:#1d2420;--card:#262f2a;--soft:#262f2a;--line:#3a443e;--fg:#eef1ee;--mute:#a9b3ad;--acc:#f0a064;--accsoft:#3a2c20;--onacc:#14181a;--bad:#ee917b;--shade:#000a;color-scheme:dark;'
+  const LIGHT = '--bg:#fff;--card:#fff;--soft:#e4ebf5;--line:#aebfd8;--fg:#0b1424;--mute:#4d5f7b;--acc:#b45f00;--accsoft:#f6e5cc;--onacc:#fff;--bad:#b3261e;--shade:#0005;--inp:#f1f5fb;--ok:#007a70;'
+  const DARKV = '--bg:#0b1424;--card:#0e1625;--soft:#0e1625;--line:#2c4366;--fg:#e8f0fd;--mute:#9aabc6;--acc:#ffb547;--accsoft:#3a2c1a;--onacc:#060a12;--bad:#ff7b8a;--shade:#000a;--inp:#060a12;--ok:#4be3d0;color-scheme:dark;'
   const BASE = `
     :host { all: initial; ${LIGHT} }
     @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) { ${DARKV} } }
     :host([data-theme="dark"]) { ${DARKV} }
     * { box-sizing: border-box; font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; letter-spacing: normal; }
-    button { cursor: pointer; border: 0; border-radius: 6px; padding: 5px 10px; color: var(--onacc); background: var(--acc); font-weight: 600; }
+    button { cursor: pointer; border: 0; border-radius: 10px; padding: 5px 10px; color: var(--onacc); background: var(--acc); font-weight: 600; }
     button.sec { background: var(--card); color: var(--fg); border: 1px solid var(--line); font-weight: 400; }
     button { transition: filter .12s, transform .08s; }
     button:hover:not(:disabled) { filter: brightness(1.1); }
     button:active:not(:disabled) { transform: translateY(1px) scale(.97); }
-    button:focus-visible { outline: 2px solid #d9762b; outline-offset: 2px; }
+    button:focus-visible { outline: 2px solid #4be3d0; outline-offset: 2px; }
     .layer { position: fixed; z-index: 2147483647; }
-    .menu { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px #0003; padding: 4px; min-width: 220px; max-width: 360px; }
+    .menu { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 28px #0003; padding: 4px; min-width: 220px; max-width: 360px; }
     .menu .it { display: block; width: 100%; text-align: left; background: transparent; color: inherit; font-weight: 400; border-radius: 4px; padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .menu .it:hover { background: #d9762b24; }
+    .menu .it:hover { background: #b45f0024; }
     .menu .hd { font-size: 11px; color: var(--mute); padding: 4px 10px; }
-    .toast { background: var(--fg); color: var(--bg); border-radius: 8px; padding: 8px 14px; box-shadow: 0 6px 20px #0004; }
-    .toast.err { background: #a8362d; }
+    .toast { background: var(--fg); color: var(--bg); border-radius: 12px; padding: 8px 14px; box-shadow: 0 6px 20px #0004; }
+    .toast.err { background: #c4283d; color: #fff; }
   `
 
   /** 创建容器。返回 { host, root, add, remove }：add 往里放节点。放在全屏元素里才看得见，所以全屏变化时跟着挪。 */

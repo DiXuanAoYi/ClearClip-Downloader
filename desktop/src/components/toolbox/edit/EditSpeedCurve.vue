@@ -129,32 +129,32 @@ const guide = [0.25, 0.5, 1, 2, 4]
 }
 .plot {
   width: 100%;
-  background: var(--el-fill-color-light);
+  background: var(--cc-hover);
   border-radius: 6px;
   touch-action: none;
   cursor: crosshair;
 }
 .g {
-  stroke: var(--el-border-color);
+  stroke: var(--cc-line);
   stroke-width: 0.6;
 }
 .g.one {
-  stroke: var(--el-text-color-secondary);
+  stroke: var(--cc-mute);
   stroke-dasharray: 3 3;
 }
 .gt {
   font-size: 7px;
   text-anchor: end;
-  fill: var(--el-text-color-secondary);
+  fill: var(--cc-mute);
 }
 .curve {
   fill: none;
-  stroke: var(--el-color-primary);
+  stroke: var(--cc-amber);
   stroke-width: 2;
 }
 .pt {
-  fill: var(--el-bg-color);
-  stroke: var(--el-color-primary);
+  fill: var(--cc-card);
+  stroke: var(--cc-amber);
   stroke-width: 2;
   cursor: grab;
 }

@@ -7,8 +7,8 @@
   const W = globalThis.ccWrite
 
   const CSS = `
-    :host { --bg:#f4f5f4; --card:#fff; --fg:#1d2420; --mut:#5d6862; --line:#d9dedb; --acc:#d9762b; --accd:#b4561a; --acc2:#fbeadb; --del-bg:#fbe3e0; --del-fg:#c2453b; --add-bg:#dff1e6; --add-fg:#2f8a57; --warn:#b4701a; --err:#c2453b }
-    @media (prefers-color-scheme: dark) { :host { --bg:#14181a; --card:#22292c; --fg:#e7ecea; --mut:#9aa6a2; --line:#2f383c; --acc:#f08a3c; --accd:#c8641f; --acc2:#3a2a1d; --del-bg:#4a2724; --del-fg:#ec7a70; --add-bg:#1f3a2c; --add-fg:#5cc28a; --warn:#e0a24a; --err:#ec7a70 } }
+    :host { --bg:#eaf0f7; --card:#fff; --fg:#0b1424; --mut:#4d5f7b; --line:#d9dedb; --acc:#b45f00; --accd:#b45f00; --acc2:#fbeadb; --del-bg:#fbe3e0; --del-fg:#c4283d; --add-bg:#dff1e6; --add-fg:#007a70; --warn:#b4701a; --err:#c4283d }
+    @media (prefers-color-scheme: dark) { :host { --bg:#060a12; --card:#0e1625; --fg:#e8f0fd; --mut:#9aabc6; --line:#1c2b43; --acc:#ffb547; --accd:#c8641f; --acc2:#3a2a1d; --del-bg:#4a2724; --del-fg:#ff7b8a; --add-bg:#1f3a2c; --add-fg:#5cc28a; --warn:#e0a24a; --err:#ff7b8a } }
     button { background: var(--accd); color: #fff; font-weight: 600; border-radius: 8px; }
     button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px }
     button.sec { background: transparent; color: var(--fg); border: 1px solid var(--line); font-weight: 400; }

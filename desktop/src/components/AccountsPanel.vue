@@ -294,7 +294,7 @@ async function remove(a: AccountSummary) {
       <small class="mute">Cookie 加密保存在本机，只会发送给它所属的网站。使用登录账号大量下载有被平台限制的风险。</small>
     </section>
 
-    <el-dialog v-model="pasteVisible" title="粘贴 Cookie" width="560px">
+    <el-dialog append-to-body v-model="pasteVisible" title="粘贴 Cookie" width="560px">
       <p class="mute small">当前网站：{{ targetSite || '未选择' }}。粘贴 cookies.txt 内容时会按文件里的域名自动分组。</p>
       <el-input v-model="pasteText" type="textarea" :rows="8" class="mono" placeholder="SESSDATA=...; bili_jct=...  或  cookies.txt 内容" />
       <template #footer>

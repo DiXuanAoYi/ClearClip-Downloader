@@ -52,6 +52,9 @@
           h('button', { class: 'sec', text: '重新断句', title: '把太长的句子按标点和长度拆开（时间按字数分配）；不改字，也不用重新识别', disabled: S.busy, onclick: resegment }),
           h('button', { class: 'sec', text: d.raw ? '还原顺句前' : '顺句', title: d.raw ? '恢复识别出来的原样' : '给没有标点的字幕（自动识别）补标点、改同音错字，行数不变', disabled: S.busy, onclick: d.raw ? unpunctuate : punctuate }),
         )),
+        d.cleaned && h('div', { class: 'tools', id: 'cleanbar' },
+          h('span', { class: 'mute', text: S.showOrig ? `已显示原始文稿（共 ${d.orig.length} 句）` : `已清理 ${(d.cleaned.hearing || 0) + (d.cleaned.filler || 0) + (d.cleaned.emptied || 0)} 处${cleanDetail(d.cleaned)}` }),
+          h('button', { class: 'sec', id: 'cleantoggle', text: S.showOrig ? '显示清理后' : '显示原始', title: '清理只去掉非语音说明和口水词；摘要、翻译等送给 AI 的文字始终是清理后的', onclick: toggleOrig })),
         h('div', { class: 'mute', text: '鼠标停在英文单词上查词；选中一段文字可以解释、存为笔记；鼠标移到一行上点 ＋ 记笔记。' }),
         body,
         actsBar(
@@ -215,6 +218,25 @@
     }
 
 
+    function cleanDetail(c) {
+      const parts = []
+      if (c.hearing) parts.push(`非语音说明 ${c.hearing} 行`)
+      if (c.filler) parts.push(`口水词 ${c.filler} 行`)
+      if (c.emptied) parts.push(`整行丢掉 ${c.emptied} 行`)
+      return parts.length ? `（${parts.join('、')}）` : ''
+    }
+    /** 在“清理后”和“原始”两份文稿之间切换：显示的行换掉，时间不变；已有的译文按行对应，换掉后清空 */
+    function toggleOrig() {
+      const d = S.data
+      if (!d?.orig) return
+      S.showOrig = !S.showOrig
+      const tmp = d.lines
+      d.lines = d.orig
+      d.orig = tmp
+      S.res.translated = null
+      render()
+    }
+
     function resegment() {
       const d = S.data
       const lines = V.resegmentLines(d.lines, d.durationMs, S.prefs.cueLevel || 'standard')
@@ -242,6 +264,6 @@
       render()
     }
 
-    return { getSel, tabTranscript }
+    return { getSel, tabTranscript, punctuate }
   }
 })()

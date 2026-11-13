@@ -4,13 +4,13 @@
   const { api, mount, h, toast } = globalThis.ccUI
 
   const STYLE = `
-    .box { position: fixed; pointer-events: none; border: 2px solid #c2453b; background: #c2453b22; border-radius: 3px; }
-    .bar { left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; width: min(560px, calc(100vw - 24px)); background: #1d2420; color: #fff; border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 24px #0006; }
+    .box { position: fixed; pointer-events: none; border: 2px solid #c4283d; background: #c2453b22; border-radius: 3px; }
+    .bar { left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; width: min(560px, calc(100vw - 24px)); background: #0b1424; color: #fff; border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 24px #0006; }
     .bar .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .bar code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #ffffff1a; border-radius: 6px; padding: 3px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
     .bar button.sec { background: transparent; color: #fff; border-color: #ffffff66; }
     .bar label { display: flex; gap: 4px; align-items: center; font-size: 12px; }
-    .bar .mut { color: #a9b3ad; font-size: 12px; }
+    .bar .mut { color: #9aabc6; font-size: 12px; }
   `
   const ui = mount(STYLE)
   const box = h('div', { class: 'layer box', style: 'display:none' })

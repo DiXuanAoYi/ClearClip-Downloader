@@ -4,8 +4,8 @@
   const { mount, h, send, toast } = globalThis.ccUI
   const ui = mount(`
     .shade { inset: 0; cursor: crosshair; background: #0000; }
-    .box { border: 2px solid #f08a3c; box-shadow: 0 0 0 9999px #0006; pointer-events: none; }
-    .tip { left: 50%; top: 16px; transform: translateX(-50%); background: #1d2420; color: #fff; border-radius: 8px; padding: 6px 14px; }
+    .box { border: 2px solid #ffb547; box-shadow: 0 0 0 9999px #0006; pointer-events: none; }
+    .tip { left: 50%; top: 16px; transform: translateX(-50%); background: #0b1424; color: #fff; border-radius: 8px; padding: 6px 14px; }
   `)
   const shade = h('div', { class: 'layer shade' })
   const tip = h('div', { class: 'layer tip', text: '拖动选取要截图的区域，Esc 取消' })

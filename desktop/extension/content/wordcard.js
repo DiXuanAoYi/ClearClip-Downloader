@@ -9,7 +9,7 @@
 
   // 颜色走变量：放在哪个容器里由容器给（字幕层是固定深色，工具条跟随主题）
   const CSS = `
-    .wcard { --wc-fg: var(--fg, #1d2420); --wc-head: var(--fg, #1d2420); --wc-mute: var(--mute, #5d6862); --wc-soft: var(--soft, #f3f1ec); --wc-acc: var(--acc, #b4561a); --wc-tag: var(--accsoft, #f6e6da); --wc-line: var(--line, #cfd5d1); --wc-ok: #2e8a52; flex-direction: column; gap: 6px; color: var(--wc-fg) }
+    .wcard { --wc-fg: var(--fg, #0b1424); --wc-head: var(--fg, #0b1424); --wc-mute: var(--mute, #4d5f7b); --wc-soft: var(--soft, #e4ebf5); --wc-acc: var(--acc, #b45f00); --wc-tag: var(--accsoft, #f6e5cc); --wc-line: var(--line, #aebfd8); --wc-ok: #2e8a52; flex-direction: column; gap: 6px; color: var(--wc-fg) }
     .wcard .hd { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 0; border: 0; background: none }
     .wcard .hd b { font-size: 17px; color: var(--wc-head) }
     .wcard .hd .sp { flex: 1 }
@@ -122,11 +122,11 @@
 
   // 浮窗容器的样式（固定深色，和字幕层一致）；第一次用到时放进调用方的界面容器
   const POP_CSS = `
-    .wc-pop { position: fixed; display: none; width: 400px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 14px 16px; border-radius: 12px; border: 1px solid #2f383c; background: #22292c; color: #e7ecea; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 6px; overflow-y: auto; z-index: 2147483647 }
+    .wc-pop { position: fixed; display: none; width: 400px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 14px 16px; border-radius: 12px; border: 1px solid #1c2b43; background: #0e1625; color: #e8f0fd; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 6px; overflow-y: auto; z-index: 2147483647 }
     .wc-pop.open { display: flex }
-    .wc-pop.wcard { --wc-fg: #e7ecea; --wc-head: #fff; --wc-mute: #9aa6a2; --wc-soft: #14181a; --wc-acc: #f0a064; --wc-tag: #3a2c20; --wc-line: #4a5a60; --wc-ok: #6cc08a }
-    .wc-pop .row2 button { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #2f383c; background: #14181a; color: #e7ecea; font-weight: 400; font-size: 12.5px; white-space: nowrap; flex: none; cursor: pointer }
-    .wc-pop .row2 button.p { background: #f08a3c; border-color: #f08a3c; color: #14181a; font-weight: 600 }
+    .wc-pop.wcard { --wc-fg: #e8f0fd; --wc-head: #fff; --wc-mute: #9aabc6; --wc-soft: #060a12; --wc-acc: #ffb547; --wc-tag: #3a2c1a; --wc-line: #4a5a60; --wc-ok: #4be3d0 }
+    .wc-pop .row2 button { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #1c2b43; background: #060a12; color: #e8f0fd; font-weight: 400; font-size: 12.5px; white-space: nowrap; flex: none; cursor: pointer }
+    .wc-pop .row2 button.p { background: #ffb547; border-color: #ffb547; color: #060a12; font-weight: 600 }
   `
 
   /**

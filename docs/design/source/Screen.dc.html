@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影 · 屏幕翻译</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="clearclip.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body { margin: 0; }
+.shell{min-height:1500px}
+
+</style>
+</helmet>
+<div class="cc" data-theme="{{theme}}">
+<div class="shell">
+<nav class="rail" aria-label="主导航">
+<div class="logo" role="img" aria-label="清影"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3.5 6.1M20.2 8.2l-6.8 1M20.2 15.8 15 11M12 21l-3.5-6.1M3.8 15.8l6.8-1M3.8 8.2 9 13"/></svg></div>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>解析</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>下载队列</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>订阅</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.5 7.5a6 6 0 0 0 0 9M16.5 7.5a6 6 0 0 1 0 9"/></svg><span>直播</span></button>
+<button class="nav-i" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H4zM8 20h8M9 9h6M9 12h4"/></svg><span>屏幕翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5"/></svg><span>媒体库</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4"/></svg><span>文件翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v17l-5-4-5 4z"/></svg><span>生词与摘录</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/></svg><span>工具箱</span></button>
+<div class="nav-gap"></div>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4"/></svg><span>设置</span></button>
+</nav>
+<main class="main">
+<header class="topbar">
+<h1>屏幕翻译</h1>
+<span class="spacer"></span><span class="chip ">翻译别的软件和游戏画面上的文字，译文贴在原位，不挡鼠标</span>
+</header>
+<div class="split r"><div style="display:flex;flex-direction:column;gap:18px"><section class="panel"><div class="panel-h"><h2>1. 翻译哪里</h2><span class="spacer"></span><span class="seg" role="radiogroup" aria-label="来源"><label><input type="radio" name="g5"><span>听声音</span></label><label><input type="radio" name="g5" checked><span>看屏幕</span></label></span></div>
+<div class="row"><div class="t"><b>取景方式</b><small>“跟随窗口”先在下拉框里选窗口；框选后译文会盖在原处</small></div><div class="ctl"><span class="seg" role="radiogroup" aria-label="取景方式"><label><input type="radio" name="g6" checked><span>框选区域</span></label><label><input type="radio" name="g6"><span>跟随窗口</span></label><label><input type="radio" name="g6"><span>整个屏幕</span></label></span></div></div>
+<div class="row"><div class="t"><b>翻译这个窗口</b><small>或从窗口列表选</small></div><div class="ctl"><select aria-label="窗口" style="width:260px"><option selected>游戏 Eldoria（eldoria.exe）</option><option>Chrome（chrome.exe）</option><option>PotPlayer（PotPlayerMini64.exe）</option></select><button class="btn sm" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H4zM8 20h8M9 9h6M9 12h4"/></svg>框选</button></div></div>
+<div class="row"><div class="t"><b>刷新速度</b><small>越快越费资源</small></div><div class="ctl"><select aria-label="刷新" style="width:100px"><option>0.5 秒</option><option selected>1 秒</option><option>2 秒</option></select></div></div>
+<div class="row"><div class="t"><b>术语库 / 专家</b><small>按当前软件自动匹配</small></div><div class="ctl"><select aria-label="术语库" style="width:150px"><option selected>自动匹配</option><option>游戏本地化</option><option>编程文档</option></select></div></div>
+<div class="toolbar" style="margin-top:10px"><button class="btn sm" >试识别一次</button><button class="btn primary sm" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>开始翻译</button><span class="note">没认出文字时可以换识字引擎，或检查识字语言是否装了。</span></div></section>
+<section class="panel"><div class="panel-h"><h2>2. 模式</h2><span class="spacer"></span><span class="seg" role="radiogroup" aria-label="模式"><label><input type="radio" name="g7" checked><span>翻译与显示</span></label><label><input type="radio" name="g7"><span>字幕模式</span></label><label><input type="radio" name="g7"><span>漫画模式</span></label></span></div>
+<div class="row"><div class="t"><b>译成什么语言</b><small>留空 = 用“设置 → AI”里的目标语言</small></div><div class="ctl"><label class="field" style="width:160px;flex:none"><input type="text" value="简体中文" placeholder="" aria-label="目标语言"></label></div></div>
+<div class="row"><div class="t"><b>同时显示原文（小字）</b></div><div class="ctl"><label class="sw"><input type="checkbox" aria-label="原文"><span></span></label></div></div>
+<div class="row"><div class="t"><b>数字、符号、已经是目标语言的文字不翻</b><small>省请求，也避免把专有名词翻坏</small></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="跳过"><span></span></label></div></div>
+<div class="row"><div class="t"><b>图标不识别、不翻译</b><small>人像、齿轮、铃铛这类图标常被认成“8”“©”“Q”</small></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="图标"><span></span></label></div></div>
+<div class="row"><div class="t"><b>清影悬浮窗里放屏幕翻译控制</b><small>桌面悬浮窗多一个“译”按钮</small></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="悬浮窗"><span></span></label></div></div>
+<div class="sec-t">字幕模式</div>
+<div class="row"><div class="t"><b>译文放哪里</b></div><div class="ctl"><span class="seg" role="radiogroup" aria-label="译文位置"><label><input type="radio" name="g8"><span>盖在原字幕上</span></label><label><input type="radio" name="g8" checked><span>悬浮字幕条</span></label></span></div></div>
+<div class="row"><div class="t"><b>字幕条里同时显示原文</b></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="原文"><span></span></label></div></div>
+<div class="row"><div class="t"><b>相似的句子不重复翻</b><small>字幕逐字出现、略有改动时只翻最终那句</small></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="去重"><span></span></label></div></div>
+<div class="row"><div class="t"><b>跨屏合并</b><small>一句话分两屏显示时合成一句再翻</small></div><div class="ctl"><label class="sw"><input type="checkbox" aria-label="合并"><span></span></label></div></div>
+<div class="sec-t">漫画模式</div>
+<div class="row"><div class="t"><b>识别方式</b></div><div class="ctl"><span class="seg" role="radiogroup" aria-label="识别"><label><input type="radio" name="g9" checked><span>视觉模型（推荐）</span></label><label><input type="radio" name="g9"><span>本机识字 + 文字翻译</span></label></span></div></div>
+<div class="row"><div class="t"><b>阅读方向</b></div><div class="ctl"><span class="seg" role="radiogroup" aria-label="方向"><label><input type="radio" name="g10" checked><span>从右到左</span></label><label><input type="radio" name="g10"><span>从左到右</span></label></span></div></div></section></div><aside style="display:flex;flex-direction:column;gap:18px" class="sticky">
+<section class="panel"><div class="panel-h"><h2>预览</h2><span class="spacer"></span><span class="chip cyan"><i class="dot "></i>翻译中</span></div>
+<div class="thumb t5" style="aspect-ratio:16/10"><div style="position:absolute;left:14%;top:22%;padding:4px 10px;border-radius:6px;background:rgba(6,10,18,.8);color:#fff;font-size:13px">前往王城的路被封锁了</div><div style="position:absolute;left:30%;top:60%;padding:4px 10px;border-radius:6px;background:rgba(6,10,18,.8);color:#fff;font-size:13px">接受任务 · 继续</div></div>
+<div class="toolbar" style="margin-top:12px"><button class="btn sm" >开始 / 停止</button><button class="btn sm" >重新框选</button><button class="btn sm" >隐藏译文</button><button class="btn sm" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5"/></svg>保存译图</button></div>
+<p class="note" style="margin-top:10px">译文贴字层不会出现在系统截图里；想留带译文的图，用“保存译图”，存到“下载文件夹/屏幕翻译截图”并复制到剪贴板。</p></section>
+<section class="panel"><div class="panel-h"><h2>快捷键</h2></div><div class="row"><div class="t"><b>开始 / 停止</b></div><div class="ctl"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">S</span></div></div><div class="row"><div class="t"><b>重新框选</b></div><div class="ctl"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">R</span></div></div><div class="row"><div class="t"><b>显示 / 隐藏译文</b></div><div class="ctl"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">H</span></div></div><div class="row"><div class="t"><b>切换模式</b></div><div class="ctl"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">M</span></div></div>
+<p class="note">游戏如果是“独占全屏”，系统截不到画面，请改成“无边框窗口”或“窗口化”。</p></section>
+</aside></div><section class="panel"><div class="panel-h"><h2>识字</h2><span class="eyebrow">OCR</span></div><div class="g3">
+<div class="stat"><b style="font-size:18px">Windows 内置</b><span>识字方式 · 日语已装</span></div>
+<div class="stat on"><b style="font-size:18px">PaddleOCR 增强</b><span>已安装 · 中英文及数字，竖排也能认</span></div>
+<div class="stat"><b style="font-size:18px">云端识字</b><span>OCR.space / 百度 / Google Vision</span></div></div>
+<div class="g2" style="margin-top:14px"><div><div class="row"><div class="t"><b>识字语言</b><small>只能识别 Windows 已安装的语言</small></div><div class="ctl"><select aria-label="识字语言" style="width:150px"><option selected>自动</option><option>日语（ja）</option><option>韩语（ko）</option></select></div></div><div class="row"><div class="t"><b>语言包</b><small>自动按识字语言选</small></div><div class="ctl"><select aria-label="语言包" style="width:170px"><option selected>自动</option><option>一律默认中英文</option><option>固定用：日文假名</option></select></div></div></div><div><div class="row"><div class="t"><b>增强识字组件</b><small>约 15 MB</small></div><div class="ctl"><button class="btn sm danger" >卸载</button></div></div><div class="row"><div class="t"><b>云端识字服务</b><small>截图会发给这家服务，密钥只存在本机</small></div><div class="ctl"><select aria-label="云端" style="width:150px"><option selected>未启用</option><option>OCR.space</option><option>百度智能云</option></select></div></div></div></div></section>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"],"section":"外观"},"$preview":{"width":1360,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return { theme: this.props.theme ?? 'dark' }; }
+}
+</script>
+</body>
+</html>

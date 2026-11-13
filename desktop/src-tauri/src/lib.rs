@@ -82,6 +82,8 @@ pub mod security;
 pub mod security_cmds;
 pub mod settings;
 pub mod shotwin;
+pub mod stt_cloud;
+pub mod subclean;
 pub mod subedit;
 pub mod subgen;
 pub mod subs;
@@ -614,9 +616,13 @@ pub fn run() {
             commands::phone_revoke,
             commands::phone_pair_respond,
             commands::phone_set_options,
+            ai_cmds::stt_cloud_test,
+            commands::phone_chat_list,
+            commands::phone_chat_clear,
             commands::transfer_list,
             commands::transfer_send_files,
             commands::transfer_send_text,
+            commands::transfer_stage_file,
             commands::transfer_thumb,
             commands::transfer_remove,
             commands::transfer_clear,
@@ -880,6 +886,7 @@ pub fn run() {
             livetr::sc_ack_manga,
             livetr::sc_bar,
             tray::float_expand,
+            tray::float_fit,
             livetr::sc_try,
             livetr::sc_history,
             livetr::sc_history_clear,

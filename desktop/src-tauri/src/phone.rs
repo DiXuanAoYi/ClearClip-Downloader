@@ -48,6 +48,62 @@ pub struct PhoneState {
     last_error: Mutex<Option<String>>,
     /// 文件互传的实时进度
     pub xfer: Arc<TransferLive>,
+    /// 手机互聊的消息（只存在内存里，退出清影或关闭开关后清空）
+    chat: Mutex<ChatRoom>,
+}
+
+pub const EVT_CHAT: &str = "phone://chat";
+const CHAT_KEEP: usize = 500;
+const CHAT_TEXT_MAX: usize = 4000;
+
+#[derive(Default)]
+struct ChatRoom {
+    next_id: u64,
+    msgs: std::collections::VecDeque<ChatMsg>,
+}
+
+/// 手机互聊里的一条消息。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMsg {
+    pub id: u64,
+    pub device: String,
+    pub name: String,
+    pub text: String,
+    /// 秒级时间戳
+    pub ts: i64,
+}
+
+fn chat_post(app: &AppHandle, device: &str, name: &str, text: &str) -> Option<ChatMsg> {
+    let text: String = text.trim().chars().take(CHAT_TEXT_MAX).collect();
+    if text.is_empty() {
+        return None;
+    }
+    let state = st(app);
+    let msg = {
+        let mut room = state.phone.chat.lock().unwrap_or_else(|e| e.into_inner());
+        room.next_id += 1;
+        let m = ChatMsg { id: room.next_id, device: device.to_string(), name: name.to_string(), text, ts: db::now() };
+        room.msgs.push_back(m.clone());
+        while room.msgs.len() > CHAT_KEEP {
+            room.msgs.pop_front();
+        }
+        m
+    };
+    let _ = app.emit(EVT_CHAT, msg.clone());
+    Some(msg)
+}
+
+pub fn chat_list(app: &AppHandle, since: u64) -> Vec<ChatMsg> {
+    let state = st(app);
+    let room = state.phone.chat.lock().unwrap_or_else(|e| e.into_inner());
+    room.msgs.iter().filter(|m| m.id > since).cloned().collect()
+}
+
+pub fn chat_clear(app: &AppHandle) {
+    let state = st(app);
+    state.phone.chat.lock().unwrap_or_else(|e| e.into_inner()).msgs.clear();
+    let _ = app.emit(EVT_CHAT, serde_json::json!({"cleared": true}));
 }
 
 struct Server {
@@ -127,6 +183,7 @@ pub struct PhoneInfo {
     pub max_upload_mb: u64,
     pub auto_extract: bool,
     pub outbox_hours: u32,
+    pub peer_chat: bool,
 }
 
 fn st(app: &AppHandle) -> Arc<AppState> {
@@ -210,6 +267,7 @@ pub fn info(app: &AppHandle) -> PhoneInfo {
         max_upload_mb: settings.phone.max_upload_mb,
         auto_extract: settings.phone.auto_extract,
         outbox_hours: settings.phone.outbox_hours,
+        peer_chat: settings.phone.peer_chat,
     }
 }
 
@@ -222,6 +280,9 @@ pub struct PhoneOptions {
     pub max_upload_mb: u64,
     pub auto_extract: bool,
     pub outbox_hours: u32,
+    /// 不传表示保持原值
+    #[serde(default)]
+    pub peer_chat: Option<bool>,
 }
 
 pub fn set_options(app: &AppHandle, o: PhoneOptions) -> AppResult<PhoneInfo> {
@@ -243,7 +304,13 @@ pub fn set_options(app: &AppHandle, o: PhoneOptions) -> AppResult<PhoneInfo> {
         p.max_upload_mb = o.max_upload_mb;
         p.auto_extract = o.auto_extract;
         p.outbox_hours = o.outbox_hours.min(24 * 365);
+        if let Some(c) = o.peer_chat {
+            p.peer_chat = c;
+        }
     })?;
+    if o.peer_chat == Some(false) {
+        chat_clear(app);
+    }
     Ok(info(app))
 }
 
@@ -696,6 +763,42 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             let list = statuses(&app, &device);
             json(sock, "200 OK", serde_json::json!({"items": list})).await;
         }
+        // 手机互聊：开关在电脑端“手机互传”里，关闭时这两个接口都不可用
+        ("GET", "/api/chat") => {
+            let device = clean_device(req.query.get("device").map(String::as_str).unwrap_or(""));
+            if !state.settings().phone.devices.iter().any(|d| d.id == device) {
+                json(sock, "403 Forbidden", serde_json::json!({"error": "这台设备还没有配对"})).await;
+            } else if !state.settings().phone.peer_chat {
+                json(sock, "200 OK", serde_json::json!({"enabled": false, "messages": []})).await;
+            } else {
+                let since = req.query.get("since").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+                let members: Vec<serde_json::Value> = state.settings().phone.devices.iter().map(|d| serde_json::json!({"id": d.id, "name": d.name})).collect();
+                json(sock, "200 OK", serde_json::json!({"enabled": true, "messages": chat_list(&app, since), "members": members})).await;
+            }
+        }
+        ("POST", "/api/chat") => {
+            #[derive(Deserialize)]
+            struct ChatBody {
+                text: String,
+                #[serde(default)]
+                device: String,
+            }
+            let Ok(body) = serde_json::from_slice::<ChatBody>(&req.body) else { return };
+            let device = clean_device(&body.device);
+            let settings = state.settings();
+            let dev = settings.phone.devices.iter().find(|d| d.id == device);
+            if dev.is_none() {
+                json(sock, "403 Forbidden", serde_json::json!({"error": "这台设备还没有配对"})).await;
+            } else if !settings.phone.peer_chat {
+                json(sock, "403 Forbidden", serde_json::json!({"error": "手机互聊没有开启"})).await;
+            } else {
+                let name = dev.map(|d| d.name.clone()).unwrap_or_default();
+                match chat_post(&app, &device, &name, &body.text) {
+                    Some(m) => json(sock, "200 OK", serde_json::json!({"message": m})).await,
+                    None => json(sock, "400 Bad Request", serde_json::json!({"error": "消息是空的"})).await,
+                }
+            }
+        }
         ("GET", "/api/ping") => {
             let version = app.package_info().version.to_string();
             // lang：清影界面语言（zh / en / ja），扩展用它决定语言下拉框的显示语言
@@ -717,7 +820,7 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
             json(
                 sock,
                 "200 OK",
-                serde_json::json!({"paired": paired, "code": code, "pcName": crate::phone::pc_name(), "maxMb": settings.phone.max_upload_mb, "version": app.package_info().version.to_string()}),
+                serde_json::json!({"paired": paired, "code": code, "pcName": crate::phone::pc_name(), "maxMb": settings.phone.max_upload_mb, "chat": settings.phone.peer_chat, "version": app.package_info().version.to_string()}),
             )
             .await;
         }

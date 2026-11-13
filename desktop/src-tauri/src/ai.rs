@@ -939,6 +939,11 @@ pub fn multipart(fields: &[(&str, &str)], file_field: &str, file_name: &str, mim
 
 /// 把音频切成每段 `seg_secs` 秒的小文件（单声道 16 kHz AAC，体积小，接口大小限制不会超）。返回（文件，起点毫秒）。
 pub async fn split_audio(ffmpeg: &Path, input: &Path, dir: &Path, seg_secs: u64) -> AppResult<Vec<(PathBuf, u64)>> {
+    split_audio_fmt(ffmpeg, input, dir, seg_secs, false).await
+}
+
+/// 同 `split_audio`；`wav` 为真时输出 16 kHz 单声道 WAV（火山引擎只收 WAV / MP3 / OGG）。
+pub async fn split_audio_fmt(ffmpeg: &Path, input: &Path, dir: &Path, seg_secs: u64, wav: bool) -> AppResult<Vec<(PathBuf, u64)>> {
     std::fs::create_dir_all(dir)?;
     let mut a = base_args();
     a.extend([
@@ -952,21 +957,25 @@ pub async fn split_audio(ffmpeg: &Path, input: &Path, dir: &Path, seg_secs: u64)
         "-ar".into(),
         "16000".into(),
         "-c:a".into(),
-        "aac".into(),
-        "-b:a".into(),
-        "32k".into(),
-        "-f".into(),
+        if wav { "pcm_s16le".into() } else { "aac".into() },
+    ]);
+    if !wav {
+        a.extend(["-b:a".to_string(), "32k".into()]);
+    }
+    a.extend([
+        "-f".to_string(),
         "segment".into(),
         "-segment_time".into(),
         seg_secs.to_string(),
         "-segment_format".into(),
-        "mp4".into(),
+        if wav { "wav".into() } else { "mp4".into() },
         "-reset_timestamps".into(),
         "1".into(),
-        dir.join("part_%03d.m4a").to_string_lossy().into_owned(),
+        dir.join(if wav { "part_%03d.wav" } else { "part_%03d.m4a" }).to_string_lossy().into_owned(),
     ]);
     run_ffmpeg_in(ffmpeg, &a, None).await?;
-    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "m4a")).collect();
+    let mut files: Vec<PathBuf> =
+        std::fs::read_dir(dir)?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "m4a" || e == "wav")).collect();
     files.sort();
     if files.is_empty() {
         return Err(AppError::invalid("这个文件里没有可以转写的音频。"));
@@ -1358,7 +1367,9 @@ pub fn auto_transcribe(app: &tauri::AppHandle, st: &Arc<AppState>, item: &crate:
     if s.metered_mode || !s.ai.auto_transcribe || item.kind != "video" || matches!(item.source.as_str(), "tool" | "ai" | "import") {
         return;
     }
-    let ready = if s.ai.stt_engine == "local" {
+    let ready = if is_cloud_stt(&s) {
+        cloud_stt_ready(st, &s).is_ok()
+    } else if s.ai.stt_engine == "local" {
         local_stt_ready(&s)
     } else {
         st.vault.get(KEY_STT).or_else(|| st.vault.get(KEY_CHAT)).is_some() || is_local_url(s.ai.stt_url())
@@ -1495,11 +1506,65 @@ pub async fn run_summarize(ctx: &JobCtx, input: &Path) -> AppResult<PathBuf> {
 /// 而本机已经有 whisper-cli 和模型（比如在“设置 → 组件”里下载了模型），就自动用本机，
 /// 免得把转写请求发给不支持 /audio/transcriptions 的对话接口（404）。
 pub fn use_local_stt(st: &AppState, settings: &Settings) -> bool {
+    if is_cloud_stt(settings) {
+        return false;
+    }
     if settings.ai.stt_engine == "local" {
         return true;
     }
     let own_api = !settings.ai.stt_base_url.trim().is_empty() || st.vault.has(KEY_STT) || stt_pool_endpoint(st, settings).is_some();
     !own_api && local_stt_ready(settings)
+}
+
+/// 选了火山引擎 / 讯飞这两个专用云端引擎。
+pub fn is_cloud_stt(settings: &Settings) -> bool {
+    matches!(settings.ai.stt_engine.as_str(), "volc" | "xfyun")
+}
+
+/// 云端专用引擎缺什么：返回给用户看的原因。
+fn cloud_stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
+    match settings.ai.stt_engine.as_str() {
+        "volc" if !st.vault.has(crate::stt_cloud::KEY_VOLC) => Err(AppError::invalid("请先在“设置 → AI → 语音转文字”里填写火山引擎（豆包语音）的密钥。")),
+        "xfyun" if settings.ai.stt_xfyun_app_id.trim().is_empty() || !st.vault.has(crate::stt_cloud::KEY_XFYUN) => {
+            Err(AppError::invalid("请先在“设置 → AI → 语音转文字”里填写讯飞的 AppID 和 SecretKey。"))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// 火山引擎 / 讯飞：整段音频上传，返回带时间的句子。
+async fn transcribe_cloud(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, input: &Path, work: &Path) -> AppResult<Vec<Cue>> {
+    cloud_stt_ready(&ctx.st, settings)?;
+    ctx.note("正在提取音频…");
+    if settings.ai.stt_engine == "volc" {
+        const SEG: u64 = 600;
+        let key = ctx.st.vault.get(crate::stt_cloud::KEY_VOLC).unwrap_or_default();
+        let client = ctx.st.net.clients_for(&settings.network, crate::stt_cloud::VOLC_URL)?.download;
+        let parts = split_audio_fmt(ffmpeg, input, work, SEG, true).await?;
+        let mut all: Vec<Cue> = vec![];
+        for (i, (file, offset)) in parts.iter().enumerate() {
+            ctx.check()?;
+            ctx.note(format!("火山引擎识别第 {} / {} 段…", i + 1, parts.len()));
+            ctx.percent(i as f64 / parts.len() as f64 * 100.0);
+            let bytes = std::fs::read(file)?;
+            let cues = crate::stt_cloud::volc_recognize(&client, &settings.ai.stt_volc_app_id, &key, &bytes, SEG * 1000, settings.ai.stt_cloud_smooth).await?;
+            crate::vsum::append_segment(&mut all, cues, *offset);
+        }
+        Ok(all)
+    } else {
+        let secret = ctx.st.vault.get(crate::stt_cloud::KEY_XFYUN).unwrap_or_default();
+        let client = ctx.st.net.clients_for(&settings.network, crate::stt_cloud::XFYUN_BASE)?.download;
+        // 讯飞自己能处理长音频：整段转成一个小文件上传
+        let parts = split_audio(ffmpeg, input, work, 60 * 60 * 6).await?;
+        let file = &parts[0].0;
+        let bytes = std::fs::read(file)?;
+        let approx_ms = bytes.len() as u64 * 8 / 32; // 32 kbps
+        ctx.note("上传到讯飞并等待识别…");
+        crate::stt_cloud::xfyun_recognize(&client, &settings.ai.stt_xfyun_app_id, &secret, bytes, "audio.m4a", approx_ms, settings.ai.stt_cloud_smooth, &|| {
+            ctx.canceled()
+        })
+        .await
+    }
 }
 
 fn stt_api_hint(e: AppError) -> AppError {
@@ -1514,6 +1579,9 @@ fn stt_api_hint(e: AppError) -> AppError {
 }
 
 pub fn stt_ready(st: &AppState, settings: &Settings) -> AppResult<()> {
+    if is_cloud_stt(settings) {
+        return cloud_stt_ready(st, settings);
+    }
     if use_local_stt(st, settings) {
         if local_stt(settings) == LocalStt::SenseVoice {
             if !sensevoice_ready() {
@@ -1555,7 +1623,9 @@ pub async fn transcribe_cues_words(
     want_words: bool,
 ) -> AppResult<(Vec<Cue>, Option<String>)> {
     let mut words_json = None;
-    let cues = if use_local_stt(&ctx.st, settings) {
+    let cues = if is_cloud_stt(settings) {
+        transcribe_cloud(ctx, settings, ffmpeg, input, work).await?
+    } else if use_local_stt(&ctx.st, settings) {
         // 要逐词时间的场合（文稿剪辑）只有 Whisper 能给；其余按所选模型走
         let sense =
             local_stt(settings) == LocalStt::SenseVoice && !(want_words && find_whisper_bin(settings).is_some() && find_whisper_model(settings).is_some());
@@ -1605,6 +1675,19 @@ pub async fn run_transcribe(ctx: &JobCtx, input: &Path, language: Option<String>
         let cues = transcribe_cues(ctx, &settings, &ffmpeg, input, &lang, &work).await?;
         let tag = if lang.is_empty() { "ai".to_string() } else { lang.clone() };
         let out = out_beside(input, &stem_of(input), &tag, "srt");
+        // 预处理（设置里可关）：去非语音说明和口水词，清理前的原文另存 `.srt.raw`
+        let cues = if settings.ai.sub_clean_output {
+            let o = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
+            let (cleaned, changed) = crate::subclean::clean_cues(&cues, &o);
+            if changed > 0 && !cleaned.is_empty() {
+                let _ = std::fs::write(out.with_extension("srt.raw"), subtitle::format_srt(&cues));
+                cleaned
+            } else {
+                cues
+            }
+        } else {
+            cues
+        };
         std::fs::write(&out, subtitle::format_srt(&cues))?;
         register_subtitle(&ctx.st, input, &out, &tag);
         Ok(out)

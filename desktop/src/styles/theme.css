@@ -1,97 +1,163 @@
-/* 深色工具风格，暖橙色为唯一强调色（见 docs/design-reference.html）。 */
+/* 清影界面主题：冷钢深空 + 镜头琥珀（见设计图）。
+   琥珀 = 主操作 / 选中；青 = 状态 / 数据；深蓝黑底 + 细网格，实色面板 + 1px 细线，面板四角带准星。
+   令牌名沿用 --cc-*，各页面不用改名就能换肤；新增的设计令牌见下面“设计令牌”。 */
 :root {
-  --cc-bg: #f4f5f4;
-  --cc-side: #eaedeb;
-  --cc-card: #ffffff;
-  --cc-line: #d9dedb;
-  --cc-fg: #1d2420;
-  --cc-mute: #69746f;
-  --cc-acc: #d9762b;
-  --cc-acc-soft: #d9762b1f;
-  --cc-ok: #2f8a57;
-  --cc-err: #c2453b;
-  /* 解析页等新版界面用的辅助色：细分隔线、浅填充、悬停、底栏、主按钮（白字够 4.5:1 的深一档橙）、选中边框、链接 */
-  --cc-line-soft: #e3e7e4;
-  --cc-fill: #eef0ee;
-  --cc-hover: #f6f7f6;
-  --cc-foot: #fafbfa;
-  --cc-fg2: #4a5550;
-  --cc-dot: #b9c1bd;
-  --cc-acc-strong: #b4561a;
-  --cc-acc-strong-hover: #9e4b16;
+  --cc-bg: #eaf0f7;
+  --cc-side: #f7f9fc;
+  --cc-card: #fbfcfe;
+  --cc-line: #d3deec;
+  --cc-fg: #0b1424;
+  --cc-mute: #4d5f7b;
+  --cc-acc: #b45f00;
+  --cc-acc-soft: #f59e0b24;
+  --cc-ok: #007a70;
+  --cc-err: #c4283d;
+  --cc-line-soft: #e0e8f2;
+  --cc-fill: #e4ebf4;
+  --cc-hover: #edf2f9;
+  --cc-foot: #f1f5fa;
+  --cc-fg2: #34445f;
+  --cc-dot: #9aabc6;
+  --cc-acc-strong: #b45f00;
+  --cc-acc-strong-hover: #9a5000;
   --cc-on-acc: #ffffff;
-  --cc-acc-text: #8a4a19;
-  --cc-acc-line: #ecbb95;
-  --cc-link: #ad5e22;
-  --cc-cover: #263034;
-  --cc-ok-soft: #e6f2eb;
-  --cc-ok-text: #22663f;
-  /* 分层术语：每一层的底色和细边（第一层最深），缩进竖线 */
-  --cc-lv0: #e6eae7;
-  --cc-lv1: #eff2f0;
-  --cc-lv2: #f8f9f8;
-  --cc-lvline0: #d7ddd9;
-  --cc-lvline1: #e1e6e2;
-  --cc-lvline2: #eaeeeb;
-  --cc-guide: #d3d9d5;
-  --cc-font: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC', system-ui, sans-serif;
+  --cc-acc-text: #8a4a00;
+  --cc-acc-line: #c8730080;
+  --cc-link: #8a4a00;
+  --cc-cover: #14233f;
+  --cc-ok-soft: #00968714;
+  --cc-ok-text: #006a60;
+  --cc-lv0: #e1e8f2;
+  --cc-lv1: #eaf0f7;
+  --cc-lv2: #f3f6fb;
+  --cc-lvline0: #cbd7e8;
+  --cc-lvline1: #d7e1ee;
+  --cc-lvline2: #e2e9f3;
+  --cc-guide: #c4d0e2;
+  --cc-font: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', system-ui, sans-serif;
+  --cc-disp: 'Chakra Petch', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --cc-mono: 'JetBrains Mono', ui-monospace, Consolas, 'SF Mono', monospace;
 
-  --el-color-primary: #d9762b;
-  --el-color-primary-light-3: #e59b62;
-  --el-color-primary-light-5: #ecbb95;
-  --el-color-primary-light-7: #f4d6bf;
-  --el-color-primary-light-8: #f7e3d4;
-  --el-color-primary-light-9: #fbf1ea;
-  --el-color-primary-dark-2: #ad5e22;
+  /* 设计令牌 */
+  --cc-bg0: #eaf0f7;
+  --cc-rail: #ffffffb8;
+  --cc-panel: #ffffffcc;
+  --cc-panel2: #f0f5fce6;
+  --cc-inset: #e2eaf5b3;
+  --cc-line-strong: #aebfd8;
+  --cc-grid: #28508c0e;
+  --cc-glow1: #ffaa2824;
+  --cc-glow2: #00aa9619;
+  --cc-amber: #b45f00;
+  --cc-amber-line: #c8730080;
+  --cc-amber-glow: #f59e0b59;
+  --cc-cyan: #007a70;
+  --cc-cyan-soft: #0096871a;
+  --cc-cyan-line: #00826666;
+  --cc-faint: #8393ab;
+  --cc-shadow: 0 18px 40px -26px #1e3c6e80;
+
+  --el-color-primary: #b45f00;
+  --el-color-primary-light-3: #d08a3a;
+  --el-color-primary-light-5: #e3b475;
+  --el-color-primary-light-7: #f0d6b0;
+  --el-color-primary-light-8: #f6e5cc;
+  --el-color-primary-light-9: #fbf1e2;
+  --el-color-primary-dark-2: #8a4a00;
   --el-font-family: var(--cc-font);
+  --el-border-radius-base: 10px;
+  --el-text-color-primary: var(--cc-fg);
+  --el-text-color-regular: var(--cc-fg2);
+  --el-text-color-secondary: var(--cc-mute);
+  --el-border-color: var(--cc-line-strong);
+  --el-border-color-light: var(--cc-line);
+  --el-border-color-lighter: var(--cc-line-soft);
 }
 
 html.dark {
-  --cc-bg: #14181a;
-  --cc-side: #1b2023;
-  --cc-card: #22292c;
-  --cc-line: #2f383c;
-  --cc-fg: #e7ecea;
-  --cc-mute: #8c9894;
-  --cc-acc: #f08a3c;
-  --cc-acc-soft: #f08a3c22;
-  --cc-ok: #5cc28a;
-  --cc-err: #ec7a70;
-  --cc-line-soft: #283034;
-  --cc-fill: #1b2023;
-  --cc-hover: #262e31;
-  --cc-foot: #1e2427;
-  --cc-fg2: #b4bfbb;
-  --cc-dot: #5a6569;
-  --cc-acc-strong: #f08a3c;
-  --cc-acc-strong-hover: #f3a163;
-  --cc-on-acc: #1d2420;
-  --cc-acc-text: #f3a163;
-  --cc-acc-line: #8a5027;
-  --cc-link: #f3a163;
-  --cc-cover: #0f1315;
-  --cc-ok-soft: #1f3a2b;
-  --cc-ok-text: #7fd3a2;
-  --cc-lv0: #323b3f;
-  --cc-lv1: #2a3235;
-  --cc-lv2: #252c2f;
-  --cc-lvline0: #3d474b;
-  --cc-lvline1: #333c40;
-  --cc-lvline2: #2c3437;
-  --cc-guide: #3a4448;
+  --cc-bg: #060a12;
+  --cc-side: #080d16;
+  --cc-card: #0e1625;
+  --cc-line: #1c2b43;
+  --cc-fg: #e8f0fd;
+  --cc-mute: #9aabc6;
+  --cc-acc: #ffb547;
+  --cc-acc-soft: #ffb54721;
+  --cc-ok: #4be3d0;
+  --cc-err: #ff7b8a;
+  --cc-line-soft: #16233a;
+  --cc-fill: #0a111d;
+  --cc-hover: #131f33;
+  --cc-foot: #0b1320;
+  --cc-fg2: #c2cfe4;
+  --cc-dot: #3d5275;
+  --cc-acc-strong: #ffb547;
+  --cc-acc-strong-hover: #ffc760;
+  --cc-on-acc: #1a1100;
+  --cc-acc-text: #ffc760;
+  --cc-acc-line: #ffb54773;
+  --cc-link: #ffc760;
+  --cc-cover: #0b1830;
+  --cc-ok-soft: #4be3d01f;
+  --cc-ok-text: #4be3d0;
+  --cc-lv0: #1a2740;
+  --cc-lv1: #142036;
+  --cc-lv2: #0f1a2d;
+  --cc-lvline0: #2c4366;
+  --cc-lvline1: #223552;
+  --cc-lvline2: #1c2b43;
+  --cc-guide: #2c4366;
 
-  --el-color-primary: #f08a3c;
-  --el-color-primary-light-3: #b8692f;
-  --el-color-primary-light-5: #8a5027;
-  --el-color-primary-light-7: #5c371f;
-  --el-color-primary-light-8: #452b1b;
-  --el-color-primary-light-9: #2e1f16;
-  --el-color-primary-dark-2: #f3a163;
-  --el-bg-color: #22292c;
-  --el-bg-color-overlay: #22292c;
-  --el-border-color: #2f383c;
-  --el-fill-color-blank: #1b2023;
+  --cc-bg0: #060a12;
+  --cc-rail: #080d16c7;
+  --cc-panel: #0e1625bd;
+  --cc-panel2: #121d30b8;
+  --cc-inset: #0509108c;
+  --cc-line-strong: #2c4366;
+  --cc-grid: #78a0dc0b;
+  --cc-glow1: #ffb5471a;
+  --cc-glow2: #4be3d014;
+  --cc-amber: #ffb547;
+  --cc-amber-line: #ffb54773;
+  --cc-amber-glow: #ffb54780;
+  --cc-cyan: #4be3d0;
+  --cc-cyan-soft: #4be3d01f;
+  --cc-cyan-line: #4be3d066;
+  --cc-faint: #66789a;
+  --cc-shadow: 0 20px 50px -24px #000000cc;
+
+  --el-color-primary: #ffb547;
+  --el-color-primary-light-3: #b88435;
+  --el-color-primary-light-5: #8a6328;
+  --el-color-primary-light-7: #4f3a1c;
+  --el-color-primary-light-8: #3a2c1a;
+  --el-color-primary-light-9: #2a2016;
+  --el-color-primary-dark-2: #ffc760;
+  --el-bg-color: #0e1625;
+  --el-bg-color-overlay: #101a2c;
+  --el-bg-color-page: #060a12;
+  --el-fill-color-blank: #05091099;
+  --el-fill-color-light: #131f33;
+  --el-fill-color: #121d30;
+  --el-fill-color-lighter: #0f1a2d;
+  --el-border-color: #2c4366;
+  --el-border-color-light: #1c2b43;
+  --el-border-color-lighter: #16233a;
+  --el-text-color-primary: #e8f0fd;
+  --el-text-color-regular: #c2cfe4;
+  --el-text-color-secondary: #9aabc6;
+  --el-text-color-placeholder: #66789a;
+  --el-mask-color: #060a12b3;
+}
+
+/* 页面底：深蓝黑 + 两团柔光 + 细网格。小窗口的样式会把 body 设成透明，所以主界面外壳也用它 */
+:root {
+  --cc-page-bg:
+    radial-gradient(1100px 560px at 82% -8%, var(--cc-glow1), transparent 62%),
+    radial-gradient(900px 520px at -6% 108%, var(--cc-glow2), transparent 58%),
+    linear-gradient(var(--cc-grid) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, var(--cc-grid) 1px, transparent 1px) 0 0 / 44px 44px,
+    var(--cc-bg);
 }
 
 * {
@@ -106,7 +172,8 @@ body,
 }
 
 body {
-  background: var(--cc-bg);
+  background: var(--cc-page-bg);
+  background-attachment: fixed;
   color: var(--cc-fg);
   font-family: var(--cc-font);
   font-size: 13px;
@@ -131,25 +198,65 @@ textarea,
 }
 
 .card {
-  background: var(--cc-card);
+  position: relative;
+  background: var(--cc-panel);
   border: 1px solid var(--cc-line);
-  border-radius: 10px;
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: var(--cc-shadow);
+}
+/* 面板四角的琥珀准星：左上、右下 */
+.card::before,
+.card::after,
+.dpanel::before,
+.dpanel::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--cc-amber-line);
+  pointer-events: none;
+}
+.card::before,
+.dpanel::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 14px 0 0 0;
+}
+.card::after,
+.dpanel::after {
+  right: -1px;
+  bottom: -1px;
+  border-left: 0;
+  border-top: 0;
+  border-radius: 0 0 14px 0;
 }
 
 .chip {
-  display: inline-block;
-  font-size: 11px;
-  padding: 0 8px;
-  line-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--cc-mono);
+  font-size: 11.5px;
+  padding: 3px 9px;
+  line-height: 1.3;
   border-radius: 999px;
-  border: 1px solid var(--cc-line);
+  border: 1px solid var(--cc-line-strong);
   color: var(--cc-mute);
   white-space: nowrap;
 }
 
 .chip.acc {
-  border-color: var(--cc-acc);
-  color: var(--cc-acc);
+  border-color: var(--cc-amber-line);
+  background: var(--cc-acc-soft);
+  color: var(--cc-amber);
+}
+.chip.cyan {
+  border-color: var(--cc-cyan-line);
+  background: var(--cc-cyan-soft);
+  color: var(--cc-cyan);
 }
 
 .ellipsis {
@@ -160,8 +267,9 @@ textarea,
 }
 
 .thumb {
-  background: linear-gradient(160deg, #3d5a63, #1f2b2f 55%, #5b3b25);
-  border-radius: 6px;
+  background: linear-gradient(160deg, #10224a, #2c4f8f 55%, #e58a3c);
+  border: 1px solid var(--cc-line-strong);
+  border-radius: 9px;
   object-fit: cover;
   flex: none;
 }
@@ -198,7 +306,12 @@ textarea,
   border-radius: 8px;
   background: var(--cc-fill);
 }
+.pz-seg {
+  max-width: 100%;
+}
 .pz-seg > button {
+  flex: none;
+  white-space: nowrap;
   min-height: 32px;
   padding: 0 14px;
   border: 0;

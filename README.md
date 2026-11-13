@@ -69,8 +69,10 @@
 | 下载队列 | 媒体库 |
 | --- | --- |
 | ![队列](docs/screenshots/queue.png) | ![媒体库](docs/screenshots/library.png) |
-| **内置播放器（字幕跳转）** | **托盘迷你窗** |
-| ![播放器](docs/screenshots/player.png) | ![迷你窗](docs/screenshots/mini.png) |
+| **内置播放器（字幕跳转）** | **设置（左侧分类）** |
+| ![播放器](docs/screenshots/player.png) | ![设置](docs/screenshots/settings.png) |
+
+界面设计稿（全部页面，含浏览器扩展、清影写作、手机互传）见 [`docs/design-reference.html`](docs/design-reference.html)。
 
 ## 从源码构建
 

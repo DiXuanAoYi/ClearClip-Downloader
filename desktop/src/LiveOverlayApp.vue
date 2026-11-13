@@ -137,9 +137,9 @@ html, body { margin: 0; background: transparent !important; overflow: hidden; }
 </style>
 
 <style scoped>
-.edge { position: fixed; inset: 0; border: 2px solid #f0a064; border-radius: 4px; pointer-events: none; box-sizing: border-box; }
+.edge { position: fixed; inset: 0; border: 2px solid #ffb547; border-radius: 4px; pointer-events: none; box-sizing: border-box; }
 .edge.paused { border-style: dashed; opacity: 0.8; }
-.edge span { position: absolute; left: 0; top: 0; background: #f0a064; color: #14181a; font: 600 11px/18px -apple-system, 'Microsoft YaHei', sans-serif; padding: 0 8px; border-radius: 0 0 4px 0; }
+.edge span { position: absolute; left: 0; top: 0; background: #ffb547; color: #060a12; font: 600 11px/18px -apple-system, 'Microsoft YaHei', sans-serif; padding: 0 8px; border-radius: 0 0 4px 0; }
 .note { position: fixed; right: 8px; top: 8px; max-width: 70%; background: rgba(30, 36, 48, 0.94); color: #fff; font: 600 12px/1.5 -apple-system, 'Microsoft YaHei', sans-serif; padding: 4px 10px; border-radius: 6px; pointer-events: none; }
 .ov { position: fixed; inset: 0; pointer-events: none; }
 </style>

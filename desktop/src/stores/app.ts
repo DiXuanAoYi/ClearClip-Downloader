@@ -7,7 +7,7 @@ import type { AppInfo, BatchRequest, ErrorKind, HistoryItem, LockStatus, MediaIn
 export type ViewName = 'parse' | 'queue' | 'subs' | 'live' | 'screen' | 'filetr' | 'library' | 'vocab' | 'tools' | 'settings'
 export type LibraryTab = 'files' | 'inbox' | 'transfer' | 'history'
 export type ToolboxTab = 'video' | 'normalize' | 'edit' | 'lut' | 'subtitle' | 'tags' | 'ai'
-export type SettingsTab = 'download' | 'parse' | 'network' | 'accounts' | 'phone' | 'ai' | 'automation' | 'security' | 'components' | 'diagnostics' | 'general'
+export type SettingsTab = 'download' | 'parse' | 'p2p' | 'network' | 'accounts' | 'phone' | 'ai' | 'writing' | 'automation' | 'security' | 'components' | 'diagnostics' | 'general'
 
 function readNavOpen(): boolean {
   try {

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影 · 解析 · 列表与批量</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="clearclip.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body { margin: 0; }
+.shell{min-height:1240px}
+.stack{display:flex;flex-direction:column;gap:18px;min-width:0}.btns{display:flex;flex-direction:column;gap:10px}.lines{display:flex;flex-direction:column;gap:7px;margin:14px 0;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:13px}.lines div{display:flex;justify-content:space-between;color:var(--mute)}.lines b{color:var(--text);font-weight:500}
+</style>
+</helmet>
+<div class="cc" data-theme="{{theme}}">
+<div class="shell">
+<nav class="rail" aria-label="主导航">
+<div class="logo" role="img" aria-label="清影"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3.5 6.1M20.2 8.2l-6.8 1M20.2 15.8 15 11M12 21l-3.5-6.1M3.8 15.8l6.8-1M3.8 8.2 9 13"/></svg></div>
+<button class="nav-i" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>解析</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>下载队列</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>订阅</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.5 7.5a6 6 0 0 0 0 9M16.5 7.5a6 6 0 0 1 0 9"/></svg><span>直播</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H4zM8 20h8M9 9h6M9 12h4"/></svg><span>屏幕翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5"/></svg><span>媒体库</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4"/></svg><span>文件翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v17l-5-4-5 4z"/></svg><span>生词与摘录</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/></svg><span>工具箱</span></button>
+<div class="nav-gap"></div>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4"/></svg><span>设置</span></button>
+</nav>
+<main class="main">
+<header class="topbar">
+<h1>解析 · 列表与批量</h1>
+<span class="spacer"></span><span class="chip cyan"><i class="dot "></i>本机服务 已开启</span>
+</header>
+<div class="split r"><div class="stack"><section class="panel">
+<div class="toolbar"><label class="field"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><input type="text" value="https://space.bilibili.com/384519271/video" placeholder="" aria-label="链接"></label><button class="btn primary" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>解析</button></div>
+<div class="toolbar" style="margin-top:12px"><span class="chip cyan"><i class="dot "></i>B站 · UP 主空间</span><span class="chip amber">已识别为列表</span><span class="spacer"></span><span class="seg" role="radiogroup" aria-label="解析模式"><label><input type="radio" name="g1" checked><span>单个</span></label><label><input type="radio" name="g1"><span>批量粘贴</span></label></span></div>
+</section>
+<section class="panel">
+<div class="panel-h"><h2>光影漫游者 · 视频</h2><span class="eyebrow">已展开 30 / 共 142 条</span><span class="spacer"></span><span class="seg" role="radiogroup" aria-label="分栏"><label><input type="radio" name="g2" checked><span>全部</span></label><label><input type="radio" name="g2"><span>投稿</span></label><label><input type="radio" name="g2"><span>合集</span></label><label><input type="radio" name="g2"><span>系列</span></label></span></div>
+<div class="toolbar" style="margin-bottom:12px"><label class="check"><input type="checkbox" checked><span>全选</span></label><span class="sub-c">已选 5 项 · 预计 335 MB</span><span class="spacer"></span><label class="field" style="width:220px;flex:none"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-4-4"/></svg><input type="text" value="" placeholder="在列表中搜索" aria-label="搜索"></label><select aria-label="排序"><option selected>按发布时间 ↓</option><option>按播放量</option><option>按时长</option></select></div>
+<div class="list"><div class="item"><label class="check"><input type="checkbox" checked><span></span></label><div style="width:120px;flex:none"><div class="thumb t1"><span class="dur mono">12:48</span></div></div><div class="grow"><div class="ttl">【4K 延时】上海 · 夜未央</div><div class="meta"><span>光影漫游者</span><span>B站</span></div></div><span class="mono sub-c">1080P · 71 MB</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg></button></div><div class="item"><label class="check"><input type="checkbox" checked><span></span></label><div style="width:120px;flex:none"><div class="thumb t3"><span class="dur mono">09:21</span></div></div><div class="grow"><div class="ttl">合集 02：苏州河的清晨</div><div class="meta"><span>光影漫游者</span><span>B站</span></div></div><span class="mono sub-c">1080P · 54 MB</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg></button></div><div class="item"><label class="check"><input type="checkbox" checked><span></span></label><div style="width:120px;flex:none"><div class="thumb t5"><span class="dur mono">06:02</span></div></div><div class="grow"><div class="ttl">【航拍】黄浦江两岸 8K 素材</div><div class="meta"><span>光影漫游者</span><span>B站</span><span class="chip amber">大会员</span></div></div><span class="mono sub-c">4K · 190 MB</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg></button></div><div class="item"><label class="check"><input type="checkbox"><span></span></label><div style="width:120px;flex:none"><div class="thumb t2"><span class="dur mono">10:33</span></div></div><div class="grow"><div class="ttl">春分｜城市里的第一场雨</div><div class="meta"><span>光影漫游者</span><span>B站</span><span class="chip ">已下载过</span></div></div><span class="mono sub-c">1080P · 63 MB</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg></button></div><div class="item"><label class="check"><input type="checkbox" checked><span></span></label><div style="width:120px;flex:none"><div class="thumb t4"><span class="dur mono">14:10</span></div></div><div class="grow"><div class="ttl">夜行者：凌晨三点的菜市场</div><div class="meta"><span>光影漫游者</span><span>B站</span></div></div><span class="mono sub-c">720P · 40 MB</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg></button></div><div class="item"><label class="check"><input type="checkbox" checked><span></span></label><div style="width:120px;flex:none"><div class="thumb t6"><span class="dur mono">31:55</span></div></div><div class="grow"><div class="ttl">老城区的一天（完整版）</div><div class="meta"><span>光影漫游者</span><span>B站</span></div></div><span class="mono sub-c">1080P · 168 MB</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg></button></div></div>
+<div class="toolbar" style="margin-top:14px;justify-content:center"><span class="mono sub-c">已加载 30 条，向下滚动继续读取（每页间隔随机 0.4–1.2 秒）</span></div>
+</section></div><aside class="stack sticky">
+<section class="panel">
+<div class="eyebrow">这一批怎么下</div>
+<div class="row"><div class="t"><b>每个视频的清晰度</b><small>按默认选项，或逐个选择</small></div><div class="ctl"><select aria-label="清晰度" style="width:150px"><option selected>自动 1080P</option><option>统一 720P</option><option>逐个选择</option></select></div></div>
+<div class="row"><div class="t"><b>字幕与弹幕</b><small>中文 SRT + 弹幕 ASS</small></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="字幕"><span></span></label></div></div>
+<div class="row"><div class="t"><b>放进子文件夹</b><small>光影漫游者 / 视频</small></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="子文件夹"><span></span></label></div></div>
+<div class="row"><div class="t"><b>批次名当文件夹</b><small>D:\清影\B站\光影漫游者</small></div><div class="ctl"><label class="sw"><input type="checkbox" aria-label="批次名"><span></span></label></div></div>
+<div class="row"><div class="t"><b>只在夜间下载</b><small>23:00 – 06:00，其余时间暂停</small></div><div class="ctl"><label class="sw"><input type="checkbox" aria-label="夜间"><span></span></label></div></div>
+<div class="lines"><div><span>已选</span><b>5 个视频</b></div><div><span>跳过</span><b>1 个（已下载过）</b></div><div><span>合计</span><b>335 MB · 约 56 秒</b></div></div>
+<div class="btns"><button class="btn primary block" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>加入下载队列（5）</button><button class="btn block" >先逐个检查再下载</button></div>
+</section>
+<section class="panel"><div class="panel-h"><h2>批量解析检查</h2></div>
+<div class="list"><div class="item"><i class="dot "></i><span class="grow">重复链接 0 条</span></div><div class="item"><i class="dot amber"></i><span class="grow">需要登录 1 条（大会员清晰度）</span></div><div class="item"><i class="dot "></i><span class="grow">已下载过 1 条，默认跳过</span></div></div></section>
+</aside></div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"],"section":"外观"},"$preview":{"width":1360,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() { return { theme: this.props.theme ?? 'dark' }; }
+}
+</script>
+</body>
+</html>

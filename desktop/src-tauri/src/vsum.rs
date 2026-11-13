@@ -173,6 +173,13 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
     use tauri::Manager;
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
+    // 字幕预处理（不需要模型）：返回清理后的行、统计、以及“要不要接着自动补标点”
+    if req.kind == "preclean" {
+        let o = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
+        let (lines, rep) = crate::subclean::clean_with_report(&req.lines, &o);
+        let lines: Vec<Value> = lines.iter().map(|l| json!({"t": l.t, "text": l.text})).collect();
+        return Ok(Prep::Done(json!({"lines": lines, "report": rep, "punct": settings.ai.sub_clean_punct})));
+    }
     let task = match req.kind.as_str() {
         "translate" | "punctuate" | "webtrans" | "domain" | "imgtrans" => crate::ai_pool::Task::Translate,
         "summary" | "article" | "mindmap" | "flowgraph" | "cards" | "quotes" | "rewrite" | "comments" => crate::ai_pool::Task::Summary,
@@ -194,6 +201,11 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
         if settings.writing.memory {
             req.write.extra = crate::writeassist::with_memory(&req.write.extra, &settings.writing, &req.write.page);
         }
+    }
+    // 字幕预处理（只作用在送给模型的文字上；文稿的显示和导出不变）
+    if matches!(req.kind.as_str(), "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate") {
+        let o = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
+        crate::subclean::prepare_lines(&mut req.lines, &o, matches!(req.kind.as_str(), "translate" | "punctuate"));
     }
     let model = settings.ai.model.clone();
     let default_lang = settings.ai.target_lang.clone();
@@ -608,7 +620,7 @@ async fn transcribe_streaming(
         std::fs::create_dir_all(&sub)?;
         match ai::transcribe_cues(ctx, settings, ffmpeg, file, lang, &sub).await {
             Ok(cues) => {
-                all.extend(shift_cues(cues, offset * 1000));
+                append_segment(&mut all, cues, *offset);
                 on_partial(
                     json!({"lines": cues_to_lines(&all), "durationMs": all.iter().map(|c| c.end).max().unwrap_or(0), "track": "清影转写", "progress": (i + 1) as f64 / total as f64}),
                 );
@@ -631,6 +643,12 @@ async fn transcribe_streaming(
         return Err(last_err.unwrap_or_else(|| AppError::msg("没有识别出任何语音。")));
     }
     Ok(all)
+}
+
+/// 把一段的识别结果接到总结果后面。`offset_ms` 是这一段在整段音频里的起点，**单位已经是毫秒**（`ai::split_audio` 返回的就是毫秒）。
+/// 以前这里又乘了一次 1000：第二段起时间全部差 1000 倍（90 秒的段变成 25 小时），文稿里的句子停在第一段的最后一个时间上、跟随播放对不上。
+pub fn append_segment(all: &mut Vec<crate::subtitle::Cue>, cues: Vec<crate::subtitle::Cue>, offset_ms: u64) {
+    all.extend(shift_cues(cues, offset_ms));
 }
 
 /// 每条字幕的时间整体后移 `ms` 毫秒（分段识别时，后面的段要接在前面段的后面）。
@@ -746,9 +764,9 @@ fn cache_lookup(data_dir: &std::path::Path, url: &str, subs_only: bool, track: &
         return read_cache(&cache_file(data_dir, url, "sub", track));
     }
     if track == "audio" {
-        return read_cache(&cache_file(data_dir, url, "stt", ""));
+        return read_cache(&cache_file(data_dir, url, "stt2", ""));
     }
-    read_cache(&cache_file(data_dir, url, "stt", "")).or_else(|| read_cache(&cache_file(data_dir, url, "sub", "")))
+    read_cache(&cache_file(data_dir, url, "stt2", "")).or_else(|| read_cache(&cache_file(data_dir, url, "sub", "")))
 }
 
 fn cache_store(data_dir: &std::path::Path, url: &str, subs_only: bool, track: &str, v: &Value) {
@@ -756,7 +774,7 @@ fn cache_store(data_dir: &std::path::Path, url: &str, subs_only: bool, track: &s
         return;
     }
     let whisper = v.get("source").and_then(|s| s.as_str()) == Some("whisper");
-    let path = if whisper { cache_file(data_dir, url, "stt", "") } else { cache_file(data_dir, url, "sub", if subs_only { track } else { "" }) };
+    let path = if whisper { cache_file(data_dir, url, "stt2", "") } else { cache_file(data_dir, url, "sub", if subs_only { track } else { "" }) };
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
         prune_cache_dir(dir, 300);
@@ -845,11 +863,16 @@ fn start_tracks(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
 }
 
 fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
-    cues.iter().map(|c| (c.start, c.lines.join(" ").trim().to_string())).filter(|(_, t)| !t.is_empty()).map(|(t, text)| json!({"t": t, "text": text})).collect()
+    cues.iter()
+        .map(|c| (c.start, crate::subtitle::clean_text(&c.lines.join(" "))))
+        .filter(|(_, t)| !t.is_empty())
+        .map(|(t, text)| json!({"t": t, "text": text}))
+        .collect()
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 30] = [
+    const KINDS: [&str; 31] = [
+        "preclean",
         "answer",
         "write",
         "replyread",
@@ -890,7 +913,8 @@ pub fn check(req: &Req) -> AppResult<()> {
     if size > MAX_CHARS {
         return Err(AppError::invalid("内容太长，超过了一次能处理的上限。"));
     }
-    let needs_lines = matches!(req.kind.as_str(), "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
+    let needs_lines =
+        matches!(req.kind.as_str(), "preclean" | "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
     if needs_lines && req.lines.iter().all(|l| l.text.trim().is_empty()) {
         return Err(AppError::invalid("没有可处理的字幕。"));
     }

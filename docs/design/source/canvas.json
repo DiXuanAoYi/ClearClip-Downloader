@@ -1,0 +1,347 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1360,
+      "h": 1300,
+      "title": "解析",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ParseList.dc.html": {
+      "x": 1440,
+      "y": 0,
+      "w": 1360,
+      "h": 1240,
+      "title": "解析 · 列表与批量",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Queue.dc.html": {
+      "x": 2880,
+      "y": 0,
+      "w": 1360,
+      "h": 980,
+      "title": "下载队列",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Subs.dc.html": {
+      "x": 0,
+      "y": 1420,
+      "w": 1360,
+      "h": 940,
+      "title": "订阅",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Live.dc.html": {
+      "x": 1440,
+      "y": 1420,
+      "w": 1360,
+      "h": 860,
+      "title": "直播",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Screen.dc.html": {
+      "x": 2880,
+      "y": 1420,
+      "w": 1360,
+      "h": 1680,
+      "title": "屏幕翻译",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Library.dc.html": {
+      "x": 0,
+      "y": 3220,
+      "w": 1360,
+      "h": 1560,
+      "title": "媒体库",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "FileTrans.dc.html": {
+      "x": 1440,
+      "y": 3220,
+      "w": 1360,
+      "h": 1020,
+      "title": "文件翻译",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Vocab.dc.html": {
+      "x": 2880,
+      "y": 3220,
+      "w": 1360,
+      "h": 980,
+      "title": "生词与摘录",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Toolbox.dc.html": {
+      "x": 0,
+      "y": 4900,
+      "w": 1360,
+      "h": 1230,
+      "title": "工具箱",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Editor.dc.html": {
+      "x": 1440,
+      "y": 4900,
+      "w": 1360,
+      "h": 1160,
+      "title": "工具箱 · 剪辑",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Overlays.dc.html": {
+      "x": 2880,
+      "y": 4900,
+      "w": 1360,
+      "h": 1100,
+      "title": "浮层与小窗",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Write.dc.html": {
+      "x": 0,
+      "y": 6250,
+      "w": 1360,
+      "h": 2640,
+      "title": "清影写作",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ExtPopup.dc.html": {
+      "x": 1440,
+      "y": 6250,
+      "w": 1360,
+      "h": 1400,
+      "title": "扩展 · 弹窗",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ExtSettings.dc.html": {
+      "x": 2880,
+      "y": 6250,
+      "w": 1360,
+      "h": 2060,
+      "title": "扩展 · 设置（横向导航）",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "ExtPage.dc.html": {
+      "x": 0,
+      "y": 9010,
+      "w": 1360,
+      "h": 1560,
+      "title": "扩展 · 页面内浮层",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Phone.dc.html": {
+      "x": 1440,
+      "y": 9010,
+      "w": 1360,
+      "h": 1500,
+      "title": "手机互传",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Chat.dc.html": {
+      "x": 2880,
+      "y": 9010,
+      "w": 1360,
+      "h": 1400,
+      "title": "手机互聊",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Small.dc.html": {
+      "x": 0,
+      "y": 10690,
+      "w": 1360,
+      "h": 900,
+      "title": "小窗口与悬浮条",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings.dc.html": {
+      "x": 1440,
+      "y": 10690,
+      "w": 1360,
+      "h": 1500,
+      "title": "设置 · 下载",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-parse.dc.html": {
+      "x": 2880,
+      "y": 10690,
+      "w": 1360,
+      "h": 1470,
+      "title": "设置 · 解析",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-p2p.dc.html": {
+      "x": 0,
+      "y": 12310,
+      "w": 1360,
+      "h": 900,
+      "title": "设置 · BT 与 ed2k",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-network.dc.html": {
+      "x": 1440,
+      "y": 12310,
+      "w": 1360,
+      "h": 900,
+      "title": "设置 · 网络",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-accounts.dc.html": {
+      "x": 2880,
+      "y": 12310,
+      "w": 1360,
+      "h": 900,
+      "title": "设置 · 账号与 Cookie",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-phone.dc.html": {
+      "x": 0,
+      "y": 13330,
+      "w": 1360,
+      "h": 900,
+      "title": "设置 · 手机与扩展",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-auto.dc.html": {
+      "x": 1440,
+      "y": 13330,
+      "w": 1360,
+      "h": 900,
+      "title": "设置 · 自动化",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-ai.dc.html": {
+      "x": 2880,
+      "y": 13330,
+      "w": 1360,
+      "h": 1100,
+      "title": "设置 · AI",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-writing.dc.html": {
+      "x": 0,
+      "y": 14550,
+      "w": 1360,
+      "h": 900,
+      "title": "设置 · 写作",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-security.dc.html": {
+      "x": 1440,
+      "y": 14550,
+      "w": 1360,
+      "h": 900,
+      "title": "设置 · 安全与隐私",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-components.dc.html": {
+      "x": 2880,
+      "y": 14550,
+      "w": 1360,
+      "h": 1000,
+      "title": "设置 · 组件",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-diag.dc.html": {
+      "x": 0,
+      "y": 15670,
+      "w": 1360,
+      "h": 900,
+      "title": "设置 · 诊断",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Settings-general.dc.html": {
+      "x": 1440,
+      "y": 15670,
+      "w": 1360,
+      "h": 1100,
+      "title": "设置 · 通用",
+      "expand": "fill",
+      "is_interactive": true
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-13T09:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "t1": {
+      "x": 0,
+      "y": -280,
+      "text": "清影 ClearClip · 全部页面设计（冷钢深空 + 镜头琥珀）",
+      "kind": "title1",
+      "maxW": 4200
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "ParseList.dc.html",
+    "Queue.dc.html",
+    "Subs.dc.html",
+    "Live.dc.html",
+    "Screen.dc.html",
+    "Library.dc.html",
+    "FileTrans.dc.html",
+    "Vocab.dc.html",
+    "Toolbox.dc.html",
+    "Editor.dc.html",
+    "Overlays.dc.html",
+    "Write.dc.html",
+    "ExtPopup.dc.html",
+    "ExtSettings.dc.html",
+    "ExtPage.dc.html",
+    "Phone.dc.html",
+    "Chat.dc.html",
+    "Small.dc.html",
+    "Settings.dc.html",
+    "Settings-parse.dc.html",
+    "Settings-p2p.dc.html",
+    "Settings-network.dc.html",
+    "Settings-accounts.dc.html",
+    "Settings-phone.dc.html",
+    "Settings-auto.dc.html",
+    "Settings-ai.dc.html",
+    "Settings-writing.dc.html",
+    "Settings-security.dc.html",
+    "Settings-components.dc.html",
+    "Settings-diag.dc.html",
+    "Settings-general.dc.html"
+  ],
+  "pages": [],
+  "title": "清影界面设计"
+}

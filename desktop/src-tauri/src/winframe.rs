@@ -61,7 +61,15 @@ const GUARD_ID: usize = 0x436C_6561; // "Clea"
 #[cfg(windows)]
 unsafe extern "system" fn guard_proc(hwnd: windows_sys::Win32::Foundation::HWND, msg: u32, wparam: usize, lparam: isize, _id: usize, _data: usize) -> isize {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_STYLE, STYLESTRUCT, WM_STYLECHANGING};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GWL_STYLE, STYLESTRUCT, WM_NCACTIVATE, WM_NCPAINT, WM_STYLECHANGING};
+    // 窗口激活 / 失去焦点（比如点了别的窗口）时，系统会重画“非客户区”，在无边框窗口顶上闪出一条白色标题条。
+    // WM_NCACTIVATE 的 lParam 传 -1 表示“不要重画非客户区”；WM_NCPAINT 直接吞掉。
+    if msg == WM_NCACTIVATE {
+        return DefSubclassProc(hwnd, msg, wparam, -1);
+    }
+    if msg == WM_NCPAINT {
+        return 0;
+    }
     if msg == WM_STYLECHANGING && wparam as i32 == GWL_STYLE && lparam != 0 {
         // SAFETY: 系统在 `WM_STYLECHANGING` 的 `lparam` 里传的是指向 `STYLESTRUCT` 的有效指针，允许修改其中的 `styleNew`。
         let styles = &mut *(lparam as *mut STYLESTRUCT);

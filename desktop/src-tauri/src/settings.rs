@@ -769,6 +769,10 @@ pub struct LiveSettings {
     pub audio_draft: bool,
     /// 翻译时带上最近几句当上文（0 = 不带），同一场对话里的称呼、人名、语气保持一致
     pub audio_context: u8,
+    /// 语音字幕实时存到本地（边听边写 .srt，不用等停下来再导出）
+    pub audio_autosave: bool,
+    /// 存到哪个文件夹；空 = 下载文件夹里的“语音字幕”
+    pub audio_save_dir: String,
     // ---- 按程序记住 ----
     pub profiles: Vec<LiveProfile>,
     /// 保存翻译历史
@@ -823,6 +827,8 @@ impl Default for LiveSettings {
             audio_source: "system".into(),
             audio_draft: true,
             audio_context: 4,
+            audio_autosave: true,
+            audio_save_dir: String::new(),
             profiles: vec![],
             history: true,
         }
@@ -858,7 +864,7 @@ impl LiveSettings {
                 "auto".into()
             }
         };
-        pick(&mut self.audio_stt, &["local", "cloud"], "local");
+        pick(&mut self.audio_stt, &["local", "cloud", "volc", "xfyun"], "local");
         pick(&mut self.audio_source, &["system", "mic"], "system");
         self.audio_context = self.audio_context.min(10);
         self.ocr_lang = self.ocr_lang.trim().chars().take(16).collect();
@@ -1013,6 +1019,12 @@ pub struct AiSettings {
     pub batch_size: usize,
     /// 语音转文字：`api`（兼容 OpenAI 的 `/audio/transcriptions`）或 `local`（本机的 whisper.cpp）
     pub stt_engine: String,
+    /// 火山引擎（豆包语音）AppId：留空用新版控制台的 API Key；密钥在保险箱 `stt.volc_key`
+    pub stt_volc_app_id: String,
+    /// 讯飞 AppID；SecretKey 在保险箱 `stt.xfyun_secret`
+    pub stt_xfyun_app_id: String,
+    /// 用云端自带的顺滑（火山 `enable_ddc` 语义顺滑 / 讯飞顺滑词）去口水词；默认关，统一交给本地的字幕预处理
+    pub stt_cloud_smooth: bool,
     /// 语音转文字接口地址；留空与上面相同
     pub stt_base_url: String,
     pub stt_model: String,
@@ -1039,6 +1051,14 @@ pub struct AiSettings {
     pub cue_length: String,
     /// 句子仍然过长时，用 AI 按语义断句（多一次模型调用，结果缓存）
     pub cue_semantic: bool,
+    /// 送给 AI 前去掉非语音说明（`[Music]` `♪` `>>` 说话人前缀）；不影响文稿显示和导出
+    pub sub_clean_hearing: bool,
+    /// 送给 AI 前去掉口水词：off / conservative / standard / aggressive；不影响文稿显示和导出
+    pub sub_clean_filler: String,
+    /// 预处理完后，没有标点的自动字幕自动补标点（多一次模型调用，结果缓存）
+    pub sub_clean_punct: bool,
+    /// 语音转文字的结果也做预处理（去非语音说明和口水词）；清理前的原文另存为 `.raw.srt`
+    pub sub_clean_output: bool,
 }
 
 impl Default for AiSettings {
@@ -1055,6 +1075,9 @@ impl Default for AiSettings {
             bilingual: true,
             batch_size: 40,
             stt_engine: "local".into(),
+            stt_volc_app_id: String::new(),
+            stt_xfyun_app_id: String::new(),
+            stt_cloud_smooth: false,
             stt_base_url: String::new(),
             stt_model: "whisper-1".into(),
             stt_language: String::new(),
@@ -1068,6 +1091,10 @@ impl Default for AiSettings {
             whisper_vad_model: String::new(),
             cue_length: "standard".into(),
             cue_semantic: false,
+            sub_clean_hearing: true,
+            sub_clean_filler: "conservative".into(),
+            sub_clean_punct: false,
+            sub_clean_output: true,
         }
     }
 }
@@ -1091,7 +1118,7 @@ impl AiSettings {
             self.target_lang = AiSettings::default().target_lang;
         }
         self.batch_size = self.batch_size.clamp(5, 100);
-        if !matches!(self.stt_engine.as_str(), "api" | "local") {
+        if !matches!(self.stt_engine.as_str(), "api" | "local" | "volc" | "xfyun") {
             self.stt_engine = "local".into();
         }
         self.stt_language = self.stt_language.trim().to_ascii_lowercase();
@@ -1256,6 +1283,8 @@ pub struct PhoneSettings {
     pub auto_extract: bool,
     /// 电脑发给手机的文件多久后自动撤回（小时）；0 表示不自动撤回
     pub outbox_hours: u32,
+    /// 手机互聊：开启后，已配对的手机可以在网页里互相发文字（消息经电脑上的服务转发，电脑端可查看）
+    pub peer_chat: bool,
 }
 
 impl Default for PhoneSettings {
@@ -1270,6 +1299,7 @@ impl Default for PhoneSettings {
             max_upload_mb: 4096,
             auto_extract: false,
             outbox_hours: 24,
+            peer_chat: false,
         }
     }
 }

@@ -21,7 +21,7 @@ watch(current, (t) => emit('update:tab', t))
 </script>
 
 <template>
-  <el-dialog :model-value="modelValue" title="媒体库工具" width="860px" top="6vh" destroy-on-close @update:model-value="(v: boolean) => emit('update:modelValue', v)">
+  <el-dialog append-to-body :model-value="modelValue" title="媒体库工具" width="860px" top="6vh" destroy-on-close @update:model-value="(v: boolean) => emit('update:modelValue', v)">
     <el-tabs v-model="current">
       <el-tab-pane label="统计与清理" name="stats"><LibStats v-if="current === 'stats'" @changed="emit('changed')" /></el-tab-pane>
       <el-tab-pane label="重复文件" name="dupes"><LibDupes v-if="current === 'dupes'" @changed="emit('changed')" /></el-tab-pane>
