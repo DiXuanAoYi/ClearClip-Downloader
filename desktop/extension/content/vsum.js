@@ -385,7 +385,7 @@
     S.busy = true
     render()
     try {
-      const key = `tr:${url}`
+      const key = `tr2:${url}`
       let r = await cached(key)
       if (!r) {
         // 识别出多少先显示多少；全部识别完后用完整结果覆盖，保证每句都有
@@ -518,7 +518,7 @@
     }
     if (!d.url || !/^https?:/.test(d.url) || d.site === 'article' || !(d.noSubtitle || d.fetchFailed)) return
     // 以前转写 / 取到过的文稿直接用，不再请求清影
-    for (const [key, name] of [[`tr:${d.url}`, '清影转写'], [`sub:${d.url}`, null]]) {
+    for (const [key, name] of [[`tr2:${d.url}`, '清影转写'], [`sub:${d.url}`, null]]) {
       const old = await cached(key)
       if (S.data !== d) return
       if (old?.lines?.length) {

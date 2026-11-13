@@ -608,7 +608,7 @@ async fn transcribe_streaming(
         std::fs::create_dir_all(&sub)?;
         match ai::transcribe_cues(ctx, settings, ffmpeg, file, lang, &sub).await {
             Ok(cues) => {
-                all.extend(shift_cues(cues, offset * 1000));
+                append_segment(&mut all, cues, *offset);
                 on_partial(
                     json!({"lines": cues_to_lines(&all), "durationMs": all.iter().map(|c| c.end).max().unwrap_or(0), "track": "清影转写", "progress": (i + 1) as f64 / total as f64}),
                 );
@@ -631,6 +631,12 @@ async fn transcribe_streaming(
         return Err(last_err.unwrap_or_else(|| AppError::msg("没有识别出任何语音。")));
     }
     Ok(all)
+}
+
+/// 把一段的识别结果接到总结果后面。`offset_ms` 是这一段在整段音频里的起点，**单位已经是毫秒**（`ai::split_audio` 返回的就是毫秒）。
+/// 以前这里又乘了一次 1000：第二段起时间全部差 1000 倍（90 秒的段变成 25 小时），文稿里的句子停在第一段的最后一个时间上、跟随播放对不上。
+pub fn append_segment(all: &mut Vec<crate::subtitle::Cue>, cues: Vec<crate::subtitle::Cue>, offset_ms: u64) {
+    all.extend(shift_cues(cues, offset_ms));
 }
 
 /// 每条字幕的时间整体后移 `ms` 毫秒（分段识别时，后面的段要接在前面段的后面）。
@@ -746,9 +752,9 @@ fn cache_lookup(data_dir: &std::path::Path, url: &str, subs_only: bool, track: &
         return read_cache(&cache_file(data_dir, url, "sub", track));
     }
     if track == "audio" {
-        return read_cache(&cache_file(data_dir, url, "stt", ""));
+        return read_cache(&cache_file(data_dir, url, "stt2", ""));
     }
-    read_cache(&cache_file(data_dir, url, "stt", "")).or_else(|| read_cache(&cache_file(data_dir, url, "sub", "")))
+    read_cache(&cache_file(data_dir, url, "stt2", "")).or_else(|| read_cache(&cache_file(data_dir, url, "sub", "")))
 }
 
 fn cache_store(data_dir: &std::path::Path, url: &str, subs_only: bool, track: &str, v: &Value) {
@@ -756,7 +762,7 @@ fn cache_store(data_dir: &std::path::Path, url: &str, subs_only: bool, track: &s
         return;
     }
     let whisper = v.get("source").and_then(|s| s.as_str()) == Some("whisper");
-    let path = if whisper { cache_file(data_dir, url, "stt", "") } else { cache_file(data_dir, url, "sub", if subs_only { track } else { "" }) };
+    let path = if whisper { cache_file(data_dir, url, "stt2", "") } else { cache_file(data_dir, url, "sub", if subs_only { track } else { "" }) };
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
         prune_cache_dir(dir, 300);
