@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText } from './api'
 import type { ScreenStatus } from './types'
@@ -32,7 +32,7 @@ const text = computed(() => {
 })
 
 /** 空闲时在主文字下面补一行用法 */
-const hint = computed(() => (!msg.value && !busy.value && !over.value && !active.value ? '或点一下后按 Ctrl+V' : ''))
+const hint = computed(() => (!msg.value && !busy.value && !over.value && !active.value ? '或点击后 Ctrl+V' : ''))
 
 function say(m: string, isBad = false) {
   msg.value = m
@@ -117,10 +117,22 @@ const MODES: [string, string][] = [
 ]
 const hk = computed(() => ({ hotkey: app.settings?.live.hotkey ?? '', hotkeyPick: app.settings?.live.hotkeyPick ?? '', hotkeyHide: app.settings?.live.hotkeyHide ?? '' }))
 const scShown = computed(() => !!sc.value?.supported && (app.settings?.live.floatButton ?? false))
-async function setScOpen(v: boolean) {
+function setScOpen(v: boolean) {
   scOpen.value = v
-  await api.floatExpand(v).catch(() => {})
 }
+/** 窗口宽度跟着内容走：量出一整行（胶囊 + 展开的控制条）的宽度，加上四周给阴影的留白 */
+const rowEl = ref<HTMLElement | null>(null)
+let ro: ResizeObserver | undefined
+let lastFit = 0
+function fit() {
+  const el = rowEl.value
+  if (!el) return
+  const w = Math.ceil(el.getBoundingClientRect().width) + 20
+  if (w === lastFit) return
+  lastFit = w
+  void api.floatFit(w).catch(() => {})
+}
+watch([scOpen, scShown], () => void nextTick(fit))
 async function act(kind: string, arg = '') {
   try {
     // 开始 / 停止和主程序“屏幕翻译”页的按钮是同一套：停止就是停止，开始用上次的区域（没有就去框选）
@@ -151,6 +163,11 @@ onMounted(async () => {
   // 窗口是透明的：页面背景也要透明，胶囊才有自己的圆角和阴影
   document.documentElement.style.background = 'transparent'
   document.body.style.background = 'transparent'
+  if (rowEl.value && typeof ResizeObserver !== 'undefined') {
+    ro = new ResizeObserver(fit)
+    ro.observe(rowEl.value)
+  }
+  fit()
   await app.load()
   await queue.start()
   window.addEventListener('paste', onPaste)
@@ -159,6 +176,7 @@ onMounted(async () => {
   offs = [await api.onScreenState((s) => ((sc.value = s), calcFps()))]
 })
 onBeforeUnmount(() => {
+  ro?.disconnect()
   window.removeEventListener('paste', onPaste)
   offs.forEach((f) => f())
 })
@@ -166,6 +184,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="wrap">
+    <div ref="rowEl" class="row">
     <div
       class="ball"
       :class="{ over, bad, busy }"
@@ -195,6 +214,7 @@ onBeforeUnmount(() => {
       <span v-if="sc?.running" class="live">{{ sc.paused ? '已暂停' : `${fps} 帧/秒` }}</span>
       <button title="收起" @click="setScOpen(false)">‹</button>
     </div>
+    </div>
   </div>
 </template>
 
@@ -209,8 +229,12 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   inset: 0;
   box-sizing: border-box;
   padding: 10px;
-  display: flex;
+}
+.row {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
+  max-width: 100%;
 }
 .ball,
 .panel {
@@ -225,8 +249,8 @@ html, body, #app { background: transparent !important; overflow: hidden; }
 .ball {
   position: relative;
   flex: 0 0 auto;
-  width: 100%;
-  max-width: 232px;
+  width: max-content;
+  max-width: 300px;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -346,8 +370,7 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   box-shadow: 0 0 0 2px #ffb547;
 }
 .panel {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 auto;
   display: flex;
   gap: 3px;
   align-items: center;

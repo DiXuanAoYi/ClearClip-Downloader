@@ -435,7 +435,7 @@ function onTab(name: string | number) {
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog :model-value="!!editing" width="960px" top="4vh" class="gl-edit" :show-close="false" @close="editing = null">
+    <el-dialog append-to-body :model-value="!!editing" width="960px" top="4vh" class="gl-edit" :show-close="false" @close="editing = null">
       <template #header>
         <div class="ehead">
           <div class="et">

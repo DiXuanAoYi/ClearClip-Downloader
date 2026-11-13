@@ -56,6 +56,7 @@ const INIT = `
         case 'sc_start': window.__sc = { ...window.__sc, running: true }; window.__emit('live://state', window.__sc); return window.__sc
         case 'sc_stop': window.__sc = { ...window.__sc, running: false }; window.__emit('live://state', window.__sc); return window.__sc
         case 'float_expand': window.__expanded = args.expanded; return null
+        case 'float_fit': window.__fit = args.width; return null
         case 'excerpt_list': return window.__excerpts
         case 'excerpt_note': window.__excerpts.find((e) => e.id === args.id).note = args.note; return null
         case 'excerpt_remove': window.__excerpts = window.__excerpts.filter((e) => e.id !== args.id); return null
@@ -104,7 +105,7 @@ const INIT = `
     ok('悬浮窗里有屏幕翻译的“译”', await page.locator('.ball .tr').isVisible())
     await page.locator('.ball .tr').click()
     await page.waitForTimeout(200)
-    ok('点“译”展开屏幕翻译控制，窗口变宽', (await page.evaluate(() => window.__expanded)) === true && (await page.locator('.panel').isVisible()))
+    ok('点“译”展开屏幕翻译控制，窗口变宽', (await page.evaluate(() => window.__fit)) > 500 && (await page.locator('.panel').isVisible()))
     const btns = await page.locator('.panel button').allInnerTexts()
     ok('控制里有开始、模式、重选、隐藏译文', ['开始', '标准', '字幕', '漫画', '▭ 重选', '隐藏译文'].every((b) => btns.includes(b)), btns.join(','))
     await page.locator('.panel button', { hasText: '开始' }).click()

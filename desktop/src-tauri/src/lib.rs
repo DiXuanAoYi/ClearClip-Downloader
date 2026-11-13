@@ -883,6 +883,7 @@ pub fn run() {
             livetr::sc_ack_manga,
             livetr::sc_bar,
             tray::float_expand,
+            tray::float_fit,
             livetr::sc_try,
             livetr::sc_history,
             livetr::sc_history_clear,

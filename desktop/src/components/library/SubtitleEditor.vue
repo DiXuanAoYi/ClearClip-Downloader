@@ -209,7 +209,7 @@ const shown = (c: ECue) => S.viewLines(S.textOf(c), view.value)
 </script>
 
 <template>
-  <el-dialog :model-value="modelValue" title="字幕校对" width="min(1080px, 96vw)" top="3vh" :close-on-click-modal="false" @update:model-value="(v: boolean) => (v ? null : close())" @close="close">
+  <el-dialog append-to-body :model-value="modelValue" title="字幕校对" width="min(1080px, 96vw)" top="3vh" :close-on-click-modal="false" @update:model-value="(v: boolean) => (v ? null : close())" @close="close">
     <div v-loading="loading" class="ed">
       <div class="bar">
         <el-button size="small" :disabled="!canUndo" @click="undo">撤销</el-button>

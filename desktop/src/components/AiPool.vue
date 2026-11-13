@@ -246,7 +246,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
     </div>
 
 
-    <el-dialog :model-value="!!probe" title="检测可用模型" width="880px" @close="probe = null">
+    <el-dialog append-to-body :model-value="!!probe" title="检测可用模型" width="880px" @close="probe = null">
       <template v-if="probe">
         <div class="pr-top mute">
           <span>{{ probe.e.name }} · {{ probe.e.baseUrl }}</span>
@@ -346,7 +346,7 @@ h3 { margin: 0; font-size: 12px; color: var(--cc-mute); }
 .pr-bar { display: flex; gap: 6px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
 .pr-bar .grow { flex: 1; }
 .pr-list { border: 1px solid var(--cc-border, #dcdfe6); border-radius: 8px; max-height: 360px; overflow-y: auto; }
-.pr-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 190px 190px; gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--cc-border, #ebeef5); font-size: 13px; }
+.pr-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(0, 150px) minmax(0, 190px); gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--cc-border, #ebeef5); font-size: 13px; }
 .pr-row:first-child { border-top: 0; }
 .pr-row .nm2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-row .caps { display: flex; gap: 4px; flex-wrap: wrap; }

@@ -1204,7 +1204,7 @@ function recentKind(r: HistoryItem) {
       </ol>
     </section>
 
-    <el-dialog v-model="preview" :title="result?.title" width="720px" align-center destroy-on-close>
+    <el-dialog append-to-body v-model="preview" :title="result?.title" width="720px" align-center destroy-on-close>
       <div v-if="result" class="preview">
         <template v-if="previewAsset">
           <p v-if="previewError" class="selectable mute">{{ previewError }}</p>

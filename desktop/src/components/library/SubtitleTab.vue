@@ -110,7 +110,7 @@ async function run() {
 
     <SubtitleEditor v-model="editing" :path="editPath" :video="video" @saved="load" />
 
-    <el-dialog v-model="muxOpen" title="把字幕合成到视频" width="min(640px, 94vw)">
+    <el-dialog append-to-body v-model="muxOpen" title="把字幕合成到视频" width="min(640px, 94vw)">
       <div class="mx">
         <el-radio-group v-model="mux.mode" size="small">
           <el-radio-button value="soft">软字幕（可多轨，不重新编码）</el-radio-button>

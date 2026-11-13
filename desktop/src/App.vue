@@ -340,7 +340,7 @@ onMounted(async () => {
     <CommandPalette />
     <PlayerDialog />
     <div v-if="dragging" class="dropzone">松开以导入链接（支持链接文本和 .txt 文件）</div>
-    <el-dialog :model-value="!!countdown" :title="countdown?.action === 'shutdown' ? '即将关机' : '即将睡眠'" width="360px" :close-on-click-modal="false" :show-close="false">
+    <el-dialog append-to-body :model-value="!!countdown" :title="countdown?.action === 'shutdown' ? '即将关机' : '即将睡眠'" width="360px" :close-on-click-modal="false" :show-close="false">
       <p>全部下载已完成，将在 <b class="mono">{{ countdown?.left }}</b> 秒后{{ countdown?.action === 'shutdown' ? '关机' : '睡眠' }}。</p>
       <template #footer>
         <el-button type="primary" @click="cancelPower">取消</el-button>

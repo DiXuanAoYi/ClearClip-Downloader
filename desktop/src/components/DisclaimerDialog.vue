@@ -17,7 +17,7 @@ async function accept() {
 </script>
 
 <template>
-  <el-dialog
+  <el-dialog append-to-body
     :model-value="visible"
     title="使用前请阅读"
     width="460px"

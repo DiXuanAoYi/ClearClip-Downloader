@@ -806,3 +806,20 @@ html:not(.dark) .el-button.pz-strong:not(.is-disabled) {
   color: var(--cc-amber) !important;
   border-bottom-color: var(--cc-amber) !important;
 }
+
+/* 对话框：宽度不超过窗口（固定写了 880px 的在窄窗口里会被切掉），内容多时在对话框里滚动 */
+.el-dialog {
+  width: min(var(--el-dialog-width, 50%), calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.el-dialog__body {
+  min-width: 0;
+  overflow: auto;
+}
+.el-overlay-dialog {
+  overflow: auto;
+}

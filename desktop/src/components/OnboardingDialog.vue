@@ -67,7 +67,7 @@ async function finish(goto?: SettingsTab) {
 </script>
 
 <template>
-  <el-dialog :model-value="visible" width="520px" :show-close="false" :close-on-click-modal="false" :close-on-press-escape="false" align-center>
+  <el-dialog append-to-body :model-value="visible" width="520px" :show-close="false" :close-on-click-modal="false" :close-on-press-escape="false" align-center>
     <template #header>
       <div class="hd">
         <b>欢迎使用清影</b>

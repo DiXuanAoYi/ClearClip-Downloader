@@ -189,7 +189,7 @@ onBeforeUnmount(() => un.forEach((f) => f()))
       <JobList />
     </template>
 
-    <el-dialog v-model="changing" title="修改保险箱密码" width="380px">
+    <el-dialog append-to-body v-model="changing" title="修改保险箱密码" width="380px">
       <div class="col">
         <el-input v-model="oldPw" type="password" show-password placeholder="当前密码" autocomplete="off" />
         <el-input v-model="newPw" type="password" show-password placeholder="新密码（至少 6 个字符）" autocomplete="off" />

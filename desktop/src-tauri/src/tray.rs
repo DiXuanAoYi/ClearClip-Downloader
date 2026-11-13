@@ -358,6 +358,23 @@ pub fn float_expand(app: AppHandle, expanded: bool) {
     let _ = w.set_position(Position::Logical(LogicalPosition::new(x, p.y as f64 / scale)));
 }
 
+/// 悬浮窗宽度跟着内容走：页面量出胶囊（展开时加上控制条）的宽度，传一个逻辑像素宽度过来；保持右边缘不动。
+#[tauri::command]
+pub fn float_fit(app: AppHandle, width: f64) {
+    use tauri::{LogicalPosition, Position, Size};
+    let Some(w) = app.get_webview_window(FLOAT.label) else { return };
+    let scale = w.scale_factor().unwrap_or(1.0);
+    let (Ok(p), Ok(sz)) = (w.outer_position(), w.inner_size()) else { return };
+    let cur_w = sz.width as f64 / scale;
+    let want = width.clamp(120.0, 1600.0);
+    if (cur_w - want).abs() < 1.0 {
+        return;
+    }
+    let x = (p.x as f64 / scale + cur_w - want).max(0.0);
+    let _ = w.set_size(Size::Logical(LogicalSize::new(want, FLOAT_H)));
+    let _ = w.set_position(Position::Logical(LogicalPosition::new(x, p.y as f64 / scale)));
+}
+
 /// 显示或隐藏悬浮拖拽窗；显示时放在屏幕右侧、迷你窗上方。
 pub fn apply_float(app: &AppHandle, on: bool) {
     if !on {

@@ -494,6 +494,7 @@ export const api = {
   scAckManga: () => invoke<void>('sc_ack_manga'),
   scBar: (on: boolean) => invoke<void>('sc_bar', { on }),
   floatExpand: (expanded: boolean) => invoke<void>('float_expand', { expanded }),
+  floatFit: (width: number) => invoke<void>('float_fit', { width }),
   scTry: (target?: ScreenTarget) => invoke<ScreenTry>('sc_try', { target }),
   scHistory: (n?: number) => invoke<ScreenEntry[]>('sc_history', { n }),
   scHistoryClear: () => invoke<void>('sc_history_clear'),

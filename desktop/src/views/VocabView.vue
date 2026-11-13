@@ -334,7 +334,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </aside>
     </div>
 
-    <el-dialog :model-value="!!viewing" :title="viewing ? (viewing.info.title || '视频缓存') : ''" width="760px" @close="viewing = null">
+    <el-dialog append-to-body :model-value="!!viewing" :title="viewing ? (viewing.info.title || '视频缓存') : ''" width="760px" @close="viewing = null">
       <template v-if="viewing">
         <div class="mute">{{ viewing.info.url }}</div>
         <h4 v-if="summaryText">摘要</h4>
