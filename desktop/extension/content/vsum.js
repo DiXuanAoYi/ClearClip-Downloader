@@ -853,7 +853,7 @@
         d.lines.length ? `${d.lines.length} 段` : '无文稿',
         d.track && `· ${d.track}`,
         d.durationMs > 0 && `· ${V.fmtClock(d.durationMs)}`,
-        S.status && !S.status.ready && h('span', { style: 'color:#a8362d', text: '· 清影里未设置大模型' })))
+        S.status && !S.status.ready && h('span', { style: 'color:#c4283d', text: '· 清影里未设置大模型' })))
       children.push(h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([id, n]) => h('button', { class: S.tab === id ? 'on' : '', role: 'tab', 'aria-selected': S.tab === id, text: id === 'vocab' && VOCAB.list ? `${n} ${VOCAB.list.length}` : n, onclick: () => ((S.tab = id), savePrefs(), id === 'vocab' && void loadVocab(), render()) }))))
     }
     const body = h('div', { class: 'body' }, h('div', { id: 'prog' }))

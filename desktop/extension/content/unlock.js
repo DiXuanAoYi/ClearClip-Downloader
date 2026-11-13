@@ -115,7 +115,7 @@
       const host = document.createElement('div')
       host.style.cssText = 'all:initial;position:fixed;right:16px;bottom:16px;z-index:2147483647'
       const root = host.attachShadow({ mode: 'closed' })
-      root.innerHTML = '<style>div{font:13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#1d2420;color:#fff;border-radius:8px;padding:8px 12px;box-shadow:0 6px 20px #0004;display:flex;gap:10px;align-items:center}button{font:inherit;cursor:pointer;border:1px solid #ffffff66;background:transparent;color:#fff;border-radius:6px;padding:2px 8px}</style><div><span>清影已解除这个网页的复制 / 右键限制</span><button id="u">撤销</button><button id="x">×</button></div>'
+      root.innerHTML = '<style>div{font:13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#0b1424;color:#fff;border-radius:8px;padding:8px 12px;box-shadow:0 6px 20px #0004;display:flex;gap:10px;align-items:center}button{font:inherit;cursor:pointer;border:1px solid #ffffff66;background:transparent;color:#fff;border-radius:6px;padding:2px 8px}</style><div><span>清影已解除这个网页的复制 / 右键限制</span><button id="u">撤销</button><button id="x">×</button></div>'
       root.getElementById('u').onclick = () => {
         state.off = true
         style.remove()

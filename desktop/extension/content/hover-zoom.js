@@ -7,26 +7,26 @@
 
   const DWELL = 220
   const CSS = `
-    .zoom { background: #fff; border: 1px solid #cfd5d1; border-radius: 8px; box-shadow: 0 12px 36px #0006; overflow: hidden; pointer-events: none; }
+    .zoom { background: #fff; border: 1px solid #aebfd8; border-radius: 8px; box-shadow: 0 12px 36px #0006; overflow: hidden; pointer-events: none; }
     .zoom.locked { pointer-events: auto; }
     .zoom .stage { display: flex; align-items: center; justify-content: center; background: #111; overflow: hidden; }
     img.big { display: block; max-width: none; transition: transform .12s; }
-    .info { background: #1d2420; color: #dfe5e2; font-size: 12px; padding: 3px 10px; display: flex; justify-content: space-between; gap: 10px; }
-    .tools { display: none; gap: 6px; padding: 6px; background: #f4f5f4; flex-wrap: wrap; align-items: center; }
+    .info { background: #0b1424; color: #dfe5e2; font-size: 12px; padding: 3px 10px; display: flex; justify-content: space-between; gap: 10px; }
+    .tools { display: none; gap: 6px; padding: 6px; background: #eaf0f7; flex-wrap: wrap; align-items: center; }
     .zoom.locked .tools, .gal .tools { display: flex; }
     .tools button { padding: 3px 10px; font-size: 12px; }
     .gal { inset: 0; background: #000d; display: flex; flex-direction: column; }
     .gal .stage { flex: 1; min-height: 0; background: transparent; position: relative; display: flex; align-items: center; justify-content: center; }
-    .gal .tools { background: #1d2420; justify-content: center; }
-    .gal .info { justify-content: center; gap: 24px; background: #1d2420; }
+    .gal .tools { background: #0b1424; justify-content: center; }
+    .gal .info { justify-content: center; gap: 24px; background: #0b1424; }
     .gal .nav { position: absolute; top: 50%; transform: translateY(-50%); font-size: 28px; padding: 8px 14px; background: #0008; }
     .gal .nav.l { left: 14px } .gal .nav.r { right: 14px }
-    .strip { display: flex; gap: 6px; padding: 8px; overflow-x: auto; background: #1d2420; justify-content: center; }
+    .strip { display: flex; gap: 6px; padding: 8px; overflow-x: auto; background: #0b1424; justify-content: center; }
     .strip img { height: 54px; width: auto; border: 2px solid transparent; border-radius: 4px; cursor: pointer; opacity: .7; }
-    .strip img.on { border-color: #d9762b; opacity: 1; }
-    .pop { background: #fff; color: #1d2420; border: 1px solid #cfd5d1; border-radius: 8px; box-shadow: 0 8px 24px #0004; padding: 4px; }
+    .strip img.on { border-color: #b45f00; opacity: 1; }
+    .pop { background: #fff; color: #0b1424; border: 1px solid #aebfd8; border-radius: 8px; box-shadow: 0 8px 24px #0004; padding: 4px; }
     .pop button { display: block; width: 100%; text-align: left; background: transparent; color: inherit; font-weight: 400; }
-    .pop button:hover { background: #d9762b24; }
+    .pop button:hover { background: #b45f0024; }
   `
   let off = false
   let userRules = ''

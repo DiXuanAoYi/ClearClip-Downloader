@@ -28,32 +28,32 @@
   const CSS = `
     .panel { transition: transform .18s ease; }
     .panel.hide { transform: translateX(105%); visibility: hidden; pointer-events: none; transition: transform .18s ease, visibility 0s .18s; }
-    .panel.peek { border-left-color: #d9762b; box-shadow: -14px 0 36px #0003; padding-top: 34px; }
-    .peekbar { top: 0; right: 0; width: 400px; max-width: 100vw; height: 34px; display: none; align-items: center; gap: 8px; padding: 0 10px 0 12px; background: var(--accsoft); border-left: 1px solid #d9762b; border-bottom: 1px solid #e8c9ad; color: var(--acc); font-size: 12px; z-index: 2147483647; }
+    .panel.peek { border-left-color: #b45f00; box-shadow: -14px 0 36px #0003; padding-top: 34px; }
+    .peekbar { top: 0; right: 0; width: 400px; max-width: 100vw; height: 34px; display: none; align-items: center; gap: 8px; padding: 0 10px 0 12px; background: var(--accsoft); border-left: 1px solid #b45f00; border-bottom: 1px solid #e3b475; color: var(--acc); font-size: 12px; z-index: 2147483647; }
     .peekbar.on { display: flex; }
-    .peekbar i { width: 8px; height: 8px; border-radius: 50%; background: #d9762b; flex: none; }
+    .peekbar i { width: 8px; height: 8px; border-radius: 50%; background: #b45f00; flex: none; }
     .peekbar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .peekbar button { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; font-size: 12px; }
     .dockbtn { display: inline-flex; align-items: center; padding: 3px 7px; }
     .dtab { right: 0; width: 30px; height: 84px; padding: 0; border: 1px solid var(--line); border-right: 0; border-radius: 12px 0 0 12px; background: var(--bg); color: var(--mute); box-shadow: -3px 2px 10px #0002; opacity: .78; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 7px; font-weight: 400; touch-action: none; cursor: pointer; transition: opacity .15s, width .15s, right .18s ease, border-color .15s; overflow: hidden; }
     .dtab.on { display: flex; }
     .dtab:hover { opacity: 1; filter: none; }
-    .dtab:hover:not(.peek) { width: 136px; gap: 3px; border-color: #d9762b; }
+    .dtab:hover:not(.peek) { width: 136px; gap: 3px; border-color: #b45f00; }
     .dtab .rw { display: flex; flex-direction: column; align-items: center; gap: 7px; }
     .dtab:hover:not(.peek) .rw { flex-direction: row; gap: 7px; }
     .dtab .nm { display: none; color: var(--fg); font-weight: 600; white-space: nowrap; }
     .dtab:hover:not(.peek) .nm { display: block; }
     .dtab .kb { display: none; font-size: 11px; color: var(--mute); font-weight: 400; }
     .dtab:hover:not(.peek) .kb { display: block; }
-    .dtab .lg { position: relative; width: 20px; height: 20px; border-radius: 6px; background: #d9762b; color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; flex: none; }
+    .dtab .lg { position: relative; width: 20px; height: 20px; border-radius: 6px; background: #b45f00; color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; flex: none; }
     .dtab .lg .rg { position: absolute; left: -5px; top: -5px; display: none; animation: dspin 1s linear infinite; }
     .dtab.busy .lg .rg { display: block; }
     .dtab .lg .dt { position: absolute; right: -4px; top: -4px; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg); display: none; }
-    .dtab.fresh .lg .dt { display: block; background: #2f8a57; }
+    .dtab.fresh .lg .dt { display: block; background: #007a70; }
     .dtab.warn .lg .dt { display: block; background: #d99a1e; }
     .dtab .gp { display: flex; flex-direction: column; gap: 2px; }
     .dtab .gp i { display: block; width: 10px; height: 2px; border-radius: 1px; background: var(--line); }
-    .dtab.peek { opacity: 1; border-color: #d9762b; background: var(--accsoft); color: var(--acc); }
+    .dtab.peek { opacity: 1; border-color: #b45f00; background: var(--accsoft); color: var(--acc); }
     .dtab.peek .gp { display: none; }
     .dtab.drag { opacity: 1; cursor: grabbing; transition: none; }
     .dtoast { right: 38px; height: 30px; display: none; align-items: center; gap: 7px; padding: 0 12px; border-radius: 999px; background: var(--fg); color: var(--bg); font-size: 12px; white-space: nowrap; box-shadow: 0 4px 14px #0004; pointer-events: none; }
@@ -65,12 +65,12 @@
     @media (prefers-reduced-motion: reduce) { .panel, .panel.hide, .dtab { transition: none; } .dtab .lg .rg { animation: none; } }
   `
   const DARK = `
-      .panel.peek, .peekbar { border-left-color: #f0a064; }
+      .panel.peek, .peekbar { border-left-color: #ffb547; }
       .peekbar { border-bottom-color: #5a4330; }
-      .peekbar i { background: #f0a064; }
-      .dtab .lg { background: #f0a064; color: #1d2420; }
-      .dtab.fresh .lg .dt { background: #6cc08a; } .dtab.warn .lg .dt { background: #f0b73a; }
-      .dtab:hover:not(.peek), .dtab.peek { border-color: #f0a064; }
+      .peekbar i { background: #ffb547; }
+      .dtab .lg { background: #ffb547; color: #0b1424; }
+      .dtab.fresh .lg .dt { background: #4be3d0; } .dtab.warn .lg .dt { background: #f0b73a; }
+      .dtab:hover:not(.peek), .dtab.peek { border-color: #ffb547; }
       .dtoast.warn { background: #2f2a1c; color: #f2d58e; border-color: #6b5530; }
   `
 
@@ -97,9 +97,9 @@
       s.setAttribute('fill', 'none')
       s.setAttribute('aria-hidden', 'true')
       const a = document.createElementNS(NS, 'circle')
-      for (const [k, v] of [['cx', '15'], ['cy', '15'], ['r', '13'], ['stroke', '#e8c9ad'], ['stroke-width', '2']]) a.setAttribute(k, v)
+      for (const [k, v] of [['cx', '15'], ['cy', '15'], ['r', '13'], ['stroke', '#e3b475'], ['stroke-width', '2']]) a.setAttribute(k, v)
       const b = document.createElementNS(NS, 'path')
-      for (const [k, v] of [['d', 'M15 2a13 13 0 0 1 13 13'], ['stroke', '#b4561a'], ['stroke-width', '2.4'], ['stroke-linecap', 'round']]) b.setAttribute(k, v)
+      for (const [k, v] of [['d', 'M15 2a13 13 0 0 1 13 13'], ['stroke', '#b45f00'], ['stroke-width', '2.4'], ['stroke-linecap', 'round']]) b.setAttribute(k, v)
       s.append(a, b)
       return s
     })()

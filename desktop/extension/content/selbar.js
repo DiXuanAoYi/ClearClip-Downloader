@@ -28,7 +28,7 @@
     .card .body.wcard .hd { font-weight: 400; align-items: baseline }
     .menu2 { background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px #0003; padding: 4px; min-width: 140px; }
     .menu2 button { display: block; width: 100%; text-align: left; background: transparent; color: inherit; font-weight: 400; }
-    .menu2 button:hover { background: #d9762b24; }
+    .menu2 button:hover { background: #b45f0024; }
   ` + (globalThis.ccWordCard?.CSS || '')
   let ui = null
   const uiRoot = () => (ui ||= mount(CSS))

@@ -12,7 +12,7 @@
   const MIN_H = 135
   const CSS = `
     .dock { transition: opacity .2s; position: fixed; display: none; align-items: center; gap: 6px; height: 30px; padding: 0 3px 0 8px; border-radius: 15px; background: #1d2420d9; color: #fff; font-size: 12.5px; font-weight: 600; box-shadow: 0 2px 8px #0005; user-select: none; backdrop-filter: blur(6px) }
-    .dock .mk { width: 16px; height: 16px; border-radius: 5px; background: #f08a3c; color: #14181a; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none }
+    .dock .mk { width: 16px; height: 16px; border-radius: 5px; background: #ffb547; color: #060a12; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none }
     .dock .grp { display: flex; align-items: center; gap: 4px }
     .dock .vd { width: 1px; height: 16px; background: #ffffff4d; flex: none }
     .dock .lb { cursor: pointer; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
@@ -21,19 +21,19 @@
     .dock .b:hover, .dock .b.on { background: #ffffff38 }
     .dock .sw { width: 30px; height: 18px; border-radius: 9px; background: #ffffff59; position: relative; cursor: pointer; padding: 0; border: 0; flex: none }
     .dock .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s }
-    .dock .sw.on { background: #f08a3c }
+    .dock .sw.on { background: #ffb547 }
     .dock .sw.on::after { left: 14px }
     .dock .dot { width: 7px; height: 7px; border-radius: 50%; background: #52b57c; flex: none }
     .dock .dot.w { background: #d9a441 } .dock .dot.o { background: #8a948f }
     .dock .dots { width: 26px; height: 26px; border-radius: 13px; padding: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer }
     .dock .dots:hover, .dock .dots.on { background: #ffffff38 }
     .dock .dots svg { width: 16px; height: 16px; fill: #fff }
-    .dmenu { position: fixed; display: flex; flex-direction: column; min-width: 220px; max-width: 300px; padding: 6px; border-radius: 12px; border: 1px solid #2f383c; background: #22292cf5; color: #e7ecea; box-shadow: 0 10px 30px #0006; font-size: 13px }
-    .dmenu .hd { color: #9aa6a2; font-size: 11px; padding: 6px 8px 2px }
+    .dmenu { position: fixed; display: flex; flex-direction: column; min-width: 220px; max-width: 300px; padding: 6px; border-radius: 12px; border: 1px solid #1c2b43; background: #22292cf5; color: #e8f0fd; box-shadow: 0 10px 30px #0006; font-size: 13px }
+    .dmenu .hd { color: #9aabc6; font-size: 11px; padding: 6px 8px 2px }
     .dmenu .it { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left; background: transparent; color: inherit; font-weight: 400; border-radius: 6px; padding: 6px 8px; border: 0; cursor: pointer }
     .dmenu .it:hover { background: #ffffff1f }
-    .dmenu .it .k { color: #9aa6a2; font-size: 11.5px }
-    .dmenu .sep { height: 1px; background: #2f383c; margin: 4px 2px }
+    .dmenu .it .k { color: #9aabc6; font-size: 11.5px }
+    .dmenu .sep { height: 1px; background: #1c2b43; margin: 4px 2px }
   `
 
   const specs = new Map()

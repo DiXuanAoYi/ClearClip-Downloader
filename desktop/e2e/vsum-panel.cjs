@@ -331,7 +331,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       sel.dispatchEvent(new Event('change'))
     })
     await settle(page, 300)
-    ok('外观：选“深色”后面板用深色样式', await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('style')].some((st) => /@media|#1d2420/.test(st.textContent) && st.textContent.includes('.src') && !st.textContent.includes('@media'))) ))
+    ok('外观：选“深色”后面板用深色样式', await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('style')].some((st) => /@media|#0b1424/.test(st.textContent) && st.textContent.includes('.src') && !st.textContent.includes('@media'))) ))
     ok('笔记流程无页面错误', errors.length === 0, errors.join('|'))
     await page.close()
   }
