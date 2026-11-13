@@ -87,7 +87,7 @@ jobs:
           Compress-Archive -Path $dir -DestinationPath "$dir.zip" -Force
           "name=$dir" >> $env:GITHUB_OUTPUT
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.pack.outputs.name }}
           path: ${{ steps.pack.outputs.name }}.zip
@@ -106,7 +106,7 @@ jobs:
           Compress-Archive -Path desktop/extension/* -DestinationPath "$name.zip" -Force
           "name=$name" >> $env:GITHUB_OUTPUT
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.ext.outputs.name }}
           path: ${{ steps.ext.outputs.name }}.zip

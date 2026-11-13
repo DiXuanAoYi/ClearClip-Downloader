@@ -187,7 +187,7 @@ jobs:
 
       - name: Upload e2e log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-log
           path: |
