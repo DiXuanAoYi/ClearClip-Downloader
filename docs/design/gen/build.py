@@ -27,6 +27,7 @@ add('ExtPopup.dc.html','扩展 · 弹窗',1400,D.p_ext_popup())
 add('ExtSettings.dc.html','扩展 · 设置（横向导航）',2060,D.p_ext_settings())
 add('ExtPage.dc.html','扩展 · 页面内浮层',1560,D.p_ext_page())
 add('Phone.dc.html','手机互传',1500,D.p_phone())
+add('Chat.dc.html','手机互聊',1400,D.p_chat())
 add('Small.dc.html','小窗口与悬浮条',900,D.p_small())
 sets = [('Settings.dc.html','设置 · 下载',C.s_download,1500),('Settings-parse.dc.html','设置 · 解析',C.s_parse,1470),('Settings-p2p.dc.html','设置 · BT 与 ed2k',C.s_p2p,900),('Settings-network.dc.html','设置 · 网络',C.s_network,900),('Settings-accounts.dc.html','设置 · 账号与 Cookie',C.s_accounts,900),('Settings-phone.dc.html','设置 · 手机与扩展',C.s_phone,900),('Settings-auto.dc.html','设置 · 自动化',C.s_auto,900),('Settings-ai.dc.html','设置 · AI',C.s_ai,1100),('Settings-writing.dc.html','设置 · 写作',C.s_writing,900),('Settings-security.dc.html','设置 · 安全与隐私',C.s_security,900),('Settings-components.dc.html','设置 · 组件',C.s_components,1000),('Settings-diag.dc.html','设置 · 诊断',C.s_diag,900),('Settings-general.dc.html','设置 · 通用',C.s_general,1100)]
 for f,t,fn,h in sets:

@@ -155,9 +155,18 @@
       "expand": "fill",
       "is_interactive": true
     },
-    "Small.dc.html": {
+    "Chat.dc.html": {
       "x": 2880,
       "y": 9010,
+      "w": 1360,
+      "h": 1400,
+      "title": "手机互聊",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Small.dc.html": {
+      "x": 0,
+      "y": 10690,
       "w": 1360,
       "h": 900,
       "title": "小窗口与悬浮条",
@@ -165,7 +174,7 @@
       "is_interactive": true
     },
     "Settings.dc.html": {
-      "x": 0,
+      "x": 1440,
       "y": 10690,
       "w": 1360,
       "h": 1500,
@@ -174,7 +183,7 @@
       "is_interactive": true
     },
     "Settings-parse.dc.html": {
-      "x": 1440,
+      "x": 2880,
       "y": 10690,
       "w": 1360,
       "h": 1470,
@@ -183,8 +192,8 @@
       "is_interactive": true
     },
     "Settings-p2p.dc.html": {
-      "x": 2880,
-      "y": 10690,
+      "x": 0,
+      "y": 12310,
       "w": 1360,
       "h": 900,
       "title": "设置 · BT 与 ed2k",
@@ -192,7 +201,7 @@
       "is_interactive": true
     },
     "Settings-network.dc.html": {
-      "x": 0,
+      "x": 1440,
       "y": 12310,
       "w": 1360,
       "h": 900,
@@ -201,7 +210,7 @@
       "is_interactive": true
     },
     "Settings-accounts.dc.html": {
-      "x": 1440,
+      "x": 2880,
       "y": 12310,
       "w": 1360,
       "h": 900,
@@ -210,8 +219,8 @@
       "is_interactive": true
     },
     "Settings-phone.dc.html": {
-      "x": 2880,
-      "y": 12310,
+      "x": 0,
+      "y": 13330,
       "w": 1360,
       "h": 900,
       "title": "设置 · 手机与扩展",
@@ -219,7 +228,7 @@
       "is_interactive": true
     },
     "Settings-auto.dc.html": {
-      "x": 0,
+      "x": 1440,
       "y": 13330,
       "w": 1360,
       "h": 900,
@@ -228,7 +237,7 @@
       "is_interactive": true
     },
     "Settings-ai.dc.html": {
-      "x": 1440,
+      "x": 2880,
       "y": 13330,
       "w": 1360,
       "h": 1100,
@@ -237,8 +246,8 @@
       "is_interactive": true
     },
     "Settings-writing.dc.html": {
-      "x": 2880,
-      "y": 13330,
+      "x": 0,
+      "y": 14550,
       "w": 1360,
       "h": 900,
       "title": "设置 · 写作",
@@ -246,7 +255,7 @@
       "is_interactive": true
     },
     "Settings-security.dc.html": {
-      "x": 0,
+      "x": 1440,
       "y": 14550,
       "w": 1360,
       "h": 900,
@@ -255,7 +264,7 @@
       "is_interactive": true
     },
     "Settings-components.dc.html": {
-      "x": 1440,
+      "x": 2880,
       "y": 14550,
       "w": 1360,
       "h": 1000,
@@ -264,8 +273,8 @@
       "is_interactive": true
     },
     "Settings-diag.dc.html": {
-      "x": 2880,
-      "y": 14550,
+      "x": 0,
+      "y": 15670,
       "w": 1360,
       "h": 900,
       "title": "设置 · 诊断",
@@ -273,7 +282,7 @@
       "is_interactive": true
     },
     "Settings-general.dc.html": {
-      "x": 0,
+      "x": 1440,
       "y": 15670,
       "w": 1360,
       "h": 1100,
@@ -317,6 +326,7 @@
     "ExtSettings.dc.html",
     "ExtPage.dc.html",
     "Phone.dc.html",
+    "Chat.dc.html",
     "Small.dc.html",
     "Settings.dc.html",
     "Settings-parse.dc.html",
