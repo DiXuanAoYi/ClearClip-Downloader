@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../api'
+import { healthAt, healthResults } from '../utils/health'
 import { useAppStore, useParseStore } from '../stores/app'
 import type { Asset, BatchProgress, Settings, Clip, CreatorTabs, DetectedLink, HistoryItem, ListOptions, MediaInfo, PlaylistEntry } from '../types'
 import { formatBytes, formatDate, formatDuration } from '../utils/format'
@@ -18,6 +19,32 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 
 const app = useAppStore()
 const parse = useParseStore()
+const checkingHealth = ref(false)
+const healthRows = computed(() =>
+  (healthResults.value ?? []).slice(0, 5).map((h) => ({
+    platform: h.platform,
+    name: h.name,
+    ok: h.ok,
+    message: h.message,
+    pct: h.ok ? Math.max(12, Math.min(100, 100 - h.millis / 40)) : 38,
+    label: h.ok ? (h.millis >= 1000 ? `${(h.millis / 1000).toFixed(1)} s` : `${h.millis} ms`) : h.sample ? '异常' : '未测',
+  })),
+)
+const healthAgo = computed(() => {
+  const m = Math.round((Date.now() - (healthAt.value ?? 0)) / 60000)
+  return m < 1 ? '刚刚' : m < 60 ? `${m} 分钟前` : `${Math.round(m / 60)} 小时前`
+})
+async function runHealth() {
+  checkingHealth.value = true
+  try {
+    healthResults.value = await api.healthCheck()
+    healthAt.value = Date.now()
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    checkingHealth.value = false
+  }
+}
 
 const selected = ref<Set<string>>(new Set())
 const links = ref<DetectedLink[]>([])
@@ -1140,6 +1167,18 @@ function recentKind(r: HistoryItem) {
           <span class="pz-tag">{{ r.info.platformName }}</span><span class="ellipsis">{{ r.title }}</span>
         </button>
       </section>
+      <section class="dpanel" aria-label="平台健康">
+        <div class="dpanel-h"><h2>平台健康</h2><span class="dspacer" /><span class="eyebrow">{{ healthAt ? healthAgo : '还没检查过' }}</span></div>
+        <div v-for="h in healthRows" :key="h.platform" class="hp">
+          <span class="ellipsis" :title="h.name">{{ h.name }}</span>
+          <span class="meter"><i :class="{ warn: !h.ok }" :style="{ width: h.pct + '%' }" /></span>
+          <span class="ms mono ellipsis" :title="h.message">{{ h.label }}</span>
+        </div>
+        <div class="dtoolbar hpbar">
+          <el-button size="small" :loading="checkingHealth" @click="runHealth">{{ healthResults ? '重新检查' : '立即检查' }}</el-button>
+          <button type="button" class="pz-link" @click="app.goSettings('parse')">在设置里看详情</button>
+        </div>
+      </section>
      </aside>
     </div>
 
@@ -2166,5 +2205,38 @@ function recentKind(r: HistoryItem) {
   .work {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+.hp {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 62px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 12.5px;
+}
+.hp .meter {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--cc-inset);
+  overflow: hidden;
+}
+.hp .meter i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--cc-cyan);
+  box-shadow: 0 0 10px var(--cc-cyan);
+}
+.hp .meter i.warn {
+  background: var(--cc-amber);
+  box-shadow: 0 0 10px var(--cc-amber);
+}
+.hp .ms {
+  text-align: right;
+  color: var(--cc-mute);
+}
+.hpbar {
+  margin-top: 8px;
+  justify-content: space-between;
 }
 </style>

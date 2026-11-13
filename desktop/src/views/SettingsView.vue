@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { healthAt, healthResults } from '../utils/health'
 import { ElMessage } from 'element-plus'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api, errorText } from '../api'
@@ -21,7 +22,6 @@ import RulesPanel from '../components/RulesPanel.vue'
 import SecurityPanel from '../components/SecurityPanel.vue'
 import WritingPanel from '../components/WritingPanel.vue'
 import ProtocolsPanel from '../components/ProtocolsPanel.vue'
-import type { HealthResult } from '../types'
 import { copyDiagnostics, copyDiagnosticsSummary } from '../composables/diagnostics'
 import { LANGUAGES } from '../i18n'
 
@@ -58,7 +58,7 @@ const DAYS = ['一', '二', '三', '四', '五', '六', '日']
 function addSpeedWindow() {
   form.value.speedSchedule.push({ days: [], start: '08:00', end: '23:00', limitKbps: 1024 })
 }
-const health = ref<HealthResult[] | null>(null)
+const health = healthResults
 const checkingHealth = ref(false)
 const portable = ref(false)
 
@@ -131,6 +131,7 @@ async function runHealth() {
   health.value = null
   try {
     health.value = await api.healthCheck()
+    healthAt.value = Date.now()
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {

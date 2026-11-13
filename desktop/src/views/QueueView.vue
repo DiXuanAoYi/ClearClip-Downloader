@@ -148,6 +148,35 @@ function percent(t: TaskSnapshot) {
   return Math.min(100, Math.floor((t.received / t.total) * 100))
 }
 
+/** 现在生效的限速：限速计划里命中的时段优先，没有命中就用全局限速（KB/s，0 = 不限） */
+const speedPlan = computed(() => {
+  const st = app.settings
+  if (!st) return null
+  const wins = st.speedSchedule ?? []
+  if (!wins.length && !st.speedLimitKbps) return null
+  const now = new Date()
+  const day = now.getDay() === 0 ? 7 : now.getDay()
+  const mins = now.getHours() * 60 + now.getMinutes()
+  const toMin = (t: string) => {
+    const [h, m] = t.split(':').map(Number)
+    return (h || 0) * 60 + (m || 0)
+  }
+  const hit = wins.find((w) => {
+    if (w.days.length && !w.days.includes(day)) return false
+    const a = toMin(w.start)
+    const b = toMin(w.end)
+    return a <= b ? mins >= a && mins < b : mins >= a || mins < b
+  })
+  const kbps = hit ? hit.limitKbps : st.speedLimitKbps
+  const fmt = (k: number) => (k >= 1024 ? `${(k / 1024).toFixed(k % 1024 ? 1 : 0)} MB/s` : `${k} KB/s`)
+  const prefix = wins.length ? '限速计划：' : '限速：'
+  return {
+    limited: kbps > 0,
+    text: `${prefix}${kbps > 0 ? fmt(kbps) : '不限速'}`,
+    title: hit ? `现在在时段 ${hit.start}–${hit.end} 内` : '没有命中任何时段，使用全局限速',
+  }
+})
+
 function detail(t: TaskSnapshot) {
   if (t.note) return t.note
   switch (t.status) {
@@ -182,6 +211,7 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
     <div class="dtop">
       <h1>下载队列</h1>
       <span class="dspacer" />
+      <span v-if="speedPlan" class="chip" :class="speedPlan.limited ? 'acc' : 'cyan'" :title="speedPlan.title"><i class="ddot" :class="{ amber: speedPlan.limited }" />{{ speedPlan.text }}</span>
       <span v-if="queue.counts.running" class="chip cyan"><i class="ddot" />{{ queue.counts.running }} 个下载中</span>
     </div>
     <div class="dstats">

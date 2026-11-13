@@ -7,10 +7,54 @@ function show(screen) {
   $('main').classList.toggle('hidden', name !== 'main')
   $('settings').classList.toggle('hidden', name !== 'settings')
   $('takeover').classList.toggle('hidden', name !== 'takeover')
+  if (name === 'settings') buildSettingsNav()
   // 设置页在独立标签页里打开时放宽，弹窗里保持窄
   document.body.classList.toggle('wide', name !== 'main' && window.innerWidth > 420)
   if (name !== 'main') stopTaskPolling()
   else if (currentTabName === 'downloads') startTaskPolling()
+}
+
+/** 设置页太长：按 <h2> 分成几个分区，顶部一排横向标签，一次只显示一个 */
+let setNavBuilt = false
+function buildSettingsNav() {
+  if (setNavBuilt) return
+  setNavBuilt = true
+  const root = $('settings')
+  const kids = [...root.children]
+  const secs = []
+  let cur = null
+  for (const el of kids) {
+    if (el.tagName === 'H2') {
+      cur = document.createElement('div')
+      cur.className = 'setsec'
+      cur.dataset.name = el.textContent.trim()
+      root.insertBefore(cur, el)
+      secs.push(cur)
+    }
+    if (cur) cur.appendChild(el)
+  }
+  const nav = document.createElement('nav')
+  nav.id = 'setNav'
+  nav.setAttribute('role', 'tablist')
+  nav.setAttribute('aria-label', '设置分区')
+  const pick = (name) => {
+    for (const b of nav.children) b.setAttribute('aria-selected', String(b.dataset.name === name))
+    for (const s of secs) s.classList.toggle('on', s.dataset.name === name)
+    try { sessionStorage.setItem('cc-set-sec', name) } catch {}
+  }
+  for (const s of secs) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.setAttribute('role', 'tab')
+    b.dataset.name = s.dataset.name
+    b.textContent = s.dataset.name
+    b.onclick = () => pick(s.dataset.name)
+    nav.appendChild(b)
+  }
+  root.insertBefore(nav, secs[0])
+  let saved = ''
+  try { saved = sessionStorage.getItem('cc-set-sec') || '' } catch {}
+  pick(secs.some((s) => s.dataset.name === saved) ? saved : secs[0]?.dataset.name)
 }
 
 let currentTabName = 'discover'
