@@ -208,7 +208,7 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   position: fixed;
   inset: 0;
   box-sizing: border-box;
-  padding: 8px;
+  padding: 10px;
   display: flex;
   gap: 8px;
 }
@@ -219,7 +219,7 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   border-radius: 24px;
   background: #0b1424;
   border: 1px solid rgba(232, 240, 253, 0.22);
-  box-shadow: 0 6px 18px rgba(2, 6, 14, 0.38), 0 1px 3px rgba(2, 6, 14, 0.5);
+  box-shadow: 0 2px 8px rgba(2, 6, 14, 0.45);
   color: #e8f0fd;
 }
 .ball {
@@ -243,7 +243,7 @@ html, body, #app { background: transparent !important; overflow: hidden; }
 .ball.over {
   border-color: #ffb547;
   background: #2a2016;
-  box-shadow: 0 0 0 3px rgba(255, 181, 71, 0.28), 0 6px 18px rgba(2, 6, 14, 0.38);
+  box-shadow: 0 0 0 3px rgba(255, 181, 71, 0.28), 0 2px 8px rgba(2, 6, 14, 0.45);
 }
 .ball.bad {
   border-color: #ff7b8a;
