@@ -171,7 +171,7 @@ async function savePdf(tab) {
 
 /** 保存为 Markdown：先提取，放进会话存储，再打开预览页让用户检查、修改后保存。 */
 async function openMarkdown(tab) {
-  const [res] = await injectFiles(tab.id, ['content/extract.js'])
+  const [res] = await injectFiles(tab.id, ccFiles.GROUPS.extract)
   if (!res) throw new Error('没有提取到内容')
   const key = `capture:${Date.now()}`
   await sessionStore.set({ [key]: res })
@@ -234,7 +234,7 @@ const PAGE_SAVE = {
 }
 
 async function startAreaPicker(tab) {
-  await injectFiles(tab.id, ['content/ui.js', 'content/area.js'])
+  await injectFiles(tab.id, ccFiles.GROUPS.area)
 }
 
 /** 弹窗和右键菜单共用的入口：检查页面、执行、给出反馈。返回 { note?, pairing? }。 */
