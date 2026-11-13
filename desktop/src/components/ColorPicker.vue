@@ -456,7 +456,7 @@ const safeNote = computed(() => (safeOn.value ? (safe.value.clamped ? `超出广
           </div>
           <div class="sec"><b>自定义</b><el-button size="small" text @click="addCustom">＋ 添加当前色</el-button></div>
           <div class="cus" aria-label="自定义颜色">
-            <button v-for="c in custom" :key="c" :style="{ background: c }" :title="c + '（右键删除）'" :class="{ on: c === hex }" @click="pickHex(c)" @contextmenu.prevent="removeCustom(c)" />
+            <button v-for="c in custom" :key="c" :style="{ background: c }" :title="`${c}（右键删除）`" :class="{ on: c === hex }" @click="pickHex(c)" @contextmenu.prevent="removeCustom(c)" />
             <span v-if="!custom.length" class="mute">还没有，点“添加当前色”</span>
           </div>
           <div class="sec"><b>最近用过</b></div>
