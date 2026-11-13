@@ -891,7 +891,7 @@ onBeforeUnmount(() => {
 <style>
 /* 窗口本身是透明的：页面底色一律透明，只有里面那张圆角卡片有颜色，窗口四周不会再有任何多余的底层容器 */
 html, body, #app { background: transparent !important; overflow: hidden; }
-html.dark .shell .wa { --acc: #ffb547; --accd: #ffb547; --soft: #ffb54721; --line: #1c2b43; --bg: #080d16; --card: #0e1625; --mut: #9aabc6; --err: #ff7b8a; --ok: #4be3d0; --fg: #e8f0fd; --shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px #2c4366; }
+html.dark .shell .wa { --acc: #ffb547; --accd: #ffb547; --soft: #ffb54721; --line: #1c2b43; --bg: #080d16; --card: #0e1625; --mut: #9aabc6; --err: #ff7b8a; --ok: #4be3d0; --fg: #e8f0fd; --edge: #2c4366; --shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px #2c4366; }
 html.dark .shell .sg.on { color: var(--acc); background: var(--soft); }
 html.dark .shell .ghost.on { color: var(--acc); }
 html.dark .shell .foot a { color: var(--acc); }
@@ -905,9 +905,9 @@ html.dark .shell .wa { --pick: #ffc760; --go: #ffb547; --gofg: #1a1100; --look: 
 </style>
 
 <style scoped>
-.shell { --m: 10px; position: relative; height: 100vh; padding: var(--m); box-sizing: border-box; }
-.wa { --pick: #8a4a00; --go: #b45f00; --gofg: #fff; --look: #34445f; --dash: #aebfd8; --acc: #b45f00; --accd: #b45f00; --soft: #f59e0b24; --line: #d3deec; --bg: #eaf0f7; --card: #f6f9fd; --mut: #4d5f7b; --err: #c4283d; --ok: #007a70; --fg: #0b1424; --shadow: 0 8px 28px rgba(20, 30, 25, 0.22), 0 1px 3px rgba(20, 30, 25, 0.18);
-  height: 100%; display: flex; flex-direction: column; background: var(--card); color: var(--fg); border-radius: 14px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; }
+.shell { --m: 12px; position: relative; height: 100vh; padding: var(--m); box-sizing: border-box; }
+.wa { --pick: #8a4a00; --go: #b45f00; --gofg: #fff; --look: #34445f; --dash: #aebfd8; --acc: #b45f00; --accd: #b45f00; --soft: #f59e0b24; --line: #d3deec; --bg: #eaf0f7; --card: #f6f9fd; --mut: #4d5f7b; --err: #c4283d; --ok: #007a70; --fg: #0b1424; --edge: #7f95b8; --shadow: 0 0 0 1px rgba(11, 20, 36, 0.12), 0 6px 18px rgba(11, 20, 36, 0.34), 0 1px 3px rgba(11, 20, 36, 0.3);
+  height: 100%; display: flex; flex-direction: column; background: var(--card); color: var(--fg); border-radius: 14px; border: 1px solid var(--edge); box-shadow: var(--shadow); overflow: hidden; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; }
 .bar { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px 14px; cursor: grab; user-select: none; background: var(--bg); border-bottom: 1px solid var(--line); }
 .bar:active { cursor: grabbing; }
 .logo { width: 24px; height: 24px; border-radius: 8px; background: var(--acc); color: var(--gofg, #1a1100); display: grid; place-items: center; font: 700 12px/1 inherit; flex: none; }
