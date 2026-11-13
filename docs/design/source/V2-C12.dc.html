@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影 · C12 硬编码色对照</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="v2.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body { margin: 0; }
+</style>
+</helmet>
+<div class="v2 sheet" style="width:1840px;box-sizing:border-box" data-t="dark"><div class="sh-head"><h1>硬编码色清理对照表</h1><span class="tag ">审计 #19</span><span class="tag ">审计 #20</span><span class="sp"></span></div><p class="sub" style="color:var(--cc-mute);max-width:900px;margin-top:-16px">审计 #20：约 200 处硬编码色不会随主题变化。这张表说明每个文件里的哪些色用哪个令牌，以及怎样防止再长回来。</p><section class="sect"><h2>哪些文件的哪些色，改用什么令牌<span class="tag ">审计 #20</span></h2><div class="sp-card "><h3></h3><div style="overflow-x:auto"><table class="tbl "><thead><tr><th>文件</th><th>现有硬编码</th><th>是什么</th><th>改用令牌</th><th>说明</th></tr></thead><tbody><tr><td>TransferPanel.vue（手机互传）</td><td>#ff7a14 #ff8c33 #e86a08 #1a1208 #fff</td><td>橙色按钮/徽标、深色字、白字</td><td><code>--cc-acc-strong</code> <code>--cc-acc-strong-hover</code> <code>--cc-on-acc</code></td><td>橙色并入琥珀，与全局主按钮一致</td></tr><tr><td>WriteApp.vue（写作窗）</td><td>#b45f00 #ffb547 #ffc760 #d3deec #2c4366 #1a1100 #fff</td><td>重复写了一遍浅/深两套琥珀与线色</td><td><code>--cc-acc</code> <code>--cc-acc-text</code> <code>--cc-line</code> <code>--cc-line-strong</code> <code>--cc-on-acc</code></td><td>本就是令牌值的硬抄，直接换名</td></tr><tr><td>ShotApp.vue（截图）</td><td>#fff #0b1424 #eee #111 #c4283d #ffb547</td><td>工具条、标注、危险色</td><td><code>--cc-fg</code> <code>--cc-card</code> <code>--cc-err</code> <code>--cc-acc</code></td><td>截图浮层固定深色：在其作用域内重定义令牌为深色</td></tr><tr><td>FloatApp.vue（悬浮窗）</td><td>#ffb547 #e8f0fd #9aabc6 #4be3d0 #ff7b8a #d3deec</td><td>深色胶囊，不随主题</td><td>同名 --cc-* 深色值</td><td>设计决定：保持固定深色（审计 #18 认为可接受），但取值来自令牌，不再手抄</td></tr><tr><td>ParseView.vue</td><td>#fff #000000a6 #ffffffe6 #ffffff99 #ffffff80</td><td>缩略图上的文字与蒙层</td><td><code>--cc-on-media</code> <code>--cc-scrim-media</code>（NEW）</td><td>缩略图上永远是黑蒙层 + 白字，两个主题一样，单独起名，不要借用 --cc-on-acc</td></tr><tr><td>ToolPreview.vue</td><td>#fdf0e6 #f3cfb2 #f0b27f #e6f6ec #b4e2c6 #a14a12</td><td>预览示意用的暖/绿块</td><td><code>--cc-acc-soft</code> <code>--cc-ok-soft</code> <code>--cc-acc-text</code></td><td>示意图而已，用 soft + 文字令牌，深色下不再发亮</td></tr><tr><td>PdfCanvas.vue</td><td>#fff #ccc #d9762b #b4561a #2f8a57 #b7beb9</td><td>PDF 纸张与批注色</td><td>纸张 <code>#fff</code> 保留（它就是白纸）；批注 <code>--cc-acc</code> <code>--cc-ok</code></td><td>白纸是内容不是 UI，写成 <code>--cc-paper</code>（NEW，两主题同为白）</td></tr><tr><td>ColorPicker.vue</td><td>#f00 #ff0 #f0f #0ff #0f0 #fff #1d2433</td><td>取色色相环与界面</td><td>色相环色值是内容，保留；界面部分 <code>--cc-card</code> <code>--cc-fg</code></td><td>只清理界面色，不动色相环</td></tr><tr><td>LibraryView.vue（媒体库）</td><td>#f5b73b #e6a23c #fff</td><td>收藏星、丢失标记、白字</td><td><code>--cc-warn</code> <code>--cc-warn</code> <code>--cc-on-acc</code></td><td>浅色下 #f5b73b 白底对比度仅 1.9，换 warn 后 6.1</td></tr><tr><td>EditTimeline.vue / EditMonitor.vue</td><td>#e5484d #d9a21a #b9812d #b4561a #4f7cc9 …</td><td>时间线轨道/片段色</td><td>轨道色板 <code>--cc-track-1…6</code>（NEW）</td><td>剪辑轨道要区分种类，单独一组 6 色令牌；仍放浅深两套</td></tr></tbody></table></div><p class="sp-note">数字来自仓库现状的字面量统计（本稿 grep 结果，和审计报告的计数口径略有出入）。表中 NEW 的令牌是为“内容色”和“媒体上的文字”新增的少数几个，其余全部映射到已有或本稿新增的语义令牌。</p></div></section>
+<div class="grid2" style="align-items:start"><section class="sect"><h2>防回退：lint 规则</h2><pre style="margin:0;padding:12px;border-radius:8px;background:var(--cc-fill);border:1px solid var(--cc-line);font-family:var(--cc-mono);font-size:11px;line-height:1.6;color:var(--cc-fg2)">// stylelint：.vue 的 &lt;style&gt; 里禁止 hex / rgb(a) / hsl(a) 字面量
+"color-no-hex": true,
+"declaration-property-value-disallowed-list": { "/^(color|background|border|fill|stroke|box-shadow)/": ["/rgba?\(/", "/hsla?\(/"] }
+// 例外只允许 theme.css、skin.css 与白名单（色相环、PDF 纸张）</pre></section><section class="sect"><h2>原则</h2><div class="sp-card "><h3></h3><div class="rule"><span class="do"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></span><span>界面色全部走 --cc-*；内容色（色相环、PDF 纸张、缩略图蒙层）单独命名，不借用语义令牌。</span></div><div class="rule"><span class="do"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></span><span>悬浮窗、截图浮层这类“固定深色”窗口：在窗口根元素重定义令牌，不在每条规则里写色。</span></div><div class="rule"><span class="dont"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span><span>直接复制 theme.css 里的 hex 到组件里（WriteApp 现状）：改一次主题要改两处。</span></div></div></section></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1840,"height":937}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
