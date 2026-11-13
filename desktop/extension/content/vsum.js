@@ -327,7 +327,7 @@
     const audio = v === 'audio'
     if (audio && S.status?.transcribe === false) return toast(ui, '清影里还没有配置语音转文字：到“设置 → AI”选择本机 whisper.cpp 或填写接口', true, 6000)
     const url = S.data.url
-    const key = audio ? `stt:${url}` : `sub:${url}:${v}`
+    const key = audio ? `stt:${url}` : `sub2:${url}:${v}`
     S.busy = true
     render()
     try {
@@ -518,7 +518,7 @@
     }
     if (!d.url || !/^https?:/.test(d.url) || d.site === 'article' || !(d.noSubtitle || d.fetchFailed)) return
     // 以前转写 / 取到过的文稿直接用，不再请求清影
-    for (const [key, name] of [[`tr2:${d.url}`, '清影转写'], [`sub:${d.url}`, null]]) {
+    for (const [key, name] of [[`tr2:${d.url}`, '清影转写'], [`sub2:${d.url}`, null]]) {
       const old = await cached(key)
       if (S.data !== d) return
       if (old?.lines?.length) {
@@ -533,7 +533,7 @@
       S.busy = true
       render()
       try {
-        const skey = `sub:${d.url}`
+        const skey = `sub2:${d.url}`
         let r = await cached(skey)
         if (!r) {
           r = await submit({ kind: 'subtitles', url: d.url, title: d.title, lang: spokenHint(d) }, 'subtitles', skey)

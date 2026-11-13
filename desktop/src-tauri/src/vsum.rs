@@ -851,7 +851,7 @@ fn start_tracks(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
 }
 
 fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
-    cues.iter().map(|c| (c.start, c.lines.join(" ").trim().to_string())).filter(|(_, t)| !t.is_empty()).map(|(t, text)| json!({"t": t, "text": text})).collect()
+    cues.iter().map(|c| (c.start, crate::subtitle::clean_text(&c.lines.join(" ")))).filter(|(_, t)| !t.is_empty()).map(|(t, text)| json!({"t": t, "text": text})).collect()
 }
 
 pub fn check(req: &Req) -> AppResult<()> {

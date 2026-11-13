@@ -20,7 +20,12 @@ pub struct Cue {
 static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
 static ROLLING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<\d{1,2}:\d{2}:\d{2}\.\d{3}>").unwrap());
 
-fn unescape(s: &str) -> String {
+fn unescape_once(s: &str) -> String {
+    static NUM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)&#(?:x([0-9a-f]{1,6})|(\d{1,7}));").unwrap());
+    let s = NUM.replace_all(s, |c: &regex::Captures| {
+        let cp = c.get(1).map(|h| u32::from_str_radix(h.as_str(), 16).unwrap_or(0)).or_else(|| c.get(2).and_then(|d| d.as_str().parse().ok())).unwrap_or(0);
+        char::from_u32(cp).filter(|c| *c != '\0').map(String::from).unwrap_or_default()
+    });
     s.replace("&nbsp;", " ")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
@@ -28,6 +33,31 @@ fn unescape(s: &str) -> String {
         .replace("&#39;", "'")
         .replace("&apos;", "'")
         .replace("&amp;", "&")
+}
+
+static TAGLIKE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"</?[A-Za-z][^<>]*>|<\d{1,2}:\d{2}(?::\d{2})?[.,]\d{1,3}>").unwrap());
+static KNOWN_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)</?(?:b|i|u|s|em|strong|font|c|v|ruby|rt|rp|lang|span|br|p|div)\b[^>]*>|<\d{1,2}:\d{2}(?::\d{2})?[.,]\d{1,3}>").unwrap()
+});
+
+/// 一行字幕文字的清理：先去一遍标记，再解 HTML 实体（最多两轮，认命名和数字写法），每轮解完再去一遍常见标记。
+/// 有些字幕的标记是转义过的（`&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;…`），只“先去标记再解实体”会留下一串字面的 `<b><font …>`。
+pub fn clean_text(l: &str) -> String {
+    let mut t = TAGLIKE_RE.replace_all(l, "").into_owned();
+    for _ in 0..2 {
+        let d = unescape_once(&t);
+        if d == t {
+            break;
+        }
+        t = KNOWN_TAG_RE.replace_all(&d, "").into_owned();
+    }
+    t.chars()
+        .filter(|c| !matches!(*c, '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{00ad}'))
+        .map(|c| if matches!(c, '\u{00a0}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{3000}') { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// `00:01:02.500` / `01:02.500` / `00:01:02,500` → 毫秒。
@@ -69,7 +99,7 @@ fn parse_blocks(text: &str, vtt: bool) -> Vec<Cue> {
         let Some(timing) = lines.by_ref().find(|l| l.contains("-->")) else { continue };
         let (a, b) = timing.split_once("-->").unwrap();
         let (Some(start), Some(end)) = (parse_time(a), parse_time(b.split_whitespace().next().unwrap_or(""))) else { continue };
-        let clean = |l: &str| if vtt { unescape(&TAG_RE.replace_all(l, "")) } else { l.to_string() };
+        let clean = |l: &str| if vtt { clean_text(l) } else { l.to_string() };
         let body: Vec<String> = lines.map(clean).map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
         cues.push(Cue { start, end, lines: body });
     }
@@ -251,7 +281,7 @@ fn parse_danmaku(xml: &str) -> Vec<Danmaku> {
         let Some(gt) = rest[q..].find('>') else { break };
         let body_start = q + gt + 1;
         let Some(end) = rest[body_start..].find("</d>") else { break };
-        let text = unescape(&rest[body_start..body_start + end]);
+        let text = unescape_once(&rest[body_start..body_start + end]);
         rest = &rest[body_start + end + 4..];
         let f: Vec<&str> = p.split(',').collect();
         if f.len() < 4 {
@@ -549,7 +579,7 @@ mod tests {
         let cues = parse_srt(&vtt_to_srt(vtt));
         assert_eq!(cues.len(), 3, "without rolling markers nothing is merged");
         assert_eq!(cues[0].start, 1000);
-        assert_eq!(cues[2].lines, vec!["<b>ok&go"]);
+        assert_eq!(cues[2].lines, vec!["ok&go"], "转义过的标记也算标记，不显示成字面文字");
     }
 
     #[test]
@@ -658,5 +688,21 @@ mod tests {
         assert_eq!(target_ext("xml", true, false), "xml");
         assert_eq!(target_ext("xml", true, true), "ass");
         assert_eq!(target_ext("ass", true, true), "ass");
+    }
+
+    #[test]
+    fn escaped_markup_is_removed_not_shown_as_text() {
+        // 真实字幕：标记是转义过的，先去标记再解实体会留下字面的 <b><font …>
+        let raw = "&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;这个就是我通过 Kaggle 免费算力部署好的 ComfyUI&lt;/font&gt;&lt;/b&gt;";
+        assert_eq!(clean_text(raw), "这个就是我通过 Kaggle 免费算力部署好的 ComfyUI");
+        // 二次转义
+        assert_eq!(clean_text("&amp;lt;i&amp;gt;hi&amp;lt;/i&amp;gt; &amp;amp; bye"), "hi & bye");
+        // 数字实体、NBSP、零宽字符
+        assert_eq!(clean_text("it&#x27;s&nbsp;a&#8217;b\u{200b}c"), "it's a’bc");
+        // 正常文字里的小于号不受影响
+        assert_eq!(clean_text("if a < b and c > d"), "if a < b and c > d");
+        // VTT 解析也走同一套
+        let vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;你好&lt;/font&gt;&lt;/b&gt;\n";
+        assert_eq!(parse_vtt(vtt)[0].lines, vec!["你好".to_string()]);
     }
 }

@@ -30,7 +30,7 @@
     const out = []
     for (const e of data?.events || []) {
       if (!Array.isArray(e.segs)) continue
-      const text = e.segs.map((s) => s.utf8 || '').join('').replace(/\s*\n\s*/g, ' ').trim()
+      const text = cleanCueText(e.segs.map((s) => s.utf8 || '').join(''))
       if (text) out.push({ t: Math.round(e.tStartMs || 0), end: Math.round((e.tStartMs || 0) + (e.dDurationMs || 0)), text })
     }
     return out
@@ -39,7 +39,7 @@
   /** YouTube 的 timedtext XML：<text start="1.2" dur="3">…</text>，或 srv3 的 <p t="1200" d="3000">…</p>。 */
   function parseTimedTextXml(xml) {
     const out = []
-    const clean = (s) => decodeEntities(String(s).replace(/<[^>]*>/g, '')).replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/\s+/g, ' ').trim()
+    const clean = (s) => cleanCueText(s)
     for (const m of String(xml).matchAll(/<text\b([^>]*)>([\s\S]*?)<\/text>/g)) {
       const start = m[1].match(/start="([\d.]+)"/)
       const dur = m[1].match(/dur="([\d.]+)"/)
@@ -60,7 +60,7 @@
   function parseBilibili(data) {
     const out = []
     for (const c of data?.body || []) {
-      const text = String(c.content ?? '').replace(/\s*\n\s*/g, ' ').trim()
+      const text = cleanCueText(c.content)
       if (text) out.push({ t: Math.round((c.from || 0) * 1000), end: Math.round((c.to || 0) * 1000), text })
     }
     return out
@@ -68,6 +68,35 @@
 
   const decodeEntities = (s) =>
     s.replace(/&(amp|lt|gt|quot|nbsp|#39);/g, (_, n) => ({ amp: '&', lt: '<', gt: '>', quot: '"', nbsp: ' ', '#39': "'" })[n])
+
+  /**
+   * 一条字幕的文字清理：去标记、解实体、去零宽字符、合并空白。
+   * 有些字幕的标记是转义过的（`&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;…`）：只先去标记再解实体的话，解出来就是一串字面的 `<b><font …>`。
+   * 所以：先去一遍标记 → 解实体（最多两轮，认命名和数字写法）→ 每轮解完再去一遍常见标记。
+   */
+  const KNOWN_TAG = /<\/?(?:b|i|u|s|em|strong|font|c|v|ruby|rt|rp|lang|span|br|p|div)\b[^>]*>|<\d{1,2}:\d{2}(?::\d{2})?[.,]\d{1,3}>/gi
+  /** 像标记的：<b> </font> <c.colorE5E5E5> <v Bob> <00:01.500>；`a < b and c > d` 里的小于号后面是空格，不算 */
+  const TAGLIKE = /<\/?[A-Za-z][^<>]*>|<\d{1,2}:\d{2}(?::\d{2})?[.,]\d{1,3}>/g
+  const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+  const decodeAll = (s) =>
+    s.replace(/&(?:#(\d{1,7})|#x([0-9a-f]{1,6})|(amp|lt|gt|quot|apos|nbsp));/gi, (m, d, h, n) => {
+      if (n) return NAMED[n.toLowerCase()]
+      const cp = d ? Number(d) : parseInt(h, 16)
+      return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : ''
+    })
+  function cleanCueText(raw) {
+    let t = String(raw ?? '').replace(TAGLIKE, '').replace(/\{\\[^}]*\}/g, '')
+    for (let i = 0; i < 2; i++) {
+      const d = decodeAll(t)
+      if (d === t) break
+      t = d.replace(KNOWN_TAG, '')
+    }
+    return t
+      .replace(/[\u200b-\u200d\u2060\ufeff\u00ad]/g, '')
+      .replace(/[\u00a0\u2000-\u200a\u202f\u3000]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
 
   /** SRT / WebVTT 文本。 */
   function parseSubtitleText(text) {
@@ -79,15 +108,9 @@
       const i = lines.findIndex((l) => TS.test(l))
       if (i < 0) continue
       const m = lines[i].match(TS)
-      const body = lines
-        .slice(i + 1)
-        .join(' ')
-        .replace(/<[^>]*>/g, '')
-        .replace(/\{\\[^}]*\}/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
+      const body = cleanCueText(lines.slice(i + 1).join(' '))
       const t = parseClock(m[1])
-      if (body && t != null) out.push({ t, end: parseClock(m[2]) ?? t, text: decodeEntities(body) })
+      if (body && t != null) out.push({ t, end: parseClock(m[2]) ?? t, text: body })
     }
     return out
   }
@@ -95,7 +118,7 @@
   /** 播放器里读出来的 TextTrackCue 列表 → 同样的格式。 */
   function fromTextTrackCues(cues) {
     return [...(cues || [])]
-      .map((c) => ({ t: Math.round(c.startTime * 1000), end: Math.round(c.endTime * 1000), text: String(c.text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() }))
+      .map((c) => ({ t: Math.round(c.startTime * 1000), end: Math.round(c.endTime * 1000), text: cleanCueText(String(c.text || '').replace(/<[^>]*>/g, ' ')) }))
       .filter((c) => c.text)
   }
 
@@ -108,7 +131,7 @@
   function normalizeLines(cues, opt = {}) {
     const maxLen = opt.maxLen ?? 90
     const maxSpan = opt.maxSpanMs ?? 20000
-    const sorted = [...(cues || [])].filter((c) => c && c.text).sort((a, b) => a.t - b.t)
+    const sorted = [...(cues || [])].map((c) => (c && c.text ? { ...c, text: cleanCueText(c.text) } : c)).filter((c) => c && c.text).sort((a, b) => a.t - b.t)
     // 去重：与上一条相同，或上一条只是这一条的前缀（滚动字幕）
     const deduped = []
     for (const c of sorted) {
@@ -1138,7 +1161,7 @@
 
   globalThis.ccVsum = {
     dockTabTop, dockFrac, dockNext,
-    fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
+    fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, cleanCueText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
     parseCount, commentTime, findComment, commentLink, cmKey, parseYtComments, parseBiliComments, cleanComments, commentsToMarkdown,
     videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, scriptOf, splitLong, resegmentLines, outlineToTree, wrapText, layoutMindmap, mindmapSvg, normalizeFlow, layoutFlow, flowSvg, FLOW_KINDS,
     searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, splitSummary, parsePoint, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,

@@ -32,6 +32,13 @@ assert.deepEqual(plain(V.parseBilibili({ body: [{ from: 1.5, to: 3, content: '�
 const vtt = 'WEBVTT\n\nNOTE x\n\n1\n00:00:01.000 --> 00:00:02.500 align:start\n<c.colorE5E5E5>Hello</c> &amp; welcome\n\n00:03.000 --> 00:04.000\nsecond\nline\n'
 assert.deepEqual(plain(V.parseSubtitleText(vtt)), [{ t: 1000, end: 2500, text: 'Hello & welcome' }, { t: 3000, end: 4000, text: 'second line' }])
 const srt = '﻿1\r\n00:00:01,000 --> 00:00:02,000\r\n你好\r\n\r\n2\r\n01:00:00,500 --> 01:00:02,000\r\n一小时后\r\n'
+// 转义过的标记不能显示成字面文字（真实字幕：&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;…）
+assert.equal(V.cleanCueText("&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;这个就是我通过 Kaggle 部署好的 ComfyUI&lt;/font&gt;&lt;/b&gt;"), '这个就是我通过 Kaggle 部署好的 ComfyUI')
+assert.equal(V.cleanCueText('&amp;lt;i&amp;gt;hi&amp;lt;/i&amp;gt; &amp;amp; bye'), 'hi & bye')
+assert.equal(V.cleanCueText("it&#x27;s&nbsp;a\u200bb"), "it's ab")
+assert.equal(V.cleanCueText('if a < b and c > d'), 'if a < b and c > d')
+assert.deepEqual(plain(V.parseSubtitleText('WEBVTT\n\n00:01.000 --> 00:02.000\n&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;你好&lt;/font&gt;&lt;/b&gt;\n')), [{ t: 1000, end: 2000, text: '你好' }])
+assert.equal(V.normalizeLines([{ t: 0, text: '&lt;b&gt;Hello.&lt;/b&gt;' }])[0].text, 'Hello.')
 assert.deepEqual(plain(V.parseSubtitleText(srt)), [{ t: 1000, end: 2000, text: '你好' }, { t: 3_600_500, end: 3_602_000, text: '一小时后' }])
 assert.deepEqual(plain(V.parseSubtitleText('不是字幕')), [])
 assert.deepEqual(plain(V.fromTextTrackCues([{ startTime: 1.2, endTime: 2, text: '<b>A</b>\nB' }, { startTime: 3, endTime: 4, text: '' }])), [{ t: 1200, end: 2000, text: 'A B' }])
@@ -473,7 +480,7 @@ assert.equal(V.commentTime('比例是 3:2 不是时间'), -1)
   assert.ok(svg.startsWith('<svg') && svg.endsWith('</svg>'))
   assert.ok(svg.includes('data-ms="130000"') && svg.includes('marker-end="url(#ah)"') && svg.includes('所以'))
   const dark = V.flowSvg(V.layoutFlow(g), true)
-  assert.ok(dark.includes('#1d2420') && dark !== svg)
+  assert.ok(dark.includes('#0b1424') && dark !== svg)
   assert.ok(!V.flowSvg(V.layoutFlow({ nodes: [{ id: '1', title: '<a&b>' }, { id: '2', title: 'x' }], edges: [] })).includes('<a&b>'), '转义')
   // 全是环也不会卡死
   const cyc = V.layoutFlow({ nodes: ['a', 'b', 'c'].map((id) => ({ id, title: id })), edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'a' }] })
