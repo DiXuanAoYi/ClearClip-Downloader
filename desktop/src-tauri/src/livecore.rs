@@ -133,6 +133,26 @@ pub fn join_text(a: &str, b: &str) -> String {
     }
 }
 
+/// 这个只有一行的“组”像不像小标题 / 标签：末尾没有标点（句子会以标点结尾）或以冒号结尾，
+/// 并且比后面那一行明显窄（标题短、正文长），或者字明显更大。设置页里“小标题 + 一行说明”就是这种，
+/// 标题后面没有标点，行距又很近，以前会被并成一段，翻译时标题和说明连成一句。
+fn heading_like(g: &Group, l: &OLine) -> bool {
+    if g.lines != 1 {
+        return false;
+    }
+    let t = g.text.trim_end();
+    let Some(last) = t.chars().last() else { return false };
+    let label = matches!(last, ':' | '：');
+    // 字母、数字、汉字、假名结尾 = 没有标点
+    let no_punct = last.is_alphanumeric();
+    if !(label || no_punct) {
+        return false;
+    }
+    let narrower = g.w < l.w * 0.6;
+    let bigger = g.em >= l.h * 1.25;
+    label || narrower || bigger
+}
+
 fn overlap_len(a0: f32, a1: f32, b0: f32, b1: f32) -> f32 {
     (a1.min(b1) - a0.max(b0)).max(0.0)
 }
@@ -192,7 +212,7 @@ fn group_horizontal(sorted: &[OLine]) -> Vec<Group> {
             let same_size = (0.62..1.6).contains(&ratio);
             let ov = overlap_len(g.x, g.right(), l.x, l.right());
             let aligned = ov >= 0.25 * g.w.min(l.w) || (l.x - g.x).abs() <= em * 2.0 || (l.cx() - (g.x + g.w / 2.0)).abs() <= em * 3.0;
-            near && same_size && aligned
+            near && same_size && aligned && !heading_like(g, l)
         });
         match target {
             Some(g) => {
@@ -976,6 +996,28 @@ mod tests {
         assert_eq!(g.len(), items.len(), "{:?}", g.iter().map(|x| x.text.clone()).collect::<Vec<_>>());
         // 段落：上一行写满了换行，照样并成一段
         let p = group_lines(&[l("This is a long paragraph line that wraps", 50.0, 100.0, 320.0, 16.0), l("onto the next line.", 50.0, 124.0, 150.0, 16.0)]);
+        assert_eq!(p.len(), 1);
+    }
+
+    #[test]
+    fn heading_without_punctuation_is_not_merged_with_the_line_below() {
+        // 设置页：小标题（没有标点）+ 紧挨着的一行说明
+        let g = group_lines(&[
+            l("Branch prefix", 276.0, 140.0, 105.0, 16.0),
+            l("Added to the start of every branch name Claude creates.", 276.0, 160.0, 330.0, 15.0),
+        ]);
+        assert_eq!(g.len(), 2, "{:?}", g.iter().map(|x| x.text.clone()).collect::<Vec<_>>());
+        // 中文：小标题 + 说明
+        let g = group_lines(&[l("分支前缀", 276.0, 140.0, 64.0, 16.0), l("添加到 Claude 创建的每个分支名称的开头。", 276.0, 160.0, 300.0, 15.0)]);
+        assert_eq!(g.len(), 2);
+        // 以冒号结尾的标签也单独成组
+        let g = group_lines(&[l("Name:", 10.0, 10.0, 100.0, 16.0), l("Claude Code", 10.0, 30.0, 100.0, 16.0)]);
+        assert_eq!(g.len(), 2);
+        // 段落里写满换行的第一行不受影响：第一行比第二行长
+        let p = group_lines(&[l("This is a long paragraph line that wraps", 50.0, 100.0, 320.0, 16.0), l("onto the next line", 50.0, 124.0, 150.0, 16.0)]);
+        assert_eq!(p.len(), 1);
+        // 第一行以逗号结尾（句子没完）：照样并
+        let p = group_lines(&[l("Short first line,", 50.0, 100.0, 120.0, 16.0), l("and the second is much longer than the first one", 50.0, 120.0, 330.0, 16.0)]);
         assert_eq!(p.len(), 1);
     }
 
