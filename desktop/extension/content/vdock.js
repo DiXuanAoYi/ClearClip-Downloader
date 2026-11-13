@@ -11,7 +11,7 @@
   const MIN_W = 240
   const MIN_H = 135
   const CSS = `
-    .dock { transition: opacity .2s; position: fixed; display: none; align-items: center; gap: 6px; height: 30px; padding: 0 3px 0 8px; border-radius: 15px; background: #1d2420d9; color: #fff; font-size: 12.5px; font-weight: 600; box-shadow: 0 2px 8px #0005; user-select: none; backdrop-filter: blur(6px) }
+    .dock { transition: opacity .2s; position: fixed; display: none; align-items: center; gap: 6px; height: 30px; padding: 0 3px 0 8px; border-radius: 15px; background: #0b1424e6; border: 1px solid #2c4366; color: #fff; font-size: 12.5px; font-weight: 600; box-shadow: 0 2px 8px #0005; user-select: none; backdrop-filter: blur(6px) }
     .dock .mk { width: 16px; height: 16px; border-radius: 5px; background: #ffb547; color: #060a12; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none }
     .dock .grp { display: flex; align-items: center; gap: 4px }
     .dock .vd { width: 1px; height: 16px; background: #ffffff4d; flex: none }
@@ -28,12 +28,12 @@
     .dock .dots { width: 26px; height: 26px; border-radius: 13px; padding: 0; border: 0; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer }
     .dock .dots:hover, .dock .dots.on { background: #ffffff38 }
     .dock .dots svg { width: 16px; height: 16px; fill: #fff }
-    .dmenu { position: fixed; display: flex; flex-direction: column; min-width: 220px; max-width: 300px; padding: 6px; border-radius: 12px; border: 1px solid #1c2b43; background: #22292cf5; color: #e8f0fd; box-shadow: 0 10px 30px #0006; font-size: 13px }
-    .dmenu .hd { color: #9aabc6; font-size: 11px; padding: 6px 8px 2px }
+    .dmenu { position: fixed; display: flex; flex-direction: column; min-width: 220px; max-width: 300px; padding: 6px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); box-shadow: 0 10px 30px #0004; font-size: 13px }
+    .dmenu .hd { color: var(--mute); font-size: 11px; padding: 6px 8px 2px }
     .dmenu .it { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left; background: transparent; color: inherit; font-weight: 400; border-radius: 6px; padding: 6px 8px; border: 0; cursor: pointer }
-    .dmenu .it:hover { background: #ffffff1f }
-    .dmenu .it .k { color: #9aabc6; font-size: 11.5px }
-    .dmenu .sep { height: 1px; background: #1c2b43; margin: 4px 2px }
+    .dmenu .it:hover { background: var(--accsoft) }
+    .dmenu .it .k { color: var(--mute); font-size: 11.5px }
+    .dmenu .sep { height: 1px; background: var(--line); margin: 4px 2px }
   `
 
   const specs = new Map()

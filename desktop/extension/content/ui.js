@@ -4,8 +4,8 @@
   const api = globalThis.browser ?? globalThis.chrome
 
   // 主题令牌：跟随系统，也跟随摘要面板里选的 浅色 / 深色（host 的 data-theme）
-  const LIGHT = '--bg:#fff;--card:#fff;--soft:#e4ebf5;--line:#aebfd8;--fg:#0b1424;--mute:#4d5f7b;--acc:#b45f00;--accsoft:#f6e5cc;--onacc:#fff;--bad:#b3261e;--shade:#0005;'
-  const DARKV = '--bg:#0b1424;--card:#0e1625;--soft:#0e1625;--line:#2c4366;--fg:#e8f0fd;--mute:#9aabc6;--acc:#ffb547;--accsoft:#3a2c1a;--onacc:#060a12;--bad:#ff7b8a;--shade:#000a;color-scheme:dark;'
+  const LIGHT = '--bg:#fff;--card:#fff;--soft:#e4ebf5;--line:#aebfd8;--fg:#0b1424;--mute:#4d5f7b;--acc:#b45f00;--accsoft:#f6e5cc;--onacc:#fff;--bad:#b3261e;--shade:#0005;--inp:#f1f5fb;--ok:#007a70;'
+  const DARKV = '--bg:#0b1424;--card:#0e1625;--soft:#0e1625;--line:#2c4366;--fg:#e8f0fd;--mute:#9aabc6;--acc:#ffb547;--accsoft:#3a2c1a;--onacc:#060a12;--bad:#ff7b8a;--shade:#000a;--inp:#060a12;--ok:#4be3d0;color-scheme:dark;'
   const BASE = `
     :host { all: initial; ${LIGHT} }
     @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) { ${DARKV} } }

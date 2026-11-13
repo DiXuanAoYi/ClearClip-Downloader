@@ -481,9 +481,9 @@
 
   /** 布局 → 独立的 SVG 字符串（可以直接下载，也能画成 PNG）。 */
   function mindmapSvg(layout, dark = false) {
-    const bg = dark ? '#1d2420' : '#ffffff'
-    const fg = dark ? '#eef1ee' : '#1d2420'
-    const colorOf = (n) => (n.branch >= 0 ? BRANCH[n.branch % BRANCH.length] : '#1d2420')
+    const bg = dark ? '#0b1424' : '#ffffff'
+    const fg = dark ? '#e8f0fd' : '#0b1424'
+    const colorOf = (n) => (n.branch >= 0 ? BRANCH[n.branch % BRANCH.length] : '#0b1424')
     const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(layout.width)}" height="${Math.ceil(layout.height)}" viewBox="0 0 ${Math.ceil(layout.width)} ${Math.ceil(layout.height)}" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif" font-size="13">`, `<rect width="100%" height="100%" fill="${bg}"/>`]
     for (const l of layout.links) {
       const mx = (l.x1 + l.x2) / 2
@@ -628,8 +628,8 @@
 
   /** 流程图 → 独立的 SVG 字符串（可下载、可转 PNG）。节点带 data-ms，页面里点一下可以跳到视频那一刻。 */
   function flowSvg(layout, dark = false) {
-    const bg = dark ? '#1d2420' : '#ffffff'
-    const fg = dark ? '#eef1ee' : '#1d2420'
+    const bg = dark ? '#0b1424' : '#ffffff'
+    const fg = dark ? '#e8f0fd' : '#0b1424'
     const mute = dark ? '#a9b3ad' : '#66716c'
     const W = Math.ceil(layout.width)
     const H = Math.ceil(layout.height)

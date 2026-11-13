@@ -8,7 +8,7 @@
   globalThis.ccSelbarRun = true
 
   const CSS = `
-    .bar { display: flex; gap: 2px; align-items: center; background: #10201a; border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px #0006; }
+    .bar { display: flex; gap: 2px; align-items: center; background: #0b1424; border: 1px solid #2c4366; border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px #0006; }
     .bar button { background: transparent; color: #fff; border: 0; font-weight: 500; padding: 4px 9px; border-radius: 7px; white-space: nowrap; }
     .bar button:hover { background: #ffffff26; }
     .bar .sep { width: 1px; align-self: stretch; background: #ffffff33; margin: 4px 2px; }

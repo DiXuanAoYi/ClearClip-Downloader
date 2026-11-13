@@ -252,17 +252,17 @@
   // ---------- 视频胶囊里的状态和快捷面板 ----------
 
   const CSS = `
-    .apnl { width: 232px; background: #10201af2; color: #fff; border: 1px solid #ffffff29; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; box-shadow: 0 8px 24px #0006; }
+    .apnl { width: 232px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; box-shadow: 0 8px 24px #0006; }
     .apnl .r { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .apnl .ch { display: flex; flex-wrap: wrap; gap: 5px; }
-    .apnl .c { background: transparent; border: 1px solid #ffffff40; color: #fff; border-radius: 12px; padding: 1px 9px; font-size: 11px; font-weight: 400; }
-    .apnl .c.on { background: #e8903f40; border-color: #ffb547; color: #ffc590; }
-    .apnl .sw { width: 32px; height: 18px; border-radius: 9px; background: #ffffff40; padding: 0; position: relative; }
+    .apnl .c { background: transparent; border: 1px solid var(--line); color: var(--fg); border-radius: 12px; padding: 1px 9px; font-size: 11px; font-weight: 400; }
+    .apnl .c.on { background: var(--accsoft); border-color: var(--acc); color: var(--acc); }
+    .apnl .sw { width: 32px; height: 18px; border-radius: 9px; background: var(--line); padding: 0; position: relative; }
     .apnl .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: left .15s; }
-    .apnl .sw.on { background: #ffb547; } .apnl .sw.on::after { left: 16px; }
-    .apnl .lk { background: none; border: 0; color: #ffb27a; padding: 0; font-size: 11.5px; font-weight: 400; text-align: left; }
-    .apnl .m { color: #c3cdc8; font-size: 11px; font-variant-numeric: tabular-nums; }
-    .atoast { max-width: 300px; background: #10201af2; color: #fff; border: 1px solid #ffffff29; border-radius: 8px; padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 6px 20px #0005; }
+    .apnl .sw.on { background: var(--acc); } .apnl .sw.on::after { left: 16px; }
+    .apnl .lk { background: none; border: 0; color: var(--acc); padding: 0; font-size: 11.5px; font-weight: 400; text-align: left; }
+    .apnl .m { color: var(--mute); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .atoast { max-width: 300px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 6px 20px #0005; }
   `
   let ui = null
   let panel = null

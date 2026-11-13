@@ -34,59 +34,59 @@
     .cap { position: fixed; pointer-events: none; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px }
     .cap span { font-size: inherit; display: inline-block; max-width: 92%; background: #000a; color: #fff; padding: 2px 10px; border-radius: 4px; white-space: pre-wrap; text-shadow: 0 1px 2px #000; line-height: 1.35 }
     .cap span.second { color: #ffe9a8 }
-    .menu { position: fixed; display: none; flex-direction: column; gap: 12px; width: 288px; box-sizing: border-box; padding: 14px; border-radius: 12px; border: 1px solid #1c2b43; background: #0e1625; color: #e8f0fd; font-size: 13px; box-shadow: 0 10px 30px #0006 }
+    .menu { position: fixed; display: none; flex-direction: column; gap: 12px; width: 288px; box-sizing: border-box; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 13px; box-shadow: 0 10px 30px #0006 }
     .menu.open { display: flex }
     .menu .row { display: flex; flex-direction: column; gap: 6px }
-    .menu .lab { display: flex; justify-content: space-between; color: #9aabc6; font-size: 12px }
-    .menu .lab b { color: #e8f0fd; font-weight: 600 }
-    .menu select { height: 30px; border: 1px solid #1c2b43; border-radius: 8px; background: #060a12; color: #e8f0fd; padding: 0 8px; font-size: 13px }
-    .menu .seg { display: flex; background: #060a12; border: 1px solid #1c2b43; border-radius: 8px; padding: 2px; gap: 2px }
-    .menu .seg button { flex: 1; padding: 5px 0; border-radius: 6px; font-size: 12px; font-weight: 400; background: transparent; color: #9aabc6 }
-    .menu .seg button.on { background: #ffb547; color: #060a12; font-weight: 600 }
-    .menu input[type=range] { width: 100%; margin: 4px 0; accent-color: #ffb547 }
-    .menu .sep { height: 1px; background: #1c2b43 }
+    .menu .lab { display: flex; justify-content: space-between; color: var(--mute); font-size: 12px }
+    .menu .lab b { color: var(--fg); font-weight: 600 }
+    .menu select { height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--inp); color: var(--fg); padding: 0 8px; font-size: 13px }
+    .menu .seg { display: flex; background: var(--inp); border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 2px }
+    .menu .seg button { flex: 1; padding: 5px 0; border-radius: 6px; font-size: 12px; font-weight: 400; background: transparent; color: var(--mute) }
+    .menu .seg button.on { background: var(--acc); color: var(--onacc); font-weight: 600 }
+    .menu input[type=range] { width: 100%; margin: 4px 0; accent-color: var(--acc) }
+    .menu .sep { height: 1px; background: var(--line) }
     .menu .foot { display: flex; gap: 8px }
-    .menu .foot button { flex: 1; height: 30px; border-radius: 8px; border: 1px solid #1c2b43; background: #060a12; color: #e8f0fd; font-weight: 400 }
-    .menu .foot button.p { background: #ffb547; border-color: #ffb547; color: #060a12; font-weight: 600 }
-    .menu .tail { display: flex; justify-content: space-between; color: #9aabc6; font-size: 12px }
-    .menu .tail button { background: none; border: 0; padding: 0; color: #9aabc6; font-weight: 400; cursor: pointer; text-decoration: underline }
-    .menu .st { color: #9aabc6; font-size: 12px; line-height: 1.4; word-break: break-all }
+    .menu .foot button { flex: 1; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--inp); color: var(--fg); font-weight: 400 }
+    .menu .foot button.p { background: var(--acc); border-color: var(--acc); color: var(--onacc); font-weight: 600 }
+    .menu .tail { display: flex; justify-content: space-between; color: var(--mute); font-size: 12px }
+    .menu .tail button { background: none; border: 0; padding: 0; color: var(--mute); font-weight: 400; cursor: pointer; text-decoration: underline }
+    .menu .st { color: var(--mute); font-size: 12px; line-height: 1.4; word-break: break-all }
     .cap .w { font: inherit; font-style: normal; pointer-events: auto; cursor: pointer; border-radius: 3px; background: transparent; padding: 0; display: inline }
     .cap .w:hover { background: #ffffff40 }
     .cap .w.unf { border-bottom: 2px dashed #ffb547 }
     .cap .w.sv { border-bottom: 2px solid #4be3d0 }
-    .ls button, .dr button.b { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #1c2b43; background: #060a12; color: #e8f0fd; font-weight: 400; font-size: 12.5px }
-    .ls button.p { background: #ffb547; border-color: #ffb547; color: #060a12; font-weight: 600 }
-    .ls { position: fixed; display: none; width: 420px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #1c2b43; background: #0e1625; color: #e8f0fd; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 8px }
+    .ls button, .dr button.b { height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--inp); color: var(--fg); font-weight: 400; font-size: 12.5px }
+    .ls button.p { background: var(--acc); border-color: var(--acc); color: var(--onacc); font-weight: 600 }
+    .ls { position: fixed; display: none; width: 420px; max-width: calc(100vw - 16px); box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 8px }
     .ls.open { display: flex }
     .ls .r { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
     .ls .r .sp { flex: 1 }
-    .ls select { height: 28px; border: 1px solid #1c2b43; border-radius: 8px; background: #060a12; color: #e8f0fd; padding: 0 6px; font-size: 12.5px }
-    .ls label { display: flex; align-items: center; gap: 4px; color: #9aabc6; font-size: 12px }
-    .ls textarea { width: 100%; height: 56px; resize: none; border: 1px solid #1c2b43; border-radius: 8px; background: #060a12; color: #e8f0fd; padding: 6px 8px; font-size: 13px }
+    .ls select { height: 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--inp); color: var(--fg); padding: 0 6px; font-size: 12.5px }
+    .ls label { display: flex; align-items: center; gap: 4px; color: var(--mute); font-size: 12px }
+    .ls textarea { width: 100%; height: 56px; resize: none; border: 1px solid var(--line); border-radius: 8px; background: var(--inp); color: var(--fg); padding: 6px 8px; font-size: 13px }
     .ls .res { line-height: 1.7; font-size: 14px }
-    .ls .res .ok { color: #4be3d0 }
-    .ls .res .no { color: #ff7b72; text-decoration: underline wavy }
-    .ls .sc { color: #9aabc6; font-size: 12px }
-    .ls .pill2 { font-size: 11.5px; padding: 1px 8px; border-radius: 9px; background: #3a2c1a; color: #ffb547 }
-    .ls .keys { color: #9aabc6; font-size: 11.5px; line-height: 1.6 }
-    .ls .keys kbd { border: 1px solid #1c2b43; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; margin: 0 2px; background: #060a12; font: inherit; font-size: 11px }
+    .ls .res .ok { color: var(--ok) }
+    .ls .res .no { color: var(--bad); text-decoration: underline wavy }
+    .ls .sc { color: var(--mute); font-size: 12px }
+    .ls .pill2 { font-size: 11.5px; padding: 1px 8px; border-radius: 9px; background: var(--accsoft); color: var(--acc) }
+    .ls .keys { color: var(--mute); font-size: 11.5px; line-height: 1.6 }
+    .ls .keys kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; margin: 0 2px; background: var(--inp); font: inherit; font-size: 11px }
     .ls .chips { display: flex; gap: 6px; flex-wrap: wrap }
-    .ls .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9px; border: 1px solid #1c2b43; font-size: 12.5px }
-    .ls .chip a { color: #ffb547; cursor: pointer }
-    .ls .prog { display: flex; flex-direction: column; gap: 2px; max-height: 120px; overflow-y: auto; border-top: 1px solid #1c2b43; padding-top: 6px }
-    .ls .prog .pr { display: flex; gap: 8px; font-size: 12px; color: #9aabc6; cursor: pointer; padding: 1px 0 }
-    .ls .prog .pr.cur { color: #ffb547 }
+    .ls .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9px; border: 1px solid var(--line); font-size: 12.5px }
+    .ls .chip a { color: var(--acc); cursor: pointer }
+    .ls .prog { display: flex; flex-direction: column; gap: 2px; max-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); padding-top: 6px }
+    .ls .prog .pr { display: flex; gap: 8px; font-size: 12px; color: var(--mute); cursor: pointer; padding: 1px 0 }
+    .ls .prog .pr.cur { color: var(--acc) }
     .ls .prog .pr span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-    .dr { position: fixed; display: none; width: 340px; max-height: 70vh; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #1c2b43; background: #0e1625; color: #e8f0fd; box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 8px }
+    .dr { position: fixed; display: none; width: 340px; max-height: 70vh; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); box-shadow: 0 10px 30px #0006; flex-direction: column; gap: 8px }
     .dr.open { display: flex }
-    .dr input { height: 28px; border: 1px solid #1c2b43; border-radius: 8px; background: #060a12; color: #e8f0fd; padding: 0 8px }
+    .dr input { height: 28px; border: 1px solid var(--line); border-radius: 8px; background: var(--inp); color: var(--fg); padding: 0 8px }
     .dr .lst { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 60px }
-    .dr .it2 { border: 1px solid #1c2b43; border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px }
-    .dr .it2 b { color: #fff }
-    .dr .it2 small { color: #9aabc6; font-size: 11.5px; line-height: 1.4 }
+    .dr .it2 { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px }
+    .dr .it2 b { color: var(--fg) }
+    .dr .it2 small { color: var(--mute); font-size: 11.5px; line-height: 1.4 }
     .dr .it2 .ac { display: flex; gap: 10px; font-size: 12px }
-    .dr .it2 .ac a { color: #ffb547; cursor: pointer; text-decoration: underline }
+    .dr .it2 .ac a { color: var(--acc); cursor: pointer; text-decoration: underline }
     .dr .ft { display: flex; gap: 6px; flex-wrap: wrap }
   ` + globalThis.ccWordCard.CSS
   const ui = mount(CSS)
