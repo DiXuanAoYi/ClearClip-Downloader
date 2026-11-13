@@ -13,6 +13,9 @@ import ExpertsPanel from './ExpertsPanel.vue'
 const ai = defineModel<AiSettings>({ required: true })
 const status = ref<AiStatus | null>(null)
 const sttKey = ref('')
+const volcKey = ref('')
+const xfKey = ref('')
+const has = ref({ volc: false, xfyun: false })
 
 const STT_PRESETS = [
   { name: 'OpenAI', url: '', model: 'whisper-1' },
@@ -24,14 +27,22 @@ const LANGS = TARGET_LANGS
 async function refresh() {
   status.value = await api.aiStatus().catch(() => null)
 }
-onMounted(refresh)
+async function refreshHas() {
+  has.value = { volc: await api.secretHas('stt.volc_key').catch(() => false), xfyun: await api.secretHas('stt.xfyun_secret').catch(() => false) }
+}
+onMounted(() => {
+  void refresh()
+  void refreshHas()
+})
 
-async function saveKey(name: 'stt.api_key', value: string) {
+async function saveKey(name: 'stt.api_key' | 'stt.volc_key' | 'stt.xfyun_secret', value: string) {
   try {
-    await api.secretSet(name, value)
+    await api.secretSet(name, value.trim())
     ElMessage.success(value ? '密钥已加密保存' : '密钥已清除')
     sttKey.value = ''
-    await refresh()
+    volcKey.value = ''
+    xfKey.value = ''
+    await Promise.all([refresh(), refreshHas()])
   } catch (e) {
     ElMessage.error(errorText(e))
   }
@@ -88,9 +99,35 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <el-radio-group v-model="ai.sttEngine" size="small">
           <el-radio-button value="api">在线接口</el-radio-button>
           <el-radio-button value="local">本机识别（离线）</el-radio-button>
+          <el-radio-button value="volc">火山引擎（豆包）</el-radio-button>
+          <el-radio-button value="xfyun">讯飞</el-radio-button>
         </el-radio-group>
       </div>
-      <template v-if="ai.sttEngine === 'api'">
+      <template v-if="ai.sttEngine === 'volc'">
+        <small class="mute">豆包语音“大模型录音文件极速版识别”：整段上传、接近说话速度出结果，中文很准。音频会先在本机转成 16 kHz 单声道 WAV，每 10 分钟一段上传到火山引擎。需要在火山引擎控制台开通该资源。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先拿一小段音频试。</small>
+        <div class="field"><label>AppId（用新版控制台的 API Key 时留空）</label><el-input v-model="ai.sttVolcAppId" size="small" class="mono" placeholder="旧版控制台的 AppId，没有就留空" /></div>
+        <div class="field">
+          <label>密钥（Access Token / API Key） <span v-if="has.volc" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://console.volcengine.com/speech/app')">打开火山引擎控制台</a></label>
+          <div class="keyrow">
+            <el-input v-model="volcKey" size="small" type="password" show-password placeholder="Access Token 或 API Key" />
+            <el-button size="small" :disabled="!volcKey.trim()" @click="saveKey('stt.volc_key', volcKey)">保存</el-button>
+            <el-button size="small" @click="saveKey('stt.volc_key', '')">清除</el-button>
+          </div>
+        </div>
+      </template>
+      <template v-else-if="ai.sttEngine === 'xfyun'">
+        <small class="mute">讯飞开放平台“录音文件转写”：整个文件上传到讯飞，转写完成后取回带时间的句子。需要在讯飞控制台开通该服务并拿到 AppID 和 SecretKey。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先拿一小段音频试。</small>
+        <div class="field"><label>AppID</label><el-input v-model="ai.sttXfyunAppId" size="small" class="mono" placeholder="例如 595f23df" /></div>
+        <div class="field">
+          <label>SecretKey <span v-if="has.xfyun" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://console.xfyun.cn/services/lfasr')">打开讯飞控制台</a></label>
+          <div class="keyrow">
+            <el-input v-model="xfKey" size="small" type="password" show-password placeholder="录音文件转写的 SecretKey" />
+            <el-button size="small" :disabled="!xfKey.trim()" @click="saveKey('stt.xfyun_secret', xfKey)">保存</el-button>
+            <el-button size="small" @click="saveKey('stt.xfyun_secret', '')">清除</el-button>
+          </div>
+        </div>
+      </template>
+      <template v-else-if="ai.sttEngine === 'api'">
         <small class="mute">使用兼容 OpenAI 的 <span class="mono">/audio/transcriptions</span> 接口。音频会先在本机转成小体积的单声道再分段上传。</small>
         <div class="presets">
           <el-button v-for="p in STT_PRESETS" :key="p.name" size="small" link type="primary" @click="ai.sttBaseUrl = p.url; ai.sttModel = p.model">{{ p.name }}</el-button>

@@ -68,7 +68,9 @@ pub fn ai_status(state: St<'_>) -> AiStatus {
         chat_ready: (!s.ai.base_url.is_empty() && !s.ai.model.is_empty() && chat_key)
             || s.ai.pool.iter().any(|e| e.enabled && !e.base_url.is_empty() && !e.model.is_empty() && state.vault.has(&ai_pool::key_name(&e.id))),
         chat_key,
-        stt_ready: if ai::use_local_stt(&state, &s) {
+        stt_ready: if ai::is_cloud_stt(&s) {
+            ai::stt_ready(&state, &s).is_ok()
+        } else if ai::use_local_stt(&state, &s) {
             ai::local_stt_ready(&s)
         } else {
             (!s.ai.stt_url().is_empty() && !s.ai.stt_model.is_empty() && stt_key) || ai::stt_pool_endpoint(&state, &s).is_some()

@@ -1013,6 +1013,10 @@ pub struct AiSettings {
     pub batch_size: usize,
     /// 语音转文字：`api`（兼容 OpenAI 的 `/audio/transcriptions`）或 `local`（本机的 whisper.cpp）
     pub stt_engine: String,
+    /// 火山引擎（豆包语音）AppId：留空用新版控制台的 API Key；密钥在保险箱 `stt.volc_key`
+    pub stt_volc_app_id: String,
+    /// 讯飞 AppID；SecretKey 在保险箱 `stt.xfyun_secret`
+    pub stt_xfyun_app_id: String,
     /// 语音转文字接口地址；留空与上面相同
     pub stt_base_url: String,
     pub stt_model: String,
@@ -1059,6 +1063,8 @@ impl Default for AiSettings {
             bilingual: true,
             batch_size: 40,
             stt_engine: "local".into(),
+            stt_volc_app_id: String::new(),
+            stt_xfyun_app_id: String::new(),
             stt_base_url: String::new(),
             stt_model: "whisper-1".into(),
             stt_language: String::new(),
@@ -1097,7 +1103,7 @@ impl AiSettings {
             self.target_lang = AiSettings::default().target_lang;
         }
         self.batch_size = self.batch_size.clamp(5, 100);
-        if !matches!(self.stt_engine.as_str(), "api" | "local") {
+        if !matches!(self.stt_engine.as_str(), "api" | "local" | "volc" | "xfyun") {
             self.stt_engine = "local".into();
         }
         self.stt_language = self.stt_language.trim().to_ascii_lowercase();

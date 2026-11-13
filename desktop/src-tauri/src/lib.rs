@@ -87,6 +87,7 @@ pub mod subgen;
 pub mod subs;
 pub mod subtitle;
 pub mod subtitle_io;
+pub mod stt_cloud;
 pub mod subclean;
 pub mod subtitle_tools;
 pub mod supadata;
