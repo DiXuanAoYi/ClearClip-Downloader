@@ -37,7 +37,28 @@
 .el-button.is-text {
   --el-button-bg-color: transparent;
 }
-.el-button.is-text {
+.el-button.is-text,
+.el-button.is-link {
+  --el-button-border-color: transparent;
+  --el-button-bg-color: transparent;
+  --el-button-hover-bg-color: transparent;
+  --el-button-hover-border-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+.el-button--primary.is-link,
+.el-button--primary.is-text {
+  --el-button-text-color: var(--cc-amber);
+  --el-button-hover-text-color: var(--cc-acc-strong-hover);
+  --el-button-bg-color: transparent;
+  --el-button-border-color: transparent;
+  font-weight: 500;
+}
+.el-button--warning.is-link {
+  --el-button-text-color: var(--cc-amber);
+}
+.el-button--danger.is-link {
+  --el-button-text-color: var(--cc-err);
   --el-button-border-color: transparent;
 }
 .el-button--primary,
@@ -57,7 +78,7 @@
   --el-button-disabled-text-color: var(--cc-on-acc);
   font-weight: 700;
 }
-.el-button--primary:not(.is-disabled),
+.el-button--primary:not(.is-disabled):not(.is-link):not(.is-text),
 .el-button.pz-strong:not(.is-disabled) {
   background-image: linear-gradient(180deg, #ffc760, #ffa62b);
   border-color: #ffd28a;
@@ -65,7 +86,7 @@
     0 10px 28px -10px var(--cc-amber-glow),
     inset 0 1px 0 #ffffff73;
 }
-html:not(.dark) .el-button--primary:not(.is-disabled),
+html:not(.dark) .el-button--primary:not(.is-disabled):not(.is-link):not(.is-text),
 html:not(.dark) .el-button.pz-strong:not(.is-disabled) {
   background-image: none;
   box-shadow: none;

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影 · 订阅</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="clearclip.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body { margin: 0; }
+.shell{min-height:940px}
+
+</style>
+</helmet>
+<div class="cc" data-theme="{{theme}}">
+<div class="shell">
+<nav class="rail" aria-label="主导航">
+<div class="logo" role="img" aria-label="清影"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3l3.5 6.1M20.2 8.2l-6.8 1M20.2 15.8 15 11M12 21l-3.5-6.1M3.8 15.8l6.8-1M3.8 8.2 9 13"/></svg></div>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>解析</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>下载队列</span></button>
+<button class="nav-i" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>订阅</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.5 7.5a6 6 0 0 0 0 9M16.5 7.5a6 6 0 0 1 0 9"/></svg><span>直播</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H4zM8 20h8M9 9h6M9 12h4"/></svg><span>屏幕翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5"/></svg><span>媒体库</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4"/></svg><span>文件翻译</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4h10v17l-5-4-5 4z"/></svg><span>生词与摘录</span></button>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/></svg><span>工具箱</span></button>
+<div class="nav-gap"></div>
+<button class="nav-i"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4"/></svg><span>设置</span></button>
+</nav>
+<main class="main">
+<header class="topbar">
+<h1>订阅</h1>
+<span class="spacer"></span><span class="chip cyan"><i class="dot "></i>开启订阅 · 托盘运行</span>
+</header>
+<div class="split r"><div class="stack" style="display:flex;flex-direction:column;gap:18px">
+<section class="panel"><div class="toolbar" style="margin-bottom:14px"><label class="field"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><input type="text" value="" placeholder="粘贴频道、UP 主空间、画师页或播放列表链接" aria-label="订阅链接"></label><button class="btn primary" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>添加订阅</button></div>
+<p class="note">关注频道、UP 主、画师、合集，有新内容自动下载。每个订阅单独设置检查间隔（默认 6 小时）、过滤条件、清晰度和保存位置。</p></section>
+<section class="panel"><div class="panel-h"><h2>订阅与追更</h2><span class="eyebrow">5 个订阅</span><span class="spacer"></span><label class="field" style="width:200px;flex:none"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-4-4"/></svg><input type="text" value="" placeholder="搜索订阅" aria-label="搜索"></label><button class="btn sm" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-4L4 9M4 4v5h5M4 13a8 8 0 0 0 14 4l2-2M20 20v-5h-5"/></svg>立即检查全部</button></div><div class="list"><div class="item"><div style="width:44px;height:44px;border-radius:50%;flex:none" class="thumb t1"></div><div class="grow"><div class="ttl">光影漫游者</div><div class="meta"><span>B站 UP 主</span><span>每 6 小时 检查</span><span>上次 12 分钟前</span><span class="chip amber">新 2</span></div></div><span class="chip cyan">正常</span><label class="sw"><input type="checkbox" checked aria-label="启用"><span></span></label><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button></div><div class="item"><div style="width:44px;height:44px;border-radius:50%;flex:none" class="thumb t5"></div><div class="grow"><div class="ttl">Veritasium</div><div class="meta"><span>YouTube 频道</span><span>每 12 小时 检查</span><span>上次 3 小时前</span></div></div><span class="chip cyan">正常</span><label class="sw"><input type="checkbox" checked aria-label="启用"><span></span></label><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button></div><div class="item"><div style="width:44px;height:44px;border-radius:50%;flex:none" class="thumb t2"></div><div class="grow"><div class="ttl">画师 · 云间</div><div class="meta"><span>Pixiv 画师</span><span>每 24 小时 检查</span><span>上次 昨天</span><span class="chip amber">新 5</span></div></div><span class="chip cyan">正常</span><label class="sw"><input type="checkbox" checked aria-label="启用"><span></span></label><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button></div><div class="item"><div style="width:44px;height:44px;border-radius:50%;flex:none" class="thumb t4"></div><div class="grow"><div class="ttl">山野厨房</div><div class="meta"><span>抖音用户主页</span><span>每 6 小时 检查</span><span>上次 连续失败 3 次</span></div></div><span class="chip amber">已暂停</span><label class="sw"><input type="checkbox" aria-label="启用"><span></span></label><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button></div><div class="item"><div style="width:44px;height:44px;border-radius:50%;flex:none" class="thumb t3"></div><div class="grow"><div class="ttl">Fireship 播放列表</div><div class="meta"><span>YouTube 播放列表</span><span>每 12 小时 检查</span><span>上次 6 小时前</span><span class="chip amber">新 1</span></div></div><span class="chip cyan">正常</span><label class="sw"><input type="checkbox" checked aria-label="启用"><span></span></label><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button></div></div></section></div>
+<aside style="display:flex;flex-direction:column;gap:18px" class="sticky">
+<section class="panel"><div class="panel-h"><h2>光影漫游者</h2><span class="spacer"></span><span class="chip ">编辑</span></div>
+<div class="row"><div class="t"><b>检查间隔</b><small>默认 6 小时</small></div><div class="ctl"><select aria-label="间隔" style="width:110px"><option>1 小时</option><option selected>6 小时</option><option>12 小时</option><option>24 小时</option></select></div></div>
+<div class="row"><div class="t"><b>首次订阅</b><small>只下载以后的新内容</small></div><div class="ctl"><select aria-label="首次" style="width:130px"><option selected>只要以后的</option><option>最近 10 条</option><option>全部</option></select></div></div>
+<div class="row"><div class="t"><b>标题过滤</b><small>包含 / 排除关键词</small></div><div class="ctl"><label class="field" style="width:130px;flex:none"><input type="text" value="延时, 航拍" placeholder="" aria-label="包含"></label></div></div>
+<div class="row"><div class="t"><b>清晰度</b><small>继承默认选项</small></div><div class="ctl"><select aria-label="清晰度" style="width:110px"><option selected>默认</option><option>1080P</option><option>720P</option></select></div></div>
+<div class="row"><div class="t"><b>保存位置</b><small>D:\清影\订阅\光影漫游者</small></div></div>
+<div class="row"><div class="t"><b>下载字幕与弹幕</b></div><div class="ctl"><label class="sw"><input type="checkbox" checked aria-label="字幕"><span></span></label></div></div>
+<p class="note" style="margin-top:8px">已下载、已忽略的条目不会重复下载；连续失败会自动暂停并通知。</p></section>
+<section class="panel"><div class="panel-h"><h2>最近动态</h2></div><div class="list"><div class="item"><i class="dot "></i><span class="grow">光影漫游者 · 新投稿 2 个，已加入队列</span><span class="mono sub-c">12 分钟前</span></div><div class="item"><i class="dot amber"></i><span class="grow">山野厨房 · 暂停：需要重新登录</span><span class="mono sub-c">昨天</span></div></div></section>
+</aside></div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"],"section":"外观"},"$preview":{"width":1360,"height":940}}'>
+class Component extends DCLogic {
+  renderVals() { return { theme: this.props.theme ?? 'dark' }; }
+}
+</script>
+</body>
+</html>

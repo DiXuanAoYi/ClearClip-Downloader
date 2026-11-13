@@ -30,7 +30,7 @@ import LiveView from './views/LiveView.vue'
 import LibraryView from './views/LibraryView.vue'
 import VocabView from './views/VocabView.vue'
 import SecurityPanel from './components/SecurityPanel.vue'
-import { useAppStore, useParseStore } from './stores/app'
+import { useAppStore, useParseStore, useQueueStore } from './stores/app'
 import { api } from './api'
 import { setLanguage } from './i18n'
 
@@ -42,6 +42,8 @@ const C: Record<string, Component> = { write: WriteApp, parse: ParseView, float:
 const store = useAppStore(pinia)
 store.settings = (await api.getSettings()) as never
 ;(window as unknown as { __app: typeof store }).__app = store
+;(window as unknown as { __queue: unknown; __parseStore: unknown }).__queue = useQueueStore(pinia)
+;(window as unknown as { __parseStore: unknown }).__parseStore = useParseStore(pinia)
 // 解析页：测试把解析结果放在 window.__result，暗色主题用 window.__dark
 const W = window as unknown as { __result?: unknown; __dark?: boolean; __parse?: unknown }
 document.body.style.setProperty('background', 'var(--cc-page-bg)', 'important')
@@ -52,7 +54,7 @@ if (which === 'parse') {
   ps.result = (W.__result ?? null) as never
   W.__parse = ps
 }
-const style = which === 'float' ? 'width:780px;height:64px;position:relative' : which === 'write' ? 'width:464px' : 'padding:16px;max-width:1100px;height:900px;display:flex;flex-direction:column'
+const style = which === 'app' ? 'width:100vw;height:100vh;overflow:hidden' : which === 'float' ? 'width:780px;height:64px;position:relative' : which === 'write' ? 'width:464px' : 'padding:16px;max-width:1100px;height:900px;display:flex;flex-direction:column'
 createApp({ render: () => h('div', { style }, [which === 'glossary' ? h(GlossaryPanel, { modelValue: store.settings!.ai, 'onUpdate:modelValue': () => {} }) : which === 'video' ? h(VideoTools, { preset: ['/m/clip.mp4'] }) : which === 'security' ? h(SecurityPanel, { modelValue: store.settings!.security, 'onUpdate:modelValue': () => {} }) : h(C[which] ?? ExcerptsPanel)]) })
   .use(pinia)
   .use(ElementPlus, { locale: zhCn })

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影 · 清影写作（桌面端 + 浏览器端）</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="clearclip.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body { margin: 0; }
+.cc .plainmain { padding: 22px 28px 32px; display: flex; flex-direction: column; gap: 18px; min-height: 2640px; }
+
+</style>
+</helmet>
+<div class="cc" data-theme="{{theme}}">
+<div class="plainmain">
+<header class="topbar"><h1>清影写作（桌面端 + 浏览器端）</h1><span class="spacer"></span></header>
+<div class="frames"><div><div class="frame-cap">桌面端 · 回复</div><div class="win" style="width:464px"><div class="win-h"><span class="logo-s">清</span><b>清影写作</b><span class="spacer"></span><span class="chip ">固定在最前</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4"/></svg></button><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+<div class="win-b">
+<div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true">回复</button><button class="tab" role="tab" aria-selected="false">润色</button><button class="tab" role="tab" aria-selected="false">翻译</button><button class="tab" role="tab" aria-selected="false">摘录</button></div>
+<div class="lbl">收到的消息</div>
+<div class="bubble">下周的评审会可以提前到周三下午吗？另外上次说的那份报价，今天能发我吗？</div>
+<div class="lbl">前面的聊天（只用来理解，不会回复它们）</div>
+<label class="field"><input type="text" value="" placeholder="粘贴前面的几条聊天" aria-label="前面的聊天"></label>
+<div class="hint-bar cyan"><b>看懂了：</b>对方想把评审会提前到周三下午，并催今天要报价。</div>
+<div class="lbl">我的意思</div>
+<span class="seg" role="radiogroup" aria-label="意图"><label><input type="radio" name="g19"><span>同意</span></label><label><input type="radio" name="g19"><span>婉拒</span></label><label><input type="radio" name="g19" checked><span>给个替代</span></label></span>
+<div class="lbl">要问的（自动找出没说清的地方，可以勾掉或自己加）</div>
+<div><label class="check"><input type="checkbox" checked><span>周三下午几点方便？</span></label><br><label class="check"><input type="checkbox" checked><span>报价要含税吗？</span></label></div>
+<div class="toolbar"><label class="field" style="width:260px;flex:none"><input type="text" value="" placeholder="＋ 自己加一个问题" aria-label="加问题"></label><button class="btn sm" >加上</button></div>
+<div class="lbl">怎么说</div>
+<span class="seg" role="radiogroup" aria-label="长度"><label><input type="radio" name="g20"><span>简短</span></label><label><input type="radio" name="g20" checked><span>适中</span></label><label><input type="radio" name="g20"><span>详细</span></label></span>
+<select aria-label="场景"><option selected>场景：通用</option><option>场景：对上级</option><option>场景：对客户</option><option>场景：朋友</option></select>
+<div class="toolbar"><button class="btn primary" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 14h6l-1 7 8-11h-6z"/></svg>生成回复</button><span class="spacer"></span><span class="kbd">Ctrl</span><span class="kbd">↵</span></div>
+</div>
+<div class="win-f"><span>只用你给的条件和时间，不替你编理由、不多承诺。</span></div></div></div><div><div class="frame-cap">桌面端 · 三个版本 / 对比</div><div class="win" style="width:464px"><div class="win-h"><span class="logo-s">清</span><b>清影写作</b><span class="spacer"></span><span class="chip cyan">1/3</span></div>
+<div class="win-b">
+<div class="verc on"><div class="vh"><b style="color:var(--amber)">版本 1</b><span>简短</span><span class="spacer"></span><span class="kbd">Alt+1</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.800 5.700 6.200.9-4.500 4.400 1.100 6.200L12 17.200 6.400 20.200l1.100-6.200L3 9.600l6.200-.9z"/></svg></button></div><div class="vt">周三下午我这边可以，三点怎么样？报价今天下班前发你。</div><div class="toolbar"><button class="btn sm" >复制</button><button class="btn sm" >再来一版</button><button class="btn sm" >微调</button><button class="btn sm" >对比</button></div></div>
+<div class="verc"><div class="vh"><b>版本 2</b><span>适中</span><span class="spacer"></span><span class="kbd">Alt+2</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.800 5.700 6.200.9-4.500 4.400 1.100 6.200L12 17.200 6.400 20.200l1.100-6.200L3 9.600l6.200-.9z"/></svg></button></div><div class="vt">周三下午可以的，你看三点还是四点更方便？报价我今天下班前整理好发你，含税的话我一并标注。</div></div>
+<div class="verc"><div class="vh"><b>版本 3</b><span>详细</span><span class="spacer"></span><span class="kbd">Alt+3</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.800 5.700 6.200.9-4.500 4.400 1.100 6.200L12 17.200 6.400 20.200l1.100-6.200L3 9.600l6.200-.9z"/></svg></button></div><div class="vt">评审会提前到周三下午没问题。时间上三点或四点都行，你定一个就好；报价今天下班前发你，是否含税请告诉我。</div></div>
+<div class="verc"><div class="vh"><b>对比</b><span>原文 → 修改</span></div><div class="vt"><span class="diffdel">周三下午我这边可以</span><span class="diffins">周三下午可以的</span>，三点怎么样？</div></div>
+<div class="toolbar"><label class="check"><input type="checkbox" checked><span>写回后自动关闭</span></label><span class="spacer"></span><button class="btn sm ghost" >撤销</button><button class="btn sm" >取消</button></div>
+</div>
+<div class="win-f"><span>快捷键 修改 · Esc 关闭 · Alt+1/2/3 切版本</span></div></div></div><div><div class="frame-cap">桌面端 · 润色 / 校对 / 翻译 / 摘录</div><div class="win" style="width:464px"><div class="win-h"><span class="logo-s">清</span><b>清影写作</b><span class="spacer"></span></div>
+<div class="win-b">
+<div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="false">回复</button><button class="tab" role="tab" aria-selected="true">润色</button><button class="tab" role="tab" aria-selected="false">翻译</button><button class="tab" role="tab" aria-selected="false">摘录</button></div>
+<div class="lbl">选一个人设</div>
+<div class="toolbar"><span class="chip acc">通用助手</span><span class="chip ">技术写作</span><span class="chip ">文案</span><span class="chip ">学术</span><span class="chip ">小红书</span></div>
+<div class="lbl">要处理的文字</div>
+<textarea aria-label="要处理的文字">这个功能上线以后用户反馈很好但是我们还需要继续优化一下细节</textarea>
+<div class="toolbar"><button class="btn sm" >粘贴</button><button class="btn sm" >清空</button><span class="spacer"></span><select aria-label="听写引擎" style="width:150px"><option selected>听写：跟随设置</option><option>本机开源模型</option><option>在线接口</option></select></div>
+<label class="field"><input type="text" value="" placeholder="额外要求（可选，比如：别太长、带点东北话）" aria-label="额外要求"></label>
+<div class="hint-bar">没有发现需要修改的地方时，这里会直接告诉你。</div>
+<div class="toolbar"><button class="btn primary" >润色</button><button class="btn " >校对（找错别字、语病、标点）</button></div>
+</div></div></div></div><div class="frames"><div><div class="frame-cap">桌面端 · 摘录列表 / 我的收藏</div><div class="win" style="width:464px"><div class="win-h"><span class="logo-s">清</span><b>清影写作</b><span class="spacer"></span></div>
+<div class="win-b">
+<div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="false">回复</button><button class="tab" role="tab" aria-selected="false">润色</button><button class="tab" role="tab" aria-selected="false">翻译</button><button class="tab" role="tab" aria-selected="true">摘录</button></div>
+<div class="toolbar"><button class="btn sm" >存入摘录</button><button class="btn sm" >复制为 Markdown</button><span class="spacer"></span><span class="seg" role="radiogroup" aria-label="列表"><label><input type="radio" name="g21" checked><span>摘录列表</span></label><label><input type="radio" name="g21"><span>我的收藏</span></label></span></div>
+<div class="item"><div class="grow"><div style="font-size:13.5px">夜里的外滩，像一台缓慢运转的巨大钟表。</div><div class="meta"><span>光影漫游者</span><span>02:10</span></div></div><button class="btn sm" >放回输入框</button><button class="btn sm danger" >删除</button></div>
+<div class="item"><div class="grow"><div style="font-size:13.5px">The best way to predict the future is to invent it.</div><div class="meta"><span>Alan Kay</span></div></div><button class="btn sm" >放回输入框</button><button class="btn sm danger" >删除</button></div>
+<div class="sec-t">对选中的文字</div><div class="toolbar"><button class="btn sm" >释义</button><button class="btn sm" >AI 搜索</button></div>
+</div></div></div><div><div class="frame-cap">写作小徽标（选中文字后出现）</div><div style="display:flex;gap:16px;align-items:center"><span class="cap-pill" style="font-size:14px;padding:8px 14px;border-color:var(--amber-line);color:var(--amber)">写</span><span class="note">选中文字后在旁边出现，点一下或按快捷键打开清影写作。</span></div></div></div><div><div class="frame-cap">浏览器端 · 在输入框旁弹出的写作浮窗</div>
+<div class="fakepage" style="min-height:560px"><h4>项目群 · 评审讨论</h4><p><b>小周：</b>下周的评审会可以提前到周三下午吗？另外上次说的那份报价，今天能发我吗？</p>
+<div style="margin-top:14px;border:1px solid #c9d2e0;border-radius:10px;background:#fff;padding:10px 12px;color:#9aa6b8;font-size:13px">回复小周…</div>
+<div class="win cc-inline" style="position:absolute;left:300px;top:150px;width:420px"><div class="win-h"><span class="logo-s">清</span><b>清影写作</b><span class="spacer"></span><span class="chip ">浏览器</span><button class="btn sm ghost" ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+<div class="win-b" style="gap:8px"><div class="hint-bar cyan"><b>看懂了：</b>想提前评审会，并催报价。</div><span class="seg" role="radiogroup" aria-label="意图"><label><input type="radio" name="g22" checked><span>同意</span></label><label><input type="radio" name="g22"><span>婉拒</span></label><label><input type="radio" name="g22"><span>给个替代</span></label></span><div class="verc on"><div class="vh"><b style="color:var(--amber)">版本 1</b><span class="spacer"></span><span class="kbd">Alt+1</span></div><div class="vt">周三下午可以，三点怎么样？报价今天下班前发你。</div></div><div class="toolbar"><button class="btn primary sm" >写回输入框</button><button class="btn sm" >复制</button><button class="btn sm" >再来一版</button><span class="spacer"></span><span class="kbd">Esc</span></div></div></div></div></div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","light"],"section":"外观"},"$preview":{"width":1360,"height":2640}}'>
+class Component extends DCLogic {
+  renderVals() { return { theme: this.props.theme ?? 'dark' }; }
+}
+</script>
+</body>
+</html>
