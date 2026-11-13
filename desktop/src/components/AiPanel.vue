@@ -15,7 +15,20 @@ const status = ref<AiStatus | null>(null)
 const sttKey = ref('')
 const volcKey = ref('')
 const xfKey = ref('')
-const has = ref({ volc: false, xfyun: false })
+const xfRtKey = ref('')
+const has = ref({ volc: false, xfyun: false, xfyunRt: false })
+const testing = ref('')
+const testMsg = ref<Record<string, { ok: boolean; text: string }>>({})
+async function testCloud(engine: 'volc' | 'xfyun' | 'xfyun_rt') {
+  testing.value = engine
+  try {
+    testMsg.value[engine] = { ok: true, text: await api.sttCloudTest(engine) }
+  } catch (e) {
+    testMsg.value[engine] = { ok: false, text: errorText(e) }
+  } finally {
+    testing.value = ''
+  }
+}
 
 const STT_PRESETS = [
   { name: 'OpenAI', url: '', model: 'whisper-1' },
@@ -28,20 +41,25 @@ async function refresh() {
   status.value = await api.aiStatus().catch(() => null)
 }
 async function refreshHas() {
-  has.value = { volc: await api.secretHas('stt.volc_key').catch(() => false), xfyun: await api.secretHas('stt.xfyun_secret').catch(() => false) }
+  has.value = {
+    volc: await api.secretHas('stt.volc_key').catch(() => false),
+    xfyun: await api.secretHas('stt.xfyun_secret').catch(() => false),
+    xfyunRt: await api.secretHas('stt.xfyun_rt_key').catch(() => false),
+  }
 }
 onMounted(() => {
   void refresh()
   void refreshHas()
 })
 
-async function saveKey(name: 'stt.api_key' | 'stt.volc_key' | 'stt.xfyun_secret', value: string) {
+async function saveKey(name: 'stt.api_key' | 'stt.volc_key' | 'stt.xfyun_secret' | 'stt.xfyun_rt_key', value: string) {
   try {
     await api.secretSet(name, value.trim())
     ElMessage.success(value ? '密钥已加密保存' : '密钥已清除')
     sttKey.value = ''
     volcKey.value = ''
     xfKey.value = ''
+    xfRtKey.value = ''
     await Promise.all([refresh(), refreshHas()])
   } catch (e) {
     ElMessage.error(errorText(e))
@@ -122,6 +140,11 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
             <el-button size="small" @click="saveKey('stt.volc_key', '')">清除</el-button>
           </div>
         </div>
+        <div class="kv"><span>用火山自带的“语义顺滑”去口水词<small class="mute block">默认关：口水词统一交给“字幕预处理”，几种引擎行为一致。打开后由火山在识别时就去掉</small></span><el-switch v-model="ai.sttCloudSmooth" /></div>
+        <div class="keyrow">
+          <el-button size="small" :loading="testing === 'volc'" :disabled="!has.volc" @click="testCloud('volc')">测试连接</el-button>
+          <span v-if="testMsg.volc" :class="testMsg.volc.ok ? 'ok' : 'bad'" class="mute">{{ testMsg.volc.text }}</span>
+        </div>
       </template>
       <template v-else-if="ai.sttEngine === 'xfyun'">
         <small class="mute">讯飞开放平台“录音文件转写”：整个文件上传到讯飞，转写完成后取回带时间的句子。需要在讯飞控制台开通该服务并拿到 AppID 和 SecretKey。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先拿一小段音频试。</small>
@@ -134,6 +157,23 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
             <el-button size="small" @click="saveKey('stt.xfyun_secret', '')">清除</el-button>
           </div>
         </div>
+        <div class="keyrow">
+          <el-button size="small" :loading="testing === 'xfyun'" :disabled="!has.xfyun || !ai.sttXfyunAppId" @click="testCloud('xfyun')">测试连接</el-button>
+          <span v-if="testMsg.xfyun" :class="testMsg.xfyun.ok ? 'ok' : 'bad'" class="mute">{{ testMsg.xfyun.text }}</span>
+        </div>
+        <div class="field">
+          <label>实时转写 APIKey（“屏幕翻译 → 语音翻译”用讯飞时需要，和上面的 SecretKey 不是同一个） <span v-if="has.xfyunRt" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://console.xfyun.cn/services/rta')">打开讯飞控制台</a></label>
+          <div class="keyrow">
+            <el-input v-model="xfRtKey" size="small" type="password" show-password placeholder="实时语音转写的 APIKey" />
+            <el-button size="small" :disabled="!xfRtKey.trim()" @click="saveKey('stt.xfyun_rt_key', xfRtKey)">保存</el-button>
+            <el-button size="small" @click="saveKey('stt.xfyun_rt_key', '')">清除</el-button>
+          </div>
+        </div>
+        <div class="keyrow">
+          <el-button size="small" :loading="testing === 'xfyun_rt'" :disabled="!has.xfyunRt || !ai.sttXfyunAppId" @click="testCloud('xfyun_rt')">测试实时转写连接</el-button>
+          <span v-if="testMsg.xfyun_rt" :class="testMsg.xfyun_rt.ok ? 'ok' : 'bad'" class="mute">{{ testMsg.xfyun_rt.text }}</span>
+        </div>
+        <div class="kv"><span>用讯飞的“顺滑词”标记去口水词<small class="mute block">默认关：口水词统一交给“字幕预处理”。打开后识别结果里讯飞标成顺滑词的字直接不要</small></span><el-switch v-model="ai.sttCloudSmooth" /></div>
       </template>
       <template v-else-if="ai.sttEngine === 'api'">
         <small class="mute">使用兼容 OpenAI 的 <span class="mono">/audio/transcriptions</span> 接口。音频会先在本机转成小体积的单声道再分段上传。</small>

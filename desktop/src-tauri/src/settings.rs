@@ -864,7 +864,7 @@ impl LiveSettings {
                 "auto".into()
             }
         };
-        pick(&mut self.audio_stt, &["local", "cloud"], "local");
+        pick(&mut self.audio_stt, &["local", "cloud", "volc", "xfyun"], "local");
         pick(&mut self.audio_source, &["system", "mic"], "system");
         self.audio_context = self.audio_context.min(10);
         self.ocr_lang = self.ocr_lang.trim().chars().take(16).collect();
@@ -1023,6 +1023,8 @@ pub struct AiSettings {
     pub stt_volc_app_id: String,
     /// 讯飞 AppID；SecretKey 在保险箱 `stt.xfyun_secret`
     pub stt_xfyun_app_id: String,
+    /// 用云端自带的顺滑（火山 `enable_ddc` 语义顺滑 / 讯飞顺滑词）去口水词；默认关，统一交给本地的字幕预处理
+    pub stt_cloud_smooth: bool,
     /// 语音转文字接口地址；留空与上面相同
     pub stt_base_url: String,
     pub stt_model: String,
@@ -1075,6 +1077,7 @@ impl Default for AiSettings {
             stt_engine: "local".into(),
             stt_volc_app_id: String::new(),
             stt_xfyun_app_id: String::new(),
+            stt_cloud_smooth: false,
             stt_base_url: String::new(),
             stt_model: "whisper-1".into(),
             stt_language: String::new(),

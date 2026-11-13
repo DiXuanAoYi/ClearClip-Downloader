@@ -266,6 +266,7 @@ export const api = {
   phoneRevoke: (deviceId: string) => invoke<PhoneInfo>('phone_revoke', { deviceId }),
   phonePairRespond: (deviceId: string, accept: boolean) => invoke<PhoneInfo>('phone_pair_respond', { deviceId, accept }),
   phoneSetOptions: (options: PhoneOptions) => invoke<PhoneInfo>('phone_set_options', { options }),
+  sttCloudTest: (engine: 'volc' | 'xfyun' | 'xfyun_rt') => invoke<string>('stt_cloud_test', { engine }),
   phoneChatList: (since = 0) => invoke<ChatMsg[]>('phone_chat_list', { since }),
   phoneChatClear: () => invoke<void>('phone_chat_clear'),
   transferList: () => invoke<TransferList>('transfer_list'),

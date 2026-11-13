@@ -684,6 +684,7 @@ export interface AiSettings {
   sttEngine: 'api' | 'local' | 'volc' | 'xfyun'
   sttVolcAppId: string
   sttXfyunAppId: string
+  sttCloudSmooth: boolean
   sttBaseUrl: string
   sttModel: string
   sttLanguage: string
@@ -2267,7 +2268,7 @@ export interface ScreenSettings {
   /** 增强识字用哪个语言包：auto 按识字语言选 / default 默认 / 指定包名 */
   ocrPack: string
   audioLang: string
-  audioStt: 'local' | 'cloud'
+  audioStt: 'local' | 'cloud' | 'volc' | 'xfyun'
   audioBilingual: boolean
   /** 听什么：电脑正在播放的声音 / 麦克风 */
   audioSource: 'system' | 'mic'

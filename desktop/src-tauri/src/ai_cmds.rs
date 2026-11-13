@@ -377,3 +377,32 @@ pub async fn notify_test(state: St<'_>, id: String) -> AppResult<()> {
 pub async fn upload_test(state: St<'_>) -> AppResult<String> {
     crate::upload::test(&state).await
 }
+
+/// 云端语音识别的“测试连接”：火山 / 讯飞录音文件 / 讯飞实时。发一秒静音，几乎不花钱；返回给用户看的结果文字。
+#[tauri::command]
+pub async fn stt_cloud_test(state: St<'_>, engine: String) -> AppResult<String> {
+    let s = state.settings();
+    match engine.as_str() {
+        "volc" => {
+            let key = state.vault.get(crate::stt_cloud::KEY_VOLC).ok_or_else(|| AppError::invalid("请先保存火山引擎的密钥。"))?;
+            let client = state.net.clients_for(&s.network, crate::stt_cloud::VOLC_URL)?.download;
+            crate::stt_cloud::test_volc(&client, &s.ai.stt_volc_app_id, &key).await
+        }
+        "xfyun" => {
+            let secret = state.vault.get(crate::stt_cloud::KEY_XFYUN).ok_or_else(|| AppError::invalid("请先保存讯飞的 SecretKey。"))?;
+            if s.ai.stt_xfyun_app_id.trim().is_empty() {
+                return Err(AppError::invalid("请先填写讯飞的 AppID。"));
+            }
+            let client = state.net.clients_for(&s.network, crate::stt_cloud::XFYUN_BASE)?.download;
+            crate::stt_cloud::test_xfyun(&client, &s.ai.stt_xfyun_app_id, &secret).await
+        }
+        "xfyun_rt" => {
+            let key = state.vault.get(crate::stt_cloud::KEY_XFYUN_RT).ok_or_else(|| AppError::invalid("请先保存讯飞“实时语音转写”的 APIKey。"))?;
+            if s.ai.stt_xfyun_app_id.trim().is_empty() {
+                return Err(AppError::invalid("请先填写讯飞的 AppID。"));
+            }
+            crate::stt_cloud::test_xfyun_rt(&s.ai.stt_xfyun_app_id, &key).await
+        }
+        _ => Err(AppError::invalid("不认识的引擎。")),
+    }
+}

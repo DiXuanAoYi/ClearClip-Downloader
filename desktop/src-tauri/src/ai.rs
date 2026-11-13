@@ -1546,7 +1546,7 @@ async fn transcribe_cloud(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, inpu
             ctx.note(format!("火山引擎识别第 {} / {} 段…", i + 1, parts.len()));
             ctx.percent(i as f64 / parts.len() as f64 * 100.0);
             let bytes = std::fs::read(file)?;
-            let cues = crate::stt_cloud::volc_recognize(&client, &settings.ai.stt_volc_app_id, &key, &bytes, SEG * 1000).await?;
+            let cues = crate::stt_cloud::volc_recognize(&client, &settings.ai.stt_volc_app_id, &key, &bytes, SEG * 1000, settings.ai.stt_cloud_smooth).await?;
             crate::vsum::append_segment(&mut all, cues, *offset);
         }
         Ok(all)
@@ -1559,7 +1559,7 @@ async fn transcribe_cloud(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, inpu
         let bytes = std::fs::read(file)?;
         let approx_ms = bytes.len() as u64 * 8 / 32; // 32 kbps
         ctx.note("上传到讯飞并等待识别…");
-        crate::stt_cloud::xfyun_recognize(&client, &settings.ai.stt_xfyun_app_id, &secret, bytes, "audio.m4a", approx_ms, &|| ctx.canceled()).await
+        crate::stt_cloud::xfyun_recognize(&client, &settings.ai.stt_xfyun_app_id, &secret, bytes, "audio.m4a", approx_ms, settings.ai.stt_cloud_smooth, &|| ctx.canceled()).await
     }
 }
 

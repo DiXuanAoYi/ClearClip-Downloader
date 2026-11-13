@@ -616,6 +616,7 @@ pub fn run() {
             commands::phone_revoke,
             commands::phone_pair_respond,
             commands::phone_set_options,
+            ai_cmds::stt_cloud_test,
             commands::phone_chat_list,
             commands::phone_chat_clear,
             commands::transfer_list,
