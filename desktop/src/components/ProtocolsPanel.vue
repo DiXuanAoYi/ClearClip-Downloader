@@ -138,4 +138,12 @@ h3 {
   font-size: 12px;
   color: var(--cc-mute);
 }
+.status > span {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.status > .el-button {
+  flex: none;
+}
 </style>
