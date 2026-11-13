@@ -31,6 +31,9 @@ const text = computed(() => {
   return '拖链接到这里'
 })
 
+/** 空闲时在主文字下面补一行用法 */
+const hint = computed(() => (!msg.value && !busy.value && !over.value && !active.value ? '或点一下后按 Ctrl+V' : ''))
+
 function say(m: string, isBad = false) {
   msg.value = m
   bad.value = isBad
@@ -145,6 +148,9 @@ function calcFps() {
 let offs: UnlistenFn[] = []
 
 onMounted(async () => {
+  // 窗口是透明的：页面背景也要透明，胶囊才有自己的圆角和阴影
+  document.documentElement.style.background = 'transparent'
+  document.body.style.background = 'transparent'
   await app.load()
   await queue.start()
   window.addEventListener('paste', onPaste)
@@ -171,10 +177,13 @@ onBeforeUnmount(() => {
       @drop.prevent="onDrop"
       @dblclick="api.showMain()"
     >
-      <span class="ic" data-tauri-drag-region>⬇</span>
-      <span class="tx" data-tauri-drag-region :title="text">{{ text }}</span>
+      <span class="ic" data-tauri-drag-region><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14" /></svg></span>
+      <span class="tx" data-tauri-drag-region :title="text">
+        <b data-tauri-drag-region>{{ text }}</b>
+        <small v-if="hint" data-tauri-drag-region>{{ hint }}</small>
+      </span>
       <button v-if="scShown" class="tr" :class="{ on: sc?.running, open: scOpen }" type="button" :title="sc?.running ? '屏幕翻译进行中：点开控制' : '屏幕翻译'" @click.stop="setScOpen(!scOpen)">译</button>
-      <button class="x" type="button" title="关闭悬浮窗" @click.stop="hide">×</button>
+      <button class="x" type="button" title="关闭悬浮窗" aria-label="关闭悬浮窗" @click.stop="hide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg></button>
     </div>
     <div v-if="scShown && scOpen" class="panel">
       <button :title="`开始 / 停止（${hk.hotkey}）`" @click="act('toggle')">{{ sc?.running ? '停止' : '开始' }}</button>
@@ -189,85 +198,152 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
+<style>
+html, body, #app { background: transparent !important; overflow: hidden; }
+</style>
+
 <style scoped>
+/* 胶囊不跟随主题：始终是深蓝黑底 + 细亮边 + 阴影，在浅色和深色桌面上都看得清圆角 */
 .wrap {
   position: fixed;
   inset: 0;
+  box-sizing: border-box;
+  padding: 8px;
   display: flex;
-  gap: 6px;
+  gap: 8px;
+}
+.ball,
+.panel {
+  height: 48px;
+  box-sizing: border-box;
+  border-radius: 24px;
+  background: #0b1424;
+  border: 1px solid rgba(232, 240, 253, 0.22);
+  box-shadow: 0 6px 18px rgba(2, 6, 14, 0.38), 0 1px 3px rgba(2, 6, 14, 0.5);
+  color: #e8f0fd;
 }
 .ball {
   position: relative;
   flex: 0 0 auto;
   width: 100%;
-  max-width: 156px;
-  box-sizing: border-box;
+  max-width: 232px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px 0 12px;
-  background: var(--cc-card);
-  border: 1.5px dashed var(--cc-line);
-  border-radius: 14px;
-  color: var(--cc-fg);
+  gap: 9px;
+  padding: 0 8px 0 9px;
   font-size: 12px;
   cursor: grab;
   user-select: none;
   outline: none;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+}
+.ball:focus-visible {
+  border-color: #4be3d0;
 }
 .ball.over {
-  border-color: var(--cc-acc);
-  background: var(--cc-acc-soft);
+  border-color: #ffb547;
+  background: #2a2016;
+  box-shadow: 0 0 0 3px rgba(255, 181, 71, 0.28), 0 6px 18px rgba(2, 6, 14, 0.38);
 }
 .ball.bad {
-  border-color: var(--cc-err);
+  border-color: #ff7b8a;
 }
-.ball.busy .ic {
+.ball.busy .ic svg {
   animation: spin 1s linear infinite;
 }
 .ic {
-  font-size: 18px;
-  color: var(--cc-acc);
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 181, 71, 0.16);
+  color: #ffb547;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ic svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .tx {
   flex: 1;
-  line-height: 1.3;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+.tx b {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+}
+.tx small {
+  font-size: 10.5px;
+  color: #9aabc6;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .x {
   all: unset;
+  flex: none;
   cursor: pointer;
-  color: var(--cc-mute);
-  font-size: 15px;
-  line-height: 1;
-  padding: 2px 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #9aabc6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.x svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
 }
 .x:hover {
-  color: var(--cc-fg);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.x:focus-visible,
+.tr:focus-visible,
+.panel button:focus-visible {
+  outline: 2px solid #4be3d0;
+  outline-offset: 1px;
 }
 .tr {
   all: unset;
   cursor: pointer;
   flex: none;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: #2c4366;
-  color: #fff;
+  background: #1c2b43;
+  color: #e8f0fd;
   font-size: 12px;
   font-weight: 700;
   text-align: center;
-  line-height: 24px;
+  line-height: 26px;
 }
 .tr.on {
   background: #007a70;
 }
 .tr.open {
-  box-shadow: 0 0 0 2px var(--cc-acc);
+  box-shadow: 0 0 0 2px #ffb547;
 }
 .panel {
   flex: 1;
@@ -275,16 +351,14 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 3px;
   align-items: center;
-  padding: 4px 6px;
-  border-radius: 14px;
-  background: rgba(30, 36, 48, 0.94);
+  padding: 0 10px;
   overflow: hidden;
 }
 .panel button {
   border: 0;
-  border-radius: 12px;
-  padding: 0 8px;
-  height: 28px;
+  border-radius: 14px;
+  padding: 0 10px;
+  height: 30px;
   background: transparent;
   color: #d3deec;
   font: 600 12px/1 inherit;
@@ -292,11 +366,11 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .panel button:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.12);
 }
 .panel button.sel {
-  background: #b45f00;
-  color: #fff;
+  background: #ffb547;
+  color: #1a1100;
 }
 .live {
   color: #ffb547;
