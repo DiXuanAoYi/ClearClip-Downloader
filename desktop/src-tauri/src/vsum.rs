@@ -195,6 +195,11 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
             req.write.extra = crate::writeassist::with_memory(&req.write.extra, &settings.writing, &req.write.page);
         }
     }
+    // 字幕预处理（只作用在送给模型的文字上；文稿的显示和导出不变）
+    if matches!(req.kind.as_str(), "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate") {
+        let o = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
+        crate::subclean::prepare_lines(&mut req.lines, &o, matches!(req.kind.as_str(), "translate" | "punctuate"));
+    }
     let model = settings.ai.model.clone();
     let default_lang = settings.ai.target_lang.clone();
     let batch = settings.ai.batch_size;

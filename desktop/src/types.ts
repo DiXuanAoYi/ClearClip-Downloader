@@ -676,6 +676,9 @@ export interface AiSettings {
   targetLang: string
   bilingual: boolean
   batchSize: number
+  /** 送给 AI 前去掉非语音说明 / 口水词（不影响文稿显示和导出） */
+  subCleanHearing: boolean
+  subCleanFiller: 'off' | 'conservative' | 'standard' | 'aggressive'
   sttEngine: 'api' | 'local'
   sttBaseUrl: string
   sttModel: string

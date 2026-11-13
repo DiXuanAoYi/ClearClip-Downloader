@@ -1039,6 +1039,10 @@ pub struct AiSettings {
     pub cue_length: String,
     /// 句子仍然过长时，用 AI 按语义断句（多一次模型调用，结果缓存）
     pub cue_semantic: bool,
+    /// 送给 AI 前去掉非语音说明（`[Music]` `♪` `>>` 说话人前缀）；不影响文稿显示和导出
+    pub sub_clean_hearing: bool,
+    /// 送给 AI 前去掉口水词：off / conservative / standard / aggressive；不影响文稿显示和导出
+    pub sub_clean_filler: String,
 }
 
 impl Default for AiSettings {
@@ -1068,6 +1072,8 @@ impl Default for AiSettings {
             whisper_vad_model: String::new(),
             cue_length: "standard".into(),
             cue_semantic: false,
+            sub_clean_hearing: true,
+            sub_clean_filler: "conservative".into(),
         }
     }
 }

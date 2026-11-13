@@ -37,6 +37,8 @@ assert.equal(V.cleanCueText("&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;这个
 assert.equal(V.cleanCueText('&amp;lt;i&amp;gt;hi&amp;lt;/i&amp;gt; &amp;amp; bye'), 'hi & bye')
 assert.equal(V.cleanCueText("it&#x27;s&nbsp;a\u200bb"), "it's ab")
 assert.equal(V.cleanCueText('if a < b and c > d'), 'if a < b and c > d')
+// 中文字幕里的空格常常是分句用的，不去掉
+assert.equal(V.cleanCueText('你好 世界'), '你好 世界')
 assert.deepEqual(plain(V.parseSubtitleText('WEBVTT\n\n00:01.000 --> 00:02.000\n&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;你好&lt;/font&gt;&lt;/b&gt;\n')), [{ t: 1000, end: 2000, text: '你好' }])
 assert.equal(V.normalizeLines([{ t: 0, text: '&lt;b&gt;Hello.&lt;/b&gt;' }])[0].text, 'Hello.')
 assert.deepEqual(plain(V.parseSubtitleText(srt)), [{ t: 1000, end: 2000, text: '你好' }, { t: 3_600_500, end: 3_602_000, text: '一小时后' }])

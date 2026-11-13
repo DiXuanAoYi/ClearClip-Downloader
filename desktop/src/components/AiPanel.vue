@@ -63,6 +63,19 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <el-input-number v-model="ai.batchSize" size="small" :min="5" :max="100" :step="5" controls-position="right" />
       </div>
       <div class="kv">
+        <span>送给 AI 前去掉非语音说明<small class="mute block">[Music]、♪、(laughs)、&gt;&gt; 换人标记、说话人前缀。只影响送给模型的文字（摘要、导图、翻译等），文稿的显示和导出不变</small></span>
+        <el-switch v-model="ai.subCleanHearing" />
+      </div>
+      <div class="kv">
+        <span>送给 AI 前去掉口水词<small class="mute block">保守：嗯、呃、um、uh、结巴和叠词；标准：再加成串的口头禅（you know、那个那个）；激进：再加被逗号隔开的单个口头禅（like、就是）。只影响送给模型的文字，文稿的显示和导出不变</small></span>
+        <el-select v-model="ai.subCleanFiller" size="small" class="sel" data-testid="sub-clean-filler">
+          <el-option value="off" label="不去" />
+          <el-option value="conservative" label="保守（推荐）" />
+          <el-option value="standard" label="标准" />
+          <el-option value="aggressive" label="激进" />
+        </el-select>
+      </div>
+      <div class="kv">
         <span>下载到外语字幕时自动翻译<small class="mute block">作品里已经有目标语言的字幕就不再翻译；弹幕不翻译</small></span>
         <el-switch v-model="ai.autoTranslate" />
       </div>
