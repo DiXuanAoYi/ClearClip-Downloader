@@ -195,11 +195,13 @@ const x=h("button","rm","×");x.type="button";x.setAttribute("aria-label","移�
 function commitT(){const v=$("text").value.trim();if(v)draft.push({id:++dseq,kind:"text",text:v});$("text").value="";$("text").style.height=""}
 function stageFiles(fs){if(!fs.length)return;commitT();for(const f of fs.slice(0,50)){const d={id:++dseq,kind:"file",file:f};if(/\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(f.name))d.url=URL.createObjectURL(f);draft.push(d)}drender();say("")}
 $("send").onclick=async()=>{commitT();if(!draft.length){say("请先输入内容",1);return}
-$("send").disabled=true;try{while(draft.length){const d=draft[0];
+// 只发点击这一刻的草稿；发送过程中新放进来的，要等下一次点发送（不能被正在发的这一轮顺手带走）
+const batch=draft.splice(0);drender();
+$("send").disabled=true;try{while(batch.length){const d=batch[0];
 if(d.kind==="text"){const r=await api("/api/send",{method:"POST",body:JSON.stringify({text:d.text,device:dev,name:dname})});say(r.state==="pending_pair"?"第一次使用：请在电脑上点“允许”完成配对":r.state==="note"?"已发送到电脑的“收到的文件”":"")}
 else{const r=addFiles([d.file])[0];await new Promise(res=>{if(r.state!=="wait"&&r.state!=="up")res();else r.fin=res});if(r.state==="err")throw new Error(d.file.name+"："+(r.msg||"发送失败"))}
-if(d.url)URL.revokeObjectURL(d.url);draft.shift();drender()}
-refresh()}catch(e){say(e.state==="pending_pair"?"请先在电脑上点“允许”完成配对":e.message,1);drender()}finally{$("send").disabled=false}};
+if(d.url)URL.revokeObjectURL(d.url);batch.shift()}
+refresh()}catch(e){draft.unshift(...batch);say(e.state==="pending_pair"?"请先在电脑上点“允许”完成配对":e.message,1);drender()}finally{$("send").disabled=false}};
 $("text").oninput=()=>{const t=$("text");t.style.height="auto";t.style.height=Math.min(120,t.scrollHeight)+"px"};
 
 // ---------- 上传文件（直接把文件作为请求正文，浏览器边读边发，不进内存） ----------

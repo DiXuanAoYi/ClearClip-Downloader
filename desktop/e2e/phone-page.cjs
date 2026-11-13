@@ -88,7 +88,9 @@ const html = fs.readFileSync(path.join(__dirname, '../src-tauri/src/phone_page.h
   ok((await page.inputValue('#text')) === '', '输入框清空可以接着打字')
   await page.fill('#text', '请签收')
   await page.click('#send')
-  await page.waitForFunction(() => document.querySelectorAll('#tray .dc').length === 0, null, { timeout: 8000 })
+  // 点发送时草稿立刻移走、按顺序在后台发：等到发完（文字、文件、文字）
+  for (let i = 0; i < 80 && !(uploads.length === 1 && sent.length === 2); i++) await page.waitForTimeout(100)
+  ok((await page.locator('#tray .dc').count()) === 0, '点发送后草稿区清空')
   ok(uploads.join() === 'a.zip' && sent.length === 2 && sent[0].includes('这是合同') && sent[1].includes('请签收'), '点发送后按顺序发出：文字、文件、文字 → ' + JSON.stringify({ uploads, sent }))
   await page.waitForFunction(() => /a\.zip/.test(document.getElementById('feed').textContent))
   // 同一个文件只留一条：上传的这条（名字、大小都和电脑记录里的 a.zip 一样）和记录里的不重复显示

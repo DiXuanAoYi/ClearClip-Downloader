@@ -267,34 +267,37 @@ function onPaste(e: ClipboardEvent) {
 async function sendAll() {
   if (!canSend.value || sending.value) return
   commitText()
+  // 只发点击这一刻的草稿：发送过程中新放进来的，要等下一次点发送
+  const batchAll = draft.value.splice(0)
   sending.value = true
   try {
     let sentText = 0
     let sentFiles = 0
     // 连续的文件合成一批发，文字单独发；批与批之间按顺序等前一个完成
-    while (draft.value.length) {
-      const first = draft.value[0]
+    while (batchAll.length) {
+      const first = batchAll[0]
       if (first.kind === 'text') {
         await api.transferSendText(first.text, targetList())
         sentText++
-        draft.value.shift()
+        batchAll.shift()
       } else {
         const batch: string[] = []
         let n = 0
-        while (n < draft.value.length && draft.value[n].kind === 'file') {
-          batch.push((draft.value[n] as Extract<Seg, { kind: 'file' }>).path)
+        while (n < batchAll.length && batchAll[n].kind === 'file') {
+          batch.push((batchAll[n] as Extract<Seg, { kind: 'file' }>).path)
           n++
         }
         const r = await api.transferSendFiles(batch, targetList())
         sentFiles += r.added
         for (const w of r.skipped.slice(0, 3)) ElMessage.warning(w)
-        draft.value.splice(0, n)
+        batchAll.splice(0, n)
       }
     }
     ElMessage.success(sentFiles ? `已发送，手机网页的“电脑发来的”里可以下载${sentText ? '、复制' : ''}` : '已加入，手机网页里可以一键复制')
     await load()
   } catch (e) {
-    // 已发出的已经从草稿里去掉，剩下的留着，改好再点发送
+    // 已发出的已经去掉，没发的放回草稿最前面，改好再点发送
+    draft.value.unshift(...batchAll)
     ElMessage.error(errorText(e))
   } finally {
     sending.value = false
