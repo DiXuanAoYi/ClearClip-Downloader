@@ -382,8 +382,8 @@ async fn segmented(
     let (stop_tx, stop_rx) = watch::channel(CTRL_RUN);
     let permits = Arc::new(Semaphore::new(parallel.max(1)));
     let mut set = tokio::task::JoinSet::new();
-    for i in 0..meta.segments.len() {
-        if meta.segments[i].is_complete() {
+    for (i, seg) in meta.segments.iter().enumerate() {
+        if seg.is_complete() {
             continue;
         }
         let (client, req, part, state, validator, opts) = (client.clone(), req.clone(), part.to_path_buf(), state.clone(), validator.clone(), opts.clone());
