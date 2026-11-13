@@ -74,7 +74,7 @@ const ICONS: Record<string, string> = {
   file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
   text: '<path d="M4 6h16M4 12h16M4 18h10"/>',
 }
-const COLORS: Record<string, string> = { image: '#c98a3b', video: '#4b7bb5', audio: '#7a8f6a', archive: '#8a6d3b', file: '#d9772f', text: '#7a62b5' }
+const COLORS: Record<string, string> = { image: '#c98a3b', video: '#4b7bb5', audio: '#7a8f6a', archive: '#8a6d3b', file: '#b45f00', text: '#7a62b5' }
 const iconOf = (k: string) => ICONS[k] ?? ICONS.file
 const colorOf = (k: string) => COLORS[k] ?? COLORS.file
 /** 日期分隔：同一天只显示一次 */
@@ -438,26 +438,26 @@ onUnmounted(() => {
 
 <style scoped>
 .xfer {
-  --x-acc: #d9772f;
+  --x-acc: #b45f00;
   --x-acfg: #fff;
-  --x-ob: #fbe9d9;
-  --x-obl: #f1d0b2;
-  --x-obfg: #3a2a1c;
-  --x-obmt: #85684c;
-  --x-ok: #23703f;
-  --x-chip: #efe9e0;
-  --x-chipfg: #1a1510;
+  --x-ob: #fbf1e2;
+  --x-obl: #e3b475;
+  --x-obfg: #3a2500;
+  --x-obmt: #8a5a1a;
+  --x-ok: #007a70;
+  --x-chip: #e4ebf5;
+  --x-chipfg: #0b1424;
 }
 :global(html.dark) .xfer {
-  --x-acc: #f08c3e;
-  --x-acfg: #1b1207;
-  --x-ob: #4a2f1b;
-  --x-obl: #6a4426;
-  --x-obfg: #fdf0e3;
+  --x-acc: #ffb547;
+  --x-acfg: #1a1100;
+  --x-ob: #2a2016;
+  --x-obl: #8a6328;
+  --x-obfg: #ffe9c4;
   --x-obmt: #d7b793;
-  --x-ok: #6fd49a;
-  --x-chip: #3a342d;
-  --x-chipfg: #f5efe7;
+  --x-ok: #4be3d0;
+  --x-chip: #131f33;
+  --x-chipfg: #e8f0fd;
 }
 .xfer {
     display: flex;
@@ -496,7 +496,7 @@ onUnmounted(() => {
   background: currentColor;
 }
 .pill.ok {
-  background: color-mix(in srgb, #2f9d5b 14%, transparent);
+  background: color-mix(in srgb, #4be3d0 14%, transparent);
   color: var(--x-ok);
 }
 .pill.off {
@@ -547,7 +547,7 @@ onUnmounted(() => {
   border-radius: 12px;
   padding: 10px;
   box-sizing: border-box;
-  border: 1px solid #efe9e0;
+  border: 1px solid var(--cc-line);
 }
 .qr :deep(svg) {
   width: 100%;

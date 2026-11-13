@@ -256,7 +256,7 @@ onBeforeUnmount(() => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #3a4a63;
+  background: #2c4366;
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -264,7 +264,7 @@ onBeforeUnmount(() => {
   line-height: 24px;
 }
 .tr.on {
-  background: #1f9d55;
+  background: #007a70;
 }
 .tr.open {
   box-shadow: 0 0 0 2px var(--cc-acc);
@@ -286,7 +286,7 @@ onBeforeUnmount(() => {
   padding: 0 8px;
   height: 28px;
   background: transparent;
-  color: #e6ebf3;
+  color: #d3deec;
   font: 600 12px/1 inherit;
   cursor: pointer;
   white-space: nowrap;
@@ -295,11 +295,11 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.14);
 }
 .panel button.sel {
-  background: #2f6fed;
+  background: #b45f00;
   color: #fff;
 }
 .live {
-  color: #f0a064;
+  color: #ffb547;
   padding: 0 6px;
   font-size: 12px;
   white-space: nowrap;

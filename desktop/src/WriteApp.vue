@@ -891,12 +891,12 @@ onBeforeUnmount(() => {
 <style>
 /* 窗口本身是透明的：页面底色一律透明，只有里面那张圆角卡片有颜色，窗口四周不会再有任何多余的底层容器 */
 html, body, #app { background: transparent !important; overflow: hidden; }
-html.dark .shell .wa { --acc: #f08a3c; --accd: #c8641f; --soft: #3a2a1d; --line: #2f383c; --bg: #1a2023; --card: #22292c; --mut: #9aa6a2; --err: #ec7a70; --ok: #5cc28a; --fg: #e7ecea; --shadow: 0 10px 30px rgba(0, 0, 0, 0.55), 0 0 0 1px #2f383c; }
+html.dark .shell .wa { --acc: #ffb547; --accd: #ffb547; --soft: #ffb54721; --line: #1c2b43; --bg: #080d16; --card: #0e1625; --mut: #9aabc6; --err: #ff7b8a; --ok: #4be3d0; --fg: #e8f0fd; --shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px #2c4366; }
 html.dark .shell .sg.on { color: var(--acc); background: var(--soft); }
 html.dark .shell .ghost.on { color: var(--acc); }
 html.dark .shell .foot a { color: var(--acc); }
 /* 暗色：选中的选项和主按钮用亮橙底配深色字（亮色主题用深一档的橙） */
-html.dark .shell .wa { --pick: #f5a466; --go: #f08a3c; --gofg: #1a2023; --look: #b9c3bf; --dash: #3a4448; }
+html.dark .shell .wa { --pick: #ffc760; --go: #ffb547; --gofg: #1a1100; --look: #c2cfe4; --dash: #2c4366; }
 .personas { display: grid; grid-template-columns: 1fr 1fr; gap: 6px }
 .pcard { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font: inherit }
 .pcard b { font-size: 13px }
@@ -906,11 +906,11 @@ html.dark .shell .wa { --pick: #f5a466; --go: #f08a3c; --gofg: #1a2023; --look: 
 
 <style scoped>
 .shell { --m: 10px; position: relative; height: 100vh; padding: var(--m); box-sizing: border-box; }
-.wa { --pick: #8a3d0f; --go: #b4561a; --gofg: #fff; --look: #4d5853; --dash: #d6dbd8; --acc: #d9762b; --accd: #b4561a; --soft: #fbeadb; --line: #e1e5e2; --bg: #f5f6f5; --card: #fff; --mut: #66716c; --err: #c2453b; --ok: #2f8a57; --fg: #1d2420; --shadow: 0 8px 28px rgba(20, 30, 25, 0.22), 0 1px 3px rgba(20, 30, 25, 0.18);
-  height: 100%; display: flex; flex-direction: column; background: var(--card); color: var(--fg); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; }
+.wa { --pick: #8a4a00; --go: #b45f00; --gofg: #fff; --look: #34445f; --dash: #aebfd8; --acc: #b45f00; --accd: #b45f00; --soft: #f59e0b24; --line: #d3deec; --bg: #eaf0f7; --card: #f6f9fd; --mut: #4d5f7b; --err: #c4283d; --ok: #007a70; --fg: #0b1424; --shadow: 0 8px 28px rgba(20, 30, 25, 0.22), 0 1px 3px rgba(20, 30, 25, 0.18);
+  height: 100%; display: flex; flex-direction: column; background: var(--card); color: var(--fg); border-radius: 14px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; }
 .bar { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px 14px; cursor: grab; user-select: none; background: var(--bg); border-bottom: 1px solid var(--line); }
 .bar:active { cursor: grabbing; }
-.logo { width: 24px; height: 24px; border-radius: 8px; background: linear-gradient(135deg, var(--acc), var(--accd)); color: #fff; display: grid; place-items: center; font: 700 12px/1 inherit; flex: none; }
+.logo { width: 24px; height: 24px; border-radius: 8px; background: var(--acc); color: var(--gofg, #1a1100); display: grid; place-items: center; font: 700 12px/1 inherit; flex: none; }
 .ttl { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
 .ttl b { font-size: 14px; }
 .from { font-size: 11px; line-height: 20px; padding: 0 9px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
@@ -964,9 +964,9 @@ main { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-dire
 .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .row.after { font-size: 12px; }
 textarea.src.live { color: var(--mute, #7a847e) }
-.meter { width: 46px; height: 6px; border-radius: 3px; background: var(--line, #d9dedb); overflow: hidden; display: inline-block }
-.meter i { display: block; height: 100%; background: var(--acc, #d9762b); transition: width .08s }
-.engsel { height: 24px; font-size: 12px; border: 1px solid var(--line, #d9dedb); border-radius: 6px; background: transparent; color: inherit }
+.meter { width: 46px; height: 6px; border-radius: 3px; background: var(--line, #d3deec); overflow: hidden; display: inline-block }
+.meter i { display: block; height: 100%; background: var(--acc, #b45f00); transition: width .08s }
+.engsel { height: 24px; font-size: 12px; border: 1px solid var(--line, #d3deec); border-radius: 6px; background: transparent; color: inherit }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
 .hint { color: var(--mut); }
 .err { color: var(--err); margin: 0; }

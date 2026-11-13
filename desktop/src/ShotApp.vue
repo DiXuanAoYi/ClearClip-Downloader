@@ -381,22 +381,22 @@ const listStyle = computed(() => {
 <style scoped>
 .root { position: fixed; inset: 0; overflow: hidden; cursor: crosshair; user-select: none; background: #000; }
 .bg { position: absolute; inset: 0; width: 100%; height: 100%; filter: brightness(0.6); pointer-events: none; }
-.tip { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); background: #1d2420; color: #fff; border-radius: 8px; padding: 6px 14px; font-size: 13px; pointer-events: none; }
-.frame { position: absolute; border: 2px solid #f08a3c; box-shadow: 0 0 0 9999px #0000; background: transparent; pointer-events: none; overflow: hidden; }
-.result { position: absolute; cursor: default; box-shadow: 0 0 0 2px #f08a3c, 0 8px 30px #0008; }
-.bar { position: absolute; display: flex; gap: 6px; align-items: center; background: #fff; color: #1d2420; border-radius: 8px; padding: 6px 8px; box-shadow: 0 6px 24px #0006; font-size: 13px; cursor: default; }
-.bar button { border: 1px solid #cfc9bd; background: #fff; border-radius: 6px; padding: 3px 9px; cursor: pointer; font: inherit; color: inherit; }
-.bar button.on { background: #f08a3c; border-color: #f08a3c; color: #fff; }
-.err { color: #b3261e; }
-.list { position: absolute; width: 320px; max-height: 60vh; overflow: auto; background: #fff; color: #1d2420; border-radius: 10px; padding: 6px 12px; box-shadow: 0 6px 24px #0006; font-size: 13px; line-height: 1.5; cursor: default; }
+.tip { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); background: #0b1424; color: #fff; border-radius: 8px; padding: 6px 14px; font-size: 13px; pointer-events: none; }
+.frame { position: absolute; border: 2px solid #ffb547; box-shadow: 0 0 0 9999px #0000; background: transparent; pointer-events: none; overflow: hidden; }
+.result { position: absolute; cursor: default; box-shadow: 0 0 0 2px #ffb547, 0 8px 30px #0008; }
+.bar { position: absolute; display: flex; gap: 6px; align-items: center; background: #fff; color: #0b1424; border-radius: 8px; padding: 6px 8px; box-shadow: 0 6px 24px #0006; font-size: 13px; cursor: default; }
+.bar button { border: 1px solid #aebfd8; background: #fff; border-radius: 6px; padding: 3px 9px; cursor: pointer; font: inherit; color: inherit; }
+.bar button.on { background: #ffb547; border-color: #ffb547; color: #fff; }
+.err { color: #c4283d; }
+.list { position: absolute; width: 320px; max-height: 60vh; overflow: auto; background: #fff; color: #0b1424; border-radius: 10px; padding: 6px 12px; box-shadow: 0 6px 24px #0006; font-size: 13px; line-height: 1.5; cursor: default; }
 .row { padding: 6px 0; border-top: 1px solid #eee; cursor: pointer; }
 .row:first-child { border-top: 0; }
 .o { color: #777; font-size: 12px; }
 .t { font-weight: 600; }
-.cmp { border-bottom: 2px solid #f0a064; margin-bottom: 4px; }
+.cmp { border-bottom: 2px solid #ffb547; margin-bottom: 4px; }
 .ci { padding: 6px 0; border-top: 1px solid #eee; cursor: pointer; }
 .ci:first-child { border-top: 0; }
-.ci b { font-size: 12px; color: #b4561a; }
+.ci b { font-size: 12px; color: #b45f00; }
 .keys { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: #1d2420cc; color: #fff; padding: 4px 12px; border-radius: 999px; font-size: 12px; pointer-events: none; }
-.toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #1d2420; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 13px; }
+.toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #0b1424; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 13px; }
 </style>

@@ -171,7 +171,7 @@ const INIT = (pending, extra = {}) => `
     ok('只问勾上的（含自己加的）', JSON.stringify(req?.write.reply.questions) === JSON.stringify(['指的是哪一份方案', '发到哪个群']), JSON.stringify(req?.write.reply))
     ok('写回按钮叫“替换到飞书”', (await page.locator('.res .go.sm').innerText()) === '替换到飞书')
     const goBg = await page.locator('.res .go.sm').evaluate((e) => getComputedStyle(e).backgroundColor + '|' + getComputedStyle(e).color)
-    ok('暗色主按钮：亮橙底、深色字', goBg === 'rgb(240, 138, 60)|rgb(26, 32, 35)', goBg)
+    ok('暗色主按钮：琥珀底、深色字', goBg === 'rgb(255, 181, 71)|rgb(26, 17, 0)', goBg)
     await page.close()
   }
 

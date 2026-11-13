@@ -174,7 +174,7 @@ async function downloadNow() {
   flex: none;
   font-size: 11px;
   font-weight: 700;
-  color: #1a1208;
+  color: #1a1100;
   background: var(--cc-acc);
   border-radius: 4px;
   padding: 2px 6px;

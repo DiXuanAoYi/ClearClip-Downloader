@@ -3,12 +3,12 @@
 <meta name="color-scheme" content="light dark">
 <title>清影 隔空传送</title>
 <style>
-:root{--bg:#f6f4f1;--bar:#fbfaf8;--sf:#ffffff;--ln:#e8e2d9;--fg:#2a2622;--mt:#766f66;--ac:#d9772f;--acfg:#ffffff;--ob:#fbe9d9;--obl:#f1d0b2;--obfg:#3a2a1c;--obmt:#85684c;--ok:#23703f;--ch:#efe9e0;--er:#b53b30;--sh:rgba(0,0,0,.18)}
-@media (prefers-color-scheme:dark){:root{--bg:#141210;--bar:#1b1916;--sf:#24211e;--ln:#37322c;--fg:#f2eee8;--mt:#a89f94;--ac:#f08c3e;--acfg:#1b1207;--ob:#4a2f1b;--obl:#6a4426;--obfg:#fdf0e3;--obmt:#d7b793;--ok:#6fd49a;--ch:#2e2a26;--er:#ff8a80;--sh:rgba(0,0,0,.6)}}
+:root{--bg:#eaf0f7;--bar:#f6f9fd;--sf:#ffffff;--ln:#d3deec;--fg:#0b1424;--mt:#4d5f7b;--ac:#b45f00;--acfg:#ffffff;--ob:#fbf1e2;--obl:#e3b475;--obfg:#3a2500;--obmt:#8a5a1a;--ok:#007a70;--ch:#e4ebf5;--er:#c4283d;--sh:rgba(6,10,18,.25)}
+@media (prefers-color-scheme:dark){:root{--bg:#060a12;--bar:#080d16;--sf:#0e1625;--ln:#1c2b43;--fg:#e8f0fd;--mt:#9aabc6;--ac:#ffb547;--acfg:#1a1100;--ob:#2a2016;--obl:#8a6328;--obfg:#ffe9c4;--obmt:#d7b793;--ok:#4be3d0;--ch:#131f33;--er:#ff7b8a;--sh:rgba(0,0,0,.6)}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+body{margin:0;background:linear-gradient(rgba(120,160,220,.05) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(90deg,rgba(120,160,220,.05) 1px,transparent 1px) 0 0/44px 44px,var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;display:flex;flex-direction:column;height:100dvh;overflow:hidden}
 svg.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 header{padding:calc(12px + env(safe-area-inset-top)) 18px 0;background:var(--bar);border-bottom:1px solid var(--ln);display:flex;flex-direction:column;gap:8px}
 .brand{display:flex;align-items:center;gap:10px}
@@ -130,7 +130,7 @@ const S={pending_pair:"等待电脑确认配对",rejected:"电脑拒绝了配对
 const $=id=>document.getElementById(id);
 const enc=encodeURIComponent;
 const SVG={file:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',image:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 9"/>',video:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>',audio:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',warn:'<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>',x:'<path d="M6 6l12 12M18 6 6 18"/>',dl:'<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>'};
-const COLOR={image:"#c98a3b",video:"#4b7bb5",audio:"#6f8760",file:"#d9772f",archive:"#8a6d3b",text:"#7a62b5",warn:"#b53b30"};
+const COLOR={image:"#c98a3b",video:"#4b7bb5",audio:"#6f8760",file:"#b45f00",archive:"#8a6d3b",text:"#7a62b5",warn:"#b53b30"};
 function ic(n){const s=document.createElementNS("http://www.w3.org/2000/svg","svg");s.setAttribute("viewBox","0 0 24 24");s.setAttribute("class","ic");s.innerHTML=SVG[n]||SVG.file;return s}
 function h(tag,cls,...kids){const e=document.createElement(tag);if(cls)e.className=cls;for(const k of kids){if(k!=null)e.append(k)}return e}
 function fmt(n){if(n<1024)return n+" B";const u=["KB","MB","GB","TB"];let i=-1;do{n/=1024;i++}while(n>=1024&&i<3);return n.toFixed(n<10?1:0)+" "+u[i]}

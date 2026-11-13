@@ -113,8 +113,8 @@ html, body { margin: 0; overflow: hidden; background: #000; }
 .pick { position: fixed; inset: 0; cursor: crosshair; user-select: none; }
 .shot { position: absolute; inset: 0; width: 100%; height: 100%; }
 .dim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.35); pointer-events: none; }
-.hov { position: absolute; border: 2px solid #2f6fed; background: rgba(47, 111, 237, 0.18); pointer-events: none; }
-.hov span { position: absolute; left: 0; top: -22px; background: #2f6fed; color: #fff; font: 12px/20px -apple-system, 'Microsoft YaHei', sans-serif; padding: 0 8px; border-radius: 3px; white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
-.sel { position: absolute; border: 2px solid #1f9d55; background: rgba(31, 157, 85, 0.16); pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25); }
+.hov { position: absolute; border: 2px solid #b45f00; background: rgba(47, 111, 237, 0.18); pointer-events: none; }
+.hov span { position: absolute; left: 0; top: -22px; background: #b45f00; color: #fff; font: 12px/20px -apple-system, 'Microsoft YaHei', sans-serif; padding: 0 8px; border-radius: 3px; white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
+.sel { position: absolute; border: 2px solid #007a70; background: rgba(31, 157, 85, 0.16); pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25); }
 .tip { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(20, 24, 32, 0.9); color: #fff; padding: 6px 14px; border-radius: 16px; font: 13px/1.2 -apple-system, 'Microsoft YaHei', sans-serif; pointer-events: none; }
 </style>
