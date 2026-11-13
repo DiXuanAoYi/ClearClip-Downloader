@@ -1036,6 +1036,7 @@
     // 先预处理，再带出以前生成的结果（缓存键按清理后的行算）
     // 同一份文稿以前生成的所有结果和对话直接带出来（不需要大模型）；会话里没有的摘要再去缓存里找
     autoClean(d)
+      .then(() => (S.data === d ? applyEditsDoc(d) : null))
       .then(() => (S.data === d ? restoreSession(d) : null))
       .then(async () => {
         if (S.data !== d) return
@@ -1132,7 +1133,7 @@
   // ---------- 各标签页（vsum-*.js）：依赖从这里传进去 ----------
 
   const TABS_ = globalThis.ccVsumTabs
-  const { getSel, tabTranscript, punctuate: punctuateDoc } = TABS_.transcript({
+  const { getSel, tabTranscript, punctuate: punctuateDoc, applyEdits: applyEditsDoc } = TABS_.transcript({
     S, V, actsBar, addNote, copy, h, isVideo, langSelect, onSelect, outLabel, render, saveFile, savePrefs, seek,
     sel, send, setData, syncSubLayer, task, tick, toast, trackBar, translateDoc, ui, video
   })

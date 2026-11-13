@@ -303,6 +303,8 @@ fn new_kinds_validate_their_inputs() {
         assert!(check(&Req { kind: kind.into(), text: "hello".into(), ..Default::default() }).is_ok());
     }
     assert!(check(&Req { kind: "punctuate".into(), ..Default::default() }).is_err());
+    assert!(check(&Req { kind: "fixasr".into(), ..Default::default() }).is_err());
+    assert!(check(&Req { kind: "fixasr".into(), lines: vec![Line { t: 0, text: "hello".into() }], ..Default::default() }).is_ok());
     let one = Req { kind: "punctuate".into(), lines: vec![Line { t: 0, text: "你好 世界".into() }], ..Default::default() };
     assert!(check(&one).is_ok());
     let long = Req { system: "x".repeat(20_001), ..one.clone() };
