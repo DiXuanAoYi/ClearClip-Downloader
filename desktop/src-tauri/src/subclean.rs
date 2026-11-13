@@ -41,7 +41,9 @@ fn re(p: &str) -> Regex {
 static BRACKETED: LazyLock<Regex> = LazyLock::new(|| re(r"\[[^\[\]]{0,40}\]|【[^【】]{0,40}】|［[^［］]{0,40}］"));
 /// 圆括号里只有这些词才算说明（`(1)` `(see below)` 这类是正文）
 static PAREN_NOTE: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"(?i)[\(（]\s*(?:laugh(?:s|ter|ing)?|applause|applauding|cheer(?:s|ing)?|music|singing|sighs?|sniffs?|coughs?|clears throat|gasps?|crying|sobbing|inaudible|silence|whispers?|chuckles?|groans?|screams?|laughs softly|笑|笑声|掌声|音乐|歌声|叹气|咳嗽|哭|无声|静音|鼓掌)\s*[\)）]")
+    re(
+        r"(?i)[\(（]\s*(?:laugh(?:s|ter|ing)?|applause|applauding|cheer(?:s|ing)?|music|singing|sighs?|sniffs?|coughs?|clears throat|gasps?|crying|sobbing|inaudible|silence|whispers?|chuckles?|groans?|screams?|laughs softly|笑|笑声|掌声|音乐|歌声|叹气|咳嗽|哭|无声|静音|鼓掌)\s*[\)）]",
+    )
 });
 static MUSIC_SYMBOLS: LazyLock<Regex> = LazyLock::new(|| re(r"[♪♫♬♩🎵🎶]+"));
 static SPEAKER_ARROWS: LazyLock<Regex> = LazyLock::new(|| re(r"^\s*(?:>>+|»+|&gt;&gt;)\s*"));
@@ -76,7 +78,8 @@ static EN_LIKE: LazyLock<Regex> = LazyLock::new(|| re(r"(?i),\s*(?:like|basicall
 static ZH_TICS: LazyLock<Regex> = LazyLock::new(|| re(r"[，,]\s*(?:那个|就是|然后|这个|对吧|你知道)\s*[，,]"));
 
 /// 可以安全叠用的短词：连续重复只留一个（`I I think` → `I think`）。`had had`、`that that` 这类真的可以重复，不在表里。
-const STUTTER_WORDS: &[&str] = &["i", "the", "a", "an", "to", "and", "it", "we", "you", "they", "he", "she", "is", "in", "of", "so", "but", "my", "your", "our", "that's", "i'm", "it's"];
+const STUTTER_WORDS: &[&str] =
+    &["i", "the", "a", "an", "to", "and", "it", "we", "you", "they", "he", "she", "is", "in", "of", "so", "but", "my", "your", "our", "that's", "i'm", "it's"];
 
 fn collapse_en_repeats(s: &str) -> String {
     let mut out: Vec<&str> = vec![];
@@ -175,7 +178,7 @@ pub fn clean_line(text: &str, o: &Opts) -> String {
     t = strip_fillers(&t, o.filler);
     // 去掉清理后留下的孤立标点和多余空白：行首的逗号句号、连续空格、逗号前的空格
     let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
-    let t = t.trim_start_matches(|c: char| matches!(c, ',' | '，' | '、' | '.' | ';' | '；')).trim().to_string();
+    let t = t.trim_start_matches([',', '，', '、', '.', ';', '；']).trim().to_string();
     if has_content(&t) {
         t
     } else {
@@ -273,7 +276,7 @@ mod tests {
         assert_eq!(c("♪ ♪ la la ♪"), "la la");
         assert_eq!(c("Thanks [Applause] everyone"), "Thanks everyone");
         assert_eq!(c("(laughs) That was good"), "That was good");
-        assert_eq!(c("这是[音乐]一首歌"), "这是 一首歌".replace(' ', " "));
+        assert_eq!(c("这是[音乐]一首歌"), "这是 一首歌");
         assert_eq!(c(">> So we begin"), "So we begin");
         assert_eq!(c("JOHN: hello there"), "hello there");
         assert_eq!(c("you [ __ ] idiot"), "you idiot");
@@ -332,11 +335,19 @@ mod tests {
 
     #[test]
     fn report_and_cue_cleaning() {
-        let lines: Vec<crate::vsum::Line> = ["[Music]", "Um, hello there", "plain line", "♪ ♪"].iter().enumerate().map(|(i, t)| crate::vsum::Line { t: i as u64 * 1000, text: (*t).into() }).collect();
+        let lines: Vec<crate::vsum::Line> = ["[Music]", "Um, hello there", "plain line", "♪ ♪"]
+            .iter()
+            .enumerate()
+            .map(|(i, t)| crate::vsum::Line { t: i as u64 * 1000, text: (*t).into() })
+            .collect();
         let (out, rep) = clean_with_report(&lines, &o(Level::Conservative));
         assert_eq!(out.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), vec!["hello there", "plain line"]);
         assert_eq!(rep, Report { hearing: 2, filler: 1, emptied: 2 });
-        let cues = vec![crate::subtitle::Cue { start: 0, end: 1000, lines: vec!["Uh, hi".into()] }, crate::subtitle::Cue { start: 1000, end: 2000, lines: vec!["[Applause]".into()] }, crate::subtitle::Cue { start: 2000, end: 3000, lines: vec!["same".into()] }];
+        let cues = vec![
+            crate::subtitle::Cue { start: 0, end: 1000, lines: vec!["Uh, hi".into()] },
+            crate::subtitle::Cue { start: 1000, end: 2000, lines: vec!["[Applause]".into()] },
+            crate::subtitle::Cue { start: 2000, end: 3000, lines: vec!["same".into()] },
+        ];
         let (c, n) = clean_cues(&cues, &o(Level::Conservative));
         assert_eq!((c.len(), n), (2, 2));
     }

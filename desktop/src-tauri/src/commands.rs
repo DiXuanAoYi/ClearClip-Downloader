@@ -401,7 +401,8 @@ pub fn transfer_stage_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> 
         return Err(crate::error::AppError::msg("粘贴的文件超过 512 MB，请直接拖进窗口，或点“选择文件”"));
     }
     let raw = request.headers().get("x-name").and_then(|v| v.to_str().ok()).unwrap_or("file");
-    let decoded: String = url::form_urlencoded::parse(format!("n={}", raw.replace('+', "%2B")).as_bytes()).next().map(|(_, v)| v.into_owned()).unwrap_or_else(|| "file".into());
+    let decoded: String =
+        url::form_urlencoded::parse(format!("n={}", raw.replace('+', "%2B")).as_bytes()).next().map(|(_, v)| v.into_owned()).unwrap_or_else(|| "file".into());
     let name = crate::transfer::safe_name(&decoded);
     let dir = app.state::<std::sync::Arc<crate::AppState>>().data_dir.join("transfer-paste");
     std::fs::create_dir_all(&dir)?;

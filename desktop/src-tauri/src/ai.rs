@@ -974,7 +974,8 @@ pub async fn split_audio_fmt(ffmpeg: &Path, input: &Path, dir: &Path, seg_secs: 
         dir.join(if wav { "part_%03d.wav" } else { "part_%03d.m4a" }).to_string_lossy().into_owned(),
     ]);
     run_ffmpeg_in(ffmpeg, &a, None).await?;
-    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "m4a" || e == "wav")).collect();
+    let mut files: Vec<PathBuf> =
+        std::fs::read_dir(dir)?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "m4a" || e == "wav")).collect();
     files.sort();
     if files.is_empty() {
         return Err(AppError::invalid("这个文件里没有可以转写的音频。"));
@@ -1559,7 +1560,10 @@ async fn transcribe_cloud(ctx: &JobCtx, settings: &Settings, ffmpeg: &Path, inpu
         let bytes = std::fs::read(file)?;
         let approx_ms = bytes.len() as u64 * 8 / 32; // 32 kbps
         ctx.note("上传到讯飞并等待识别…");
-        crate::stt_cloud::xfyun_recognize(&client, &settings.ai.stt_xfyun_app_id, &secret, bytes, "audio.m4a", approx_ms, settings.ai.stt_cloud_smooth, &|| ctx.canceled()).await
+        crate::stt_cloud::xfyun_recognize(&client, &settings.ai.stt_xfyun_app_id, &secret, bytes, "audio.m4a", approx_ms, settings.ai.stt_cloud_smooth, &|| {
+            ctx.canceled()
+        })
+        .await
     }
 }
 

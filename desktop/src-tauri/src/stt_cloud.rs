@@ -4,7 +4,6 @@
 //! 注意：写这个模块时无法访问两家的官方文档站点，接口细节来自公开资料和已知用法，**还没有用真实密钥跑通过**。
 //! 解析函数对返回格式做了尽量宽松的处理，并有单元测试；第一次用请先在“设置 → AI → 语音转文字”里点“测试连接”。
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -162,7 +161,17 @@ pub fn parse_xfyun_order_result(order_result: &str, drop_smooth: bool) -> Vec<Cu
     out
 }
 
-pub async fn xfyun_recognize(client: &reqwest::Client, app_id: &str, secret: &str, audio: Vec<u8>, file_name: &str, duration_ms: u64, drop_smooth: bool, stop: &(dyn Fn() -> bool + Sync)) -> AppResult<Vec<Cue>> {
+#[allow(clippy::too_many_arguments)]
+pub async fn xfyun_recognize(
+    client: &reqwest::Client,
+    app_id: &str,
+    secret: &str,
+    audio: Vec<u8>,
+    file_name: &str,
+    duration_ms: u64,
+    drop_smooth: bool,
+    stop: &(dyn Fn() -> bool + Sync),
+) -> AppResult<Vec<Cue>> {
     let ts = crate::db::now().to_string();
     let signa = xfyun_signa(app_id, secret, &ts);
     let url = format!(
@@ -497,7 +506,9 @@ mod tests {
                     _ => {}
                 }
             }
-            let part = |t: &str, ty: &str| json!({"action": "result", "code": "0", "data": json!({"cn": {"st": {"type": ty, "rt": [{"ws": [{"cw": [{"w": t, "wp": "n"}]}]}]}}}).to_string()}).to_string();
+            let part = |t: &str, ty: &str| {
+                json!({"action": "result", "code": "0", "data": json!({"cn": {"st": {"type": ty, "rt": [{"ws": [{"cw": [{"w": t, "wp": "n"}]}]}]}}}).to_string()}).to_string()
+            };
             ws.send(Message::Text(part("你", "1").into())).await.unwrap();
             ws.send(Message::Text(part("你好", "0").into())).await.unwrap();
             ws.send(Message::Text(part("世界。", "0").into())).await.unwrap();

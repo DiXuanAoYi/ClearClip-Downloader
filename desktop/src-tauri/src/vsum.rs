@@ -863,7 +863,11 @@ fn start_tracks(app: &tauri::AppHandle, req: Req) -> AppResult<u64> {
 }
 
 fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
-    cues.iter().map(|c| (c.start, crate::subtitle::clean_text(&c.lines.join(" ")))).filter(|(_, t)| !t.is_empty()).map(|(t, text)| json!({"t": t, "text": text})).collect()
+    cues.iter()
+        .map(|c| (c.start, crate::subtitle::clean_text(&c.lines.join(" "))))
+        .filter(|(_, t)| !t.is_empty())
+        .map(|(t, text)| json!({"t": t, "text": text}))
+        .collect()
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
@@ -909,7 +913,8 @@ pub fn check(req: &Req) -> AppResult<()> {
     if size > MAX_CHARS {
         return Err(AppError::invalid("内容太长，超过了一次能处理的上限。"));
     }
-    let needs_lines = matches!(req.kind.as_str(), "preclean" | "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
+    let needs_lines =
+        matches!(req.kind.as_str(), "preclean" | "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
     if needs_lines && req.lines.iter().all(|l| l.text.trim().is_empty()) {
         return Err(AppError::invalid("没有可处理的字幕。"));
     }

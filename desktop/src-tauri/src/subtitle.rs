@@ -17,7 +17,6 @@ pub struct Cue {
     pub lines: Vec<String>,
 }
 
-static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
 static ROLLING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<\d{1,2}:\d{2}:\d{2}\.\d{3}>").unwrap());
 
 fn unescape_once(s: &str) -> String {
@@ -36,9 +35,8 @@ fn unescape_once(s: &str) -> String {
 }
 
 static TAGLIKE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"</?[A-Za-z][^<>]*>|<\d{1,2}:\d{2}(?::\d{2})?[.,]\d{1,3}>").unwrap());
-static KNOWN_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)</?(?:b|i|u|s|em|strong|font|c|v|ruby|rt|rp|lang|span|br|p|div)\b[^>]*>|<\d{1,2}:\d{2}(?::\d{2})?[.,]\d{1,3}>").unwrap()
-});
+static KNOWN_TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)</?(?:b|i|u|s|em|strong|font|c|v|ruby|rt|rp|lang|span|br|p|div)\b[^>]*>|<\d{1,2}:\d{2}(?::\d{2})?[.,]\d{1,3}>").unwrap());
 
 /// 一行字幕文字的清理：先去一遍标记，再解 HTML 实体（最多两轮，认命名和数字写法），每轮解完再去一遍常见标记。
 /// 有些字幕的标记是转义过的（`&lt;b&gt;&lt;font color=&#39;#e27717&#39;&gt;…`），只“先去标记再解实体”会留下一串字面的 `<b><font …>`。
@@ -59,7 +57,6 @@ pub fn clean_text(l: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
-
 
 /// `00:01:02.500` / `01:02.500` / `00:01:02,500` → 毫秒。
 fn parse_time(s: &str) -> Option<u64> {

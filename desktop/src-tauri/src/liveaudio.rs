@@ -292,7 +292,10 @@ async fn recognize_cloud(st: &std::sync::Arc<crate::AppState>, wav: &std::path::
         let cues = crate::stt_cloud::volc_recognize(&client, &settings.ai.stt_volc_app_id, &key, &bytes, 10_000, settings.ai.stt_cloud_smooth).await?;
         Ok(text_of(&cues))
     } else {
-        let key = st.vault.get(crate::stt_cloud::KEY_XFYUN_RT).ok_or_else(|| AppError::invalid("请先在“设置 → AI → 语音转文字”里填写讯飞“实时语音转写”的 APIKey。"))?;
+        let key = st
+            .vault
+            .get(crate::stt_cloud::KEY_XFYUN_RT)
+            .ok_or_else(|| AppError::invalid("请先在“设置 → AI → 语音转文字”里填写讯飞“实时语音转写”的 APIKey。"))?;
         let pcm = bytes.get(44..).unwrap_or(&[]);
         crate::stt_cloud::xfyun_rt_text(&settings.ai.stt_xfyun_app_id, &key, pcm, settings.ai.stt_cloud_smooth).await
     }
@@ -420,8 +423,15 @@ fn run_loop(
                     crate::livevoice::push(start_ms, end_ms, &text, &tr);
                     if live.audio_autosave {
                         let settings = st.settings_raw();
-                        let dir = if live.audio_save_dir.trim().is_empty() { settings.download_root().join("语音字幕") } else { std::path::PathBuf::from(live.audio_save_dir.trim()) };
-                        let pre = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
+                        let dir = if live.audio_save_dir.trim().is_empty() {
+                            settings.download_root().join("语音字幕")
+                        } else {
+                            std::path::PathBuf::from(live.audio_save_dir.trim())
+                        };
+                        let pre = crate::subclean::Opts {
+                            hearing: settings.ai.sub_clean_hearing,
+                            filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler),
+                        };
                         let _ = crate::livevoice::autosave(&dir, if settings.ai.sub_clean_output { Some(&pre) } else { None }, live.audio_bilingual);
                     }
                     emit_sub(

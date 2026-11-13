@@ -1017,7 +1017,8 @@ mod tests {
         let p = group_lines(&[l("This is a long paragraph line that wraps", 50.0, 100.0, 320.0, 16.0), l("onto the next line", 50.0, 124.0, 150.0, 16.0)]);
         assert_eq!(p.len(), 1);
         // 第一行以逗号结尾（句子没完）：照样并
-        let p = group_lines(&[l("Short first line,", 50.0, 100.0, 120.0, 16.0), l("and the second is much longer than the first one", 50.0, 120.0, 330.0, 16.0)]);
+        let p =
+            group_lines(&[l("Short first line,", 50.0, 100.0, 120.0, 16.0), l("and the second is much longer than the first one", 50.0, 120.0, 330.0, 16.0)]);
         assert_eq!(p.len(), 1);
     }
 

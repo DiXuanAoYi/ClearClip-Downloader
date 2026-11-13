@@ -772,8 +772,7 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                 json(sock, "200 OK", serde_json::json!({"enabled": false, "messages": []})).await;
             } else {
                 let since = req.query.get("since").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
-                let members: Vec<serde_json::Value> =
-                    state.settings().phone.devices.iter().map(|d| serde_json::json!({"id": d.id, "name": d.name})).collect();
+                let members: Vec<serde_json::Value> = state.settings().phone.devices.iter().map(|d| serde_json::json!({"id": d.id, "name": d.name})).collect();
                 json(sock, "200 OK", serde_json::json!({"enabled": true, "messages": chat_list(&app, since), "members": members})).await;
             }
         }
