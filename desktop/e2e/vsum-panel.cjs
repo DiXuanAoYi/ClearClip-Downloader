@@ -93,6 +93,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
               note: { quote: '整理后的完整句子。' },
               refine: { quote: '优化后的笔记。' },
               punctuate: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: l.text + '。' })), failed: 0 },
+              fixasr: { lines: (window.__job.lines || []).map((l) => ({ t: l.t, text: l.text.replace('Rust', 'Rusty') })), failed: 0 },
               subtitles: { lines: o.subs === false && !window.__job?.track ? [] : [{ t: 1000, text: '在线字幕第一句' }, { t: 6000, text: '在线字幕第二句' }], durationMs: 12000, track: '在线字幕（en）', source: 'subtitles' },
               transcribe: { lines: [{ t: 0, text: '大家好，今天讲讲 Rust。' }, { t: 5000, text: '它又快又安全。' }], durationMs: 12000, track: '清影转写' },
             }[k]
@@ -784,6 +785,48 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     })
     await tick(true)
     ok('字幕层开着但被关掉：勾选后让它显示出来', (await page.evaluate(() => window.__shown)) >= 1)
+    await page.close()
+  }
+
+  // ---- 修改文稿：双击一句手动改；AI 结合上下文纠错；改动记在本地
+  {
+    const { page } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '文稿')
+    await settle(page, 300)
+    const first = () => page.evaluate(() => window.__roots.map((r) => r.querySelector('#lines .ln')?.textContent || '').find(Boolean) || '')
+    const before = await first()
+    await page.evaluate(() => {
+      const row = window.__roots.map((r) => r.querySelector('#lines .ln')).find(Boolean)
+      row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    })
+    ok('双击一句：变成输入框', await page.evaluate(() => window.__roots.some((r) => r.querySelector('#lines textarea.ledit'))))
+    await page.evaluate(() => {
+      const ta = window.__roots.map((r) => r.querySelector('#lines textarea.ledit')).find(Boolean)
+      ta.value = '手动改过的第一句'
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await settle(page, 300)
+    ok('回车保存：这一句变成新文字', (await first()).includes('手动改过的第一句') && (await first()) !== before, await first())
+    ok('改动存在本地（下次同一个视频自动带出）', await page.evaluate(() => Object.keys(window.__store.vsumEdits || {}).length === 1))
+    ok('改过的句子有标记', await page.evaluate(() => window.__roots.some((r) => r.querySelector('#lines .ln.fx'))))
+    // Esc 取消
+    await page.evaluate(() => {
+      window.__roots.map((r) => r.querySelector('#lines .ln')).find(Boolean).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      const ta = window.__roots.map((r) => r.querySelector('#lines textarea.ledit')).find(Boolean)
+      ta.value = '不该保存'
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    await settle(page, 200)
+    ok('Esc 取消：不保存', !(await first()).includes('不该保存'))
+    // AI 纠错
+    await clickText(page, 'AI 纠错')
+    await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('撤销纠错')), null, { timeout: 8000 })
+    const req = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1).req)
+    ok('纠错请求用 fixasr 并带全部字幕', req.kind === 'fixasr' && req.lines.length > 2, req.kind)
+    ok('纠错后文稿有改动', (await text(page, '#lines')).includes('Rusty'))
+    await page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('button')]).find((x) => x.textContent.startsWith('撤销纠错')).click())
+    ok('撤销纠错：恢复', !(await text(page, '#lines')).includes('Rusty') && (await text(page, '#lines')).includes('手动改过的第一句'))
     await page.close()
   }
 
