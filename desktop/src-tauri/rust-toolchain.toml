@@ -1,0 +1,6 @@
+# 固定 Rust 工具链：CI（desktop-ci）从这里读版本号，本机用 rustup 进到这个目录也会自动用同一版本，
+# 避免“stable 一更新 clippy 多出新警告、CI 突然变红”。升级时改这一行，并确认 fmt / clippy / 测试都过。
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
