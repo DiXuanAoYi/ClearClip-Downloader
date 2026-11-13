@@ -183,6 +183,64 @@ pub fn clean_line(text: &str, o: &Opts) -> String {
     }
 }
 
+/// 清理一批字幕条（语音转文字的结果）：每条的每一行清理一遍，清空的行 / 条丢掉。返回（清理后的条, 有改动的条数）。
+pub fn clean_cues(cues: &[crate::subtitle::Cue], o: &Opts) -> (Vec<crate::subtitle::Cue>, usize) {
+    let mut changed = 0;
+    let mut out = Vec::with_capacity(cues.len());
+    for c in cues {
+        let lines: Vec<String> = c.lines.iter().map(|l| clean_line(l, o)).filter(|l| !l.is_empty()).collect();
+        if lines != c.lines.iter().map(|l| norm(l)).collect::<Vec<_>>() {
+            changed += 1;
+        }
+        if !lines.is_empty() {
+            out.push(crate::subtitle::Cue { start: c.start, end: c.end, lines });
+        }
+    }
+    (out, changed)
+}
+
+/// 清理结果的统计：多少行去掉了非语音说明、多少行去掉了口水词、多少行清理后一个字不剩（整行丢掉）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct Report {
+    pub hearing: usize,
+    pub filler: usize,
+    pub emptied: usize,
+}
+
+fn norm(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// 清理一批字幕行并统计（给文稿显示用）：清理后空了的行丢掉。`keep_time` 的行保持原时间。
+pub fn clean_with_report(lines: &[crate::vsum::Line], o: &Opts) -> (Vec<crate::vsum::Line>, Report) {
+    let mut rep = Report::default();
+    let mut out = Vec::with_capacity(lines.len());
+    for l in lines {
+        let before = norm(&l.text);
+        let mut t = before.clone();
+        if o.hearing {
+            let h = norm(&strip_hearing(&t));
+            if h != t {
+                rep.hearing += 1;
+            }
+            t = h;
+        }
+        let f = norm(&strip_fillers(&t, o.filler));
+        if f != t {
+            rep.filler += 1;
+        }
+        let cleaned = clean_line(&before, o);
+        if cleaned.is_empty() {
+            if !before.is_empty() {
+                rep.emptied += 1;
+            }
+            continue;
+        }
+        out.push(crate::vsum::Line { t: l.t, text: cleaned });
+    }
+    (out, rep)
+}
+
 /// 请求里的字幕行：把要送给模型的文字清理一遍。`keep_empty` 为真（翻译）时，清空的行保留原文，保证和显示的行一一对应；否则清空的行变成空串（后面的流程会跳过）。
 pub fn prepare_lines(lines: &mut [crate::vsum::Line], o: &Opts, keep_empty: bool) {
     if !o.hearing && o.filler == Level::Off {
@@ -270,5 +328,16 @@ mod tests {
         let mut v2 = vec![crate::vsum::Line { t: 0, text: "嗯".into() }];
         prepare_lines(&mut v2, &o(Level::Conservative), false);
         assert_eq!(v2[0].text, "");
+    }
+
+    #[test]
+    fn report_and_cue_cleaning() {
+        let lines: Vec<crate::vsum::Line> = ["[Music]", "Um, hello there", "plain line", "♪ ♪"].iter().enumerate().map(|(i, t)| crate::vsum::Line { t: i as u64 * 1000, text: (*t).into() }).collect();
+        let (out, rep) = clean_with_report(&lines, &o(Level::Conservative));
+        assert_eq!(out.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), vec!["hello there", "plain line"]);
+        assert_eq!(rep, Report { hearing: 2, filler: 1, emptied: 2 });
+        let cues = vec![crate::subtitle::Cue { start: 0, end: 1000, lines: vec!["Uh, hi".into()] }, crate::subtitle::Cue { start: 1000, end: 2000, lines: vec!["[Applause]".into()] }, crate::subtitle::Cue { start: 2000, end: 3000, lines: vec!["same".into()] }];
+        let (c, n) = clean_cues(&cues, &o(Level::Conservative));
+        assert_eq!((c.len(), n), (2, 2));
     }
 }

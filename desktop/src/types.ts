@@ -679,6 +679,8 @@ export interface AiSettings {
   /** 送给 AI 前去掉非语音说明 / 口水词（不影响文稿显示和导出） */
   subCleanHearing: boolean
   subCleanFiller: 'off' | 'conservative' | 'standard' | 'aggressive'
+  subCleanPunct: boolean
+  subCleanOutput: boolean
   sttEngine: 'api' | 'local' | 'volc' | 'xfyun'
   sttVolcAppId: string
   sttXfyunAppId: string

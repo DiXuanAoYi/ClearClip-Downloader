@@ -1047,6 +1047,10 @@ pub struct AiSettings {
     pub sub_clean_hearing: bool,
     /// 送给 AI 前去掉口水词：off / conservative / standard / aggressive；不影响文稿显示和导出
     pub sub_clean_filler: String,
+    /// 预处理完后，没有标点的自动字幕自动补标点（多一次模型调用，结果缓存）
+    pub sub_clean_punct: bool,
+    /// 语音转文字的结果也做预处理（去非语音说明和口水词）；清理前的原文另存为 `.raw.srt`
+    pub sub_clean_output: bool,
 }
 
 impl Default for AiSettings {
@@ -1080,6 +1084,8 @@ impl Default for AiSettings {
             cue_semantic: false,
             sub_clean_hearing: true,
             sub_clean_filler: "conservative".into(),
+            sub_clean_punct: false,
+            sub_clean_output: true,
         }
     }
 }

@@ -967,6 +967,21 @@ pub async fn run_subgen(ctx: &JobCtx, input: &Path, opts: GenOpts) -> AppResult<
         let lang_tag: String = if lang.is_empty() { guess_lang(&cues).to_string() } else { lang.clone() };
         let title = stem_of(input);
         let base = ai::strip_lang_suffix(&title).to_string();
+        // 预处理：去非语音说明和口水词（设置里可关）；清理前的原文另存一份 `.srt.raw`，需要原话时还在
+        let cues = if settings.ai.sub_clean_output {
+            let o = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
+            let (cleaned, changed) = crate::subclean::clean_cues(&cues, &o);
+            if changed > 0 && !cleaned.is_empty() {
+                let raw_path = ai::out_beside(input, &base, &lang_tag, "srt");
+                let _ = std::fs::write(raw_path.with_extension("srt.raw"), subtitle::format_srt(&cues));
+                ctx.note(format!("预处理：{changed} 条字幕去掉了非语音说明 / 口水词（清理前的原文另存为 .srt.raw）。"));
+                cleaned
+            } else {
+                cues
+            }
+        } else {
+            cues
+        };
         let terms = if settings.ai.glossary_on { ctx.st.glossary.terms_for("", &lang_tag) } else { vec![] };
 
         // 3) 纠错

@@ -173,6 +173,13 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
     use tauri::Manager;
     let st = app.state::<Arc<crate::AppState>>().inner().clone();
     let settings = st.settings();
+    // 字幕预处理（不需要模型）：返回清理后的行、统计、以及“要不要接着自动补标点”
+    if req.kind == "preclean" {
+        let o = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
+        let (lines, rep) = crate::subclean::clean_with_report(&req.lines, &o);
+        let lines: Vec<Value> = lines.iter().map(|l| json!({"t": l.t, "text": l.text})).collect();
+        return Ok(Prep::Done(json!({"lines": lines, "report": rep, "punct": settings.ai.sub_clean_punct})));
+    }
     let task = match req.kind.as_str() {
         "translate" | "punctuate" | "webtrans" | "domain" | "imgtrans" => crate::ai_pool::Task::Translate,
         "summary" | "article" | "mindmap" | "flowgraph" | "cards" | "quotes" | "rewrite" | "comments" => crate::ai_pool::Task::Summary,
@@ -860,7 +867,8 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 30] = [
+    const KINDS: [&str; 31] = [
+        "preclean",
         "answer",
         "write",
         "replyread",
@@ -901,7 +909,7 @@ pub fn check(req: &Req) -> AppResult<()> {
     if size > MAX_CHARS {
         return Err(AppError::invalid("内容太长，超过了一次能处理的上限。"));
     }
-    let needs_lines = matches!(req.kind.as_str(), "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
+    let needs_lines = matches!(req.kind.as_str(), "preclean" | "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
     if needs_lines && req.lines.iter().all(|l| l.text.trim().is_empty()) {
         return Err(AppError::invalid("没有可处理的字幕。"));
     }

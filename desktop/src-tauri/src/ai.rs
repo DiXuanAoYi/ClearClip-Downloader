@@ -1671,6 +1671,19 @@ pub async fn run_transcribe(ctx: &JobCtx, input: &Path, language: Option<String>
         let cues = transcribe_cues(ctx, &settings, &ffmpeg, input, &lang, &work).await?;
         let tag = if lang.is_empty() { "ai".to_string() } else { lang.clone() };
         let out = out_beside(input, &stem_of(input), &tag, "srt");
+        // 预处理（设置里可关）：去非语音说明和口水词，清理前的原文另存 `.srt.raw`
+        let cues = if settings.ai.sub_clean_output {
+            let o = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
+            let (cleaned, changed) = crate::subclean::clean_cues(&cues, &o);
+            if changed > 0 && !cleaned.is_empty() {
+                let _ = std::fs::write(out.with_extension("srt.raw"), subtitle::format_srt(&cues));
+                cleaned
+            } else {
+                cues
+            }
+        } else {
+            cues
+        };
         std::fs::write(&out, subtitle::format_srt(&cues))?;
         register_subtitle(&ctx.st, input, &out, &tag);
         Ok(out)

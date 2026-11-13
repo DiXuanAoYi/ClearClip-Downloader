@@ -87,6 +87,14 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         </el-select>
       </div>
       <div class="kv">
+        <span>预处理后自动补标点<small class="mute block">自动识别出来的字幕通常没有标点：读到文稿、做完上面的清理后，如果大部分句子没有标点，就自动用 AI 补标点并改同音错字（多一次模型调用，结果缓存）。可以在文稿栏点“还原顺句前”撤销</small></span>
+        <el-switch v-model="ai.subCleanPunct" />
+      </div>
+      <div class="kv">
+        <span>语音转文字的结果也做预处理<small class="mute block">本机 / 在线 / 火山引擎 / 讯飞识别出来的字幕，同样去掉非语音说明和口水词再保存；清理前的原文另存为 .raw.srt</small></span>
+        <el-switch v-model="ai.subCleanOutput" />
+      </div>
+      <div class="kv">
         <span>下载到外语字幕时自动翻译<small class="mute block">作品里已经有目标语言的字幕就不再翻译；弹幕不翻译</small></span>
         <el-switch v-model="ai.autoTranslate" />
       </div>
