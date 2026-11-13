@@ -71,7 +71,36 @@ async function saveKey(e: PoolEntry) {
     refresh()
   } catch (err) {
     ElMessage.error(errorText(err))
+    return
   }
+  // 保存了新密钥：自动检测这个服务有哪些模型，当前模型为空或不在列表里就默认选第一个
+  if (v && !isMt(e)) void detectModels(e, v, true)
+}
+// ---------- 模型下拉（保存密钥时自动检测） ----------
+const modelOpts = ref<Record<string, string[]>>({})
+const detecting = ref<Record<string, boolean>>({})
+async function detectModels(e: PoolEntry, key: string | null, auto: boolean) {
+  if (detecting.value[e.id]) return
+  detecting.value[e.id] = true
+  try {
+    const list = await api.aiProbeModels(e.id, e.baseUrl, key)
+    const chat = list.filter((m) => m.caps.includes('chat'))
+    const ids = (chat.length ? chat : list).map((m) => m.id)
+    modelOpts.value[e.id] = ids
+    if (auto && ids.length && !ids.includes(e.model)) {
+      e.model = ids[0]
+      ElMessage.success(`检测到 ${ids.length} 个模型，已选用 ${ids[0]}（记得点右下角“保存”）`)
+    } else if (auto) {
+      ElMessage.success(`检测到 ${ids.length} 个模型，可在“模型”下拉里选`)
+    }
+  } catch (err) {
+    if (auto) ElMessage.warning(`密钥已保存，但没能读到模型列表：${errorText(err)}。可以手动填写模型名。`)
+  } finally {
+    detecting.value[e.id] = false
+  }
+}
+function onModelDrop(e: PoolEntry, open: boolean) {
+  if (open && !modelOpts.value[e.id]?.length) void detectModels(e, null, false)
 }
 async function saveSupadata(clear = false) {
   try {
@@ -199,8 +228,10 @@ function state(e: PoolEntry): { text: string; cls: string } {
           <el-input v-model="e.baseUrl" size="small" class="mono" :placeholder="basePlaceholder(e)" />
         </div>
         <div v-if="!isMt(e)" class="field">
-          <label>模型 · <a href="#" @click.prevent="openProbe(e)">检测可用模型</a></label>
-          <el-input v-model="e.model" size="small" class="mono" />
+          <label>模型 · <a href="#" @click.prevent="openProbe(e)">详细检测 / 测试</a></label>
+          <el-select v-model="e.model" size="small" class="mono" filterable allow-create default-first-option :loading="detecting[e.id]" placeholder="保存密钥后自动检测，也可手动输入" no-data-text="还没有检测到模型：先保存密钥" @visible-change="(o: boolean) => onModelDrop(e, o)">
+            <el-option v-for="m in modelOpts[e.id] || (e.model ? [e.model] : [])" :key="m" :value="m" :label="m" />
+          </el-select>
         </div>
         <div v-else-if="e.kind === 'microsoft'" class="field">
           <label>区域（Azure 资源所在区域，如 eastasia；全球资源留空）</label>
