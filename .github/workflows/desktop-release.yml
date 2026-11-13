@@ -200,6 +200,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 配了更新签名私钥时，latest.json 和 .sig 必须齐全；没配时它们本来就不会生成，只警告
+          SIGNING_CONFIGURED: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: |
           version=$(jq -r .version desktop/src-tauri/tauri.conf.json)
           ext=$(jq -r .version desktop/extension/manifest.json)
@@ -251,4 +253,23 @@ jobs:
               echo "::warning title=Release 里没有::$f（Windows ARM64 是实验性的；latest.json 要配好更新签名密钥才会有）"
             fi
           done
+          if [ "$SIGNING_CONFIGURED" = "true" ]; then
+            if ! grep -qxF "latest.json" <<<"$names"; then
+              echo "::error title=缺少 latest.json::已配置更新签名私钥，Release 里却没有 latest.json，程序内更新会失效"
+              missing=1
+            fi
+            if ! grep -q '\.sig$' <<<"$names"; then
+              echo "::error title=缺少更新签名文件::已配置更新签名私钥，Release 里却没有任何 .sig 文件"
+              missing=1
+            fi
+            # latest.json 里每个平台都要有非空的签名
+            if grep -qxF "latest.json" <<<"$names"; then
+              dir=$(mktemp -d)
+              gh release download "$tag" --repo "$GITHUB_REPOSITORY" -p latest.json -D "$dir"
+              if ! jq -e '(.platforms | length) > 0 and ([.platforms[].signature] | all(type == "string" and length > 0))' "$dir/latest.json" >/dev/null; then
+                echo "::error title=latest.json 不完整::没有平台条目，或有平台缺少 signature"
+                missing=1
+              fi
+            fi
+          fi
           exit $missing
