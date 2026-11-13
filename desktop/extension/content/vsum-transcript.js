@@ -8,6 +8,7 @@
   }) => {
     const WC = globalThis.ccWordCard
     const LN = globalThis.ccLearn
+    const VS = globalThis.ccVSession
     const getSel = () => String((ui.root.getSelection && ui.root.getSelection()) || getSelection() || '').trim()
 
     function tabTranscript() {
@@ -23,7 +24,7 @@
       const body = h('div', { id: 'lines', onmouseup: onSelect, onmouseover: wordIn, onmouseout: wordOut })
       d.lines.forEach((l, i) => {
         const [main, sub] = V.viewLine(l.text, tr?.[i], mode)
-        body.append(h('div', { class: `ln${showTm ? '' : ' nt'}${hits?.has(i) ? ' hit' : ''}${i === nowIdx ? ' now' : ''}`, 'data-i': i, onclick: () => !getSel() && seek(l.t) },
+        body.append(h('div', { class: `ln${showTm ? '' : ' nt'}${hits?.has(i) ? ' hit' : ''}${i === nowIdx ? ' now' : ''}${l.src && l.src !== l.text ? ' fx' : ''}`, 'data-i': i, title: l.src && l.src !== l.text ? `已修改，原文：${l.src}` : '双击修改这一句', onclick: () => !getSel() && seek(l.t), ondblclick: (e) => startEdit(e, i) },
           showTm && h('span', { class: 'tm', text: V.fmtClock(l.t) }),
           h('span', { style: 'flex:1' }, sub ? h('span', { class: 'mn' }, ...words(main)) : h('span', { class: 'one' }, ...words(main)), sub ? h('span', { class: 'tr' }, ...words(sub)) : null),
           h('button', { class: 'rec', title: '把这句记成笔记', text: '＋', onclick: (e) => (e.stopPropagation(), addNote({ t: l.t, text: l.text })) })))
@@ -39,7 +40,7 @@
         h('div', { class: 'tools' },
           S.detached && S.prefs.follow && isVideo() && h('button', { text: '回到当前句', onclick: () => ((S.detached = false), tick(true)) }),
           isVideo() && h('label', { class: 'mute' }, h('input', { type: 'checkbox', checked: S.prefs.follow, onchange: (e) => ((S.prefs.follow = e.target.checked), savePrefs()) }), ' 跟随播放'),
-          isVideo() && h('label', { class: 'mute', title: '读到字幕后，把文稿同时作为字幕层叠在视频上（双语、调字号位置、导出）' }, h('input', { type: 'checkbox', checked: S.prefs.autoSub !== false, onchange: (e) => ((S.prefs.autoSub = e.target.checked), savePrefs(), e.target.checked ? syncSubLayer(S.data) : globalThis.ccSubLayerRun?.destroy()) }), ' 显示在视频上'),
+          isVideo() && h('label', { class: 'mute', title: '读到字幕后，把文稿同时作为字幕层叠在视频上（双语、调字号位置、导出）' }, h('input', { type: 'checkbox', checked: S.prefs.autoSub !== false, onchange: (e) => ((S.prefs.autoSub = e.target.checked), savePrefs(), e.target.checked ? syncSubLayer(S.data, true) : globalThis.ccSubLayerRun?.destroy()) }), ' 显示在视频上'),
           langSelect('翻译成哪种语言（任意语言互译，自动识别原文）', () => ((S.res.translated = null), render())),
           h('button', { class: 'sec', text: tr ? '重新翻译' : outLabel() ? `翻译成${outLabel()}` : '翻译（自动方向）', disabled: S.busy, onclick: () => translateDoc(d) }),
           sel([['orig', '原文'], ['tr', '译文'], ['both', '双语']], tr ? mode : 'orig', (v) => {
@@ -51,6 +52,7 @@
           }, '文稿显示：原文 / 译文 / 双语'),
           h('button', { class: 'sec', text: '重新断句', title: '把太长的句子按标点和长度拆开（时间按字数分配）；不改字，也不用重新识别', disabled: S.busy, onclick: resegment }),
           h('button', { class: 'sec', text: d.raw ? '还原顺句前' : '顺句', title: d.raw ? '恢复识别出来的原样' : '给没有标点的字幕（自动识别）补标点、改同音错字，行数不变', disabled: S.busy, onclick: d.raw ? unpunctuate : punctuate }),
+          h('button', { class: 'sec', text: d.fixBefore ? `撤销纠错（${d.fixed} 处）` : 'AI 纠错', title: d.fixBefore ? '恢复纠错之前的文字' : '结合上下文和视频标题，改正识别错的字词、人名和术语（不改标点和句子）；改过的句子下面有虚线，鼠标停上去看原文。也可以双击任意一句手动改', disabled: S.busy, onclick: d.fixBefore ? unfix : fixAsr }),
         )),
         d.cleaned && h('div', { class: 'tools', id: 'cleanbar' },
           h('span', { class: 'mute', text: S.showOrig ? `已显示原始文稿（共 ${d.orig.length} 句）` : `已清理 ${(d.cleaned.hearing || 0) + (d.cleaned.filler || 0) + (d.cleaned.emptied || 0)} 处${cleanDetail(d.cleaned)}` }),
@@ -264,6 +266,159 @@
       render()
     }
 
-    return { getSel, tabTranscript, punctuate }
+    // ---------- 修改文稿：双击一句手动改；AI 结合上下文纠错 ----------
+    // 改动按“视频 + 时间 + 读到的原文字”存在本地，下次打开同一个视频的同一份字幕自动带出来
+    const EDITS_KEY = 'vsumEdits'
+    const editStore = () => globalThis.ccUI.api.storage.local
+    const editVk = () => V.videoKey(S.data?.url || location.href)
+    async function rememberEdit(t, from, to) {
+      try {
+        const all = (await editStore().get(EDITS_KEY))[EDITS_KEY] || {}
+        const k = editVk()
+        const m = { ...(all[k] || {}) }
+        if (to === from) delete m[`${t}|${from}`]
+        else m[`${t}|${from}`] = to
+        delete all[k]
+        if (Object.keys(m).length) all[k] = m
+        const keys = Object.keys(all)
+        for (const x of keys.slice(0, Math.max(0, keys.length - 40))) delete all[x]
+        await editStore().set({ [EDITS_KEY]: all })
+      } catch {
+        // 存不了就只在这次有效
+      }
+    }
+    /** 读到文稿后把以前改过的带回来（在预处理之后调用，用显示的文字对应） */
+    async function applyEdits(d) {
+      try {
+        const m = (await editStore().get(EDITS_KEY))[EDITS_KEY]?.[editVk()]
+        if (!m || S.data !== d || d.streaming) return
+        let n = 0
+        d.lines = d.lines.map((l) => {
+          const to = m[`${l.t}|${l.text}`]
+          if (to === undefined || to === l.text) return l
+          n++
+          return { ...l, text: to, src: l.text }
+        })
+        if (n) {
+          S.res.translated = null
+          render()
+          syncSubLayer(d)
+        }
+      } catch {
+        // 没有就算了
+      }
+    }
+    let syncTimer = 0
+    /** 改完停一下再同步到视频上的字幕层（连续改几句不会每句都重新翻译） */
+    function syncLater() {
+      clearTimeout(syncTimer)
+      syncTimer = setTimeout(() => S.data && syncSubLayer(S.data), 1500)
+    }
+    function startEdit(e, i) {
+      if (e.target.closest?.('button')) return
+      const d = S.data
+      const l = d?.lines[i]
+      if (!l) return
+      try {
+        ;(ui.root.getSelection?.() || getSelection())?.removeAllRanges()
+      } catch {
+        /* 选区清不掉不影响 */
+      }
+      clearTimeout(hovTimer)
+      wpop.close()
+      const row = e.currentTarget
+      const t0 = l.t
+      S.editing = true
+      const box = row.children[row.children.length - 2]
+      const ta = h('textarea', { class: 'ledit', rows: 1 })
+      ta.value = l.text
+      const fit = () => {
+        ta.style.height = 'auto'
+        ta.style.height = `${ta.scrollHeight}px`
+      }
+      let done = false
+      const finish = (save) => {
+        if (done) return
+        done = true
+        S.editing = false
+        if (save) saveLine(t0, i, ta.value)
+        else render()
+        // 编辑期间识别又来了新内容：现在补画
+        if (S.pendingRender) (S.pendingRender = false, render())
+      }
+      ta.addEventListener('input', fit)
+      ta.addEventListener('keydown', (ev) => {
+        ev.stopPropagation()
+        if (ev.isComposing) return
+        if (ev.key === 'Enter' && !ev.shiftKey) (ev.preventDefault(), finish(true))
+        else if (ev.key === 'Escape') (ev.preventDefault(), finish(false))
+      })
+      ta.addEventListener('blur', () => finish(true))
+      for (const t of ['click', 'dblclick', 'mouseup', 'mouseover']) ta.addEventListener(t, (ev) => ev.stopPropagation())
+      box.replaceChildren(ta)
+      fit()
+      ta.focus()
+      ta.setSelectionRange(ta.value.length, ta.value.length)
+    }
+    function saveLine(t0, i0, raw) {
+      const d = S.data
+      // 识别进行中行会增减：按时间找回这一句
+      const i = d?.lines[i0]?.t === t0 ? i0 : d?.lines.findIndex((x) => x.t === t0) ?? -1
+      const l = d?.lines[i]
+      const v = String(raw || '').replace(/\s*\n\s*/g, ' ').trim()
+      if (!l || !v || v === l.text) return render()
+      const src = l.src || l.text
+      d.lines = d.lines.map((x, j) => (j === i ? { ...x, text: v, src } : x))
+      // 这一句原来的译文已经不对了：清掉，其他句的译文保留
+      if (S.res.translated) S.res.translated = S.res.translated.map((x, j) => (j === i ? '' : x))
+      if (d.streaming) {
+        // 识别还没完成：先记下，之后每次新结果、以及最终结果出来都按时间把这句的修改带上
+        ;(S.liveEdits ||= new Map()).set(t0, v)
+      } else if (!VS.editLine(i, v, 'vsum')) {
+        // 会话里的文稿和这里对不上（比如还没同步）：整份同步，改动单独记
+        rememberEdit(l.t, src, v)
+        syncLater()
+      }
+      render()
+      toast(ui, '已修改这一句')
+    }
+    async function fixAsr() {
+      const before = S.data.lines
+      let changed = 0
+      await task('fixasr', {}, (x) => {
+        const out = x.lines || []
+        let k = 0
+        const lines = before.map((l) => {
+          if (!l.text.trim()) return l
+          const text = String(out[k++]?.text || '').trim()
+          // 只接受小改动：模型把一句话改写得面目全非的不要
+          const r = text.length / Math.max(1, l.text.length)
+          if (!text || text === l.text || r > 1.6 || r < 0.5) return l
+          changed++
+          return { ...l, text, src: l.src || l.text }
+        })
+        if (!changed) return
+        S.data.fixBefore = before
+        S.data.fixed = changed
+        S.data.lines = lines
+        S.res.translated = null
+        for (const [j, l] of lines.entries()) if (l !== before[j]) rememberEdit(l.t, l.src, l.text)
+        syncLater()
+      }, false)
+      if (!S.closed) toast(ui, changed ? `纠正了 ${changed} 处（改过的句子下有虚线，可点“撤销纠错”）` : '没有发现需要改的错字')
+    }
+    function unfix() {
+      const d = S.data
+      if (!d?.fixBefore) return
+      for (const [j, l] of d.lines.entries()) if (l.text !== d.fixBefore[j]?.text) rememberEdit(l.t, l.src || d.fixBefore[j]?.text || l.text, d.fixBefore[j]?.text ?? l.text)
+      d.lines = d.fixBefore
+      d.fixBefore = null
+      d.fixed = 0
+      S.res.translated = null
+      syncLater()
+      render()
+    }
+
+    return { getSel, tabTranscript, punctuate, applyEdits, rememberEdit }
   }
 })()

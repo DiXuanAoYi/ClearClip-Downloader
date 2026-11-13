@@ -24,6 +24,8 @@
     .chip { background: #b45f001f; color: #8a4a00; border-radius: 10px; padding: 1px 8px; font-size: 12px; }
     .ln { position: relative; display: grid; grid-template-columns: 48px 1fr; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; }
     .ln.nt { grid-template-columns: 1fr; }
+    .ln.fx .one, .ln.fx .mn { border-bottom: 1px dashed var(--acc); }
+    .ln textarea.ledit { width: 100%; box-sizing: border-box; resize: none; overflow: hidden; font: inherit; line-height: 1.5; padding: 3px 6px; border: 1px solid var(--acc); border-radius: 6px; background: var(--inp); color: var(--fg); }
     .ln:hover { background: #b45f0014; }
     .ln.cur { background: #b45f001f; }
     .ln.cur .tm { background: #b45f00; color: #fff; border-radius: 6px; padding: 0 6px; }

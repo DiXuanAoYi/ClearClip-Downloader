@@ -181,7 +181,7 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
         return Ok(Prep::Done(json!({"lines": lines, "report": rep, "punct": settings.ai.sub_clean_punct})));
     }
     let task = match req.kind.as_str() {
-        "translate" | "punctuate" | "webtrans" | "domain" | "imgtrans" => crate::ai_pool::Task::Translate,
+        "translate" | "punctuate" | "fixasr" | "webtrans" | "domain" | "imgtrans" => crate::ai_pool::Task::Translate,
         "summary" | "article" | "mindmap" | "flowgraph" | "cards" | "quotes" | "rewrite" | "comments" => crate::ai_pool::Task::Summary,
         _ => crate::ai_pool::Task::Chat,
     };
@@ -203,9 +203,9 @@ fn prepare(app: &tauri::AppHandle, mut req: Req) -> AppResult<Prep> {
         }
     }
     // 字幕预处理（只作用在送给模型的文字上；文稿的显示和导出不变）
-    if matches!(req.kind.as_str(), "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate") {
+    if matches!(req.kind.as_str(), "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "fixasr") {
         let o = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
-        crate::subclean::prepare_lines(&mut req.lines, &o, matches!(req.kind.as_str(), "translate" | "punctuate"));
+        crate::subclean::prepare_lines(&mut req.lines, &o, matches!(req.kind.as_str(), "translate" | "punctuate" | "fixasr"));
     }
     let model = settings.ai.model.clone();
     let default_lang = settings.ai.target_lang.clone();
@@ -871,7 +871,7 @@ fn cues_to_lines(cues: &[crate::subtitle::Cue]) -> Vec<Value> {
 }
 
 pub fn check(req: &Req) -> AppResult<()> {
-    const KINDS: [&str; 31] = [
+    const KINDS: [&str; 32] = [
         "preclean",
         "answer",
         "write",
@@ -893,6 +893,7 @@ pub fn check(req: &Req) -> AppResult<()> {
         "tracks",
         "explain",
         "punctuate",
+        "fixasr",
         "note",
         "refine",
         "webtrans",
@@ -913,8 +914,10 @@ pub fn check(req: &Req) -> AppResult<()> {
     if size > MAX_CHARS {
         return Err(AppError::invalid("内容太长，超过了一次能处理的上限。"));
     }
-    let needs_lines =
-        matches!(req.kind.as_str(), "preclean" | "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "webtrans");
+    let needs_lines = matches!(
+        req.kind.as_str(),
+        "preclean" | "summary" | "mindmap" | "flowgraph" | "cards" | "quotes" | "ask" | "translate" | "punctuate" | "fixasr" | "webtrans"
+    );
     if needs_lines && req.lines.iter().all(|l| l.text.trim().is_empty()) {
         return Err(AppError::invalid("没有可处理的字幕。"));
     }
@@ -1147,6 +1150,15 @@ fn refine_system(lang: &str) -> String {
         "You polish a note the user wrote or edited while watching a video. Keep every fact, opinion, proper noun and the writer's tone; fix typos, broken grammar and repetition; \
          no vague summarising; keep the length close to the original; keep the note's language (default {lang}). Reply with ONE JSON object only: {{\"quote\": \"...\"}}."
     )
+}
+
+/// 纠错：只改识别 / 字幕里的错字、同音字、人名术语，结合前后句和视频标题；不动标点和句子结构。
+fn fixasr_system() -> String {
+    "You proofread subtitles (automatic speech recognition or hand-made) using the surrounding lines and the video title as context. Fix ONLY words that are clearly wrong: \
+     homophone and mis-heard words, broken names, product / technical terms, numbers and units that the context shows are wrong. Do NOT change punctuation, wording style, grammar or meaning; \
+     do not add, delete, merge, split or reorder lines; do not translate; keep the language of every line. If a line is already fine, return it exactly as it is. \
+     Reply with ONE JSON array of strings only, no commentary and no code fences, with exactly the same number of strings in the same order as the input array. A line break inside a line is written as \\n."
+        .to_string()
 }
 
 fn punctuate_system() -> String {
@@ -1819,6 +1831,19 @@ pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usiz
                 .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
                 .collect();
             let system = format!("{}\nVideo title: {}", pick_system(req, punctuate_system()), req.title.trim());
+            let t = ai::map_cues(ep, model, &system, &cues, batch.max(20), progress).await?;
+            let out: Vec<Value> =
+                cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
+            Ok(json!({"lines": out, "failed": t.failed}))
+        }
+        "fixasr" => {
+            let cues: Vec<Cue> = req
+                .lines
+                .iter()
+                .filter(|l| !l.text.trim().is_empty())
+                .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
+                .collect();
+            let system = format!("{}\nVideo title: {}", pick_system(req, fixasr_system()), req.title.trim());
             let t = ai::map_cues(ep, model, &system, &cues, batch.max(20), progress).await?;
             let out: Vec<Value> =
                 cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();

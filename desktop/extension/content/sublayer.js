@@ -32,8 +32,9 @@
 
   const CSS = `
     .cap { position: fixed; pointer-events: none; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px }
-    .cap span { font-size: inherit; display: inline-block; max-width: 92%; background: #000a; color: #fff; padding: 2px 10px; border-radius: 4px; white-space: pre-wrap; text-shadow: 0 1px 2px #000; line-height: 1.35 }
+    .cap span { pointer-events: auto; font-size: inherit; display: inline-block; max-width: 92%; background: #000a; color: #fff; padding: 2px 10px; border-radius: 4px; white-space: pre-wrap; text-shadow: 0 1px 2px #000; line-height: 1.35 }
     .cap span.second { color: #ffe9a8 }
+    .cap textarea.ledit { pointer-events: auto; width: min(92%, 42em); box-sizing: border-box; resize: none; overflow: hidden; font: inherit; line-height: 1.35; text-align: center; padding: 2px 10px; border: 2px solid #ffb547; border-radius: 4px; background: #000e; color: #fff }
     .menu { position: fixed; display: none; flex-direction: column; gap: 12px; width: 288px; box-sizing: border-box; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 13px; box-shadow: 0 10px 30px #0006 }
     .menu.open { display: flex }
     .menu .row { display: flex; flex-direction: column; gap: 6px }
@@ -251,6 +252,7 @@
 
   function paint() {
     const v = S.video
+    if (S.editing) return
     if (!v || !S.lines.length || !S.on) {
       cap.dataset.k = ''
       return cap.replaceChildren()
@@ -275,6 +277,60 @@
     })
     cap.replaceChildren(...kids)
   }
+
+  /** 双击视频上的字幕：就地改当前这一句（回车保存、Esc 取消）；改动同步到摘要文稿，也记在本地 */
+  function editCurrent() {
+    const v = S.video
+    if (!v || !S.lines.length || !S.on || S.editing || S.ls) return
+    const i = L.indexAt(S.lines, v.currentTime * 1000, S.prefs.delay)
+    if (i < 0) return
+    hideBubble(true)
+    try {
+      ;(ui.root.getSelection?.() || getSelection())?.removeAllRanges()
+    } catch {
+      /* 选区清不掉不影响 */
+    }
+    const wasPlaying = !v.paused
+    if (wasPlaying) v.pause()
+    S.editing = true
+    const ta = h('textarea', { class: 'ledit', rows: 1 })
+    ta.value = S.lines[i].text
+    const fit = () => {
+      ta.style.height = 'auto'
+      ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`
+    }
+    let done = false
+    const finish = (save) => {
+      if (done) return
+      done = true
+      const text = ta.value.replace(/\s*\n\s*/g, ' ').trim()
+      if (save && text && text !== S.lines[i].text) {
+        VS.editLine(i, text, 'sublayer')
+        S.lines[i] = { t: S.lines[i].t, text }
+        S.trans[i] = ''
+        setStatus('已修改这一句')
+      }
+      S.editing = false
+      cap.dataset.k = ''
+      paint()
+      if (wasPlaying) Promise.resolve(v.play()).catch(() => {})
+    }
+    ta.addEventListener('input', fit)
+    ta.addEventListener('keydown', (ev) => {
+      ev.stopPropagation()
+      if (ev.isComposing) return
+      if (ev.key === 'Enter' && !ev.shiftKey) (ev.preventDefault(), finish(true))
+      else if (ev.key === 'Escape') (ev.preventDefault(), finish(false))
+    })
+    ta.addEventListener('keyup', (ev) => ev.stopPropagation())
+    ta.addEventListener('blur', () => finish(true))
+    for (const t of ['click', 'dblclick', 'mousedown', 'mouseup']) ta.addEventListener(t, (ev) => ev.stopPropagation())
+    cap.replaceChildren(ta)
+    fit()
+    ta.focus()
+    ta.setSelectionRange(ta.value.length, ta.value.length)
+  }
+  cap.addEventListener('dblclick', editCurrent)
 
   function renderBar() {
     swEl.classList.toggle('on', S.on)
@@ -816,8 +872,16 @@
     refreshMarks()
     paint()
   }
-  const unsub = VS.subscribe((what, snap) => {
+  const unsub = VS.subscribe((what, snap, extra) => {
     if (S.closed) return
+    // 摘要文稿里改了一句：这里跟着换（其他句的译文保留）
+    if (what === 'edit' && extra?.source !== 'sublayer' && S.lines[extra.i]) {
+      S.lines[extra.i] = { t: S.lines[extra.i].t, text: extra.text }
+      S.trans[extra.i] = ''
+      cap.dataset.k = ''
+      if (!S.editing) paint()
+      return
+    }
     if (what === 'lines' && snap.lines.length && snap.source !== 'sublayer') setLines(snap.lines, snap.track)
     if (what === 'trans' && !S.trans.some(Boolean)) {
       const have = VS.translations(S.target)
@@ -828,7 +892,19 @@
       }
     }
   })
-  globalThis.ccSubLayerRun = { destroy: api_destroy, setLines }
+  /** 摘要文稿页勾选“显示在视频上”：字幕层开着但字幕被关掉了，就打开 */
+  function show() {
+    if (S.closed) return
+    if (!S.on) {
+      S.on = true
+      store.set('subLayerOn', true)
+    }
+    renderBar()
+    cap.dataset.k = ''
+    layout()
+    paint()
+  }
+  globalThis.ccSubLayerRun = { destroy: api_destroy, setLines, show }
 
   ;(async () => {
     WC.loadClips()
