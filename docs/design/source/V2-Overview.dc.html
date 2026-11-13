@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影 · 总览与待拍板事项</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="v2.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body { margin: 0; }
+</style>
+</helmet>
+<div class="v2 sheet" style="width:1840px;box-sizing:border-box" data-t="dark"><div class="sh-head"><h1>清影 · UI 提升到 8–9 分的设计稿</h1><span class="sp"></span></div><p class="sub" style="color:var(--cc-mute);max-width:900px;margin-top:-16px">目标：把审计的 6.5 分（视觉气质 7、系统化 5.5）提到 8–9 分。先令牌、再组件、最后逐页。以下画板是新增的 v2，旧的全部页面设计保持原样放在上面。</p><div class="grid2" style="grid-template-columns:1.25fr 1fr;align-items:start">
+<div class="sp-card "><h3>审计问题 → 画板</h3><div style="overflow-x:auto"><table class="tbl "><thead><tr><th>#</th><th>问题</th><th>审计编号</th><th>对应画板</th></tr></thead><tbody><tr><td>C1</td><td>设置 · AI：说明文字墙、默认蓝链接、保存提示矛盾</td><td><span class="tag ">审计 #1</span></td><td>V2-C1 设置 · AI</td></tr><tr><td>C2</td><td>设置页排布开关占据每个分类页右上</td><td><span class="tag ">审计 #4</span></td><td>V2-C2 设置全局</td></tr><tr><td>C3</td><td>下载队列行：文字操作、被底栏裁切、统计卡折行</td><td><span class="tag ">审计 #5</span><span class="tag ">审计 #6</span></td><td>V2-C3 下载队列</td></tr><tr><td>C4</td><td>设置 · 安全：老板键输入截断、文案被截</td><td><span class="tag ">审计 #2</span></td><td>V2-C4 设置 · 安全</td></tr><tr><td>C5</td><td>写作窗：原生 select、两层 tab</td><td><span class="tag ">审计 #16</span></td><td>V2-C5 写作窗</td></tr><tr><td>C6</td><td>工具箱：高频工具埋得深、三列错位、禁用无说明</td><td><span class="tag ">审计 #7</span></td><td>V2-C6 工具箱首页</td></tr><tr><td>C7</td><td>侧栏：900×700 下被推出视口、页脚被截断</td><td><span class="tag ">审计 #15</span></td><td>V2-C7 侧栏</td></tr><tr><td>C8</td><td>媒体库：筛选条过重、空/加载态弱</td><td><span class="tag ">审计 #8</span></td><td>V2-C8 媒体库</td></tr><tr><td>C9</td><td>空状态各写各的（订阅、生词、迷你窗、直播…）</td><td><span class="tag ">审计 #9</span><span class="tag ">审计 #11</span><span class="tag ">审计 #12</span><span class="tag ">审计 #17</span></td><td>V2-C9 空状态统一</td></tr><tr><td>C10</td><td>屏幕翻译首屏：入口主次不清、模式卡 11px</td><td><span class="tag ">审计 #10</span></td><td>V2-C10 屏幕翻译</td></tr><tr><td>C11</td><td>无骨架屏、无进出动画、错误只有瞬时 toast</td><td><span class="tag ">审计 维度·动效与反馈</span></td><td>V2-C11 加载·错误·反馈</td></tr><tr><td>C12</td><td>硬编码色不随主题变化</td><td><span class="tag ">审计 #19</span><span class="tag ">审计 #20</span></td><td>V2-C12 硬编码色对照</td></tr><tr><td>A</td><td>字号 8 种、圆角 10+、无间距/阴影/动效/z-index 令牌</td><td><span class="tag ">审计 维度·视觉层级</span></td><td>V2-DS-1 / V2-DS-2</td></tr><tr><td>B</td><td>按钮 642 处 + 4 套自绘；3 套 segmented；原生 select</td><td><span class="tag ">审计 维度·控件一致性</span></td><td>V2-CMP-1 / V2-CMP-2</td></tr><tr><td>D</td><td>实施顺序、工作量、验收</td><td></td><td>V2-D 实施清单</td></tr></tbody></table></div></div>
+<div class="colf"><div class="sp-card "><h3>怎么看这套设计稿</h3><ul><li>每张页面画板都有 <b>深色 / 浅色 × 1280 / 900</b> 的示意，按真实比例缩小摆放，放大查看。</li>
+<li>画板里的数字圆点和右侧编号说明一一对应；顶部红框标签是审计报告里的证据编号。</li>
+<li>所有取值都用仓库已有的 <b>--cc-*</b> 命名；新增的令牌在“设计系统 · 色彩与令牌清单”里有一份可复制的完整列表。</li>
+<li>保持不变：信息架构、功能、侧栏 9 个一级入口、深蓝黑 + 琥珀的气质。变化集中在“更克制、更统一”。</li></ul></div><div class="sp-card "><h3>需要产品负责人拍板的 8 件事</h3><div style="overflow-x:auto"><table class="tbl "><thead><tr><th>要拍板的事</th><th>选项</th><th>推荐</th></tr></thead><tbody><tr><td>警告色是否独立于琥珀</td><td>A 独立黄（#f2cf5b / #7a5c00），永远带图标；B 直接复用琥珀</td><td>推荐 A：琥珀只给“可操作/选中”，警告与它同色会混淆</td></tr><tr><td>浅色强调色 #b45f00 → #a65600</td><td>A 调深一档，主按钮白字达到 4.5:1；B 保持，主按钮改深色字</td><td>推荐 A：只影响浅色，深色不变</td></tr><tr><td>去掉所有卡片角上的琥珀小装饰</td><td>A 全部去掉，只保留底部网格背景；B 仅保留在“当前聚焦”卡</td><td>推荐 A：层级靠间距和字号，不靠装饰</td></tr><tr><td>工具箱高频入口放哪</td><td>A 首页顶部 4 张快捷卡；B 侧栏一级再加入口</td><td>推荐 A：不增加一级入口，侧栏 9 项已经满</td></tr><tr><td>设置页排布开关</td><td>A 移到“通用”页；B 直接删掉，固定自动平衡</td><td>推荐 A：功能保留，只挪位置</td></tr><tr><td>侧栏矮窗口策略</td><td>A 自动：够高全展开、矮了中间滚动、更矮仅图标；B 只做手动收起</td><td>推荐 A + 手动收起都做</td></tr><tr><td>Chinese 小字下限</td><td>A 11px 仅限徽标/等宽读数，说明最小 12px；B 全部允许 11px</td><td>推荐 A：中文 11px 很吃力</td></tr><tr><td>设置是否“即时保存”</td><td>A 全部即时保存，删掉“点保存”提示；B 保留保存按钮并改顶部文案</td><td>不确定：需先确认 AiPool 实际行为，设计按 A 画</td></tr></tbody></table></div></div></div></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1840,"height":926}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
