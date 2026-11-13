@@ -176,28 +176,59 @@ async function enable() {
   }
 }
 
-async function sendPaths(paths: string[]) {
+/**
+ * 微信式输入框：粘贴 / 选择 / 拖入的文件先“放进输入框”（草稿），点“发送”才发出，不会自动发。
+ * 草稿是按放入顺序排的一串：文字和文件交错时，先打的文字会在放文件的那一刻固定成一条，
+ * 发送时严格按这个顺序发（输入框里还没固定的文字排在最后）。
+ */
+type Seg = { id: number; kind: 'text'; text: string } | { id: number; kind: 'file'; path: string; name: string }
+const draft = ref<Seg[]>([])
+let segSeq = 0
+const baseName = (p: string) => p.split(/[\\/]/).pop() || p
+const canSend = computed(() => (draft.value.length > 0 || !!text.value.trim()) && targets.value.size > 0)
+/** 把输入框里正在打的文字固定成草稿里的一条（保持顺序） */
+function commitText() {
+  const t = text.value.trim()
+  if (t) draft.value.push({ id: ++segSeq, kind: 'text', text: t })
+  text.value = ''
+}
+function stagePaths(paths: string[]) {
   if (!paths.length) return
-  sending.value = true
-  try {
-    const r = await api.transferSendFiles(paths, targetList())
-    if (r.added) ElMessage.success(`已加入 ${r.added} 个文件，在手机网页的“电脑发来的”里下载`)
-    for (const s of r.skipped.slice(0, 3)) ElMessage.warning(s)
-    await load()
-  } catch (e) {
-    ElMessage.error(errorText(e))
-  } finally {
-    sending.value = false
+  commitText()
+  for (const path of paths.slice(0, 50)) {
+    draft.value.push({ id: ++segSeq, kind: 'file', path, name: baseName(path) })
+    void ensureThumb(path)
   }
+}
+const isImageName = (n: string) => THUMB_EXT.test(n)
+async function ensureThumb(path: string) {
+  if (!THUMB_EXT.test(path) || path in thumbs.value) return
+  thumbs.value[path] = ''
+  try {
+    const u = await api.transferThumb(path)
+    if (u) thumbs.value[path] = u
+  } catch {
+    /* 没有缩略图就显示文件图标 */
+  }
+}
+/** 输入框是空的时候按退格：删掉草稿里最后一项（和微信一样） */
+function onBackspace(e: KeyboardEvent) {
+  if (text.value === '' && draft.value.length && !e.isComposing) {
+    e.preventDefault()
+    draft.value.pop()
+  }
+}
+function dropSeg(id: number) {
+  draft.value = draft.value.filter((x) => x.id !== id)
 }
 
 async function pick() {
   const r = await open({ multiple: true })
   if (!r) return
-  await sendPaths(Array.isArray(r) ? r : [r])
+  stagePaths(Array.isArray(r) ? r : [r])
 }
 
-/** 剪贴板里的图片 / 文件（截图、在资源管理器里复制的文件）：存成临时文件再发给手机 */
+/** 剪贴板里的图片 / 文件（截图、在资源管理器里复制的文件）：存成临时文件，放进输入框（不发送） */
 async function pasteFiles(files: File[]) {
   if (!files.length) return
   sending.value = true
@@ -217,8 +248,7 @@ async function pasteFiles(files: File[]) {
       i++
       paths.push(await api.transferStageFile(name, await f.arrayBuffer()))
     }
-    sending.value = false
-    await sendPaths(paths)
+    stagePaths(paths)
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -228,21 +258,46 @@ async function pasteFiles(files: File[]) {
 
 function onPaste(e: ClipboardEvent) {
   const files = [...(e.clipboardData?.files ?? [])]
-  if (!files.length) return
+  if (!files.length) return // 只有文字：交给输入框自己粘贴
   e.preventDefault()
   void pasteFiles(files)
 }
 
-async function sendText() {
-  const t = text.value.trim()
-  if (!t) return
+/** 发送整个草稿：按顺序一条一条发；输入框里没固定的文字排在最后。 */
+async function sendAll() {
+  if (!canSend.value || sending.value) return
+  commitText()
+  sending.value = true
   try {
-    await api.transferSendText(t, targetList())
-    text.value = ''
-    ElMessage.success('已加入，手机网页里可以一键复制')
+    let sentText = 0
+    let sentFiles = 0
+    // 连续的文件合成一批发，文字单独发；批与批之间按顺序等前一个完成
+    while (draft.value.length) {
+      const first = draft.value[0]
+      if (first.kind === 'text') {
+        await api.transferSendText(first.text, targetList())
+        sentText++
+        draft.value.shift()
+      } else {
+        const batch: string[] = []
+        let n = 0
+        while (n < draft.value.length && draft.value[n].kind === 'file') {
+          batch.push((draft.value[n] as Extract<Seg, { kind: 'file' }>).path)
+          n++
+        }
+        const r = await api.transferSendFiles(batch, targetList())
+        sentFiles += r.added
+        for (const w of r.skipped.slice(0, 3)) ElMessage.warning(w)
+        draft.value.splice(0, n)
+      }
+    }
+    ElMessage.success(sentFiles ? `已发送，手机网页的“电脑发来的”里可以下载${sentText ? '、复制' : ''}` : '已加入，手机网页里可以一键复制')
     await load()
   } catch (e) {
+    // 已发出的已经从草稿里去掉，剩下的留着，改好再点发送
     ElMessage.error(errorText(e))
+  } finally {
+    sending.value = false
   }
 }
 
@@ -374,7 +429,7 @@ onMounted(async () => {
     leave: () => (over.value = false),
     drop: (paths) => {
       over.value = false
-      sendPaths(paths)
+      stagePaths(paths)
     },
   })
 })
@@ -541,15 +596,27 @@ onUnmounted(() => {
           </template>
         </div>
 
-        <div v-if="over && !(chatOn && view === 'chat')" class="dropmask"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>松开鼠标，发送给 {{ targetText.replace('发给 ', '') }}</div>
+        <div v-if="over && !(chatOn && view === 'chat')" class="dropmask"><svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>松开鼠标，放进输入框（点“发送”才会发给 {{ targetText.replace('发给 ', '') }}）</div>
         <div v-show="!(chatOn && view === 'chat')" class="composer">
+          <div v-if="draft.length" class="tray" data-testid="draft" aria-label="待发送的内容（按这个顺序发出）">
+            <div v-for="(d, n) in draft" :key="d.id" class="dchip" :class="d.kind" :data-kind="d.kind">
+              <span class="no">{{ n + 1 }}</span>
+              <template v-if="d.kind === 'text'"><span class="dtext" :title="d.text">{{ d.text }}</span></template>
+              <template v-else>
+                <img v-if="thumbs[d.path]" class="dthumb" :src="thumbs[d.path]" alt="" />
+                <span v-else class="dicon"><svg viewBox="0 0 24 24" v-html="iconOf(isImageName(d.name) ? 'image' : 'file')" /></span>
+                <span class="dtext" :title="d.path">{{ d.name }}</span>
+              </template>
+              <button type="button" class="dx" :aria-label="`移除第 ${n + 1} 项`" @click="dropSeg(d.id)">×</button>
+            </div>
+          </div>
           <div class="cbar">
             <span class="tchip" :class="{ none: !targets.size }" :title="'在左侧“发送对象”里勾选'">{{ targetText }}</span>
             <el-button class="clip" text :loading="sending" aria-label="选择文件" title="选择文件…" @click="pick">
               <svg viewBox="0 0 24 24"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.4-2.4L15 8.6" /></svg>
             </el-button>
-            <input v-model="text" class="tin" type="text" maxlength="20000" placeholder="输入文字，或把文件拖进窗口，或直接粘贴图片 / 文件…" @keydown.enter.exact.prevent="sendText" @paste="onPaste" />
-            <el-button type="primary" class="sendb" :disabled="!text.trim() || !targets.size" @click="sendText">发送</el-button>
+            <input v-model="text" class="tin" type="text" maxlength="20000" placeholder="输入文字，或把文件拖进窗口，或直接粘贴图片 / 文件（点“发送”才会发出）…" @keydown.enter.exact.prevent="sendAll" @keydown.backspace="onBackspace" @paste="onPaste" />
+            <el-button type="primary" class="sendb" :disabled="!canSend" :loading="sending" @click="sendAll">发送{{ draft.length ? `（${draft.length + (text.trim() ? 1 : 0)}）` : '' }}</el-button>
           </div>
           <div class="tail">
             <small class="mute">收到的文件不会被自动运行，打开前请确认来源可信。</small>
@@ -1093,6 +1160,96 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 22px 12px;
+}
+.tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px 0;
+  max-height: 156px;
+  overflow: auto;
+}
+.dchip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  min-width: 0;
+  padding: 5px 24px 5px 6px;
+  border-radius: 10px;
+  background: var(--x-chip);
+  color: var(--x-chipfg);
+  border: 1px solid var(--cc-line);
+  font-size: 12.5px;
+}
+.dchip.text {
+  background: var(--x-ob);
+  border-color: var(--x-obl);
+  color: var(--x-obfg);
+}
+.dchip .no {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--x-acc);
+  color: var(--x-acfg);
+}
+.dthumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  object-fit: cover;
+  flex: none;
+}
+.dicon {
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--cc-hover);
+  flex: none;
+}
+.dicon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dtext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dx {
+  all: unset;
+  cursor: pointer;
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.6;
+}
+.dx:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.18);
 }
 .dropmask {
   position: absolute;

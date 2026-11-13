@@ -16,6 +16,7 @@ const html = fs.readFileSync(path.join(__dirname, '../src-tauri/src/phone_page.h
   let paired = false
   const sent = []
   let chatOn = false
+  const uploads = []
   const chatMsgs = []
   await page.route('http://phone.test/**', async (route) => {
     const u = new URL(route.request().url())
@@ -33,6 +34,7 @@ const html = fs.readFileSync(path.join(__dirname, '../src-tauri/src/phone_page.h
       const since = Number(u.searchParams.get('since') || 0)
       return j({ enabled: chatOn, messages: chatOn ? chatMsgs.filter((m) => m.id > since) : [] })
     }
+    if (u.pathname === '/api/upload') return (uploads.push(u.searchParams.get('name')), j({ id: 1, name: u.searchParams.get('name') }))
     if (u.pathname === '/api/send') return (sent.push(route.request().postData()), j({ state: 'queued' }))
     if (u.pathname === '/api/box')
       return j({
@@ -76,10 +78,19 @@ const html = fs.readFileSync(path.join(__dirname, '../src-tauri/src/phone_page.h
   await page.waitForFunction(() => document.getElementById('text').value === '')
   ok(sent.length === 1 && sent[0].includes('bilibili'), '发送链接')
 
-  // 上传：选一个小文件（接口没有实现 /api/upload，会失败，用来看错误气泡与移除）
+  // 微信式输入框：选的 / 粘贴的文件先放进输入框，点发送才发；先打的文字、文件、后打的文字按顺序发
+  sent.length = 0
+  await page.fill('#text', '这是合同')
   await page.setInputFiles('#inFile', { name: 'a.zip', mimeType: 'application/zip', buffer: Buffer.alloc(100) })
+  await page.waitForSelector('#tray .dc')
+  ok((await page.locator('#tray .dc').count()) === 2 && (await page.locator('#tray .dc').first().getAttribute('class')).includes('tx'), '选了文件后，先打的文字固定成第 1 项，文件是第 2 项')
+  ok(uploads.length === 0 && sent.length === 0, '没点发送不会自动发')
+  ok((await page.inputValue('#text')) === '', '输入框清空可以接着打字')
+  await page.fill('#text', '请签收')
+  await page.click('#send')
+  await page.waitForFunction(() => document.querySelectorAll('#tray .dc').length === 0, null, { timeout: 8000 })
+  ok(uploads.join() === 'a.zip' && sent.length === 2 && sent[0].includes('这是合同') && sent[1].includes('请签收'), '点发送后按顺序发出：文字、文件、文字 → ' + JSON.stringify({ uploads, sent }))
   await page.waitForFunction(() => /a\.zip/.test(document.getElementById('feed').textContent))
-  ok(true, '上传条目出现在对话流')
   // 同一个文件只留一条：上传的这条（名字、大小都和电脑记录里的 a.zip 一样）和记录里的不重复显示
   await page.waitForTimeout(300)
   const zips = await page.locator('#feed .bub', { hasText: 'a.zip' }).count()

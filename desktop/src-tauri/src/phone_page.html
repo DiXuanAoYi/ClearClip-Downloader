@@ -56,6 +56,16 @@ pre{margin:0;white-space:pre-wrap;word-break:break-all;font:15px/1.55 inherit;fo
 .plus svg{width:22px;height:22px}
 .comp textarea{flex:1;min-height:44px;max-height:120px;border-radius:22px;border:1px solid var(--ln);background:var(--sf);color:var(--fg);padding:11px 16px;font:14.5px/1.4 inherit;font-family:inherit;resize:none}
 .comp textarea::placeholder{color:var(--mt)}
+/* 输入框里待发送的草稿（微信式）：按放入顺序排，点发送才发 */
+#tray{display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px}#tray:empty{display:none}
+.dc{position:relative;flex:none;display:flex;align-items:center;gap:7px;max-width:210px;padding:5px 26px 5px 6px;border-radius:12px;background:var(--ch);border:1px solid var(--ln);font-size:12.5px}
+.dc.tx{background:var(--ob);border-color:var(--obl);color:var(--obfg)}
+.dc .n{flex:none;width:16px;height:16px;border-radius:50%;background:var(--ac);color:var(--acfg);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.dc img{width:38px;height:38px;border-radius:8px;object-fit:cover;flex:none}
+.dc .ph{width:38px;height:38px;border-radius:8px;background:var(--sf);display:flex;align-items:center;justify-content:center;flex:none}
+.dc .ph svg{width:18px;height:18px}
+.dc .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dc .rm{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;border:0;background:none;color:inherit;opacity:.65;font-size:15px;line-height:1;padding:0;margin:0;display:flex;align-items:center;justify-content:center}
 #msg{font-size:12.5px;color:var(--mt);text-align:center}#msg:empty{display:none}#msg.err{color:var(--er)}
 #drop{display:none;border:2px dashed var(--ln);border-radius:14px;padding:12px;text-align:center;color:var(--mt);font-size:13px}
 #drop.over{border-color:var(--ac);color:var(--ac)}
@@ -117,9 +127,10 @@ body.pairing .tabs,body.pairing #vChat,body.pairing #cComp,body.pairing #vSend,b
 
 <div class="comp" id="comp">
 <div id="msg"></div>
+<div id="tray" aria-label="待发送的内容（按这个顺序发出）"></div>
 <div class="in">
 <button id="plus" class="plus" aria-label="添加照片、文件或粘贴链接"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-<textarea id="text" rows="1" placeholder="粘贴链接、图片，或写点文字…"></textarea>
+<textarea id="text" rows="1" placeholder="粘贴链接、图片，或写点文字…（点发送才会发出）"></textarea>
 <button id="send" class="go" aria-label="发送"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
 </div>
 <input id="inMedia" type="file" accept="image/*,video/*" multiple hidden>
@@ -175,32 +186,44 @@ $("pickFile").onclick=()=>{sheet(false);$("inFile").click()};
 $("paste").onclick=async()=>{sheet(false);try{const t=await navigator.clipboard.readText();if(t){$("text").value=t;$("text").oninput();$("text").focus()}else say("剪贴板是空的",1)}catch(e){say("浏览器不允许直接读取剪贴板，请长按输入框粘贴",1);$("text").focus()}};
 
 // ---------- 发送文字 / 链接 ----------
-$("send").onclick=async()=>{const text=$("text").value.trim();if(!text){say("请先输入内容",1);return}
-$("send").disabled=true;try{const r=await api("/api/send",{method:"POST",body:JSON.stringify({text,device:dev,name:dname})});$("text").value="";$("text").style.height="";say(r.state==="pending_pair"?"第一次使用：请在电脑上点“允许”完成配对":r.state==="note"?"已发送到电脑的“收到的文件”":"");refresh()}catch(e){say(e.state==="pending_pair"?"请先在电脑上点“允许”完成配对":e.message,1)}finally{$("send").disabled=false}};
+// 草稿：文字和文件按放入的顺序排，点发送才发；输入框里没固定的文字排在最后
+const draft=[];let dseq=0;
+function drender(){const t=$("tray");t.innerHTML="";draft.forEach((d,i)=>{const c=h("div","dc"+(d.kind==="text"?" tx":""));c.append(h("span","n",String(i+1)));
+if(d.kind==="text")c.append(h("span","nm",d.text));
+else{if(d.url){const im=h("img");im.alt="";im.src=d.url;c.append(im)}else{const ph=h("span","ph");ph.append(ic(kindOfName(d.file.name)==="archive"?"file":kindOfName(d.file.name)));c.append(ph)}c.append(h("span","nm",d.file.name))}
+const x=h("button","rm","×");x.type="button";x.setAttribute("aria-label","移除第 "+(i+1)+" 项");x.onclick=()=>{if(d.url)URL.revokeObjectURL(d.url);draft.splice(draft.indexOf(d),1);drender()};c.append(x);t.append(c)})}
+function commitT(){const v=$("text").value.trim();if(v)draft.push({id:++dseq,kind:"text",text:v});$("text").value="";$("text").style.height=""}
+function stageFiles(fs){if(!fs.length)return;commitT();for(const f of fs.slice(0,50)){const d={id:++dseq,kind:"file",file:f};if(/\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(f.name))d.url=URL.createObjectURL(f);draft.push(d)}drender();say("")}
+$("send").onclick=async()=>{commitT();if(!draft.length){say("请先输入内容",1);return}
+$("send").disabled=true;try{while(draft.length){const d=draft[0];
+if(d.kind==="text"){const r=await api("/api/send",{method:"POST",body:JSON.stringify({text:d.text,device:dev,name:dname})});say(r.state==="pending_pair"?"第一次使用：请在电脑上点“允许”完成配对":r.state==="note"?"已发送到电脑的“收到的文件”":"")}
+else{const r=addFiles([d.file])[0];await new Promise(res=>{if(r.state!=="wait"&&r.state!=="up")res();else r.fin=res});if(r.state==="err")throw new Error(d.file.name+"："+(r.msg||"发送失败"))}
+if(d.url)URL.revokeObjectURL(d.url);draft.shift();drender()}
+refresh()}catch(e){say(e.state==="pending_pair"?"请先在电脑上点“允许”完成配对":e.message,1);drender()}finally{$("send").disabled=false}};
 $("text").oninput=()=>{const t=$("text");t.style.height="auto";t.style.height=Math.min(120,t.scrollHeight)+"px"};
 
 // ---------- 上传文件（直接把文件作为请求正文，浏览器边读边发，不进内存） ----------
 const queue=[];let running=0;const PAR=2;
 function kindOfName(n){n=n.toLowerCase();return/\.(jpe?g|png|gif|webp|heic|heif|avif|bmp)$/.test(n)?"image":/\.(mp4|mov|m4v|mkv|webm|avi)$/.test(n)?"video":/\.(mp3|m4a|aac|wav|flac|ogg)$/.test(n)?"audio":/\.(zip|rar|7z|tar|gz)$/.test(n)?"archive":"file"}
-function addFiles(files){let n=0;for(const f of files){const r={file:f,done:0,kind:kindOfName(f.name)};if(r.kind==="image"&&/\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(f.name))r.url=URL.createObjectURL(f);
-if(maxMb>0&&f.size>maxMb*1048576){r.state="err";r.msg="超过上限 "+maxMb+" MB，可在电脑设置里调整"}else{r.state="wait";n++}queue.push(r)}renderFeed();pump();if(n)say("")}
+function addFiles(files){let n=0;const out=[];for(const f of files){const r={file:f,done:0,kind:kindOfName(f.name)};out.push(r);if(r.kind==="image"&&/\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(f.name))r.url=URL.createObjectURL(f);
+if(maxMb>0&&f.size>maxMb*1048576){r.state="err";r.msg="超过上限 "+maxMb+" MB，可在电脑设置里调整"}else{r.state="wait";n++}queue.push(r)}renderFeed();pump();if(n)say("");return out}
 function pump(){while(running<PAR){const r=queue.find(q=>q.state==="wait");if(!r)break;start(r)}}
 function start(r){running++;r.state="up";const x=new XMLHttpRequest();r.xhr=x;
 x.open("POST","/api/upload?device="+enc(dev)+"&dname="+enc(dname)+"&name="+enc(r.file.name));x.setRequestHeader("X-Token",TOKEN);
 x.upload.onprogress=e=>{r.done=e.loaded;renderFeed()};
-const end=(st,msg)=>{if(r.state!=="up")return;running--;r.state=st;r.msg=msg;renderFeed();pump();refresh()};
+const end=(st,msg)=>{if(r.state!=="up")return;running--;r.state=st;r.msg=msg;renderFeed();pump();refresh();if(r.fin)r.fin()};
 x.onload=()=>{let j={};try{j=JSON.parse(x.responseText)}catch(e){}if(x.status===200){r.done=r.file.size;end("ok",j.name&&j.name!==r.file.name?"重名已改为 "+j.name:"")}else end("err",j.error||("HTTP "+x.status))};
 x.onerror=()=>end("err","连接中断，请确认手机和电脑在同一个 Wi-Fi");
 x.onabort=()=>end("err","已取消");
 x.send(r.file)}
-$("text").addEventListener("paste",e=>{const fs=[...(e.clipboardData&&e.clipboardData.files||[])];if(fs.length){e.preventDefault();addFiles(fs)}});
-$("inMedia").onchange=$("inFile").onchange=e=>{addFiles([...e.target.files]);e.target.value=""};
+$("text").addEventListener("paste",e=>{const fs=[...(e.clipboardData&&e.clipboardData.files||[])];if(fs.length){e.preventDefault();stageFiles(fs)}});
+$("inMedia").onchange=$("inFile").onchange=e=>{stageFiles([...e.target.files]);e.target.value=""};
 addEventListener("dragover",e=>{e.preventDefault();$("drop").classList.add("over")});
 addEventListener("dragleave",e=>{if(!e.relatedTarget)$("drop").classList.remove("over")});
 addEventListener("drop",e=>{e.preventDefault();$("drop").classList.remove("over");if(!paired){say("请先在电脑上点“允许”完成配对",1);return}
 const files=[];let dirs=0;for(const it of e.dataTransfer.items||[]){if(it.kind!=="file")continue;const en=it.webkitGetAsEntry&&it.webkitGetAsEntry();if(en&&en.isDirectory){dirs++;continue}const f=it.getAsFile();if(f)files.push(f)}
 if(!e.dataTransfer.items)files.push(...e.dataTransfer.files);
-if(dirs)say("文件夹不能直接发送，请先压缩成压缩包",1);addFiles(files)});
+if(dirs)say("文件夹不能直接发送，请先压缩成压缩包",1);stageFiles(files)});
 addEventListener("beforeunload",e=>{if(running>0){e.preventDefault();e.returnValue=""}});
 
 // ---------- 对话流（发送） ----------
