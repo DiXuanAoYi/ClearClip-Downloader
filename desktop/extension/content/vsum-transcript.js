@@ -8,6 +8,7 @@
   }) => {
     const WC = globalThis.ccWordCard
     const LN = globalThis.ccLearn
+    const VS = globalThis.ccVSession
     const getSel = () => String((ui.root.getSelection && ui.root.getSelection()) || getSelection() || '').trim()
 
     function tabTranscript() {
@@ -318,7 +319,6 @@
       const d = S.data
       const l = d?.lines[i]
       if (!l) return
-      if (d.streaming) return toast(ui, '识别还没完成，完成后再改', true)
       try {
         ;(ui.root.getSelection?.() || getSelection())?.removeAllRanges()
       } catch {
@@ -327,6 +327,8 @@
       clearTimeout(hovTimer)
       wpop.close()
       const row = e.currentTarget
+      const t0 = l.t
+      S.editing = true
       const box = row.children[row.children.length - 2]
       const ta = h('textarea', { class: 'ledit', rows: 1 })
       ta.value = l.text
@@ -338,8 +340,11 @@
       const finish = (save) => {
         if (done) return
         done = true
-        if (save) saveLine(i, ta.value)
+        S.editing = false
+        if (save) saveLine(t0, i, ta.value)
         else render()
+        // 编辑期间识别又来了新内容：现在补画
+        if (S.pendingRender) (S.pendingRender = false, render())
       }
       ta.addEventListener('input', fit)
       ta.addEventListener('keydown', (ev) => {
@@ -355,8 +360,10 @@
       ta.focus()
       ta.setSelectionRange(ta.value.length, ta.value.length)
     }
-    function saveLine(i, raw) {
+    function saveLine(t0, i0, raw) {
       const d = S.data
+      // 识别进行中行会增减：按时间找回这一句
+      const i = d?.lines[i0]?.t === t0 ? i0 : d?.lines.findIndex((x) => x.t === t0) ?? -1
       const l = d?.lines[i]
       const v = String(raw || '').replace(/\s*\n\s*/g, ' ').trim()
       if (!l || !v || v === l.text) return render()
@@ -364,8 +371,14 @@
       d.lines = d.lines.map((x, j) => (j === i ? { ...x, text: v, src } : x))
       // 这一句原来的译文已经不对了：清掉，其他句的译文保留
       if (S.res.translated) S.res.translated = S.res.translated.map((x, j) => (j === i ? '' : x))
-      rememberEdit(l.t, src, v)
-      syncLater()
+      if (d.streaming) {
+        // 识别还没完成：先记下，之后每次新结果、以及最终结果出来都按时间把这句的修改带上
+        ;(S.liveEdits ||= new Map()).set(t0, v)
+      } else if (!VS.editLine(i, v, 'vsum')) {
+        // 会话里的文稿和这里对不上（比如还没同步）：整份同步，改动单独记
+        rememberEdit(l.t, src, v)
+        syncLater()
+      }
       render()
       toast(ui, '已修改这一句')
     }
@@ -406,6 +419,6 @@
       render()
     }
 
-    return { getSel, tabTranscript, punctuate, applyEdits }
+    return { getSel, tabTranscript, punctuate, applyEdits, rememberEdit }
   }
 })()

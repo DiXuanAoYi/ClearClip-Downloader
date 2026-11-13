@@ -373,8 +373,12 @@
   /** 转写进行中：把已经识别出来的先显示在文稿里（不重置摘要等结果，也不存缓存）。 */
   function showPartial(p) {
     if (S.closed || !S.data || !p?.lines?.length) return
-    S.data = { ...S.data, lines: p.lines, durationMs: p.durationMs || S.data.durationMs || 0, track: `清影转写（识别中 ${Math.round((p.progress || 0) * 100)}%）`, streaming: true, noSubtitle: false, note: '', trackUrl: '' }
-    render()
+    // 识别过程中用户改过的句子（按时间对应）一直保留
+    const lines = S.liveEdits?.size ? p.lines.map((l) => (S.liveEdits.has(l.t) ? { ...l, text: S.liveEdits.get(l.t), src: l.text } : l)) : p.lines
+    S.data = { ...S.data, lines, durationMs: p.durationMs || S.data.durationMs || 0, track: `清影转写（识别中 ${Math.round((p.progress || 0) * 100)}%）`, streaming: true, noSubtitle: false, note: '', trackUrl: '' }
+    // 正在编辑一句时不重画（会把输入框弄没），编辑完补画
+    if (S.editing) S.pendingRender = true
+    else render()
   }
 
   async function transcribeNow() {
@@ -393,8 +397,19 @@
         if (r?.lines?.length) putCache(key, r)
       }
       if (!r?.lines?.length) throw new Error('没有识别出任何语音')
-      setData({ ...S.data, lines: r.lines, durationMs: r.durationMs || S.data?.durationMs || 0, track: r.track, spoken: r.lang || S.data?.spoken || '', trackLang: r.lang || '', trackAuto: true, streaming: false, noSubtitle: false, note: '', trackUrl: '', tracks: S.data?.tracks || [] })
-      toast(ui, `转写完成，共 ${r.lines.length} 句`)
+      // 识别过程中改过的句子：按时间带到最终结果上，并记在本地
+      let finalLines = r.lines
+      if (S.liveEdits?.size) {
+        finalLines = r.lines.map((l) => {
+          if (!S.liveEdits.has(l.t)) return l
+          const to = S.liveEdits.get(l.t)
+          rememberEditDoc?.(l.t, l.text, to)
+          return { ...l, text: to, src: l.text }
+        })
+        S.liveEdits = null
+      }
+      setData({ ...S.data, lines: finalLines, durationMs: r.durationMs || S.data?.durationMs || 0, track: r.track, spoken: r.lang || S.data?.spoken || '', trackLang: r.lang || '', trackAuto: true, streaming: false, noSubtitle: false, note: '', trackUrl: '', tracks: S.data?.tracks || [] })
+      toast(ui, `转写完成，共 ${finalLines.length} 句`)
     } catch (e) {
       toast(ui, e.message, true, 7000)
     } finally {
@@ -979,7 +994,16 @@
   }
 
   // 字幕层翻好的译文（同一份文稿、同一种语言）直接显示在文稿里
-  const unsubSession = VS.subscribe((what) => {
+  const unsubSession = VS.subscribe((what, _snap, extra) => {
+    // 视频上的字幕层里改了一句：文稿跟着换（其他句的译文保留）
+    if (what === 'edit' && extra?.source !== 'vsum' && !S.closed && S.data?.lines[extra.i] && _snap.lines[extra.i]?.t === S.data.lines[extra.i].t) {
+      const d = S.data
+      d.lines = d.lines.map((l, j) => (j === extra.i ? { ...l, text: extra.text, src: extra.src } : l))
+      if (S.res.translated) S.res.translated = S.res.translated.map((x, j) => (j === extra.i ? '' : x))
+      if (S.editing) S.pendingRender = true
+      else render()
+      return
+    }
     if (what !== 'trans' || S.closed || !S.data?.lines.length || S.res.translated) return
     if (VS.fingerprint(S.data.lines.map((l) => ({ t: l.t, text: l.text }))) !== VS.fingerprint(VS.current().lines)) return
     const have = VS.translations(outLang())
@@ -1133,7 +1157,7 @@
   // ---------- 各标签页（vsum-*.js）：依赖从这里传进去 ----------
 
   const TABS_ = globalThis.ccVsumTabs
-  const { getSel, tabTranscript, punctuate: punctuateDoc, applyEdits: applyEditsDoc } = TABS_.transcript({
+  const { getSel, tabTranscript, punctuate: punctuateDoc, applyEdits: applyEditsDoc, rememberEdit: rememberEditDoc } = TABS_.transcript({
     S, V, actsBar, addNote, copy, h, isVideo, langSelect, onSelect, outLabel, render, saveFile, savePrefs, seek,
     sel, send, setData, syncSubLayer, task, tick, toast, trackBar, translateDoc, ui, video
   })

@@ -33,10 +33,10 @@
     return t
   }
 
-  function emit(what) {
+  function emit(what, extra) {
     for (const fn of S.subs) {
       try {
-        fn(what, snapshot())
+        fn(what, snapshot(), extra)
       } catch {
         // 订阅者出错不影响别的
       }
@@ -64,7 +64,8 @@
   /** 放进一份字幕。`source`：谁读到的（vsum / sublayer / transcribe）。内容没变就什么也不做。 */
   function setLines(lines, track = '', source = '') {
     current()
-    const next = (lines || []).map((l) => ({ t: Number(l.t) || 0, text: String(l.text || '') }))
+    // src：这一句手动改过 / 纠错过时，读到的原文字（改动按它记在本地）
+    const next = (lines || []).map((l) => (l.src && l.src !== l.text ? { t: Number(l.t) || 0, text: String(l.text || ''), src: String(l.src) } : { t: Number(l.t) || 0, text: String(l.text || '') }))
     if (next.length && fingerprint(next) === fingerprint(S.lines) && track === S.track) return false
     S.lines = next
     S.track = track || ''
@@ -80,8 +81,54 @@
     const cur = current()
     if (cur.lines.length && !opts.force) return { lines: cur.lines, track: cur.track, fromSession: true }
     const d = await globalThis.ccVsumSource.load(opts.url)
+    // 以前手动改过的字带回来
+    d.lines = await withEdits(d.lines || [])
     if (videoKey() === S.vk) setLines(d.lines || [], d.track || '', opts.source || '')
     return d
+  }
+
+  // ---------- 手动改字幕：按“视频 + 时间 + 读到的原文字”记在本地，下次同一份字幕自动带出 ----------
+  const EDITS_KEY = 'vsumEdits'
+  async function rememberEdit(vk, t, from, to) {
+    try {
+      const all = (await api.storage.local.get(EDITS_KEY))[EDITS_KEY] || {}
+      const m = { ...(all[vk] || {}) }
+      if (to === from) delete m[`${t}|${from}`]
+      else m[`${t}|${from}`] = to
+      delete all[vk]
+      if (Object.keys(m).length) all[vk] = m
+      const keys = Object.keys(all)
+      for (const x of keys.slice(0, Math.max(0, keys.length - 40))) delete all[x]
+      await api.storage.local.set({ [EDITS_KEY]: all })
+    } catch {
+      // 存不了就只在这次有效
+    }
+  }
+  /** 把本地记的改动用到一份刚读到的字幕上 */
+  async function withEdits(lines) {
+    try {
+      const m = (await api.storage.local.get(EDITS_KEY))[EDITS_KEY]?.[videoKey()]
+      if (!m) return lines
+      return lines.map((l) => {
+        const to = m[`${l.t}|${l.text}`]
+        return to === undefined || to === l.text ? l : { ...l, text: to, src: l.text }
+      })
+    } catch {
+      return lines
+    }
+  }
+  /** 改会话里的一句：其他句的译文保留，这一句的译文清掉；通知订阅者（摘要文稿、字幕层）。 */
+  function editLine(i, text, source = '') {
+    current()
+    const l = S.lines[i]
+    const v = String(text || '').trim()
+    if (!l || !v || v === l.text) return false
+    const src = l.src || l.text
+    S.lines[i] = v === src ? { t: l.t, text: v } : { t: l.t, text: v, src }
+    for (const arr of S.trans.values()) if (Array.isArray(arr)) arr[i] = ''
+    rememberEdit(S.vk, l.t, src, v)
+    emit('edit', { i, text: v, src, source })
+    return true
   }
 
   const cacheKey = (target) => `${S.vk}|${langKey(target)}|${fingerprint(S.lines)}|${S.pv}`
@@ -175,6 +222,8 @@
   globalThis.ccVSession = {
     current,
     setLines,
+    editLine,
+    withEdits,
     load,
     translations,
     putTranslations,

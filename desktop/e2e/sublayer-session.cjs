@@ -130,6 +130,27 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
   const cap2 = await inRoots(() => window.__roots.map((r) => r.querySelector('.cap')).find(Boolean)?.textContent || '')
   ok('会话换了字幕，字幕层跟着换并重新翻译', /Another track line/.test(cap2) && /译:Another/.test(cap2), cap2)
 
+  // 4a. 双击视频上的字幕直接改：会话、摘要文稿、本地记录都跟着；摘要里改了，字幕层也跟着
+  await page.evaluate(() => globalThis.ccVSession.setLines([{ t: 0, text: 'Alpha line here.' }, { t: 2000, text: 'Beta line here.' }], 'English', 'vsum'))
+  await page.waitForFunction(() => (window.__roots || []).some((r) => /Alpha line here/.test(r.querySelector('.cap')?.textContent || '')), null, { timeout: 5000 }).catch(() => {})
+  await page.evaluate(() => window.__roots.map((r) => r.querySelector('.cap')).find(Boolean).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+  ok('双击视频上的字幕：变成输入框', await page.evaluate(() => window.__roots.some((r) => r.querySelector('.cap textarea.ledit'))))
+  await page.evaluate(() => {
+    const ta = window.__roots.map((r) => r.querySelector('.cap textarea.ledit')).find(Boolean)
+    ta.value = 'Alpha line fixed.'
+    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+  await page.waitForTimeout(300)
+  ok('回车保存：视频会话里这一句变了', await page.evaluate(() => globalThis.ccVSession.current().lines[0].text === 'Alpha line fixed.'))
+  ok('字幕层显示新文字', /Alpha line fixed/.test(await inRoots(() => window.__roots.map((r) => r.querySelector('.cap')).find(Boolean)?.textContent || '')))
+  ok('改动记在本地', await page.evaluate(() => Object.values(window.__store.vsumEdits || {}).some((m) => m['0|Alpha line here.'] === 'Alpha line fixed.')))
+  await page.evaluate(() => globalThis.ccVSession.editLine(0, 'Alpha line again.', 'vsum'))
+  await page.waitForTimeout(300)
+  ok('文稿那边改了一句，字幕层跟着换', /Alpha line again/.test(await inRoots(() => window.__roots.map((r) => r.querySelector('.cap')).find(Boolean)?.textContent || '')))
+  // 还原成上一步的字幕，后面的用例接着用
+  await page.evaluate(() => globalThis.ccVSession.setLines([{ t: 0, text: 'Another track line.' }], 'English (auto)', 'vsum'))
+  await page.waitForFunction(() => (window.__roots || []).some((r) => /译:Another track line/.test(r.querySelector('.cap')?.textContent || '')), null, { timeout: 5000 }).catch(() => {})
+
   // 4b. 视频胶囊：字幕层的“双语”开关和视频摘要的“记笔记”都在同一个胶囊里（以前各有一个小按钮）
   await page.mouse.move(300, 120)
   await page.waitForTimeout(150)
