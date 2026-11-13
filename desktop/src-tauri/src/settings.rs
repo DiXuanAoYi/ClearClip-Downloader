@@ -769,6 +769,10 @@ pub struct LiveSettings {
     pub audio_draft: bool,
     /// 翻译时带上最近几句当上文（0 = 不带），同一场对话里的称呼、人名、语气保持一致
     pub audio_context: u8,
+    /// 语音字幕实时存到本地（边听边写 .srt，不用等停下来再导出）
+    pub audio_autosave: bool,
+    /// 存到哪个文件夹；空 = 下载文件夹里的“语音字幕”
+    pub audio_save_dir: String,
     // ---- 按程序记住 ----
     pub profiles: Vec<LiveProfile>,
     /// 保存翻译历史
@@ -823,6 +827,8 @@ impl Default for LiveSettings {
             audio_source: "system".into(),
             audio_draft: true,
             audio_context: 4,
+            audio_autosave: true,
+            audio_save_dir: String::new(),
             profiles: vec![],
             history: true,
         }

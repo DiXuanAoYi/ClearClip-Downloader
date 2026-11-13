@@ -397,6 +397,12 @@ fn run_loop(
                     let end_ms = t0.elapsed().as_millis() as u64;
                     let start_ms = end_ms.saturating_sub((s.len() as u64 * 1000) / u64::from(RATE));
                     crate::livevoice::push(start_ms, end_ms, &text, &tr);
+                    if live.audio_autosave {
+                        let settings = st.settings_raw();
+                        let dir = if live.audio_save_dir.trim().is_empty() { settings.download_root().join("语音字幕") } else { std::path::PathBuf::from(live.audio_save_dir.trim()) };
+                        let pre = crate::subclean::Opts { hearing: settings.ai.sub_clean_hearing, filler: crate::subclean::parse_level(&settings.ai.sub_clean_filler) };
+                        let _ = crate::livevoice::autosave(&dir, if settings.ai.sub_clean_output { Some(&pre) } else { None }, live.audio_bilingual);
+                    }
                     emit_sub(
                         app,
                         SubPayload {

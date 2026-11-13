@@ -661,6 +661,8 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         <div class="kv"><span>边说边出字<small class="mute block">先显示原文草稿，说完再换成译文；只在本机识别时</small></span><el-switch v-model="form.audioDraft" :disabled="form.audioStt === 'cloud'" /></div>
         <div class="field"><label>翻译时带上最近几句当上文：{{ form.audioContext || '不带' }}</label><el-slider v-model="form.audioContext" :min="0" :max="10" /></div>
         <small class="mute">带上文能让同一场对话里的人名、称呼、语气保持一致；会多发一点字给翻译模型。</small>
+        <div class="kv"><span>语音字幕实时存到本地<small class="mute block">边听边把字幕写进一个 .srt 文件（每次“开始听”新建一个），停下来、关机、崩溃都不会丢。保存时同样做“设置 → AI”里的字幕预处理（去非语音说明和口水词），清理前的原文另存为 .srt.raw</small></span><el-switch v-model="form.audioAutosave" data-testid="audio-autosave" /></div>
+        <div v-if="form.audioAutosave" class="field"><label>保存到</label><el-input v-model="form.audioSaveDir" size="small" class="mono" placeholder="留空 = 下载文件夹里的“语音字幕”" /></div>
         <div class="row">
           <el-button type="primary" :disabled="!st.supported || st.audio" @click="audioOn">开始听</el-button>
           <el-button :disabled="!st.audio" @click="audioOff">停止</el-button>

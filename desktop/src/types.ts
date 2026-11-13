@@ -2275,6 +2275,9 @@ export interface ScreenSettings {
   audioDraft: boolean
   /** 翻译时带上最近几句当上文（0 = 不带） */
   audioContext: number
+  /** 语音字幕实时存到本地 */
+  audioAutosave: boolean
+  audioSaveDir: string
   profiles: ScreenProfile[]
   history: boolean
 }
