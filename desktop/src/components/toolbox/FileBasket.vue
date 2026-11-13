@@ -116,7 +116,7 @@ function move(i: number, d: number) {
 }
 .count {
   background: var(--cc-acc);
-  color: #fff;
+  color: var(--cc-on-acc);
   font-size: 12px;
   font-weight: 600;
   padding: 0 8px;

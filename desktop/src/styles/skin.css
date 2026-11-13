@@ -214,6 +214,7 @@ html:not(.dark) .el-button.pz-strong:not(.is-disabled) {
   --el-radio-button-checked-border-color: transparent;
 }
 .el-radio-button__inner {
+  outline: 0 !important;
   border: 0 !important;
   box-shadow: none !important;
   border-radius: 7px !important;

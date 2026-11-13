@@ -636,11 +636,11 @@ const safeNote = computed(() => (safeOn.value ? (safe.value.clamped ? `超出广
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
 .seg { display: flex; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px; flex-wrap: wrap }
 .seg span { padding: 2px 10px; border-radius: 6px; cursor: pointer; font-size: 12.5px; color: var(--cc-mute) }
-.seg .on { background: var(--cc-amber); color: #fff; font-weight: 700 }
+.seg .on { background: var(--cc-amber); color: var(--cc-on-acc); font-weight: 700 }
 .sl { flex: 1; min-width: 120px }
 .tools { display: flex; gap: 4px }
 .tools button { border: 1px solid var(--cc-line); background: var(--cc-card); border-radius: 6px; padding: 3px 10px; cursor: pointer; font: inherit; font-size: 12.5px; color: var(--cc-fg) }
-.tools button.on { background: var(--cc-amber); color: #fff; border-color: var(--cc-amber) }
+.tools button.on { background: var(--cc-amber); color: var(--cc-on-acc); border-color: var(--cc-amber) }
 .pimg { position: relative; border: 1px solid var(--cc-line); line-height: 0; touch-action: none; user-select: none; max-height: 380px; overflow: hidden }
 .pimg.pick { cursor: crosshair }
 .pimg.box, .pimg.line { cursor: copy }

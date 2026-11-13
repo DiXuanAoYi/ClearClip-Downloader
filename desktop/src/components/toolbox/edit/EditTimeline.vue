@@ -1465,7 +1465,7 @@ defineExpose({ reveal, targetAt, hover, fit })
   z-index: 40;
   pointer-events: none;
 }
-.insline span { position: absolute; left: 8px; top: -18px; font-size: 11px; font-weight: 700; color: #fff; background: var(--cc-acc); padding: 1px 8px; border-radius: 9px; white-space: nowrap }
+.insline span { position: absolute; left: 8px; top: -18px; font-size: 11px; font-weight: 700; color: var(--cc-on-acc); background: var(--cc-acc); padding: 1px 8px; border-radius: 9px; white-space: nowrap }
 .mini {
   position: relative;
   border: 1px solid var(--cc-line);

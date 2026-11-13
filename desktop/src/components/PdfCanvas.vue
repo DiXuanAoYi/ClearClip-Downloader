@@ -734,7 +734,7 @@ onBeforeUnmount(() => ro?.disconnect())
 .zt { min-width: 44px; text-align: center }
 .seg3 { display: flex; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px }
 .seg3 span { padding: 3px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--cc-mute); white-space: nowrap }
-.seg3 .on { background: var(--cc-amber); color: #fff; font-weight: 700 }
+.seg3 .on { background: var(--cc-amber); color: var(--cc-on-acc); font-weight: 700 }
 .vrow { flex: 1; min-height: 0; display: flex }
 .banner { display: flex; align-items: center; gap: 10px; padding: 7px 14px; background: var(--cc-acc-soft); border-bottom: 1px solid var(--cc-acc-line); color: var(--cc-amber); font-size: 12.5px }
 .banner span { flex: 1 }
@@ -750,7 +750,7 @@ onBeforeUnmount(() => ro?.disconnect())
 .chip.warn { background: var(--cc-acc-soft); color: var(--cc-amber) }
 .seg { display: flex; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px }
 .seg span { padding: 2px 8px; border-radius: 6px; cursor: pointer; color: var(--cc-mute); white-space: nowrap }
-.seg .on { background: var(--cc-amber); color: #fff; font-weight: 700 }
+.seg .on { background: var(--cc-amber); color: var(--cc-on-acc); font-weight: 700 }
 .szin { width: 62px }
 .grow { flex: 1; margin: 0 6px }
 .adv { color: var(--cc-amber); cursor: pointer; user-select: none; margin-top: 2px }
@@ -768,7 +768,7 @@ onBeforeUnmount(() => ro?.disconnect())
 .side em.ed { color: var(--cc-amber) }
 .mute { color: var(--cc-mute); font-size: 12px }
 .sel { position: absolute; pointer-events: none; z-index: 5; border: 1.5px solid var(--cc-amber) }
-.sel .grip { position: absolute; left: -1px; top: -20px; height: 18px; min-width: 22px; padding: 0 4px; background: var(--cc-amber); color: #fff; border-radius: 4px 4px 0 0; font-size: 12px; line-height: 18px; text-align: center; cursor: move; pointer-events: auto; user-select: none }
+.sel .grip { position: absolute; left: -1px; top: -20px; height: 18px; min-width: 22px; padding: 0 4px; background: var(--cc-amber); color: var(--cc-on-acc); border-radius: 4px 4px 0 0; font-size: 12px; line-height: 18px; text-align: center; cursor: move; pointer-events: auto; user-select: none }
 .sel .rsz { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--cc-amber); border: 2px solid #fff; border-radius: 3px; cursor: nwse-resize; pointer-events: auto }
 .blk.todo { border: 1.5px dashed #d9762b; min-height: 6px }
 .blk.on { outline: 1.5px solid var(--cc-amber); outline-offset: 0 }

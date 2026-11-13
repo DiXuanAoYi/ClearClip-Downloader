@@ -150,6 +150,16 @@ html.dark {
   --el-mask-color: #060a12b3;
 }
 
+/* 页面底：深蓝黑 + 两团柔光 + 细网格。小窗口的样式会把 body 设成透明，所以主界面外壳也用它 */
+:root {
+  --cc-page-bg:
+    radial-gradient(1100px 560px at 82% -8%, var(--cc-glow1), transparent 62%),
+    radial-gradient(900px 520px at -6% 108%, var(--cc-glow2), transparent 58%),
+    linear-gradient(var(--cc-grid) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, var(--cc-grid) 1px, transparent 1px) 0 0 / 44px 44px,
+    var(--cc-bg);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -162,12 +172,7 @@ body,
 }
 
 body {
-  background:
-    radial-gradient(1100px 560px at 82% -8%, var(--cc-glow1), transparent 62%),
-    radial-gradient(900px 520px at -6% 108%, var(--cc-glow2), transparent 58%),
-    linear-gradient(var(--cc-grid) 1px, transparent 1px) 0 0 / 44px 44px,
-    linear-gradient(90deg, var(--cc-grid) 1px, transparent 1px) 0 0 / 44px 44px,
-    var(--cc-bg);
+  background: var(--cc-page-bg);
   background-attachment: fixed;
   color: var(--cc-fg);
   font-family: var(--cc-font);

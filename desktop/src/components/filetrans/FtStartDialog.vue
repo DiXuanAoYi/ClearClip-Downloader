@@ -134,7 +134,7 @@ const rest = computed(() => (plan.value ? Math.max(0, plan.value.segments - plan
 .grow { flex: 1 }
 .seg { display: flex; flex: 1; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px }
 .seg span { flex: 1; text-align: center; padding: 3px 0; border-radius: 6px; color: var(--cc-mute); font-size: 13px; cursor: pointer }
-.seg .on { background: var(--cc-amber); color: #fff; font-weight: 700 }
+.seg .on { background: var(--cc-amber); color: var(--cc-on-acc); font-weight: 700 }
 .chk { display: flex; flex-direction: column; gap: 0 }
 .est { font-size: 13px; line-height: 1.7; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--cc-line) }
 .ask { margin-right: auto; float: left }

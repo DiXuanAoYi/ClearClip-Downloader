@@ -565,7 +565,7 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 .lrail { width: 46px; flex: none; display: flex; flex-direction: column; gap: 8px; align-items: stretch }
 .lrail button { position: relative; border: 1px solid var(--cc-line); background: var(--cc-card); color: var(--cc-fg); border-radius: 10px; padding: 9px 0; cursor: pointer; font: inherit; font-size: 12px; line-height: 1.2 }
 .lrail button:hover { border-color: var(--cc-amber); color: var(--cc-amber) }
-.lrail button i { position: absolute; top: -6px; right: -4px; min-width: 16px; height: 16px; line-height: 16px; font-style: normal; font-size: 11px; border-radius: 8px; background: var(--cc-amber); color: #fff }
+.lrail button i { position: absolute; top: -6px; right: -4px; min-width: 16px; height: 16px; line-height: 16px; font-style: normal; font-size: 11px; border-radius: 8px; background: var(--cc-amber); color: var(--cc-on-acc) }
 .lfold { border: 0; background: none; text-align: left; color: var(--cc-amber); cursor: pointer; font: inherit; font-size: 12.5px; padding: 0 2px }
 .lc { width: 330px; flex: none; display: flex; flex-direction: column; gap: 12px; overflow-y: auto }
 .mute { color: var(--cc-mute); font-size: 12.5px }
@@ -597,7 +597,7 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 .sw.on i::after { left: 15px }
 .seg { display: flex; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px; flex: 1 }
 .seg span { flex: 1; text-align: center; padding: 3px 0; border-radius: 6px; color: var(--cc-mute); font-size: 13px; cursor: pointer }
-.seg .on { background: var(--cc-amber); color: #fff; font-weight: 700 }
+.seg .on { background: var(--cc-acc-soft); color: var(--cc-amber); box-shadow: inset 0 0 0 1px var(--cc-amber-line); font-weight: 700 }
 .w210 { flex: none; width: 210px }
 .rd { flex: 1; min-width: 0; border: 1px solid var(--cc-line); background: var(--cc-card); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden }
 .tb { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--cc-line); flex-wrap: wrap }

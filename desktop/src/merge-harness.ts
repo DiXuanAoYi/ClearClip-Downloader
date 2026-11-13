@@ -24,6 +24,11 @@ import TransferPanel from './components/TransferPanel.vue'
 import SettingsView from './views/SettingsView.vue'
 import ToolboxView from './views/ToolboxView.vue'
 import App from './App.vue'
+import QueueView from './views/QueueView.vue'
+import SubsView from './views/SubsView.vue'
+import LiveView from './views/LiveView.vue'
+import LibraryView from './views/LibraryView.vue'
+import VocabView from './views/VocabView.vue'
 import SecurityPanel from './components/SecurityPanel.vue'
 import { useAppStore, useParseStore } from './stores/app'
 import { api } from './api'
@@ -33,12 +38,13 @@ import { setLanguage } from './i18n'
 setLanguage('zh')
 const pinia = createPinia()
 const which = location.hash.slice(1)
-const C: Record<string, Component> = { write: WriteApp, parse: ParseView, float: FloatApp, excerpts: ExcerptsPanel, screen: ScreenView, ai: AiTools, glossary: GlossaryPanel, filetr: FileTransView, transfer: TransferPanel, settings: SettingsView, tools: ToolboxView, app: App }
+const C: Record<string, Component> = { write: WriteApp, parse: ParseView, float: FloatApp, excerpts: ExcerptsPanel, screen: ScreenView, ai: AiTools, glossary: GlossaryPanel, filetr: FileTransView, transfer: TransferPanel, settings: SettingsView, tools: ToolboxView, app: App, queue: QueueView, subs: SubsView, live: LiveView, library: LibraryView, vocab: VocabView }
 const store = useAppStore(pinia)
 store.settings = (await api.getSettings()) as never
 ;(window as unknown as { __app: typeof store }).__app = store
 // 解析页：测试把解析结果放在 window.__result，暗色主题用 window.__dark
 const W = window as unknown as { __result?: unknown; __dark?: boolean; __parse?: unknown }
+document.body.style.setProperty('background', 'var(--cc-page-bg)', 'important')
 if (W.__dark) document.documentElement.classList.add('dark')
 if (which === 'parse') {
   const ps = useParseStore(pinia)

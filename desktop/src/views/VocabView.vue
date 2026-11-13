@@ -400,7 +400,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px }
 .g { border: 1px solid var(--cc-line); border-radius: 10px; padding: 8px 4px; text-align: center; cursor: pointer; display: flex; flex-direction: column; gap: 2px; font-weight: 600 }
 .g span { font-weight: 400; font-size: 11px; color: var(--cc-mute) }
-.g.p { background: var(--cc-amber); border-color: var(--cc-amber); color: #fff }
+.g.p { background: var(--cc-amber); border-color: var(--cc-amber); color: var(--cc-on-acc) }
 .g.p span { color: #fff; opacity: .85 }
 .exp { border: 1px solid var(--cc-line); background: var(--cc-card); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px }
 .btns { display: flex; gap: 6px; flex-wrap: wrap }

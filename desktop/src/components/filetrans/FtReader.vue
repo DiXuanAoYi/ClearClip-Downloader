@@ -309,7 +309,7 @@ const retryText = computed(() => `重试失败（${counts.value.failedSegs}）`)
 .search { width: 160px }
 .seg { display: flex; background: var(--cc-inset); border: 1px solid var(--cc-line); border-radius: 8px; padding: 2px; gap: 2px }
 .seg span { padding: 3px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; color: var(--cc-mute); white-space: nowrap }
-.seg .on { background: var(--cc-amber); color: #fff; font-weight: 700 }
+.seg .on { background: var(--cc-amber); color: var(--cc-on-acc); font-weight: 700 }
 .mid { flex: 1; min-height: 0; display: flex }
 .rail { width: 76px; flex: none; border-right: 1px solid var(--cc-line-soft); padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 10px; background: var(--cc-hover); overflow-y: auto }
 .rail .only { display: flex; flex-direction: column; width: 56px; border: 1px solid var(--cc-line); border-radius: 8px; overflow: hidden; background: var(--cc-card) }

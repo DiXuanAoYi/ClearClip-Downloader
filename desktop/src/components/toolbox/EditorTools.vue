@@ -818,7 +818,7 @@ onBeforeUnmount(() => releaseDrop?.())
   padding: 6px 12px;
   border-radius: 6px;
   background: var(--cc-acc);
-  color: #fff;
+  color: var(--cc-on-acc);
   font-size: 12.5px;
   text-align: center;
 }

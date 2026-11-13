@@ -361,6 +361,7 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr);
   height: 100%;
+  background: var(--cc-page-bg);
 }
 .side {
   display: flex;
