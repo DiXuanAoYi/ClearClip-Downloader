@@ -753,6 +753,40 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.close()
   }
 
+  // ---- 文稿页勾选“显示在视频上”：字幕层被关掉 / 刚关又开，也要马上显示
+  {
+    const { page } = await open(YT)
+    await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
+    await clickText(page, '文稿')
+    await settle(page, 300)
+    const box = () => page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('label.mute input[type=checkbox]')]).find((i) => i.parentElement.textContent.includes('显示在视频上')))
+    ok('文稿页有“显示在视频上”', !!(await box()))
+    // 字幕层开着但字幕被关掉：重新勾选要调用 show()
+    await page.evaluate(() => {
+      window.__shown = 0
+      globalThis.ccSubLayerRun = { destroy() { delete globalThis.ccSubLayerRun }, show() { window.__shown++ }, setLines() {} }
+    })
+    const tick = (checked) => page.evaluate((c) => {
+      const i = window.__roots.flatMap((r) => [...r.querySelectorAll('label.mute input[type=checkbox]')]).find((x) => x.parentElement.textContent.includes('显示在视频上'))
+      i.checked = c
+      i.dispatchEvent(new Event('change'))
+    }, checked)
+    await tick(false)
+    ok('取消勾选：字幕层关闭', await page.evaluate(() => !globalThis.ccSubLayerRun))
+    const n0 = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-sublayer-open').length)
+    await tick(true)
+    await settle(page, 200)
+    const n1 = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-sublayer-open').length)
+    ok('刚取消又勾上：立刻重新打开字幕层（不被 4 秒防重复挡住）', n1 > n0, `${n0} → ${n1}`)
+    await page.evaluate(() => {
+      window.__shown = 0
+      globalThis.ccSubLayerRun = { destroy() {}, show() { window.__shown++ }, setLines() {} }
+    })
+    await tick(true)
+    ok('字幕层开着但被关掉：勾选后让它显示出来', (await page.evaluate(() => window.__shown)) >= 1)
+    await page.close()
+  }
+
   // ---- 导图：全屏查看、缩放
   {
     const { page } = await open(YT)

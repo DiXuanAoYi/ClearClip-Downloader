@@ -828,7 +828,19 @@
       }
     }
   })
-  globalThis.ccSubLayerRun = { destroy: api_destroy, setLines }
+  /** 摘要文稿页勾选“显示在视频上”：字幕层开着但字幕被关掉了，就打开 */
+  function show() {
+    if (S.closed) return
+    if (!S.on) {
+      S.on = true
+      store.set('subLayerOn', true)
+    }
+    renderBar()
+    cap.dataset.k = ''
+    layout()
+    paint()
+  }
+  globalThis.ccSubLayerRun = { destroy: api_destroy, setLines, show }
 
   ;(async () => {
     WC.loadClips()

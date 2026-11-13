@@ -956,15 +956,25 @@
 
   /** 读到字幕后，同时把文稿作为字幕层叠在视频上（已经开着就换成新文稿）；可在文稿页关掉。 */
   let subOpenAt = 0
-  function syncSubLayer(d) {
+  function syncSubLayer(d, force = false) {
     if (!isVideo() || !d.lines.length) return
     // 文稿放进视频会话：字幕层开着的话订阅了会话，自己跟着换
     VS.setLines(d.lines, d.track || '', 'vsum')
-    if (globalThis.ccSubLayerRun) return
     if (S.prefs.autoSub === false) return
-    // 正在打开的这几秒里不再重复发（再注入一次会把字幕层关掉）；字幕层打开后从会话里取文稿
-    if (Date.now() - subOpenAt < 4000) return
+    if (globalThis.ccSubLayerRun) {
+      // 用户在文稿页勾选“显示在视频上”：字幕层开着但被关掉了（字幕层上的开关）也要显示出来
+      if (force) globalThis.ccSubLayerRun.show?.()
+      return
+    }
+    // 正在打开的这几秒里不再重复发（再注入一次会把字幕层关掉）；字幕层打开后从会话里取文稿。用户主动勾选时不受这个限制
+    if (!force && Date.now() - subOpenAt < 4000) return
     subOpenAt = Date.now()
+    // 字幕层上次是关着的（存了“关”）：打开它就是要看字幕，先把开关存成开
+    try {
+      globalThis.ccUI.api.storage.local.set({ subLayerOn: true })
+    } catch {
+      // 存不了就沿用上次的开关
+    }
     send({ type: 'cc-sublayer-open' })
   }
 
