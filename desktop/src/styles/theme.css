@@ -306,7 +306,12 @@ textarea,
   border-radius: 8px;
   background: var(--cc-fill);
 }
+.pz-seg {
+  max-width: 100%;
+}
 .pz-seg > button {
+  flex: none;
+  white-space: nowrap;
   min-height: 32px;
   padding: 0 14px;
   border: 0;

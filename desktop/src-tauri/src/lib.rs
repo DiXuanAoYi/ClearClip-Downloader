@@ -617,6 +617,7 @@ pub fn run() {
             commands::transfer_list,
             commands::transfer_send_files,
             commands::transfer_send_text,
+            commands::transfer_stage_file,
             commands::transfer_thumb,
             commands::transfer_remove,
             commands::transfer_clear,

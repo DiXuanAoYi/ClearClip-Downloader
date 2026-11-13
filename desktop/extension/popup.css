@@ -84,11 +84,17 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.985); }
 button.pressed { box-shadow: 0 0 0 3px #2f8a5766; }
 .toast { position: fixed; right: 12px; bottom: 12px; background: var(--card); color: var(--fg); border: 1px solid var(--line2); border-radius: 10px; padding: 6px 12px; font-size: 12px; box-shadow: 0 6px 18px #0004; z-index: 50; }
 
-/* 设置页：横向导航，一次只显示一个分区 */
-#setNav { display: flex; gap: 2px; overflow-x: auto; margin: 0 0 12px; border-bottom: 1px solid var(--line); scrollbar-width: none; position: sticky; top: 0; z-index: 5; background: var(--bg); }
+/* 设置页：横向导航，一次只显示一个分区。最前面是返回，太长时两端有左右箭头，也能用滚轮 / 方向键 */
+#setBar { display: flex; align-items: stretch; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; background: var(--bg); }
+#setNav { display: flex; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; scroll-behavior: smooth; }
 #setNav::-webkit-scrollbar { display: none; }
 #setNav button { flex: none; width: auto; margin: 0 0 -1px; padding: 9px 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--mute); font-weight: 400; font-size: 13px; white-space: nowrap; }
 #setNav button:hover:not(:disabled) { color: var(--fg); filter: none; }
 #setNav button[aria-selected="true"] { color: var(--acc); font-weight: 700; border-bottom-color: var(--acc); }
+#setBar .setBack, #setBar .setArrow { flex: none; width: 32px; margin: 4px 0; padding: 0; border: 1px solid var(--line2); border-radius: 8px; background: var(--card); color: var(--fg); font-weight: 400; font-size: 14px; line-height: 1; }
+#setBar .setArrow { font-size: 18px; }
+#setBar .setBack:hover:not(:disabled), #setBar .setArrow:hover:not(:disabled) { border-color: var(--accline); color: var(--acc); filter: none; }
+#setBar .setArrow:disabled { opacity: .35; }
+#setBar [hidden] { display: none; }
 #settings .setsec { display: none; } #settings .setsec.on { display: block; }
 #settings .setsec > h2:first-child { display: none; }

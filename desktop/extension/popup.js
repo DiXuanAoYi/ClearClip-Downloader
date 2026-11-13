@@ -33,14 +33,49 @@ function buildSettingsNav() {
     }
     if (cur) cur.appendChild(el)
   }
+  const bar = document.createElement('div')
+  bar.id = 'setBar'
+  const mk = (cls, label, text, fn) => {
+    const x = document.createElement('button')
+    x.type = 'button'
+    x.className = cls
+    x.setAttribute('aria-label', label)
+    x.title = label
+    x.textContent = text
+    x.onclick = fn
+    return x
+  }
+  const back = mk('setBack', '返回', '◀', () => show('main'))
   const nav = document.createElement('nav')
   nav.id = 'setNav'
   nav.setAttribute('role', 'tablist')
   nav.setAttribute('aria-label', '设置分区')
+  const prev = mk('setArrow', '向左', '‹', () => nav.scrollBy({ left: -nav.clientWidth * 0.7, behavior: 'smooth' }))
+  const next = mk('setArrow', '向右', '›', () => nav.scrollBy({ left: nav.clientWidth * 0.7, behavior: 'smooth' }))
+  const fit = () => {
+    const over = nav.scrollWidth > nav.clientWidth + 2
+    prev.hidden = next.hidden = !over
+    prev.disabled = nav.scrollLeft <= 1
+    next.disabled = nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 1
+  }
+  nav.addEventListener('scroll', fit, { passive: true })
+  // 滚轮上下滚也能横向移动导航
+  nav.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      nav.scrollLeft += e.deltaY
+      e.preventDefault()
+    }
+  }, { passive: false })
+  window.addEventListener('resize', fit)
   const pick = (name) => {
-    for (const b of nav.children) b.setAttribute('aria-selected', String(b.dataset.name === name))
+    for (const b of nav.children) {
+      const on = b.dataset.name === name
+      b.setAttribute('aria-selected', String(on))
+      if (on) b.scrollIntoView({ block: 'nearest', inline: 'center' })
+    }
     for (const s of secs) s.classList.toggle('on', s.dataset.name === name)
     try { sessionStorage.setItem('cc-set-sec', name) } catch {}
+    fit()
   }
   for (const s of secs) {
     const b = document.createElement('button')
@@ -51,10 +86,21 @@ function buildSettingsNav() {
     b.onclick = () => pick(s.dataset.name)
     nav.appendChild(b)
   }
-  root.insertBefore(nav, secs[0])
+  // 键盘：左右方向键在分区之间切换
+  nav.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    const names = secs.map((s) => s.dataset.name)
+    const cur = names.indexOf(sessionStorage.getItem('cc-set-sec') || names[0])
+    const n = names[(cur + (e.key === 'ArrowRight' ? 1 : names.length - 1)) % names.length]
+    pick(n)
+    nav.querySelector('[aria-selected="true"]')?.focus()
+  })
+  bar.append(back, prev, nav, next)
+  root.insertBefore(bar, secs[0])
   let saved = ''
   try { saved = sessionStorage.getItem('cc-set-sec') || '' } catch {}
   pick(secs.some((s) => s.dataset.name === saved) ? saved : secs[0]?.dataset.name)
+  requestAnimationFrame(fit)
 }
 
 let currentTabName = 'discover'

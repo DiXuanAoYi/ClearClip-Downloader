@@ -431,27 +431,36 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
         </el-select>
         <el-button :disabled="!winPick || !st.supported" @click="startWindow">翻译这个窗口</el-button>
       </div>
-      <div class="row">
-        <span class="mute">取景方式</span>
-        <el-button-group>
-          <el-button :disabled="!st.supported" @click="pick">框选区域</el-button>
-          <el-button :disabled="!winPick || !st.supported" @click="startWindow">跟随窗口</el-button>
-          <el-button :disabled="!st.supported" @click="startScreen">整个屏幕</el-button>
-        </el-button-group>
-        <small class="mute">“跟随窗口”先在上面的下拉框里选窗口；框选后译文会盖在原处。</small>
+      <div class="drow">
+        <div class="t"><b>取景方式</b><small>“跟随窗口”先在上面的下拉框里选窗口；框选后译文会盖在原处。</small></div>
+        <div class="ctl">
+          <el-button-group>
+            <el-button :disabled="!st.supported" @click="pick">框选区域</el-button>
+            <el-button :disabled="!winPick || !st.supported" @click="startWindow">跟随窗口</el-button>
+            <el-button :disabled="!st.supported" @click="startScreen">整个屏幕</el-button>
+          </el-button-group>
+        </div>
       </div>
-      <div class="row">
-        <span class="mute">刷新速度</span>
-        <el-radio-group v-model="form.fps">
-          <el-radio-button v-for="[n, t] in SPEEDS" :key="n" :value="n">{{ t }}</el-radio-button>
-        </el-radio-group>
-        <span class="mute">术语库</span>
-        <el-switch v-model="glossaryOn" />
-        <span class="mute">专家</span>
-        <el-select v-model="expertId" style="width: 180px" placeholder="自动匹配">
-          <el-option value="__auto" label="自动匹配" />
-          <el-option v-for="e in experts" :key="e.id" :value="e.id" :label="e.name" />
-        </el-select>
+      <div class="drow">
+        <div class="t"><b>刷新速度</b><small>越快越灵敏，也越费资源。</small></div>
+        <div class="ctl">
+          <el-radio-group v-model="form.fps">
+            <el-radio-button v-for="[n, t] in SPEEDS" :key="n" :value="n">{{ t }}</el-radio-button>
+          </el-radio-group>
+        </div>
+      </div>
+      <div class="drow">
+        <div class="t"><b>术语库</b><small>翻译时带上你的术语库，译法统一。</small></div>
+        <div class="ctl"><el-switch v-model="glossaryOn" /></div>
+      </div>
+      <div class="drow">
+        <div class="t"><b>专家</b><small>按场景选翻译风格；默认自动匹配。</small></div>
+        <div class="ctl">
+          <el-select v-model="expertId" style="width: 180px" placeholder="自动匹配">
+            <el-option value="__auto" label="自动匹配" />
+            <el-option v-for="e in experts" :key="e.id" :value="e.id" :label="e.name" />
+          </el-select>
+        </div>
       </div>
       <div class="row">
         <el-button v-if="!st.running" type="success" :disabled="!st.supported || !st.target" @click="start()">开始（{{ form.hotkey }}）</el-button>
@@ -520,7 +529,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           <small class="mute">只能识别 Windows 已安装的语言。没有想要的语言就到 Windows 设置里添加对应语言包，或改用“增强识字组件”。</small>
         </div>
         <div v-if="form.ocr === 'enhanced' || ocr?.installed" class="field">
-          <label>增强识字组件（PaddleOCR，中英文及数字，竖排也能认）</label>
+          <label>增强识字组件</label><small class="mute block">PaddleOCR，中英文及数字，竖排也能认</small>
           <div class="row">
             <span v-if="ocr?.installed" class="ok">已安装 · {{ formatBytes(ocr.size) }}</span>
             <span v-else class="mute">未安装</span>
@@ -536,7 +545,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           </div>
         </div>
         <div v-if="form.ocr === 'enhanced' || ocr?.installed" class="field">
-          <label>语言包（默认的中英文模型认不了日文假名、韩文、俄文、阿拉伯文、带重音的拉丁字母）</label>
+          <label>语言包</label><small class="mute block">默认的中英文模型认不了日文假名、韩文、俄文、阿拉伯文、带重音的拉丁字母</small>
           <div class="row">
             <el-select v-model="form.ocrPack" size="small" style="width: 260px">
               <el-option value="auto" label="自动（按识字语言选，没装就用默认）" />
@@ -649,7 +658,7 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
           </div>
         </div>
         <div class="kv"><span>字幕条里同时显示原文</span><el-switch v-model="form.audioBilingual" /></div>
-        <div class="kv"><span>边说边出字（先显示原文草稿，说完再换成译文；只在本机识别时）</span><el-switch v-model="form.audioDraft" :disabled="form.audioStt === 'cloud'" /></div>
+        <div class="kv"><span>边说边出字<small class="mute block">先显示原文草稿，说完再换成译文；只在本机识别时</small></span><el-switch v-model="form.audioDraft" :disabled="form.audioStt === 'cloud'" /></div>
         <div class="field"><label>翻译时带上最近几句当上文：{{ form.audioContext || '不带' }}</label><el-slider v-model="form.audioContext" :min="0" :max="10" /></div>
         <small class="mute">带上文能让同一场对话里的人名、称呼、语气保持一致；会多发一点字给翻译模型。</small>
         <div class="row">
@@ -748,9 +757,17 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 .mode.sel { border-color: var(--cc-amber); background: var(--cc-acc-soft) }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 6px 24px }
 .field { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 }
-.field label { font-size: 13px; font-weight: 600 }
+.field label { font-size: 13.5px; font-weight: 700 }
+.field > small, .field .mute { line-height: 1.5 }
 .vert { display: flex; flex-direction: column; align-items: flex-start }
-.kv { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--cc-line-soft) }
+.kv { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid var(--cc-line) }
+.kv > span { min-width: 0; display: block; font-weight: 500 }
+.kv small.block, .field small.block, .block { display: block; margin-top: 2px; font-weight: 400; line-height: 1.5 }
+.drow { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 0; border-top: 1px solid var(--cc-line) }
+.drow .t { min-width: 0 }
+.drow .t b { display: block; font-weight: 500 }
+.drow .t small { display: block; color: var(--cc-mute); font-size: 12.5px; line-height: 1.5 }
+.drow .ctl { flex: none; display: flex; align-items: center; gap: 10px }
 .mono :deep(input) { font-family: ui-monospace, Consolas, monospace }
 .ok { color: var(--cc-cyan); font-size: 13px }
 .try { padding: 8px 10px; border-radius: 6px; background: var(--cc-hover); display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto }

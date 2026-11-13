@@ -302,12 +302,12 @@ const ratio = computed(() => {
   background: #fdf0e6;
   border-color: #f3cfb2;
 }
-:global(html.dark) .pill.live {
+:global(html.dark .pill.live) {
   color: #7fd9a6;
   background: #16301f;
   border-color: #2c5a3c;
 }
-:global(html.dark) .pill.trial {
+:global(html.dark .pill.trial) {
   color: #f0b27f;
   background: #35261a;
   border-color: #5c4028;

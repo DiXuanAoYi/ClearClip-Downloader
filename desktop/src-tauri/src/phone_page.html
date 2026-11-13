@@ -109,7 +109,7 @@ body.pairing .tabs,body.pairing #vSend,body.pairing #vGet,body.pairing .comp,bod
 <div id="msg"></div>
 <div class="in">
 <button id="plus" class="plus" aria-label="添加照片、文件或粘贴链接"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-<textarea id="text" rows="1" placeholder="粘贴链接，或写点文字…"></textarea>
+<textarea id="text" rows="1" placeholder="粘贴链接、图片，或写点文字…"></textarea>
 <button id="send" class="go" aria-label="发送"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
 </div>
 <input id="inMedia" type="file" accept="image/*,video/*" multiple hidden>
@@ -175,6 +175,7 @@ x.onload=()=>{let j={};try{j=JSON.parse(x.responseText)}catch(e){}if(x.status===
 x.onerror=()=>end("err","连接中断，请确认手机和电脑在同一个 Wi-Fi");
 x.onabort=()=>end("err","已取消");
 x.send(r.file)}
+$("text").addEventListener("paste",e=>{const fs=[...(e.clipboardData&&e.clipboardData.files||[])];if(fs.length){e.preventDefault();addFiles(fs)}});
 $("inMedia").onchange=$("inFile").onchange=e=>{addFiles([...e.target.files]);e.target.value=""};
 addEventListener("dragover",e=>{e.preventDefault();$("drop").classList.add("over")});
 addEventListener("dragleave",e=>{if(!e.relatedTarget)$("drop").classList.remove("over")});

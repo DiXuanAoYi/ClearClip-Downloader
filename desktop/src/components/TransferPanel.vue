@@ -197,6 +197,42 @@ async function pick() {
   await sendPaths(Array.isArray(r) ? r : [r])
 }
 
+/** 剪贴板里的图片 / 文件（截图、在资源管理器里复制的文件）：存成临时文件再发给手机 */
+async function pasteFiles(files: File[]) {
+  if (!files.length) return
+  sending.value = true
+  try {
+    const stamp = () => {
+      const d = new Date()
+      const z = (n: number) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`
+    }
+    const paths: string[] = []
+    let i = 0
+    for (const f of files.slice(0, 20)) {
+      // 截图粘贴过来叫 image.png，换成带时间的名字
+      const generic = /^image\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)
+      const ext = f.name.includes('.') ? f.name.slice(f.name.lastIndexOf('.')) : f.type === 'image/png' ? '.png' : ''
+      const name = generic || !f.name ? `粘贴的图片-${stamp()}${i ? '-' + i : ''}${ext || '.png'}` : f.name
+      i++
+      paths.push(await api.transferStageFile(name, await f.arrayBuffer()))
+    }
+    sending.value = false
+    await sendPaths(paths)
+  } catch (e) {
+    ElMessage.error(errorText(e))
+  } finally {
+    sending.value = false
+  }
+}
+
+function onPaste(e: ClipboardEvent) {
+  const files = [...(e.clipboardData?.files ?? [])]
+  if (!files.length) return
+  e.preventDefault()
+  void pasteFiles(files)
+}
+
 async function sendText() {
   const t = text.value.trim()
   if (!t) return
@@ -398,8 +434,9 @@ onUnmounted(() => {
                   </span>
                 </div>
                 <el-progress v-if="r.it.status === 'receiving' || (r.it.direction === 'out' && r.it.active)" :percentage="pct(r.it)" :stroke-width="5" :show-text="false" />
-                <small v-if="r.it.kind === 'text'" class="mute">文字{{ r.it.direction === 'out' ? ' · 手机上可一键复制' : '' }}</small>
                 <small v-if="r.it.extra" class="mute">解压到 <a class="link" @click="reveal(r.it.extra!)">{{ r.it.extra }}</a></small>
+                <div class="brow">
+                <small v-if="r.it.kind === 'text'" class="mute kind">文字{{ r.it.direction === 'out' ? ' · 手机上可一键复制' : '' }}</small>
                 <div class="acts">
                   <template v-if="r.it.direction === 'in' && r.it.status === 'done' && r.it.kind === 'text'">
                     <a class="link" @click="copy(r.it.text)">复制</a>
@@ -410,6 +447,7 @@ onUnmounted(() => {
                   </template>
                   <a v-if="r.it.kind === 'text' && r.it.direction === 'out'" class="link" @click="copy(r.it.text)">复制</a>
                   <a class="link" @click="remove(r.it)">{{ r.it.direction === 'out' ? '撤回' : r.it.status === 'receiving' ? '取消' : '删除' }}</a>
+                </div>
                 </div>
               </div>
             </div>
@@ -423,7 +461,7 @@ onUnmounted(() => {
             <el-button class="clip" text :loading="sending" aria-label="选择文件" title="选择文件…" @click="pick">
               <svg viewBox="0 0 24 24"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.4-2.4L15 8.6" /></svg>
             </el-button>
-            <input v-model="text" class="tin" type="text" maxlength="20000" placeholder="输入文字，或把文件拖进窗口…" @keydown.enter.exact.prevent="sendText" />
+            <input v-model="text" class="tin" type="text" maxlength="20000" placeholder="输入文字，或把文件拖进窗口，或直接粘贴图片 / 文件…" @keydown.enter.exact.prevent="sendText" @paste="onPaste" />
             <el-button type="primary" class="sendb" :disabled="!text.trim() || !targets.size" @click="sendText">发送</el-button>
           </div>
           <div class="tail">
@@ -448,7 +486,7 @@ onUnmounted(() => {
   --x-chip: #e4ebf5;
   --x-chipfg: #0b1424;
 }
-:global(html.dark) .xfer {
+:global(html.dark .xfer) {
   --x-acc: #ffb547;
   --x-acfg: #1a1100;
   --x-ob: #2a2016;
@@ -923,5 +961,17 @@ onUnmounted(() => {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.brow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.brow .kind {
+  min-width: 0;
+}
+.brow .acts {
+  margin-left: auto;
 }
 </style>

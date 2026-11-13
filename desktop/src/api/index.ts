@@ -267,6 +267,8 @@ export const api = {
   phoneSetOptions: (options: PhoneOptions) => invoke<PhoneInfo>('phone_set_options', { options }),
   transferList: () => invoke<TransferList>('transfer_list'),
   transferSendFiles: (paths: string[], targets?: string[]) => invoke<{ added: number; skipped: string[] }>('transfer_send_files', { paths, targets }),
+  /** 把粘贴的图片 / 文件字节存成临时文件，返回路径 */
+  transferStageFile: (name: string, bytes: ArrayBuffer) => invoke<string>('transfer_stage_file', new Uint8Array(bytes), { headers: { 'x-name': encodeURIComponent(name) } }),
   transferSendText: (text: string, targets?: string[]) => invoke<number>('transfer_send_text', { text, targets }),
   transferThumb: (path: string) => invoke<string | null>('transfer_thumb', { path }),
   transferRemove: (id: number, deleteFile: boolean) => invoke<void>('transfer_remove', { id, deleteFile }),

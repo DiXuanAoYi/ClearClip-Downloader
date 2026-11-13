@@ -2076,7 +2076,7 @@ function recentKind(r: HistoryItem) {
 /* 清晰度：一格一格的卡片，选中＝琥珀描边 */
 .rows {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
 }
 .frow {
@@ -2105,12 +2105,26 @@ function recentKind(r: HistoryItem) {
 .frow .dot {
   display: none;
 }
+.rows > .frow {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
 .fname {
   flex-wrap: wrap;
+  max-width: 100%;
   font-family: var(--cc-disp);
-  font-size: 24px;
-  line-height: 1.15;
+  font-size: 20px;
+  line-height: 1.2;
   font-weight: 700;
+}
+.fname .ellipsis,
+.spec.ellipsis {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 .fname .pz-tag {
   font-family: var(--cc-font);
@@ -2119,6 +2133,8 @@ function recentKind(r: HistoryItem) {
 .spec {
   font-size: 12.5px;
   color: var(--cc-mute);
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .size {
   margin-top: 4px;
