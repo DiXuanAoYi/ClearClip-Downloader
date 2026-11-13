@@ -234,7 +234,8 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  max-width: 100%;
+  /* 不能限制成窗口宽度：窗口宽度是按这一行量出来的，限制了就再也长不宽（“译”和关闭钮被截掉） */
+  width: max-content;
 }
 .ball,
 .panel {
