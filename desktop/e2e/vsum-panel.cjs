@@ -72,6 +72,8 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
           }
           if (m.type === 'cc-ai-job') {
             if (o.hold) return { ok: true, state: 'running', done: 0, total: 1, note: '' }
+            if (o.streamHold && window.__job?.kind === 'transcribe' && !window.__release)
+              return { ok: true, state: 'running', done: 30, total: 100, note: '正在转写第 1 / 2 段…', partial: { lines: [{ t: 0, text: '大家好，今天讲讲 Rust。' }], durationMs: 5000, track: '清影转写', progress: 0.5 } }
             if (o.stream && window.__job?.kind === 'transcribe' && !window.__streamed) {
               window.__streamed = true
               return { ok: true, state: 'running', done: 30, total: 100, note: '正在转写第 1 / 2 段…', partial: { lines: [{ t: 0, text: '大家好，今天讲讲 Rust。' }], durationMs: 5000, track: '清影转写', progress: 0.5 } }
@@ -785,6 +787,28 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     })
     await tick(true)
     ok('字幕层开着但被关掉：勾选后让它显示出来', (await page.evaluate(() => window.__shown)) >= 1)
+    await page.close()
+  }
+
+  // ---- 转写还在流式识别时也能改：改动一直保留，识别完成后带到最终结果上
+  {
+    const { page } = await open(YT + '&notracks=1', { subs: false, stream: true, streamHold: true })
+    await page.waitForFunction(() => window.__roots?.some((r) => /识别中 50%/.test(r.textContent)), null, { timeout: 8000 })
+    await clickText(page, '文稿')
+    await settle(page, 300)
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('#lines .ln')).find(Boolean).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    ok('识别中双击一句：变成输入框', await page.evaluate(() => window.__roots.some((r) => r.querySelector('#lines textarea.ledit'))))
+    await page.evaluate(() => {
+      const ta = window.__roots.map((r) => r.querySelector('#lines textarea.ledit')).find(Boolean)
+      ta.value = '大家好，今天讲讲 Rusty。'
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await settle(page, 1800)
+    ok('识别中改的字，新一批结果来了也还在', (await text(page, '#lines')).includes('Rusty'))
+    await page.evaluate(() => (window.__release = true))
+    await page.waitForFunction(() => window.__roots?.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '') && !/识别中/.test(r.textContent)), null, { timeout: 10000 })
+    ok('识别完成后最终结果里仍是改过的字', (await text(page, '#lines')).includes('Rusty'))
+    ok('改动记在本地', await page.evaluate(() => Object.values(window.__store.vsumEdits || {}).some((m) => m['0|大家好，今天讲讲 Rust。'] === '大家好，今天讲讲 Rusty。')))
     await page.close()
   }
 
