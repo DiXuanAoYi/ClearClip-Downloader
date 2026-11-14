@@ -4,6 +4,10 @@ import { ElMessage } from 'element-plus'
 import { api, errorText } from '../api'
 import type { AiSettings, ModelInfo, PoolEntry, PoolPreset, PoolStatus, ProbeResult } from '../types'
 import { toastErr } from '../utils/toastErr'
+import CcButton from './ui/CcButton.vue'
+import CcDialog from './ui/CcDialog.vue'
+import CcField from './ui/CcField.vue'
+import CcLink from './ui/CcLink.vue'
 
 const ai = defineModel<AiSettings>({ required: true })
 const presets = ref<PoolPreset[]>([])
@@ -68,7 +72,7 @@ async function saveKey(e: PoolEntry) {
     await api.secretSet(`ai.pool.${e.id}`, v)
     keys.value[e.id] = ''
     await api.aiPoolReset(e.id)
-    ElMessage.success(v ? '密钥已加密保存' : '密钥已清除')
+    ElMessage.success(v ? '密钥已加密保存到本机' : '密钥已清除')
     refresh()
   } catch (err) {
     ElMessage.error(errorText(err))
@@ -90,7 +94,7 @@ async function detectModels(e: PoolEntry, key: string | null, auto: boolean) {
     modelOpts.value[e.id] = ids
     if (auto && ids.length && !ids.includes(e.model)) {
       e.model = ids[0]
-      ElMessage.success(`检测到 ${ids.length} 个模型，已选用 ${ids[0]}（记得点右下角“保存”）`)
+      ElMessage.success(`检测到 ${ids.length} 个模型，已选用 ${ids[0]}，设置已自动保存`)
     } else if (auto) {
       ElMessage.success(`检测到 ${ids.length} 个模型，可在“模型”下拉里选`)
     }
@@ -116,11 +120,11 @@ async function saveSupadata(clear = false) {
 async function test(e: PoolEntry) {
   busy.value[e.id] = true
   try {
-    // 测试走已保存的设置，所以先提醒保存
+    // 测试走已保存的设置；设置改动会自动保存
     const r = await api.aiPoolTest(e.id)
     ElMessage.success(`${e.name} 可用，回复：${r}`)
   } catch (err) {
-    ElMessage.error(`${e.name}：${errorText(err)}（修改过设置请先点右下角“保存”再测试）`)
+    ElMessage.error(`${e.name}：${errorText(err)}`)
   } finally {
     busy.value[e.id] = false
     refresh()
@@ -181,7 +185,7 @@ function applyProbe() {
     ai.value.pool.push({ ...p.e, id, name: `${p.e.name} · ${r.id.split('/').pop()}`, model: r.id, tasks: stt ? ['stt'] : [...p.e.tasks], sttModel: stt ? r.id : p.e.sttModel, priority: p.e.priority + 1 })
     api.aiPoolCopyKey(p.e.id, id).catch(toastErr('复制密钥'))
   }
-  ElMessage.success(rest.length ? `已选用 ${first.id}，另外 ${rest.length} 个作为新条目加入（记得点右下角“保存”）` : `已选用 ${first.id}（记得点右下角“保存”）`)
+  ElMessage.success(rest.length ? `已选用 ${first.id}，另外 ${rest.length} 个作为新条目加入，设置已自动保存` : `已选用 ${first.id}，设置已自动保存`)
   probe.value = null
 }
 async function reset(e: PoolEntry) {
@@ -207,9 +211,9 @@ function state(e: PoolEntry): { text: string; cls: string } {
 <template>
   <section class="group card pool">
     <h3>模型池（翻译字幕、摘要与章节）</h3>
-    <small class="mute">
-      可以放多个服务：每次请求按“适用任务 → 优先级（数字小的先用）→ 今天用得少的先用”自动挑一个；某个服务额度用完、被限流或出错时自动冷却并换下一个，不用你手动切换。免费额度用完的服务会在次日零点（北京时间）自动恢复。密钥加密保存在本机，不进设置文件和备份。
-    </small>
+<CcField label="多个服务自动轮换" layout="col" desc="可以放多个服务：每次请求按“适用任务 → 优先级（数字小的先用）→ 今天用得少的先用”自动挑一个；某个服务额度用完、被限流或出错时自动冷却并换下一个，不用你手动切换。免费额度用完的服务会在次日零点（北京时间）自动恢复。密钥加密保存在本机，不进设置文件和备份。">
+      <small class="mute">这里的设置改动会立即自动保存；只有 API 密钥要点“保存密钥”才会写入本机的加密保险箱。</small>
+    </CcField>
 
     <div v-if="!ai.pool.length" class="empty mute">模型池是空的：从下面的“添加服务”选一个有免费额度的开始。</div>
 
@@ -219,7 +223,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
         <el-input v-model="e.name" size="small" class="nm" />
         <span class="st" :class="state(e).cls">{{ state(e).text }}</span>
         <span class="mute used">今日 {{ status[e.id]?.used ?? 0 }}<template v-if="e.dailyLimit"> / {{ e.dailyLimit }}</template> 次</span>
-        <el-button size="small" link type="danger" @click="remove(e)">删除</el-button>
+        <CcButton kind="danger" size="s" @click="remove(e)">删除服务</CcButton>
       </div>
       <small v-if="presetOf(e)?.note" class="mute">{{ presetOf(e)?.note }}</small>
       <small v-if="status[e.id]?.lastError" class="err">最近错误：{{ status[e.id].lastError }}</small>
@@ -230,7 +234,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
           <el-input v-model="e.baseUrl" size="small" class="mono" :placeholder="basePlaceholder(e)" />
         </div>
         <div v-if="!isMt(e)" class="field">
-          <label>模型 · <a href="#" @click.prevent="openProbe(e)">详细检测 / 测试</a></label>
+          <label>模型 · <CcLink @click="openProbe(e)">详细检测 / 测试</CcLink></label>
           <el-select v-model="e.model" size="small" class="mono" filterable allow-create default-first-option :loading="detecting[e.id]" placeholder="保存密钥后自动检测，也可手动输入" no-data-text="还没有检测到模型：先保存密钥" @visible-change="(o: boolean) => onModelDrop(e, o)">
             <el-option v-for="m in modelOpts[e.id] || (e.model ? [e.model] : [])" :key="m" :value="m" :label="m" />
           </el-select>
@@ -243,15 +247,16 @@ function state(e: PoolEntry): { text: string; cls: string } {
       <div class="field">
         <label>API 密钥 <span v-if="status[e.id]?.hasKey" class="ok">已保存</span>
           <template v-if="presetOf(e)?.keyUrl">
-            · <a href="#" @click.prevent="api.openUrl(presetOf(e)!.keyUrl)">获取 API 密钥</a>
-            <template v-if="presetOf(e)?.signupUrl && presetOf(e)?.signupUrl !== presetOf(e)?.keyUrl"> · <a href="#" @click.prevent="api.openUrl(presetOf(e)!.signupUrl)">注册 / 登录</a></template>
+            · <CcLink :href="presetOf(e)!.keyUrl" external>获取 API 密钥</CcLink>
+            <template v-if="presetOf(e)?.signupUrl && presetOf(e)?.signupUrl !== presetOf(e)?.keyUrl"> · <CcLink :href="presetOf(e)!.signupUrl" external>注册 / 登录</CcLink></template>
           </template>
         </label>
         <div class="keyrow">
           <el-input v-model="keys[e.id]" size="small" type="password" show-password :placeholder="presetOf(e)?.local || e.kind === 'deeplx' ? '没设密钥可留空' : status[e.id]?.hasKey ? '输入新密钥可替换' : (['baidu', 'youdao', 'tencent', 'aliyun', 'volcano'].includes(e.kind) ? 'ID:密钥（英文冒号连起来）' : '粘贴 API 密钥')" />
-          <el-button size="small" :disabled="!(keys[e.id] || '').trim()" @click="saveKey(e)">保存</el-button>
-          <el-button v-if="status[e.id]?.hasKey" size="small" @click="keys[e.id] = ''; saveKey(e)">清除</el-button>
+          <CcButton size="s" :disabled="!(keys[e.id] || '').trim()" disabled-reason="先输入密钥" @click="saveKey(e)">保存密钥</CcButton>
+          <CcButton v-if="status[e.id]?.hasKey" size="s" @click="keys[e.id] = ''; saveKey(e)">清除密钥</CcButton>
         </div>
+        <small class="mute">“保存密钥”把密钥加密存进本机，立即生效。</small>
       </div>
       <div class="grid">
         <div class="field">
@@ -273,13 +278,13 @@ function state(e: PoolEntry): { text: string; cls: string } {
         </div>
       </div>
       <div class="acts">
-        <el-button size="small" :loading="busy[e.id]" @click="test(e)">测试</el-button>
-        <el-button size="small" @click="reset(e)">清除冷却和计数</el-button>
+        <CcButton size="s" :loading="busy[e.id]" @click="test(e)">测试</CcButton>
+        <CcButton size="s" @click="reset(e)">清除冷却和计数</CcButton>
       </div>
     </div>
 
 
-    <el-dialog append-to-body :model-value="!!probe" title="检测可用模型" width="880px" @close="probe = null">
+    <CcDialog :model-value="!!probe" title="检测可用模型" size="lg" @update:model-value="probe = null">
       <template v-if="probe">
         <div class="pr-top mute">
           <span>{{ probe.e.name }} · {{ probe.e.baseUrl }}</span>
@@ -291,10 +296,10 @@ function state(e: PoolEntry): { text: string; cls: string } {
         <template v-else>
           <div class="pr-bar">
             <el-input v-model="probe.q" size="small" placeholder="搜索模型，例如 qwen、vl" clearable style="width: 240px" />
-            <el-button size="small" :type="probe.cap === '' ? 'primary' : 'default'" plain @click="probe.cap = ''">全部</el-button>
-            <el-button v-for="c in ['chat', 'vision', 'stt', 'embed']" :key="c" size="small" :type="probe.cap === c ? 'primary' : 'default'" plain @click="probe.cap = c">{{ CAP_LABEL[c] }} {{ capCount(c) }}</el-button>
+            <CcButton size="s" :kind="probe.cap === '' ? 'primary' : 'secondary'" @click="probe.cap = ''">全部</CcButton>
+            <CcButton v-for="c in ['chat', 'vision', 'stt', 'embed']" :key="c" size="s" :kind="probe.cap === c ? 'primary' : 'secondary'" @click="probe.cap = c">{{ CAP_LABEL[c] }} {{ capCount(c) }}</CcButton>
             <span class="grow" />
-            <el-button size="small" :disabled="!pickedRows.length" @click="testPicked">测试已勾选（{{ pickedRows.length }}）</el-button>
+            <CcButton size="s" :disabled="!pickedRows.length" @click="testPicked">测试已勾选（{{ pickedRows.length }}）</CcButton>
           </div>
           <div class="pr-list">
             <div v-for="r in shown" :key="r.id" class="pr-row">
@@ -304,7 +309,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
               <span class="res">
                 <template v-if="r.testing">测试中…</template>
                 <template v-else-if="r.res"><span :class="r.res.ok ? 'ok' : 'bad'">{{ r.res.ok ? (r.res.vision === true ? '✓ 可用，能看图' : r.res.vision === false ? '✓ 可用，不能看图' : '✓ 可用') : `✗ ${r.res.text}` }}</span> <span class="mute">{{ (r.res.ms / 1000).toFixed(1) }} 秒</span></template>
-                <a v-else href="#" @click.prevent="testRow(r)">测试</a>
+                <CcLink v-else @click="testRow(r)">测试</CcLink>
               </span>
             </div>
             <div v-if="!shown.length" class="mute" style="padding: 14px">没有符合的模型。</div>
@@ -313,14 +318,14 @@ function state(e: PoolEntry): { text: string; cls: string } {
       </template>
       <template #footer>
         <small class="mute" style="float: left">已勾选 {{ pickedRows.length }} 个；测试失败的不会加入。多选时第一个用于当前条目，其余新增条目。</small>
-        <el-button @click="probe = null">取消</el-button>
-        <el-button type="primary" :disabled="!pickedRows.length" @click="applyProbe">选用</el-button>
+        <CcButton @click="probe = null">取消</CcButton>
+        <CcButton kind="primary" :disabled="!pickedRows.length" disabled-reason="先勾选模型" @click="applyProbe">选用</CcButton>
       </template>
-    </el-dialog>
+    </CcDialog>
 
     <div class="adds">
       <el-dropdown trigger="click" @command="(id: string) => (id === 'custom' ? addCustom() : addPreset(presets.find((p) => p.id === id)!))">
-        <el-button size="small" type="primary">添加服务</el-button>
+        <CcButton kind="primary" size="s">添加服务</CcButton>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item v-for="p in chatPresets" :key="p.id" :command="p.id">{{ p.name }}<span v-if="p.free" class="tag">有免费额度</span><span v-if="p.local" class="tag">本机</span></el-dropdown-item>
@@ -329,20 +334,19 @@ function state(e: PoolEntry): { text: string; cls: string } {
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-      <small class="mute">提示：改完设置后点页面右下角“保存”才会生效。</small>
+      <small class="mute">添加后在下方填写密钥并点“保存密钥”；其余设置自动保存。</small>
     </div>
 
     <div class="supa">
-      <div class="kv">
-        <span>用 Supadata 取在线字幕（备用，更快）<small class="mute block">贴 YouTube 等链接时，先向 Supadata 要现成字幕，比本机下载快，也不容易被限流；没有字幕或额度用完会自动退回原来的方式。视频网址会发送给 Supadata。</small></span>
-        <el-switch v-model="ai.supadataOn" />
-      </div>
+      <CcField label="用 Supadata 取在线字幕（备用，更快）" desc="贴 YouTube 等链接时，先向 Supadata 要现成字幕，比本机下载快，也不容易被限流；没有字幕或额度用完会自动退回原来的方式。视频网址会发送给 Supadata。">
+        <template #default="{ id }"><el-switch :id="id" v-model="ai.supadataOn" /></template>
+      </CcField>
       <div v-if="ai.supadataOn" class="field">
-        <label>Supadata 密钥 <span v-if="supaHas" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://dash.supadata.ai/')">获取 API 密钥</a></label>
+        <label>Supadata 密钥 <span v-if="supaHas" class="ok">已保存</span> · <CcLink href="https://dash.supadata.ai/" external>获取 API 密钥</CcLink></label>
         <div class="keyrow">
           <el-input v-model="supaKey" size="small" type="password" show-password placeholder="粘贴 Supadata 密钥" />
-          <el-button size="small" :disabled="!supaKey.trim()" @click="saveSupadata()">保存</el-button>
-          <el-button v-if="supaHas" size="small" @click="saveSupadata(true)">清除</el-button>
+          <CcButton size="s" :disabled="!supaKey.trim()" disabled-reason="先输入密钥" @click="saveSupadata()">保存密钥</CcButton>
+          <CcButton v-if="supaHas" size="s" @click="saveSupadata(true)">清除密钥</CcButton>
         </div>
       </div>
     </div>
@@ -352,36 +356,36 @@ function state(e: PoolEntry): { text: string; cls: string } {
 <style scoped>
 .pool { grid-column: 1 / -1; }
 .group { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-h3 { margin: 0; font-size: 12px; color: var(--cc-mute); }
-.svc { border: 1px solid var(--cc-border, rgba(128,128,128,.25)); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+h3 { margin: 0; font-size: var(--cc-fs-lg); color: var(--cc-fg); font-weight: 700; }
+.svc { border: 1px solid var(--cc-line); border-radius: var(--cc-r-md); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .svc.off { opacity: .6; }
 .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .nm { width: 160px; }
-.st { font-size: 12px; }
-.used { margin-left: auto; font-size: 12px; }
+.st { font-size: var(--cc-fs-sm); }
+.used { margin-left: auto; font-size: var(--cc-fs-sm); }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 12px; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field.two { flex-direction: row; gap: 12px; flex-wrap: wrap; }
-.field label { font-size: 12px; color: var(--cc-mute); }
+.field label { font-size: var(--cc-fs-sm); color: var(--cc-mute); }
 .keyrow { display: flex; gap: 8px; }
 .kv { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .block { display: block; }
 .acts, .adds { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.ok { color: var(--cc-ok); }
-.bad { color: var(--cc-err); }
-.warn { color: var(--cc-warn, #e6a23c); }
-.err { color: var(--cc-err); word-break: break-all; }
-.tag { margin-left: 8px; font-size: 11px; color: var(--cc-ok); }
+.ok { color: var(--cc-ok-text); }
+.bad { color: var(--cc-err-text); }
+.warn { color: var(--cc-warn-text); }
+.err { color: var(--cc-err-text); word-break: break-all; }
+.tag { margin-left: 8px; font-size: var(--cc-fs-xs); color: var(--cc-ok); }
 .empty { padding: 8px 0; }
 .mtnote { display: block }
-.supa { border-top: 1px solid var(--cc-border, rgba(128,128,128,.25)); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-.pr-top { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+.supa { border-top: 1px solid var(--cc-line); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pr-top { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--cc-fs-sm); }
 .pr-bar { display: flex; gap: 6px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
 .pr-bar .grow { flex: 1; }
-.pr-list { border: 1px solid var(--cc-border, #dcdfe6); border-radius: 8px; max-height: 360px; overflow-y: auto; }
-.pr-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(0, 150px) minmax(0, 190px); gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--cc-border, #ebeef5); font-size: 13px; }
+.pr-list { border: 1px solid var(--cc-line); border-radius: var(--cc-r-md); max-height: 360px; overflow-y: auto; }
+.pr-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(0, 150px) minmax(0, 190px); gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--cc-line); font-size: var(--cc-fs-sm); }
 .pr-row:first-child { border-top: 0; }
 .pr-row .nm2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-row .caps { display: flex; gap: 4px; flex-wrap: wrap; }
-.bad { color: var(--cc-err); font-weight: 600; }
+.bad { color: var(--cc-err-text); font-weight: 600; }
 </style>
