@@ -76,6 +76,10 @@ jobs:
       - name: Frontend unit tests
         run: npm run test:unit
 
+      # 颜色写死数量只许减不许增（基线 scripts/color-baseline.json）
+      - name: Color literals baseline
+        run: npm run lint:colors
+
       # 列出源码里还没有英文译文的中文（只提示，不会让检查失败；要强制可加 -- --strict）
       - name: Translation coverage
         run: npm run i18n
