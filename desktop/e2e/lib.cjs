@@ -7,9 +7,10 @@ const os = require('os')
 const { chromium } = require('playwright')
 
 const MEDIA = path.join(__dirname, 'media')
-const OUT = path.join(os.tmpdir(), 'clearclip-e2e')
+// 并行起多个 run 时各用各的临时目录（run.mjs 会传 E2E_PORT），避免互相覆盖截图和缩略图
+const OUT = path.join(os.tmpdir(), process.env.E2E_PORT ? 'clearclip-e2e-' + process.env.E2E_PORT : 'clearclip-e2e')
 fs.mkdirSync(OUT, { recursive: true })
-const MPORT = 5301
+const MPORT = Number(process.env.E2E_MEDIA_PORT) || 5301
 const MIME = { '.webm': 'video/webm', '.ogg': 'audio/ogg', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif' }
 
 function startMediaServer() {
@@ -184,7 +185,7 @@ const m = (f) => path.join(MEDIA, f)
 
 /** 打开只含剪辑页的测试页面；等不到时把页面上的报错和内容打印出来，方便看 CI 日志。 */
 async function openHarness(page, errors) {
-  await page.goto('http://127.0.0.1:5199/ui-harness.html')
+  await page.goto(`http://127.0.0.1:${process.env.E2E_PORT || 5199}/ui-harness.html`)
   try {
     await page.waitForSelector('.ed', { timeout: 60000 })
   } catch (e) {
@@ -210,4 +211,58 @@ function pixel(buf, x, y) {
   return [out[0], out[1], out[2]]
 }
 
-module.exports = { launch, openHarness, m, pixel, OUT, MEDIA, urlOf, addMenu }
+/**
+ * “先等再读”：反复读 locator 的全部文字，直到 pred(texts) 为真再返回（默认要求至少有一个元素）。
+ * 用来代替 `waitForTimeout(n)` + `allInnerTexts()`：后者在 vite 按需编译没完成时会读到空数组。
+ * 超时抛错，错误里带最后一次读到的内容。
+ */
+async function waitForTexts(loc, pred = (t) => t.length > 0, timeout = 15000) {
+  const page = loc.page()
+  const deadline = Date.now() + timeout
+  let last = []
+  for (;;) {
+    last = await loc.allInnerTexts().catch(() => [])
+    if (pred(last)) return last
+    if (Date.now() > deadline) throw new Error('等待文字超时，最后读到：' + JSON.stringify(last).slice(0, 300))
+    await page.waitForTimeout(50)
+  }
+}
+
+/** 等 locator 的文字包含 sub（字符串或正则），返回完整文字。 */
+async function expectText(loc, sub, timeout = 15000) {
+  const has = (t) => (sub instanceof RegExp ? sub.test(t) : t.includes(sub))
+  const t = await waitForTexts(loc, (ts) => ts.some(has), timeout)
+  return t.join('\n')
+}
+
+/** 等页面里某个条件成立（页面内求值，自动重试）。 */
+const until = (page, fn, arg, timeout = 15000) => page.waitForFunction(fn, arg, { timeout, polling: 50 })
+
+/**
+ * 轮询版断言：反复求值 cond（抛错算 false），为真就通过，超时报失败；extra 是失败时附带的说明（也在失败时才求值）。
+ * 用来代替“waitForTimeout(n) 之后立刻 ok(...)”——等的是条件而不是时间，慢机器上不会误报，快机器上不白等。
+ */
+async function soon(cond, extra, timeout = 8000) {
+  const deadline = Date.now() + timeout
+  for (;;) {
+    let v = false
+    try {
+      v = await cond()
+    } catch {}
+    if (v) return { pass: true, extra: '' }
+    if (Date.now() > deadline) break
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  let ex = ''
+  try {
+    ex = extra ? await extra() : ''
+  } catch (e) {
+    ex = String(e)
+  }
+  return { pass: false, extra: ex }
+}
+
+/** 等页面刷完一轮（两帧 + 一个宏任务）：点击 / 键盘之后让 Vue 把 DOM 更新完，不依赖固定时长。 */
+const settle = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 0)))))
+
+module.exports = { soon, settle, waitForTexts, expectText, until, launch, openHarness, m, pixel, OUT, MEDIA, urlOf, addMenu }

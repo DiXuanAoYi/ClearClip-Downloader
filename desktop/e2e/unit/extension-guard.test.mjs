@@ -40,7 +40,7 @@ test('needTab：内容脚本发的才行，扩展页面发的返回 no_tab', () 
 
 test('needTab 的集合与原来的正则一致（没有悄悄放宽或收紧）', () => {
   const needTab = Object.entries(plain(G.SPEC)).filter(([, s]) => s.needTab).map(([t]) => t.replace(/^cc-/, ''))
-  const old = 'sniffed|send-page|send-media|send-batch|engines|save|capture|area|shot|ai-status|ai-run|ai-job|ai-cancel|note|tr'.split('|')
+  const old = 'sniffed|send-page|send-media|send-batch|engines|save|capture|area|shot|ai-status|ai-run|ai-job|ai-cancel|note|tr|stub-load'.split('|')
   assert.deepEqual(needTab.sort(), old.sort())
 })
 

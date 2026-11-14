@@ -24,6 +24,7 @@
 
     <section id="v-discover" class="view">
       <div id="page" class="mute pageTitle"></div>
+      <div id="permBox" class="hidden mute"><span id="permInfo"></span> <button id="permBtn" class="sec">授权访问网页</button></div>
       <button id="send">发送当前页面</button>
       <button id="cookies" class="sec">同步此网站的登录 Cookie</button>
       <div id="syncInfo" class="mute"></div>
@@ -160,6 +161,7 @@
   </div>
 
   <div id="settings" class="hidden">
+    <button id="permSetBtn" class="sec hidden">授权访问网页</button>
     <p id="setupHint" class="mute hidden"><b>还差一步：</b>填好下面的端口和访问令牌，右键菜单和发送按钮才能使用。</p>
     <h2>连接</h2>
     <p class="mute">打开电脑上的清影，进入“设置 → 手机与浏览器扩展”，开启服务，把“分享菜单”里的端口和访问令牌复制到这里，再点“保存并测试”。</p>
@@ -275,12 +277,13 @@
     <button id="openTakeover" class="sec">接管下载设置</button>
 
     <h2>隐私与权限</h2>
-    <p class="mute">所有功能只和本机的清影通信。不上传页面内容，不做统计，不下发远程规则。Cookie 只在你确认后读取，只读取对应的网站。以图搜图只在你点击后，把图片地址交给你选的搜索引擎。新增权限：scripting（按需注入）、alarms（进度检查）。</p>
+    <p class="mute">所有功能只和本机的清影通信。不上传页面内容，不做统计，不下发远程规则。Cookie 和“访问所有网页”都是可选权限，只在你开启对应功能时由浏览器问你一次；Cookie 只在你确认后读取，只读取对应的网站。以图搜图只在你点击后，把图片地址交给你选的搜索引擎。新增权限：scripting（按需注入）、alarms（进度检查）。</p>
     <button id="back" class="sec">返回</button>
   </div>
 
   <div id="msg"></div>
   <script src="shared.js"></script>
+  <script src="perms.js"></script>
   <script src="files-manifest.js"></script>
   <script src="features.js"></script>
   <script src="trans-logic.js"></script>

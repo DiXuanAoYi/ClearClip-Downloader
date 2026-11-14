@@ -82,7 +82,7 @@ jobs:
 
       # 列出源码里还没有英文译文的中文（只提示，不会让检查失败；要强制可加 -- --strict）
       - name: Translation coverage
-        run: npm run i18n
+        run: npm run i18n -- --strict --max-missing=0
 
       - name: Rust clippy
         working-directory: desktop/src-tauri

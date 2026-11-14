@@ -34,17 +34,19 @@ function normalizeFeatures(raw) {
   return out
 }
 
-/** 常驻内容脚本：key 是脚本编号，need 判断当前设置下是否要注册。文件清单和加载顺序在 files-manifest.js（需要先于本文件加载）。 */
+/** 常驻内容脚本：lazy 的（视频类）不直接注册，只注册一个很小的探测 stub（content/stub.js），页面里出现 <video>/<audio> 时才由后台注入主体。key 是脚本编号，need 判断当前设置下是否要注册。文件清单和加载顺序在 files-manifest.js（需要先于本文件加载）。 */
 const RESIDENT_SCRIPTS = [
-  { id: 'cc-float', js: ccFiles.GROUPS.float, need: (f) => f.floatButton },
+  { id: 'cc-float', lazy: true, js: ccFiles.GROUPS.float, need: (f) => f.floatButton },
   { id: 'cc-zoom', js: ccFiles.GROUPS.zoom, need: (f) => f.hoverZoom },
-  { id: 'cc-audio', js: ccFiles.GROUPS.audio, need: (f) => f.audioFx },
-  { id: 'cc-video', js: ccFiles.GROUPS.video, need: (f) => f.videoMaster && (f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced) },
+  { id: 'cc-audio', lazy: true, js: ccFiles.GROUPS.audio, need: (f) => f.audioFx },
+  { id: 'cc-video', lazy: true, js: ccFiles.GROUPS.video, need: (f) => f.videoMaster && (f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced) },
   // 解除限制：只在用户开启过的网站里注册（unlockAll 才是所有网站），在页面自己的环境（MAIN）里尽早运行
   // 网页翻译：只在用户设为“自动翻译”的网站里常驻；其他网站点了才注入
   { id: 'cc-trans', js: ccFiles.GROUPS.trans, need: (f) => f.webtrans, matches: (_rules, trans) => (trans ? ccTrans.autoMatches(trans) : []) },
   { id: 'cc-selbar', js: ccFiles.GROUPS.selbar, need: (f) => f.selbar },
   { id: 'cc-write', js: ccFiles.GROUPS.write, need: (f) => f.writing },
+  // Alt+点击放行：只在“接管浏览器下载”开启时注册（以前是对所有网页常驻的静态脚本）
+  { id: 'cc-bypass', js: ccFiles.GROUPS.bypass, need: (_f, ctx) => !!ctx?.takeover?.enabled, runAt: 'document_start' },
   { id: 'cc-unlock', js: ccFiles.GROUPS.unlock, need: (f) => f.unlock, world: 'MAIN', runAt: 'document_start', matches: (rules) => unlockMatches(rules) },
 ]
 
@@ -63,9 +65,9 @@ function unlockMatches(rules) {
 }
 
 /** 当前设置下需要注册的常驻脚本编号。 */
-function neededScripts(features) {
+function neededScripts(features, ctx) {
   const f = normalizeFeatures(features)
-  return RESIDENT_SCRIPTS.filter((s) => s.need(f)).map((s) => s.id)
+  return RESIDENT_SCRIPTS.filter((s) => s.need(f, ctx)).map((s) => s.id)
 }
 
 const DEFAULT_SITE_RULES = {
