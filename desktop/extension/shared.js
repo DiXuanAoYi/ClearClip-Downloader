@@ -1,5 +1,26 @@
 // 与清影桌面端通信：桌面端在“设置 → 手机与浏览器扩展”开启后，在本机端口提供接口。
 const api = globalThis.browser ?? globalThis.chrome
+/** 会话级存储（浏览器重启后清空）；旧版 Firefox 没有 storage.session 就退回 local。 */
+const sessionStore = api.storage.session || api.storage.local
+
+/** 记一条调试日志：不打扰用户，但“静默吞掉”的错误至少留个痕迹（后台控制台里筛选 [cc]；与内容脚本里 ccUI.log 对应）。 */
+function logErr(where, e) {
+  try {
+    console.debug('[cc]', where, e?.message || e)
+  } catch {
+    // 控制台不可用
+  }
+}
+
+/** 执行 fn（同步或异步），出错记日志并返回 fallback。 */
+async function safeRun(fn, fallback, where = 'safe') {
+  try {
+    return await fn()
+  } catch (e) {
+    logErr(where, e)
+    return fallback
+  }
+}
 
 async function getConfig() {
   const c = await api.storage.local.get(['port', 'token', 'device', 'autoSync', 'syncSites', 'lastSync'])
@@ -75,7 +96,8 @@ async function firstTimeSync(pageUrl) {
     const { autoFirstSync, lastSync = {} } = await api.storage.local.get(['autoFirstSync', 'lastSync'])
     if (autoFirstSync === false || lastSync[registrable(u.hostname)]) return null
     return await syncCookies(pageUrl)
-  } catch {
+  } catch (e) {
+    logErr('firstTimeSync', e)
     return null
   }
 }
@@ -113,7 +135,8 @@ async function tidyUrl(url) {
     if (!(await getFeatures()).cleanLink) return url
     const rules = await getSiteRules()
     return cleanUrl(url, rules.extraParams.split(/[\s,]+/).filter(Boolean)).url
-  } catch {
+  } catch (e) {
+    logErr('tidyUrl', e)
     return url
   }
 }

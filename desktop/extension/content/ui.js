@@ -168,5 +168,70 @@
     return t
   }
 
-  globalThis.ccUI = { api, mount, h, send, aiRun, siteRules, hostOff, onSettings, toast, listed }
+  // ---------- 吞掉的错误留痕、存储写失败提示 ----------
+
+  const logCounts = {}
+  /** 记一条调试日志：不打扰用户，但“静默吞掉”的错误至少留个痕迹（页面控制台里筛选 [cc]）。同一处最多记 20 次。 */
+  function log(where, e) {
+    logCounts[where] = (logCounts[where] || 0) + 1
+    if (logCounts[where] > 20) return
+    try {
+      console.debug('[cc]', where, e?.message || e)
+    } catch {
+      // 控制台不可用
+    }
+  }
+
+  /** 执行 fn，出错记日志并返回 fallback。fn 可以是同步或异步函数。 */
+  async function safe(fn, fallback, where = 'safe') {
+    try {
+      return await fn()
+    } catch (e) {
+      log(where, e)
+      return fallback
+    }
+  }
+
+  const isQuota = (e) => /quota|QUOTA_BYTES|storage.*(full|exceed)/i.test(String(e?.message || e))
+  let lastSaveToast = 0
+  /** 存储写失败：记日志，并提示用户（同一页面 30 秒内只提示一次，免得连环弹）。ui 是 mount() 的结果。 */
+  function saveFailed(ui, where, e) {
+    log(where, e)
+    if (!ui) return false // 没有界面可提示（后台式的写入）：只记日志
+    const now = Date.now()
+    if (now - lastSaveToast < 30_000) return false
+    lastSaveToast = now
+    try {
+      toast(ui, isQuota(e) ? '保存失败：扩展的存储空间满了。请在“视频摘要 → 更多”里清除缓存或删除不要的笔记' : '保存失败：这次的改动没有存下来，刷新页面后可能丢失', true, 5200)
+    } catch {
+      // 容器已经关了
+    }
+    return true
+  }
+
+  /**
+   * 写 storage.local：失败时（多半是 10MB 配额满了）先清掉可以再生成的缓存（cacheKeys）重试一次，再失败就 saveFailed 提示。
+   * 返回是否写成功。
+   */
+  async function storeSet(ui, obj, cacheKeys = ['vsumCache', 'transCache']) {
+    try {
+      await api.storage.local.set(obj)
+      return true
+    } catch (e) {
+      let err = e
+      if (isQuota(e)) {
+        try {
+          await api.storage.local.remove(cacheKeys.filter((k) => !(k in obj)))
+          await api.storage.local.set(obj)
+          return true
+        } catch (e2) {
+          err = e2
+        }
+      }
+      saveFailed(ui, `storage.set ${Object.keys(obj).join(',')}`, err)
+      return false
+    }
+  }
+
+  globalThis.ccUI = { api, mount, h, send, aiRun, siteRules, hostOff, onSettings, toast, listed, log, safe, saveFailed, storeSet, isQuota }
 })()
