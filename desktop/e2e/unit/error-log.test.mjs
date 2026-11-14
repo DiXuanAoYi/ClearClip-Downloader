@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createErrorLog, describeError, isNoise } from '../../src/utils/errorLog.ts'
+import { createErrorLog, describeError, isNoise, isLockedMessage } from '../../src/utils/errorLog.ts'
 
 const quiet = () => {
   const orig = console.error
@@ -50,4 +50,16 @@ test('ResizeObserver 噪声被忽略；提示函数抛错不外泄', () => {
   assert.doesNotThrow(() => log.record('a', 'real'))
   restore()
   assert.equal(log.recent().length, 1)
+})
+
+test('应用锁定的错误不弹提示，但仍记录', () => {
+  const restore = quiet()
+  const shown = []
+  const log = createErrorLog((m) => shown.push(m))
+  log.record('x', { kind: 'invalid', message: '应用已锁定，请先解锁。' })
+  restore()
+  assert.equal(shown.length, 0)
+  assert.equal(log.recent().length, 1)
+  assert.equal(isLockedMessage('应用已锁定，请先解锁。'), true)
+  assert.equal(isLockedMessage('网络错误'), false)
 })

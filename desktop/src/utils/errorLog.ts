@@ -31,6 +31,11 @@ export function isNoise(message: string): boolean {
   return /ResizeObserver loop/i.test(message)
 }
 
+/** 后端在应用锁定时拒绝命令的错误（“应用已锁定，请先解锁。”）：辅助窗口会被收起，这类错误不该弹提示 */
+export function isLockedMessage(message: string): boolean {
+  return message.includes('应用已锁定')
+}
+
 export function createErrorLog(notify: (message: string) => void, now: () => number = Date.now) {
   const entries: ErrorEntry[] = []
   const lastToast = new Map<string, number>()
@@ -42,7 +47,7 @@ export function createErrorLog(notify: (message: string) => void, now: () => num
     entries.push(entry)
     if (entries.length > MAX) entries.splice(0, entries.length - MAX)
     console.error(`[${source}]`, e)
-    if (opts.toast !== false) {
+    if (opts.toast !== false && !isLockedMessage(message)) {
       const last = lastToast.get(message)
       if (last === undefined || entry.at - last >= TOAST_GAP_MS) {
         lastToast.set(message, entry.at)

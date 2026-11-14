@@ -105,10 +105,38 @@ pub fn lock_enabled(st: &AppState) -> bool {
 
 // ---------- 命令层锁定检查 ----------
 
-/// 应用锁定时仍允许的命令：解锁 / 查锁状态 / 立即锁定、显示与隐藏窗口、重启、
-/// 以及锁屏界面和各窗口启动时读取外观与版本所必需的只读命令。其余命令一律拒绝。
-pub const LOCKED_ALLOWED: &[&str] =
-    &["lock_status", "lock_unlock", "lock_now", "show_main", "hide_mini", "mini_ready", "restart_app", "get_app_info", "get_settings", "is_portable"];
+/// 应用锁定时仍允许的命令。其余命令一律拒绝。
+/// 1. 解锁 / 查锁状态 / 立即锁定、显示与隐藏窗口、重启；
+/// 2. 锁屏界面和各窗口启动时读取外观与版本所必需的只读命令；
+/// 3. 辅助窗口（悬浮窗、截图翻译、写作窗、取景条）的纯布局 / 自我关闭命令：只调整窗口尺寸或关掉窗口，不读写用户数据。
+///    读取内容的（`sc_overlay_state`、`shot_take`、`write_take`……）和发起操作的（解析、下载、翻译、摘录、写作……）不在其中。
+pub const LOCKED_ALLOWED: &[&str] = &[
+    "lock_status",
+    "lock_unlock",
+    "lock_now",
+    "show_main",
+    "hide_mini",
+    "mini_ready",
+    "restart_app",
+    "get_app_info",
+    "get_settings",
+    "is_portable",
+    // 辅助窗口：布局与屏幕翻译运行状态（只有开关 / 模式，不含识别内容）
+    "float_fit",
+    "float_expand",
+    "sc_status",
+    // 辅助窗口：自己关自己
+    "shot_close",
+    "shot_pin_close",
+    "write_close",
+    "sc_pick_cancel",
+];
+
+/// 锁定时要收起的辅助窗口：迷你窗、悬浮窗、截图翻译（含钉图）、写作窗与浮标、屏幕翻译的覆盖层 / 字幕条 / 取景框。
+/// 主窗口不在其中。解锁后悬浮窗按设置恢复，迷你窗在下一条剪贴板链接时再出现，其余由用户重新触发。
+pub fn closes_when_locked(label: &str) -> bool {
+    matches!(label, "mini" | "float" | "shot" | "write" | "wbadge" | "live-overlay" | "live-subbar" | "live-pick") || label.starts_with("shotpin")
+}
 
 /// 命令名在锁定时是否放行（Tauri 插件命令 `plugin:` 不经过应用命令表，不受这里管）。
 pub fn command_allowed_when_locked(cmd: &str) -> bool {
@@ -174,7 +202,13 @@ pub fn lock_now(app: &AppHandle) -> bool {
     st.lock.set(true);
     st.media.clear();
     seal_safebox(&st);
+    crate::livetr::stop(app);
     crate::tray::close_small_windows(app);
+    for (label, w) in app.webview_windows() {
+        if closes_when_locked(&label) {
+            let _ = w.destroy();
+        }
+    }
     let _ = app.emit(EVT_LOCK, serde_json::json!({ "locked": true }));
     true
 }
@@ -441,6 +475,46 @@ mod tests {
         for cmd in ["save_settings", "list_library", "safebox_list", "get_diagnostics", "ai_translate", "enqueue", "backup_export", "wipe_traces"] {
             let e = lock_verdict(true, cmd).unwrap_err();
             assert!(e.message.contains("已锁定"), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn locked_allows_layout_commands_but_rejects_data_commands() {
+        for cmd in ["float_fit", "float_expand", "sc_status", "shot_close", "shot_pin_close", "write_close", "sc_pick_cancel"] {
+            assert!(lock_verdict(true, cmd).is_ok(), "{cmd}");
+        }
+        for cmd in [
+            "resolve_and_enqueue",
+            "batch_quick",
+            "sc_start",
+            "sc_overlay_state",
+            "sc_shot_frame",
+            "sc_shot_save",
+            "sc_pick_take",
+            "shot_take",
+            "shot_run",
+            "shot_pin_take",
+            "shot_pin",
+            "shot_compare",
+            "shot_hist_add",
+            "write_take",
+            "write_run",
+            "write_job",
+            "write_apply",
+            "excerpt_list",
+            "excerpt_add",
+        ] {
+            assert!(lock_verdict(true, cmd).is_err(), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn lock_closes_aux_windows_but_not_main() {
+        for l in ["mini", "float", "shot", "shotpin3", "write", "wbadge", "live-overlay", "live-subbar", "live-pick"] {
+            assert!(closes_when_locked(l), "{l}");
+        }
+        for l in ["main", "login", "preview"] {
+            assert!(!closes_when_locked(l), "{l}");
         }
     }
 

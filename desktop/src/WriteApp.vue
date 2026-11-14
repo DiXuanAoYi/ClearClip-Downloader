@@ -8,6 +8,7 @@ import CcLink from './components/ui/CcLink.vue'
 import CcSkeleton from './components/ui/CcSkeleton.vue'
 import CcButton from './components/ui/CcButton.vue'
 import { notifyError } from './utils/notify'
+import { isLockedMessage } from './utils/errorLog'
 import { useLanguage } from './i18n/useLanguage'
 import type { Excerpt, WritePending, WritePersona, WritingSettings } from './types'
 import { isWord, speechLang } from './utils/selection'
@@ -289,7 +290,7 @@ async function tweak(id: string) {
     }
   } catch (e) {
     error.value = errorText(e)
-    notifyError('生成失败', { desc: '模型没有给出结果。', detail: error.value, onRetry: () => void run() })
+    if (!isLockedMessage(error.value)) notifyError('生成失败', { desc: '模型没有给出结果。', detail: error.value, onRetry: () => void run() })
   } finally {
     busy.value = false
     progress.value = ''
