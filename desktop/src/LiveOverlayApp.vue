@@ -4,6 +4,8 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText } from './api'
 import type { ScreenBlock, ScreenPayload } from './types'
 import { ORIG_STYLE, blockStyle, overlaySvg, padOf, startFont, trStyle, viewOf } from './utils/overlayShot'
+import { useTauriEvents } from './composables/useTauriEvent'
+const ev = useTauriEvents()
 
 /** 实时屏幕翻译的贴字层：透明、点击穿透。坐标是物理像素，按窗口实际大小换算成 CSS 像素（不依赖系统报的缩放比例，
  *  多个显示器缩放不同也对得上）；字号按框自动缩到放得下。竖排原文 → 竖排译文，横排 → 横排，原文居中 / 靠右的译文也跟着排。
@@ -103,14 +105,14 @@ onMounted(async () => {
   document.body.style.background = 'transparent'
   window.addEventListener('resize', onResize)
   offs = await Promise.all([
-    api.onScreenBlocks((p) => void apply(p)),
-    api.onScreenHidden((h) => (hidden.value = h)),
-    api.onScreenState((s) => (paused.value = !!s.paused)),
-    api.onScreenShot(() => void saveShot()),
+    ev.on(api.onScreenBlocks((p) => void apply(p))),
+    ev.on(api.onScreenHidden((h) => (hidden.value = h))),
+    ev.on(api.onScreenState((s) => (paused.value = !!s.paused))),
+    ev.on(api.onScreenShot(() => void saveShot())),
   ])
-  const stt = await api.scStatus().catch(() => null)
+  const stt = await api.scStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
   if (stt) paused.value = !!stt.paused
-  const cur = await api.scOverlayState().catch(() => null)
+  const cur = await api.scOverlayState().catch(() => null) // 忽略：可选数据，取不到就按空处理
   if (cur && !payload.value) void apply(cur)
 })
 onBeforeUnmount(() => {

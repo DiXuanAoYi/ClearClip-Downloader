@@ -6,6 +6,8 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../api'
 import type { PhoneInfo } from '../types'
 import { formatDateTime } from '../utils/format'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const info = ref<PhoneInfo | null>(null)
 const busy = ref(false)
@@ -89,7 +91,7 @@ async function copy(text: string) {
 
 onMounted(async () => {
   await refresh()
-  unlisten = await events.onPairRequest(() => refresh())
+  unlisten = await ev.on(events.onPairRequest(() => refresh()))
   // 配对状态可能在别处改变，定期刷新
   timer = window.setInterval(refresh, 5000)
 })

@@ -5,6 +5,8 @@ import { useLanguage } from './i18n/useLanguage'
 import { useAppStore, useQueueStore } from './stores/app'
 import type { AutoResult, ClipboardLink } from './types'
 import { formatSpeed } from './utils/format'
+import { useTauriEvents } from './composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const app = useAppStore()
 useLanguage()
@@ -49,8 +51,8 @@ function showResult(r: AutoResult) {
 onMounted(async () => {
   await app.load()
   await queue.start()
-  await events.onClipboardLink(showLink)
-  await events.onAutoResult(showResult)
+  await ev.on(events.onClipboardLink(showLink))
+  await ev.on(events.onAutoResult(showResult))
   // 迷你窗是用到时才创建的：页面加载好之前发出的链接和自动下载结果在这里补上
   try {
     const s = await api.miniReady()

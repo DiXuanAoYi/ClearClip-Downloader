@@ -16,6 +16,9 @@ import PlaylistPicker from '../components/PlaylistPicker.vue'
 import BatchWorkspace from '../components/BatchWorkspace.vue'
 import BatchList from '../components/BatchList.vue'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { useTauriEvents } from '../composables/useTauriEvent'
+import { toastErr } from '../utils/toastErr'
+const ev = useTauriEvents()
 
 const app = useAppStore()
 const parse = useParseStore()
@@ -67,7 +70,7 @@ async function makeSlideshow() {
   try {
     const path = await api.makeSlideshow(result.value, ids, slideMusic.value && musicAsset.value ? musicAsset.value.id : null, slideSecs.value)
     ElMessage.success({ message: `已生成：${path}`, duration: 5000 })
-    api.revealFile(path).catch(() => {})
+    api.revealFile(path).catch(toastErr('打开文件夹'))
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -240,7 +243,7 @@ watch(preview, async (on) => {
       .then((s) => {
         if (preview.value) previewImages.value = { ...previewImages.value, [img.id]: s.url }
       })
-      .catch(() => {})
+      .catch(() => {}) // 忽略：预览图是可选的
   }
 })
 
@@ -335,7 +338,7 @@ let batchTimer: number | undefined
 function onBatchText() {
   window.clearTimeout(batchTimer)
   batchTimer = window.setTimeout(async () => {
-    const found = batchText.value.trim() ? await api.batchExtract(batchText.value).catch(() => []) : []
+    const found = batchText.value.trim() ? await api.batchExtract(batchText.value).catch(() => []) : [] // 忽略：可选数据，取不到就按空处理
     if (found.length) {
       batchText.value = ''
       app.openBatch(found, '粘贴')
@@ -430,7 +433,7 @@ async function downloadEntries() {
 }
 
 onMounted(async () => {
-  unlistenBatch = await events.onBatch((p) => {
+  unlistenBatch = await ev.on(events.onBatch((p) => {
     batchInfo.value = p
     if (p.finished) {
       const skipped = p.skipped ? `，${p.skipped} 项之前已下载或已在队列中` : ''
@@ -440,7 +443,7 @@ onMounted(async () => {
       else ElMessage.success(`“${p.title}”：已加入 ${p.queued} 个视频${from}`)
       window.setTimeout(() => (batchInfo.value = null), 1500)
     }
-  })
+  }))
 })
 onUnmounted(() => unlistenBatch?.())
 

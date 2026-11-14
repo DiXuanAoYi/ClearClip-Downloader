@@ -39,6 +39,9 @@ import {
   type Tab,
   type WriteAction,
 } from './writePresets'
+import { useTauriEvents } from './composables/useTauriEvent'
+import { toastErr } from './utils/toastErr'
+const ev = useTauriEvents()
 
 /** 写作窗（桌面端）：快捷键取到文字后弹出，选动作、看结果、替换回原来的程序。 */
 useLanguage()
@@ -136,7 +139,7 @@ async function pasteIn() {
 const personas = ref<WritePersona[]>([])
 const personaId = ref('')
 const persona = computed(() => personas.value.find((p) => p.id === personaId.value))
-void api.writePersonas().then((l) => (personas.value = l)).catch(() => {})
+void api.writePersonas().then((l) => (personas.value = l)).catch(() => {}) // 忽略：人物列表是可选的
 const canRun = computed(() => !!text.value.trim() && !busy.value && !missing.value && (tab.value !== 'persona' || !!personaId.value))
 
 async function load() {
@@ -211,7 +214,7 @@ function pickRelation(id: string) {
   const key = relationKey(src.value?.app, who.value)
   if (!key) return
   if (cfg.value) cfg.value.relations = { ...(cfg.value.relations ?? {}), [key]: form.value.relation }
-  void api.writeRelation(key, form.value.relation).catch(() => {})
+  void api.writeRelation(key, form.value.relation).catch(toastErr('保存对象关系'))
 }
 
 function pickIntent(id: string) {
@@ -242,7 +245,7 @@ function pickTab(t: Tab) {
   issues.value = []
   error.value = ''
   selMode.value = false
-  void api.writePrefs(action.value.id, extras.value, autoClose.value).catch(() => {})
+  void api.writePrefs(action.value.id, extras.value, autoClose.value).catch(toastErr('保存偏好'))
   scheduleRead()
 }
 
@@ -296,10 +299,10 @@ function dropFav(t: string) {
 }
 
 function saveExtra() {
-  if (isReply.value) return void api.writePrefs('reply', extras.value, autoClose.value).catch(() => {})
+  if (isReply.value) return void api.writePrefs('reply', extras.value, autoClose.value).catch(toastErr('保存偏好'))
   const e = extra.value.trim()
   if (e) extras.value = [e, ...extras.value.filter((x) => x !== e)].slice(0, 8)
-  void api.writePrefs(action.value.id, extras.value, autoClose.value).catch(() => {})
+  void api.writePrefs(action.value.id, extras.value, autoClose.value).catch(toastErr('保存偏好'))
 }
 
 async function run() {
@@ -365,7 +368,7 @@ function dictRender() {
 
 function dictTeardown() {
   dictStream?.getTracks().forEach((t) => t.stop())
-  void dictCtx?.close().catch(() => {})
+  void dictCtx?.close().catch(() => {}) // 忽略：音频上下文可能已关闭
   dictStream = null
   dictCtx = null
   dictLevel.value = 0
@@ -392,7 +395,7 @@ async function dictate() {
     dictFinals = []
     dictInterim = ''
     dictOff?.()
-    dictOff = await api.onWriteDictate((p) => {
+    dictOff = await ev.on(api.onWriteDictate((p) => {
       if (p.session !== dictSession) return
       if (p.kind === 'interim') {
         dictInterim = p.text
@@ -413,7 +416,7 @@ async function dictate() {
         dictDone = null
         if (!dictFinals.length && !error.value) error.value = '没有听清，请再说一次'
       }
-    })
+    }))
     try {
       dictStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
     } catch (e) {
@@ -430,7 +433,7 @@ async function dictate() {
       const ch = new Float32Array(e.inputBuffer.getChannelData(0))
       dictLevel.value = pcmLevel(ch)
       const pcm = int16ToBase64(floatToInt16(resampleTo16k(ch, rate)))
-      void api.writeDictatePush(session, pcm).catch(() => {})
+      void api.writeDictatePush(session, pcm).catch(() => {}) // 忽略：丢一块音频无碍，识别会继续
     }
     src.connect(proc)
     proc.connect(dictCtx.destination)
@@ -515,7 +518,7 @@ async function addExcerpt() {
 }
 async function toggleEx() {
   showEx.value = !showEx.value
-  if (showEx.value) excerpts.value = await api.excerptList().catch(() => [])
+  if (showEx.value) excerpts.value = await api.excerptList().catch(() => []) // 忽略：可选数据，取不到就按空处理
 }
 async function dropEx(e: Excerpt) {
   await api.excerptRemove(e.id)
@@ -577,7 +580,7 @@ function toggleAuto() {
 
 function pickAction(a: WriteAction) {
   action.value = a
-  void api.writePrefs(a.id, extras.value, autoClose.value).catch(() => {})
+  void api.writePrefs(a.id, extras.value, autoClose.value).catch(toastErr('保存偏好'))
 }
 
 /** 拖边缘缩放（无边框窗口没有系统边框可拖）。 */
@@ -606,10 +609,10 @@ onMounted(async () => {
   } catch {
     /* 没有收藏 */
   }
-  themeMode = (await api.getSettings().catch(() => null))?.theme ?? 'system'
+  themeMode = (await api.getSettings().catch(() => null))?.theme ?? 'system' // 忽略：可选数据，取不到就按空处理
   applyTheme()
   media.addEventListener('change', applyTheme)
-  cfg.value = await api.writeSettings().catch(() => null)
+  cfg.value = await api.writeSettings().catch(() => null) // 忽略：可选数据，取不到就按空处理
   if (cfg.value) {
     pin.value = cfg.value.pin
     autoClose.value = cfg.value.autoClose
@@ -617,7 +620,7 @@ onMounted(async () => {
     action.value = ACTIONS.find((a) => a.id === cfg.value?.lastAction) ?? ACTIONS[0]
   }
   watch([text, () => form.value.context], scheduleRead)
-  unlisten = await listen('write://new', () => void load())
+  unlisten = await ev.on(listen('write://new', () => void load()))
   await load()
 })
 onBeforeUnmount(() => {

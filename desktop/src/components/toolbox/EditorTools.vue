@@ -14,6 +14,8 @@ import FileInput from './FileInput.vue'
 import EditInspector from './edit/EditInspector.vue'
 import EditMonitor from './edit/EditMonitor.vue'
 import EditTimeline from './edit/EditTimeline.vue'
+import { useTauriEvents } from '../../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const props = defineProps<{ preset?: string[] }>()
 const emit = defineEmits<{ consumed: [] }>()
@@ -334,7 +336,7 @@ const stale = computed(() => !!preview.value && preview.value.key !== projectKey
 
 let unlisten: UnlistenFn | undefined
 onMounted(async () => {
-  unlisten = await events.onMediaJobs(async (list) => {
+  unlisten = await ev.on(events.onMediaJobs(async (list) => {
     const id = previewId.value
     if (id === null) return
     const j = list.find((x) => x.id === id)
@@ -356,7 +358,7 @@ onMounted(async () => {
     } else if (j.status === 'canceled') {
       previewId.value = null
     }
-  })
+  }))
 })
 onBeforeUnmount(() => unlisten?.())
 
@@ -375,7 +377,7 @@ async function buildPreview() {
   }
 }
 async function cancelPreview() {
-  if (previewId.value !== null) await api.mediaJobCancel(previewId.value).catch(() => undefined)
+  if (previewId.value !== null) await api.mediaJobCancel(previewId.value).catch(() => undefined) // 忽略：取消时任务可能已结束
 }
 /** 点“精确预览”：已经是最新的就直接切过去，否则先生成，生成好了自动切过去 */
 function setMode(v: string | number | boolean | undefined) {

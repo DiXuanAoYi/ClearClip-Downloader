@@ -239,8 +239,8 @@ onBeforeUnmount(() => {
 })
 
 onMounted(async () => {
-  presets.value = await api.videoPresets().catch(() => [])
-  caps.value = await api.videoCaps().catch(() => null)
+  presets.value = await api.videoPresets().catch(() => []) // 忽略：可选数据，取不到就按空处理
+  caps.value = await api.videoCaps().catch(() => null) // 忽略：可选数据，取不到就按空处理
   const first = presets.value.find((p) => p.id === presetId.value)
   if (first) applyPreset(first)
 })

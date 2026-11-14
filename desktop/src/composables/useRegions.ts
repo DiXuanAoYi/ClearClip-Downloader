@@ -7,6 +7,7 @@ import { api, errorText, events } from '../api'
 import type { EditClip, EditRegion, NRect, RegionEffect, TrackCandidate } from '../types'
 import { MAX_REGIONS, clamp, clipIndexAt, lostSpans, mergeTracked, newRegion, nextRegionId, resizeAll, setPin, sourceTimeAt, trackAt } from '../utils/edit'
 import type { EditApi } from './useEditProject'
+import { useTauriEvents } from './useTauriEvent'
 
 export interface RegionNote {
   kind: 'info' | 'warn' | 'error'
@@ -237,16 +238,19 @@ export function useRegions(ed: EditApi) {
 
   // ---------- 追踪 ----------
 
+  const ev = useTauriEvents()
   let unlisten: UnlistenFn | undefined
   onMounted(async () => {
-    unlisten = await events.onTrackProgress((p) => {
-      if (tracking.running && p.id === tracking.id) tracking.percent = clamp(p.percent, 0, 100)
-    })
+    unlisten = await ev.on(
+      events.onTrackProgress((p) => {
+        if (tracking.running && p.id === tracking.id) tracking.percent = clamp(p.percent, 0, 100)
+      }),
+    )
   })
   onBeforeUnmount(() => {
     unlisten?.()
     clearTimeout(detectTimer)
-    if (tracking.running) api.trackCancel(tracking.id).catch(() => undefined)
+    if (tracking.running) api.trackCancel(tracking.id).catch(() => undefined) // 忽略：取消时任务可能已结束
   })
 
   /** 从播放位置这一帧的框出发，向前向后追踪整个片段。结果并进轨迹，已有的手动点不动。 */
@@ -284,7 +288,7 @@ export function useRegions(ed: EditApi) {
   }
 
   async function cancelTrack() {
-    if (tracking.running) await api.trackCancel(tracking.id).catch(() => undefined)
+    if (tracking.running) await api.trackCancel(tracking.id).catch(() => undefined) // 忽略：取消时任务可能已结束
   }
 
   /** 丢失的时间段（素材毫秒）里，播放位置之后的下一段（没有就回到第一段）。 */

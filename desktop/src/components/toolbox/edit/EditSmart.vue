@@ -12,6 +12,8 @@ import { clipDuration, clamp, msText } from '../../../utils/edit'
 import EditField from './EditField.vue'
 import EditModels from './EditModels.vue'
 import EditSlider from './EditSlider.vue'
+import { useTauriEvents } from '../../../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const props = defineProps<{ ed: EditApi }>()
 const emit = defineEmits<{ goto: [ms: number] }>()
@@ -192,15 +194,15 @@ const tracking = reactive({ running: false, id: 0, percent: 0, done: 0, total: 0
 let seq = (Math.floor(Date.now() / 1000) % 1_000_000) * 1000 + 500
 let unlisten: UnlistenFn | undefined
 onMounted(async () => {
-  unlisten = await events.onTrackProgress((p) => {
+  unlisten = await ev.on(events.onTrackProgress((p) => {
     if (tracking.running && p.id === tracking.id) tracking.percent = clamp(p.percent, 0, 100)
     if (voc.running && p.id === voc.id) voc.percent = clamp(p.percent, 0, 100)
-  })
+  }))
 })
 onBeforeUnmount(() => {
   unlisten?.()
-  if (tracking.running) api.trackCancel(tracking.id).catch(() => undefined)
-  if (voc.running) api.trackCancel(voc.id).catch(() => undefined)
+  if (tracking.running) api.trackCancel(tracking.id).catch(() => undefined) // 忽略：取消时任务可能已结束
+  if (voc.running) api.trackCancel(voc.id).catch(() => undefined) // 忽略：取消时任务可能已结束
 })
 
 // ---- 人声分离 ----
@@ -224,7 +226,7 @@ async function separateVocals() {
     voc.percent = 0
   }
 }
-const cancelVocals = () => voc.running && api.trackCancel(voc.id).catch(() => undefined)
+const cancelVocals = () => voc.running && api.trackCancel(voc.id).catch(() => undefined) // 忽略：取消时任务可能已结束
 /** 把分离结果放上音频轨，从片段的起点开始；`replace` 时把原片段的声音静音 */
 async function addStem(which: 'vocals' | 'instrumental', replace: boolean) {
   const r = voc.result
@@ -267,7 +269,7 @@ async function reframe() {
   }
 }
 async function cancelReframe() {
-  if (tracking.running) await api.trackCancel(tracking.id).catch(() => undefined)
+  if (tracking.running) await api.trackCancel(tracking.id).catch(() => undefined) // 忽略：取消时任务可能已结束
 }
 const hasFocus = computed(() => !!clip.value?.regions.some((r) => r.effect === 'focus'))
 </script>

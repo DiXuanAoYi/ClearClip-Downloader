@@ -5,6 +5,8 @@ import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
 import { useAppStore, useQueueStore } from '../stores/app'
 import type { BatchView } from '../types'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const app = useAppStore()
 const queue = useQueueStore()
@@ -13,14 +15,14 @@ let unBatch: (() => void) | null = null
 let timer: number | undefined
 
 async function load() {
-  batches.value = await api.batchList().catch(() => [])
+  batches.value = await api.batchList().catch(() => []) // 忽略：可选数据，取不到就按空处理
 }
 function loadSoon() {
   window.clearTimeout(timer)
   timer = window.setTimeout(load, 400)
 }
 onMounted(async () => {
-  unBatch = await events.onBatchChanged(loadSoon)
+  unBatch = await ev.on(events.onBatchChanged(loadSoon))
   await load()
 })
 onBeforeUnmount(() => {

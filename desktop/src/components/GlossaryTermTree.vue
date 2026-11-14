@@ -5,6 +5,7 @@ import { api } from '../api'
 import type { GlossaryTerm } from '../types'
 import VirtualList from './VirtualList.vue'
 import * as T from '../utils/termtree'
+import { toastErr } from '../utils/toastErr'
 
 /**
  * 分层术语的编辑区：工具条、表头、树形术语（每一层一种底色）、右键 / ⋯ 菜单、拖动整理、删除确认。
@@ -184,7 +185,7 @@ async function copyPath(i: number) {
     await api.copyText(text)
     ElMessage.success('已复制路径')
   } catch {
-    navigator.clipboard?.writeText(text).catch(() => {})
+    navigator.clipboard?.writeText(text).catch(toastErr('复制'))
   }
 }
 

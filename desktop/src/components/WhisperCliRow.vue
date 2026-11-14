@@ -6,6 +6,8 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
 import { api, errorText, events } from '../api'
 import type { WhisperCliStatus } from '../types'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const st = ref<WhisperCliStatus | null>(null)
 const busy = ref(false)
@@ -39,9 +41,9 @@ async function pick() {
   }
 }
 onMounted(async () => {
-  un = await events.onModelProgress((p) => {
+  un = await ev.on(events.onModelProgress((p) => {
     if (p.id === 'whisper-cli' && busy.value && p.total > 0) pct.value = Math.round((p.got / p.total) * 100)
-  })
+  }))
   try {
     await reload()
   } catch (e) {

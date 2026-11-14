@@ -6,6 +6,8 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus'
 import { api, errorText, events } from '../../../api'
 import type { ModelStatus } from '../../../types'
+import { useTauriEvents } from '../../../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const props = defineProps<{ kind: ModelStatus['kind']; selected?: string; single?: boolean }>()
 const emit = defineEmits<{ select: [id: string]; changed: [models: ModelStatus[]] }>()
@@ -57,9 +59,9 @@ async function importFile(m: ModelStatus) {
 const remove = (m: ModelStatus) => run(m.id, () => api.mlModelRemove(m.id))
 
 onMounted(async () => {
-  un = await events.onModelProgress((p) => {
+  un = await ev.on(events.onModelProgress((p) => {
     if (p.id === busy.value && p.total > 0) pct.value = Math.round((p.got / p.total) * 100)
-  })
+  }))
   try {
     await reload()
   } catch (e) {

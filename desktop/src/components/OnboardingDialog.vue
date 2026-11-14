@@ -7,6 +7,8 @@ import { api, errorText, events } from '../api'
 import { useAppStore, type SettingsTab } from '../stores/app'
 import type { ToolProgress, ToolStatus } from '../types'
 import { formatBytes } from '../utils/format'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const app = useAppStore()
 const visible = computed(() => !!app.settings && app.settings.disclaimerAccepted && !app.settings.onboarded)
@@ -29,8 +31,8 @@ watch(
     dir.value = app.settings.downloadDir
     language.value = app.settings.language
     watchClipboard.value = app.settings.watchClipboard
-    tools.value = await api.toolsStatus().catch(() => [])
-    un = await events.onToolProgress((p) => (progress.value[p.tool] = p))
+    tools.value = await api.toolsStatus().catch(() => []) // 忽略：可选数据，取不到就按空处理
+    un = await ev.on(events.onToolProgress((p) => (progress.value[p.tool] = p)))
   },
   { immediate: true },
 )
