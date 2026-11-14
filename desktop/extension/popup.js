@@ -134,6 +134,35 @@ async function tabSite() {
   return tab?.url?.startsWith('http') ? registrable(new URL(tab.url).hostname) : null
 }
 
+// 权限申请必须在用户点击的处理函数里、而且前面不能先 await 别的：打开弹窗时先把当前网址记下来
+let curUrl = ''
+const siteOfUrl = (url) => (url?.startsWith('http') ? registrable(new URL(url).hostname) : null)
+
+/** 同步 Cookie 前先申请“Cookie + 这个网站”的权限（已授权时不会弹框）。被拒绝时给出说明。 */
+async function askCookiePerm(url) {
+  const site = siteOfUrl(url)
+  if (!site) return false
+  if (await ccPerms.request(ccPerms.cookieRequest(site))) return true
+  msg(`没有授权，无法同步 ${site} 的登录 Cookie。${ccPerms.TEXT.cookies}`, 'err')
+  return false
+}
+
+/** 所有网页的访问权限：未授权时在“发现”页和设置页提示，一个按钮申请。 */
+async function renderPerms() {
+  const ok = await ccPerms.hasSites()
+  $('permBox').classList.toggle('hidden', ok)
+  $('permInfo').textContent = ok ? '已授权访问所有网页。' : ccPerms.TEXT.sites
+  $('permSetBtn').classList.toggle('hidden', ok)
+}
+async function grantSites() {
+  const ok = await ccPerms.request(ccPerms.sitesRequest())
+  msg(ok ? '已授权访问网页，常驻功能马上生效' : '没有授权：常驻功能仍不可用。需要时再点“授权访问网页”', ok ? 'ok' : 'err')
+  renderPerms()
+  return ok
+}
+$('permBtn').onclick = grantSites
+$('permSetBtn').onclick = grantSites
+
 async function renderSync() {
   const c = await getConfig()
   const site = await tabSite()
@@ -262,6 +291,7 @@ async function taskAction(task, action) {
     if (action === 'login') {
       const entry = loginSites.find((s) => s.site === task.site) || loginSites[0]
       if (!entry) return msg('找不到这个任务的网站地址，请在网站上打开扩展再同步', 'err')
+      if (!(await askCookiePerm(entry.url))) return
       const r = await syncCookies(entry.url)
       msg(`已同步 ${r.count} 个 Cookie（${r.site}）${r.retried ? `，已重新开始 ${r.retried} 个任务` : ''}`, 'ok')
       loginSites = loginSites.filter((s) => s !== entry)
@@ -491,6 +521,8 @@ async function loadSettings() {
     cb.type = 'checkbox'
     cb.checked = features[f.id]
     cb.onchange = async () => {
+      // 在网页里常驻的功能要“访问所有网页”权限：开启时申请（必须是第一步）；拒绝也照常保存开关，只是暂时不生效
+      if (cb.checked && f.tag.startsWith('常驻') && !(await ccPerms.hasSites())) await grantSites()
       const cur = await getFeatures()
       cur[f.id] = cb.checked
       await api.storage.local.set({ features: cur })
@@ -853,6 +885,7 @@ async function saveRules() {
 async function init() {
   const c = await getConfig()
   const tab = await currentTab()
+  curUrl = tab?.url || ''
   $('page').textContent = tab?.title || tab?.url || ''
   const f = await getFeatures()
   $('pageTools').classList.toggle('hidden', !f.onDemand)
@@ -866,6 +899,7 @@ async function init() {
   if (location.hash === '#audio') showTab('audio')
   renderSniffed()
   renderTakeover()
+  renderPerms()
   refreshConn()
 }
 
@@ -922,6 +956,11 @@ $('saveRules').onclick = saveRules
 $('notifyDone').onchange = () => api.storage.local.set({ notifyDone: $('notifyDone').checked })
 
 $('autoSite').onchange = async () => {
+  const want = $('autoSite').checked
+  if (want && !(await askCookiePerm(curUrl))) {
+    $('autoSite').checked = false
+    return
+  }
   const site = await tabSite()
   if (!site) return
   const c = await getConfig()
@@ -970,6 +1009,7 @@ $('send').onclick = async () => {
 }
 
 $('cookies').onclick = async () => {
+  if (!(await askCookiePerm(curUrl))) return
   const tab = await currentTab()
   if (!tab?.url?.startsWith('http')) return msg('当前页面不能同步', 'err')
   msg('同步中…')
@@ -994,6 +1034,8 @@ $('save').onclick = async () => {
 }
 
 $('tkOn').onchange = async () => {
+  // 接管下载本身不需要网页权限；“按住 Alt 点击临时放行”要往网页里放一个小脚本，所以顺便申请（拒绝也照常开启）
+  if ($('tkOn').checked && !(await ccPerms.hasSites())) await grantSites()
   const cfg = await getTakeover()
   await api.storage.local.set({ takeover: { ...cfg, enabled: $('tkOn').checked } })
   renderTakeover()

@@ -93,11 +93,89 @@
     return el
   }
 
-  /** 给后台发消息；后台没就绪或扩展刚更新时返回 { ok: false, error }。 */
+  // ---------- 生命周期：统一的清理函数 ----------
+  // 每个内容脚本把“移除监听 / 定时器 / MutationObserver / DOM 节点”的清理函数登记在这里。
+  // 扩展被更新或卸载后，页面里的旧脚本就成了孤儿（runtime 失效，sendMessage 抛“Extension context invalidated”）：
+  // 这时统一执行所有清理函数，别继续在页面上空转（定时器、观察整个文档的 MutationObserver 都很贵）。
+  const hadId = (() => {
+    try {
+      return !!api.runtime?.id
+    } catch {
+      return false
+    }
+  })()
+  const disposers = new Set()
+  let disposed = false
+  const life = {
+    get alive() {
+      return !disposed
+    },
+    /** 登记一个清理函数，返回“注销它”的函数（功能自己先清理完时调用）。已经被清理过的页面里立刻执行。 */
+    add(fn) {
+      if (disposed) {
+        try {
+          fn()
+        } catch {
+          // 已经在清理
+        }
+        return () => {}
+      }
+      disposers.add(fn)
+      return () => disposers.delete(fn)
+    },
+    /** 加事件监听，并登记移除。 */
+    on(target, type, fn, opts) {
+      target.addEventListener(type, fn, opts)
+      return life.add(() => target.removeEventListener(type, fn, opts))
+    },
+    /** 开定时器，并登记清除。返回定时器编号。 */
+    interval(fn, ms) {
+      const id = setInterval(fn, ms)
+      life.add(() => clearInterval(id))
+      return id
+    },
+    /** 开始观察并登记断开。 */
+    observe(mo, target, opts) {
+      mo.observe(target, opts)
+      life.add(() => mo.disconnect())
+      return mo
+    },
+    /** 扩展失效了吗：被更新 / 卸载后 runtime.id 读不到。 */
+    orphaned() {
+      if (!hadId) return false // 加载时就读不到 id（测试里的假接口）：不据此判断
+      try {
+        return !api.runtime?.id
+      } catch {
+        return true
+      }
+    },
+    /** 孤儿了就清理。返回脚本是否还活着。 */
+    check() {
+      if (!disposed && life.orphaned()) life.disposeAll()
+      return !disposed
+    },
+    /** 执行所有清理函数（后登记的先执行），一个出错不影响其余。 */
+    disposeAll() {
+      if (disposed) return
+      disposed = true
+      for (const fn of [...disposers].reverse()) {
+        try {
+          fn()
+        } catch {
+          // 清理时页面可能已经变了
+        }
+      }
+      disposers.clear()
+    },
+  }
+
+  /** 给后台发消息；后台没就绪或扩展刚更新时返回 { ok: false, error }。发现扩展已失效时顺便清理本页所有内容脚本。 */
   async function send(msg) {
+    if (disposed) return { ok: false, error: '扩展已更新或被卸载，请刷新这个网页' }
     try {
       return (await api.runtime.sendMessage(msg)) || { ok: false, error: '没有响应' }
-    } catch {
+    } catch (e) {
+      if (life.orphaned() || /context invalidated/i.test(String(e?.message || e))) life.disposeAll()
       return { ok: false, error: '扩展刚更新，请刷新这个网页后再试' }
     }
   }
@@ -152,9 +230,11 @@
   /** 设置（功能开关、站点名单）变了的回调。 */
   function onSettings(cb) {
     try {
-      api.storage.onChanged.addListener((ch, area) => {
+      const fn = (ch, area) => {
         if (area === 'local' && (ch.siteRules || ch.features)) cb()
-      })
+      }
+      api.storage.onChanged.addListener(fn)
+      life.add(() => api.storage.onChanged.removeListener(fn))
     } catch {
       // 扩展已失效
     }
@@ -233,5 +313,5 @@
     }
   }
 
-  globalThis.ccUI = { api, mount, h, send, aiRun, siteRules, hostOff, onSettings, toast, listed, log, safe, saveFailed, storeSet, isQuota }
+  globalThis.ccUI = { api, life, mount, h, send, aiRun, siteRules, hostOff, onSettings, toast, listed, log, safe, saveFailed, storeSet, isQuota }
 })()

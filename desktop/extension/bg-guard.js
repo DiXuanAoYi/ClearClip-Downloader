@@ -82,6 +82,7 @@ const ccGuard = (() => {
   // 新增消息类型必须在这里登记（单元测试会核对 HANDLERS 与这张表一一对应）。
   const SPEC = {
     'cc-sniffed': { needTab: true },
+    'cc-stub-load': { needTab: true },
     'cc-send-page': { needTab: true },
     'cc-send-media': { needTab: true, fields: { url: req(S(LIMITS.URL)) } },
     'cc-send-batch': { needTab: true, fields: { items: req(A(ITEM, LIMITS.BATCH_ITEMS)) } },

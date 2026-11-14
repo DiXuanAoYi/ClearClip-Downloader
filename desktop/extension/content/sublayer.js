@@ -7,7 +7,7 @@
     prev.destroy()
     return
   }
-  const { api, mount, h, send, toast } = globalThis.ccUI
+  const { api, life, mount, h, send, toast } = globalThis.ccUI
   const L = globalThis.ccSubLayer
   const V = globalThis.ccVsum
   const VS = globalThis.ccVSession
@@ -853,6 +853,9 @@
     if (S.ls) stopListen()
     clearInterval(S.timer)
     window.removeEventListener('resize', layout)
+    if (S.onPtr) document.removeEventListener('mousemove', S.onPtr, { capture: true })
+    S.onPtr = null
+    S.unlife?.()
     ui.remove()
     Dock.unregister('sublayer')
     unsub()
@@ -925,7 +928,9 @@
     renderBar()
     layout()
     window.addEventListener('resize', layout)
-    document.addEventListener('mousemove', (e) => (globalThis.__ccPtr = { x: e.clientX, y: e.clientY }), { capture: true, passive: true })
+    S.unlife = life.add(api_destroy) // 扩展更新 / 卸载后本页统一清理时一并关闭字幕层
+    S.onPtr = (e) => (globalThis.__ccPtr = { x: e.clientX, y: e.clientY })
+    document.addEventListener('mousemove', S.onPtr, { capture: true, passive: true })
     S.timer = setInterval(() => {
       if (!S.video?.isConnected) S.video = pickVideo()
       layout()
