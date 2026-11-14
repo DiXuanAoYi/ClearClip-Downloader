@@ -1,8 +1,16 @@
 //! 云端语音识别：火山引擎（豆包语音，大模型录音文件极速版）和讯飞（录音文件转写）。
 //! 两个都是“上传整段音频 → 返回带时间的句子”，比 Whisper 一类接口快得多、中文更准。
 //!
-//! 火山部分已于 2026-11-14 对照官方文档（见 `volc_hint` 上方注释）；讯飞部分另见其核对记录。
-//! 都**没有用真实密钥跑通过**。
+//! **核对状态（2026-11-14）**：
+//! - 讯飞部分已对照官方文档（www.xfyun.cn/doc）：「录音文件转写（标准版）」`/doc/asr/ifasr_new/API.html`、
+//!   「实时语音转写(标准版)」`/doc/asr/rtasr/API.html`。两页都没有标更新日期。
+//! - 火山部分已对照官方文档（docs.volcengine.com/docs/6561/1631584 等，见 `volc_hint` 上方注释）。
+//! - 两家都**没有用真实密钥跑通过**。
+//! - 讯飞另有“录音文件转写大模型”（`/doc/spark/asr_llm/Ifasr_llm.html`，域名 office-api-ist-dx.iflyaisol.com）和
+//!   “实时语音转写大模型”（`/doc/spark/asr_llm/rtasr_llm.html`，wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1）：
+//!   鉴权是 appId + accessKeyId + accessKeySecret 的参数排序签名，和这里用的标准版（appid + secretkey/apiKey）不是一套，
+//!   本模块没有实现。
+//!
 //! 解析函数对返回格式做了尽量宽松的处理，并有单元测试；第一次用请先在“设置 → AI → 语音转文字”里点“测试连接”。
 
 use std::time::Duration;
@@ -240,11 +248,11 @@ pub async fn xfyun_recognize(
         return Err(AppError::msg(xfyun_hint(&up)));
     }
     let order = up["content"]["orderId"].as_str().ok_or_else(|| AppError::msg("讯飞没有返回订单号"))?.to_string();
-    for _ in 0..400 {
+    for n in 0..XFYUN_MAX_POLLS {
         if stop() {
             return Err(AppError::msg("canceled"));
         }
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        tokio::time::sleep(xfyun_poll_delay(n)).await;
         let ts = crate::db::now().to_string();
         let signa = xfyun_signa(app_id, secret, &ts);
         let url = format!("{XFYUN_BASE}/getResult?appId={}&signa={}&ts={}&orderId={}&resultType=transfer", pct(app_id), pct(&signa), ts, pct(&order));
@@ -262,21 +270,62 @@ pub async fn xfyun_recognize(
         }
         match r["content"]["orderInfo"]["status"].as_i64().unwrap_or(0) {
             4 => return Ok(parse_xfyun_order_result(r["content"]["orderResult"].as_str().unwrap_or(""), drop_smooth)),
-            -1 => return Err(AppError::msg(format!("讯飞转写失败（{}）", r["content"]["orderInfo"]["failType"]))),
+            -1 => {
+                let ft = r["content"]["orderInfo"]["failType"].as_i64().unwrap_or(99);
+                // failType 6 = 静音：没有内容可转写，不算失败
+                if ft == 6 {
+                    return Ok(vec![]);
+                }
+                return Err(AppError::msg(xfyun_fail_text(ft)));
+            }
             _ => {}
         }
     }
-    Err(AppError::msg("讯飞转写等待超时"))
+    Err(AppError::msg(format!("讯飞转写等待超时（订单 {order}；官方限制每个订单最多查询 100 次，72 小时内结果还在，可稍后重试）")))
+}
+
+/// 官方文档：“获取结果次数不得超过 100 次”，超过报 26604。
+const XFYUN_MAX_POLLS: usize = 100;
+
+/// 前 30 次每 3 秒（约 1.5 分钟），之后每 10 秒，100 次一共约 13 分钟。
+fn xfyun_poll_delay(n: usize) -> Duration {
+    Duration::from_secs(if n < 30 { 3 } else { 10 })
+}
+
+/// `orderInfo.failType`（文档“录音文件转写（标准版）”）
+fn xfyun_fail_text(ft: i64) -> String {
+    let why = match ft {
+        1 => "音频上传失败",
+        2 => "音频转码失败，请检查音频格式",
+        3 => "识别失败",
+        4 => "音频时长超过 5 小时",
+        5 => "音频校验失败",
+        7..=11 => "翻译 / 质检相关失败",
+        _ => "其他原因",
+    };
+    format!("讯飞转写失败（failType {ft}）：{why}")
 }
 
 fn xfyun_hint(v: &Value) -> String {
     let code = v["code"].as_str().unwrap_or("");
     let desc = v["descInfo"].as_str().unwrap_or("");
     let why = match code {
-        "26602" | "26604" | "26605" => "服务繁忙或订单状态异常，稍后重试",
-        "26610" | "26611" | "26612" => "AppId 或密钥不对，或没有开通“录音文件转写”",
+        // 官方错误码表（录音文件转写标准版）
+        "26601" => "非法应用信息：检查 AppID 是否填对",
+        "26602" => "任务 ID 不存在",
+        "26603" => "请求太频繁，稍后重试",
+        "26604" => "这个订单查询结果的次数超过了官方限制（100 次）",
+        "26605" => "任务还在处理中",
+        "26606" => "音频是空的",
+        "26607" => "转写语种没有授权或已过期，请在讯飞控制台检查“录音文件转写”的开通状态",
+        "26610" => "请求参数有误（检查 AppID、文件名、大小、时长）",
+        "26631" => "音频文件太大（上限 500 MB）",
+        "26632" => "音频太长（上限 5 小时）",
+        "26633" => "音频服务时长不足，请在讯飞控制台充值或领取额度",
+        "26640" | "26650" => "文件上传或音频格式转换失败",
+        "26680" | "26689" => "讯飞引擎出错，稍后重试",
+        // 以下三个是旧代码里的猜测，官方页面里没有，保留以免丢掉原有的签名提示
         "26200" | "26201" | "26202" => "签名或时间戳错误：检查密钥，并确认电脑时间准确",
-        "26603" | "26606" => "额度不足或已超出并发：到讯飞开放平台控制台查看该服务的剩余时长 / 套餐",
         _ => "",
     };
     format!("讯飞语音识别失败（{code}）{desc}{}", if why.is_empty() { String::new() } else { format!("：{why}") })
@@ -361,7 +410,8 @@ pub async fn xfyun_rt_text_at(url: &str, connector: Option<tokio_tungstenite::Co
         ws.send(Message::Binary(frame.to_vec().into())).await.map_err(|e| AppError::msg(format!("发送音频失败：{e}")))?;
         tokio::time::sleep(Duration::from_millis(RT_PACE_MS)).await;
     }
-    ws.send(Message::Text("{\"end\": true}".into())).await.map_err(|e| AppError::msg(format!("发送结束标记失败：{e}")))?;
+    // 官方文档：结束标识是一条二进制消息，内容 {"end": true}
+    ws.send(Message::Binary(b"{\"end\": true}".to_vec().into())).await.map_err(|e| AppError::msg(format!("发送结束标记失败：{e}")))?;
     // 3) 收结果，直到服务器关闭
     let mut out = String::new();
     while let Ok(Some(m)) = tokio::time::timeout(Duration::from_secs(10), ws.next()).await {
@@ -388,10 +438,13 @@ pub async fn xfyun_rt_text_at(url: &str, connector: Option<tokio_tungstenite::Co
 fn xfyun_rt_hint(v: &Value) -> String {
     let code = v["code"].as_str().unwrap_or("");
     let why = match code {
-        "10105" | "10106" | "10107" | "10110" | "10700" => "没有开通“实时语音转写”，或 AppID / APIKey 不对",
-        "10202" | "10205" => "网络连接问题，稍后重试",
-        "10800" | "10801" => "额度不足或已超出并发：到讯飞开放平台控制台查看“实时语音转写”的剩余时长 / 套餐",
-        "37005" | "37006" => "音频格式不对（需要 16 kHz 16 bit 单声道）",
+        // 官方错误码表（实时语音转写标准版）
+        "10105" => "访问被拒绝：AppID / APIKey 不对，没有开通“实时语音转写”，或本机的外网 IP 不在控制台的 IP 白名单里",
+        "10106" | "10107" => "请求参数有误（检查 AppID、时间戳）",
+        "10110" => "没有授权：AppID / APIKey 不对（签名没通过），或没有开通“实时语音转写”",
+        "10700" | "10800" => "讯飞引擎出错或同时连接数超过授权，稍后重试",
+        "10202" | "10204" | "10205" => "网络连接问题，稍后重试",
+        "37005" => "超过 15 秒没有收到音频数据",
         _ => "",
     };
     format!("讯飞实时转写失败（{code}）{}{}", v["desc"].as_str().unwrap_or(""), if why.is_empty() { String::new() } else { format!("：{why}") })
@@ -554,6 +607,27 @@ mod tests {
     }
 
     #[test]
+    fn xfyun_polling_stays_within_the_documented_limit() {
+        // 官方：获取结果不得超过 100 次；总等待要比 10 分钟长，转写长音频才来得及
+        let total: u64 = (0..XFYUN_MAX_POLLS).map(|n| xfyun_poll_delay(n).as_secs()).sum();
+        assert_eq!(XFYUN_MAX_POLLS, 100);
+        assert!(total >= 600, "{total}");
+    }
+
+    #[test]
+    fn xfyun_error_codes_follow_the_docs() {
+        let h = |c: &str| xfyun_hint(&json!({"code": c, "descInfo": "d"}));
+        assert!(h("26604").contains("100 次"));
+        assert!(h("26632").contains("5 小时"));
+        assert!(h("26610").contains("参数"));
+        assert!(xfyun_fail_text(2).contains("转码"));
+        let rt = |c: &str| xfyun_rt_hint(&json!({"code": c, "desc": "x"}));
+        assert!(rt("37005").contains("15 秒"));
+        assert!(rt("10105").contains("白名单"));
+        assert!(rt("10110").contains("授权"));
+    }
+
+    #[test]
     fn silent_wav_has_a_valid_header() {
         let w = silent_wav(1000);
         assert_eq!(w.len(), 44 + 32_000);
@@ -573,16 +647,22 @@ mod tests {
             let mut ws = tokio_tungstenite::accept_async(sock).await.unwrap();
             ws.send(Message::Text(json!({"action": "started", "code": "0"}).to_string().into())).await.unwrap();
             let mut bytes = 0usize;
+            let mut ended = false;
             while let Some(Ok(m)) = ws.next().await {
                 match m {
+                    // 官方文档：结束标识是二进制消息 {"end": true}
+                    Message::Binary(b) if b.as_ref() == br#"{"end": true}"# => {
+                        ended = true;
+                        break;
+                    }
                     Message::Binary(b) => bytes += b.len(),
-                    Message::Text(t) if t.contains("end") => break,
                     _ => {}
                 }
             }
             let part = |t: &str, ty: &str| {
                 json!({"action": "result", "code": "0", "data": json!({"cn": {"st": {"type": ty, "rt": [{"ws": [{"cw": [{"w": t, "wp": "n"}]}]}]}}}).to_string()}).to_string()
             };
+            assert!(ended, "结束帧必须是二进制消息");
             ws.send(Message::Text(part("你", "1").into())).await.unwrap();
             ws.send(Message::Text(part("你好", "0").into())).await.unwrap();
             ws.send(Message::Text(part("世界。", "0").into())).await.unwrap();
