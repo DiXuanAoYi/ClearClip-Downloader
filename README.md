@@ -95,4 +95,4 @@ npm run tauri build    # 打包安装包
 
 仅用于下载你有权保存的内容。本仓库只为学习研究，如涉及侵犯个人或者团体利益，请与我取得联系，我将主动删除一切相关资料。
 
-邮箱：goliszhou@gmail.com
+邮箱：dixuanaoyi@gmail.com
