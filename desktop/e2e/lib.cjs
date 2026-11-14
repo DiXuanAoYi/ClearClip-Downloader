@@ -9,7 +9,7 @@ const { chromium } = require('playwright')
 const MEDIA = path.join(__dirname, 'media')
 const OUT = path.join(os.tmpdir(), 'clearclip-e2e')
 fs.mkdirSync(OUT, { recursive: true })
-const MPORT = 5399
+const MPORT = 5301
 const MIME = { '.webm': 'video/webm', '.ogg': 'audio/ogg', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif' }
 
 function startMediaServer() {
@@ -184,7 +184,7 @@ const m = (f) => path.join(MEDIA, f)
 
 /** 打开只含剪辑页的测试页面；等不到时把页面上的报错和内容打印出来，方便看 CI 日志。 */
 async function openHarness(page, errors) {
-  await page.goto('http://127.0.0.1:5299/ui-harness.html')
+  await page.goto('http://127.0.0.1:5199/ui-harness.html')
   try {
     await page.waitForSelector('.ed', { timeout: 60000 })
   } catch (e) {

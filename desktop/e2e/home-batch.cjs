@@ -45,7 +45,7 @@ const init = `
   const page = await browser.newPage({ viewport: { width: 1180, height: 900 }, deviceScaleFactor: 1 })
   page.on('pageerror', (e) => errors.push(e.message))
   await page.addInitScript(init)
-  await page.goto('http://127.0.0.1:5299/merge-harness.html#parse')
+  await page.goto('http://127.0.0.1:5199/merge-harness.html#parse')
   await page.waitForSelector('.modes')
   await page.waitForTimeout(600)
 
