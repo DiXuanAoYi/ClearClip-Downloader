@@ -112,8 +112,8 @@ html:not(.dark) .el-button.pz-strong:not(.is-disabled) {
   --el-button-hover-text-color: var(--cc-fg);
 }
 .el-button:focus-visible {
-  outline: 2px solid var(--cc-cyan);
-  outline-offset: 2px;
+  outline: var(--cc-focus-w) solid var(--cc-focus);
+  outline-offset: var(--cc-focus-off);
 }
 
 /* 输入框 / 选择框 / 数字框：凹进去的深色底 */
@@ -215,8 +215,8 @@ html:not(.dark) .el-button.pz-strong:not(.is-disabled) {
   transform: translateX(14px);
 }
 .el-switch:focus-visible .el-switch__core {
-  outline: 2px solid var(--cc-cyan);
-  outline-offset: 2px;
+  outline: var(--cc-focus-w) solid var(--cc-focus);
+  outline-offset: var(--cc-focus-off);
 }
 
 /* 分段选择（单选按钮组）：凹槽里的三选一，选中＝琥珀描边 */
@@ -259,7 +259,9 @@ html:not(.dark) .el-button.pz-strong:not(.is-disabled) {
   font-weight: 700;
 }
 .el-radio-button__original-radio:focus-visible + .el-radio-button__inner {
-  outline: 2px solid var(--cc-cyan);
+  /* 上面的 .el-radio-button__inner 用 !important 去掉了 outline，这里要同样加 !important 才能把焦点环还回来 */
+  outline: var(--cc-focus-w) solid var(--cc-focus) !important;
+  outline-offset: 1px;
 }
 
 /* 单选 / 多选框 */

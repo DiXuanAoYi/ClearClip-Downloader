@@ -8,7 +8,7 @@
   --cc-line: #d3deec;
   --cc-fg: #0b1424;
   --cc-mute: #4d5f7b;
-  --cc-acc: #b45f00;
+  --cc-acc: #a65600;
   --cc-acc-soft: #f59e0b24;
   --cc-ok: #007a70;
   --cc-err: #c4283d;
@@ -18,8 +18,8 @@
   --cc-foot: #f1f5fa;
   --cc-fg2: #34445f;
   --cc-dot: #9aabc6;
-  --cc-acc-strong: #b45f00;
-  --cc-acc-strong-hover: #9a5000;
+  --cc-acc-strong: #a65600;
+  --cc-acc-strong-hover: #8a4a00;
   --cc-on-acc: #ffffff;
   --cc-acc-text: #8a4a00;
   --cc-acc-line: #c8730080;
@@ -48,16 +48,84 @@
   --cc-grid: #28508c0e;
   --cc-glow1: #ffaa2824;
   --cc-glow2: #00aa9619;
-  --cc-amber: #b45f00;
+  --cc-amber: #a65600;
   --cc-amber-line: #c8730080;
   --cc-amber-glow: #f59e0b59;
   --cc-cyan: #007a70;
   --cc-cyan-soft: #0096871a;
   --cc-cyan-line: #00826666;
-  --cc-faint: #8393ab;
+  --cc-faint: #566884;
   --cc-shadow: 0 18px 40px -26px #1e3c6e80;
 
-  --el-color-primary: #b45f00;
+  /* ---- 设计令牌 v2（度量与动效，深浅色共用；设计稿：docs/design 设计系统 2） ---- */
+  /* 字号 6 档：中文说明最小 12px，11px 只给徽标与等宽读数 */
+  --cc-fs-xs: 11px;
+  --cc-fs-sm: 12px;
+  --cc-fs-md: 14px;
+  --cc-fs-lg: 16px;
+  --cc-fs-xl: 20px;
+  --cc-fs-2xl: 28px;
+  --cc-lh-tight: 1.25;
+  --cc-lh-base: 1.5;
+  /* 圆角 */
+  --cc-r-sm: 4px;
+  --cc-r-md: 8px;
+  --cc-r-lg: 12px;
+  --cc-r-pill: 999px;
+  /* 间距：4px 栅格 */
+  --cc-sp-1: 4px;
+  --cc-sp-2: 8px;
+  --cc-sp-3: 12px;
+  --cc-sp-4: 16px;
+  --cc-sp-5: 20px;
+  --cc-sp-6: 24px;
+  --cc-sp-8: 32px;
+  --cc-sp-10: 40px;
+  --cc-sp-12: 48px;
+  /* 控件高度 */
+  --cc-h-sm: 28px;
+  --cc-h-md: 36px;
+  --cc-h-lg: 44px;
+  /* 动效 */
+  --cc-dur-fast: 120ms;
+  --cc-dur-base: 200ms;
+  --cc-dur-slow: 320ms;
+  --cc-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --cc-ease-io: cubic-bezier(0.4, 0, 0.2, 1);
+  --cc-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* 层级 */
+  --cc-z-sticky: 10;
+  --cc-z-side: 20;
+  --cc-z-pop: 100;
+  --cc-z-dialog: 200;
+  --cc-z-toast: 300;
+  --cc-z-tip: 400;
+  /* 焦点环 */
+  --cc-focus: var(--cc-acc);
+  --cc-focus-w: 2px;
+  --cc-focus-off: 2px;
+  /* ---- 设计令牌 v2（颜色，浅色） ---- */
+  --cc-ok-line: #00826666;
+  --cc-err-soft: #c4283d14;
+  --cc-err-line: #c4283d66;
+  --cc-err-text: #b01f33;
+  --cc-on-err: #ffffff;
+  --cc-info: #1f5fbf;
+  --cc-info-soft: #286edc14;
+  --cc-info-line: #1f5fbf66;
+  --cc-info-text: #1a52a6;
+  --cc-warn: #7a5c00;
+  --cc-warn-soft: #e6b41429;
+  --cc-warn-line: #a07800;
+  --cc-warn-text: #7a5c00;
+  --cc-skel: #d3deec;
+  --cc-skel-hi: #e6edf6;
+  --cc-sh-1: 0 1px 2px #1e3c6e1f;
+  --cc-sh-2: 0 8px 24px -8px #1e3c6e4d, 0 0 0 1px #d3deec;
+  --cc-sh-3: 0 24px 60px -20px #1e3c6e66, 0 0 0 1px #aebfd8;
+  --cc-scrim: #0b142459;
+
+  --el-color-primary: #a65600;
   --el-color-primary-light-3: #d08a3a;
   --el-color-primary-light-5: #e3b475;
   --el-color-primary-light-7: #f0d6b0;
@@ -123,8 +191,27 @@ html.dark {
   --cc-cyan: #4be3d0;
   --cc-cyan-soft: #4be3d01f;
   --cc-cyan-line: #4be3d066;
-  --cc-faint: #66789a;
+  --cc-faint: #8396b8;
   --cc-shadow: 0 20px 50px -24px #000000cc;
+  --cc-ok-line: #4be3d066;
+  --cc-err-soft: #ff7b8a1f;
+  --cc-err-line: #ff7b8a73;
+  --cc-err-text: #ff9aa6;
+  --cc-on-err: #1a0509;
+  --cc-info: #7db4ff;
+  --cc-info-soft: #7db4ff21;
+  --cc-info-line: #7db4ff73;
+  --cc-info-text: #9cc6ff;
+  --cc-warn: #f2cf5b;
+  --cc-warn-soft: #f2cf5b21;
+  --cc-warn-line: #f2cf5b73;
+  --cc-warn-text: #f2cf5b;
+  --cc-skel: #16233a;
+  --cc-skel-hi: #1f3150;
+  --cc-sh-1: 0 1px 2px #00000066;
+  --cc-sh-2: 0 8px 24px -8px #000000b3, 0 0 0 1px #1c2b43;
+  --cc-sh-3: 0 24px 60px -20px #000000e6, 0 0 0 1px #2c4366;
+  --cc-scrim: #060a12b8;
 
   --el-color-primary: #ffb547;
   --el-color-primary-light-3: #b88435;
@@ -146,7 +233,7 @@ html.dark {
   --el-text-color-primary: #e8f0fd;
   --el-text-color-regular: #c2cfe4;
   --el-text-color-secondary: #9aabc6;
-  --el-text-color-placeholder: #66789a;
+  --el-text-color-placeholder: #8396b8;
   --el-mask-color: #060a12b3;
 }
 
@@ -205,7 +292,7 @@ textarea,
   backdrop-filter: blur(10px);
   box-shadow: var(--cc-shadow);
 }
-/* 面板四角的琥珀准星：左上、右下 */
+/* 面板四角的琥珀准星：只在聚焦的卡片上出现（键盘焦点在卡内，或加 .is-focus），常态不画 */
 .card::before,
 .card::after,
 .dpanel::before,
@@ -216,6 +303,18 @@ textarea,
   height: 14px;
   border: 1.5px solid var(--cc-amber-line);
   pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--cc-dur-fast) var(--cc-ease-out);
+}
+.card:focus-within::before,
+.card:focus-within::after,
+.card.is-focus::before,
+.card.is-focus::after,
+.dpanel:focus-within::before,
+.dpanel:focus-within::after,
+.dpanel.is-focus::before,
+.dpanel.is-focus::after {
+  opacity: 1;
 }
 .card::before,
 .dpanel::before {
@@ -284,14 +383,21 @@ textarea,
 }
 
 :focus-visible {
-  outline: 2px solid var(--cc-acc);
-  outline-offset: 2px;
+  outline: var(--cc-focus-w) solid var(--cc-focus);
+  outline-offset: var(--cc-focus-off);
 }
 
+/* 减少动态效果：位移与循环动画全部关掉，状态变化立即完成 */
 @media (prefers-reduced-motion: reduce) {
-  * {
-    transition: none !important;
-    animation: none !important;
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }
 
