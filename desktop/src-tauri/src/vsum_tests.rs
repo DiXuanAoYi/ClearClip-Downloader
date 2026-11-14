@@ -595,3 +595,173 @@ fn streamed_segments_are_placed_at_their_real_start_time() {
     assert!(all.windows(2).all(|w| w[0].start <= w[1].start), "时间必须随段落单调递增");
     assert!(all.last().unwrap().end < 3 * 90_000 + 10_000);
 }
+
+// ---- 特征化：process 对每种请求类型的整体输出（返回值、进度回调序列、发给模型的提示词）。
+// 拆分函数前先固定住行为；用 VSUM_GOLDEN=update 重新生成。 ----
+
+fn short_lines(n: usize) -> Vec<Line> {
+    (0..n).map(|i| Line { t: i as u64 * 65_000, text: format!(" 第{i}句 hello world ") }).collect()
+}
+
+async fn trace(r: &Req, reply: &str, cancel_at: Option<usize>) -> String {
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let s2 = seen.clone();
+    let reply = reply.to_string();
+    let base = mock(Arc::new(move |p| {
+        s2.lock().unwrap().push(p.to_string());
+        reply.clone()
+    }))
+    .await;
+    let prog: Mutex<Vec<(usize, usize)>> = Mutex::new(vec![]);
+    let out = process(&ep(&base), "m", "简体中文", 20, r, &|a, b| {
+        let mut g = prog.lock().unwrap();
+        g.push((a, b));
+        if cancel_at == Some(g.len()) {
+            Err(AppError::msg("已取消"))
+        } else {
+            Ok(())
+        }
+    })
+    .await;
+    let mut calls = seen.lock().unwrap().clone();
+    calls.sort();
+    let mut s = match out {
+        Ok(v) => format!("OK {v}\n"),
+        Err(e) => format!("ERR {e}\n"),
+    };
+    s.push_str(&format!("progress {:?}\n", prog.lock().unwrap()));
+    for c in calls {
+        // 系统提示词很长且由各自的函数生成：只记开头、结尾和长度；用户消息超过 700 字时也只记两头和长度
+        let (sys, user) = c.split_once("\n=====\n").unwrap_or((&c, ""));
+        let chars: Vec<char> = sys.chars().collect();
+        let head: String = chars.iter().take(60).collect();
+        let tail: String = chars[chars.len().saturating_sub(160)..].iter().collect();
+        let uc: Vec<char> = user.chars().collect();
+        let user = if uc.len() > 700 {
+            format!("({} chars) {} ... {}", uc.len(), uc[..300].iter().collect::<String>(), uc[uc.len() - 300..].iter().collect::<String>())
+        } else {
+            user.to_string()
+        };
+        s.push_str(&format!("--- system ({} chars) {head} ... {tail}\n--- user\n{user}\n", chars.len()));
+    }
+    s
+}
+
+fn golden_requests() -> Vec<(&'static str, Req, &'static str, Option<usize>)> {
+    let l3 = || short_lines(3);
+    let k = |kind: &str| Req { kind: kind.into(), ..Default::default() };
+    let sm =
+        r#"{"summary":"概述","points":["要点一","要点二"],"chapters":[{"time":"0:00","title":"开头"},{"time":"1:05","title":"中段"}],"keywords":["甲","乙"]}"#;
+    let flow = r#"{"nodes":[{"id":"a","title":"起","kind":"step","time":"0:10"},{"id":"b","title":"果","kind":"result"}],"edges":[{"from":"a","to":"b","label":"导致"}]}"#;
+    let w = |action: &str, cands: u8| crate::writing::Opts { action: action.into(), candidates: cands, ..Default::default() };
+    vec![
+        ("summary-one", Req { lines: l3(), style: "brief".into(), ..k("summary") }, sm, None),
+        ("summary-many", req("summary", 80), sm, None),
+        ("summary-bad-reply", Req { lines: l3(), ..k("summary") }, "不是 JSON", None),
+        ("article", Req { text: "第一段\n\n  第二段  \n".into(), lang: "English".into(), ..k("article") }, sm, None),
+        ("mindmap-one", Req { lines: l3(), system: "自定义 {lang}".into(), ..k("mindmap") }, "# 题\n- 一\n  - 二", None),
+        ("mindmap-many", req("mindmap", 80), "# 题\n- 一\n  - 二", None),
+        ("mindmap-bad", Req { lines: l3(), ..k("mindmap") }, "没有结构", None),
+        ("flowgraph-one", Req { lines: l3(), ..k("flowgraph") }, flow, None),
+        ("flowgraph-many", req("flowgraph", 80), flow, None),
+        ("flowgraph-bad", Req { lines: l3(), ..k("flowgraph") }, "x", None),
+        ("cards", Req { lines: l3(), ..k("cards") }, r#"{"cards":[{"q":"问","a":"答","time":"0:30"}]}"#, None),
+        ("quotes", Req { lines: l3(), ..k("quotes") }, r#"{"quotes":[{"text":"金句","time":"0:10"}]}"#, None),
+        ("cards-empty", Req { lines: l3(), ..k("cards") }, "{}", None),
+        (
+            "ask",
+            Req {
+                lines: l3(),
+                question: " 讲了什么？ ".into(),
+                history: vec![
+                    Turn { role: "user".into(), text: "之前问".into() },
+                    Turn { role: "assistant".into(), text: " ".into() },
+                    Turn { role: "assistant".into(), text: "之前答".into() },
+                ],
+                ..k("ask")
+            },
+            " 答案见 [1:05] ",
+            None,
+        ),
+        ("ask-cancel", Req { lines: l3(), question: "q".into(), ..k("ask") }, "a", Some(1)),
+        (
+            "askcomments",
+            Req {
+                question: "大家怎么看".into(),
+                comments: vec![
+                    Cmt { author: "甲".into(), text: "好看".into(), likes: 5, t: -1, replies: 0 },
+                    Cmt { author: "乙".into(), text: "一般".into(), likes: 1, t: 3000, replies: 2 },
+                ],
+                ..k("askcomments")
+            },
+            " 多数好评 ",
+            None,
+        ),
+        (
+            "translate-zh",
+            Req {
+                lines: vec![Line { t: 0, text: "你好".into() }, Line { t: 1000, text: " ".into() }, Line { t: 2000, text: "再见".into() }],
+                guide: "\nGuide".into(),
+                ..k("translate")
+            },
+            r#"["Hello","Bye"]"#,
+            None,
+        ),
+        ("translate-en", Req { lines: l3(), lang: "日本語".into(), ..k("translate") }, r#"["一","二","三"]"#, None),
+        ("webtrans", Req { lines: l3(), context: "站点：x".into(), guide: "\nG".into(), ..k("webtrans") }, r#"["一","二","三"]"#, None),
+        ("punctuate", Req { lines: l3(), title: " 标题 ".into(), ..k("punctuate") }, r#"["一。","二。","三。"]"#, None),
+        ("fixasr", Req { lines: l3(), title: "T".into(), system: "own".into(), ..k("fixasr") }, r#"["一","二"]"#, None),
+        ("namer", Req { lines: l3(), title: "页面".into(), text: " a  b\nc ".into(), lang: "English".into(), ..k("namer") }, r#"["甲 乙","b/c","d."]"#, None),
+        ("namer-bad", Req { lines: l3(), ..k("namer") }, "没有数组", None),
+        ("domain", Req { title: "T".into(), url: " http://x ".into(), text: " 样本 ".into(), ..k("domain") }, r#"{"domain":"科技","note":"说明"}"#, None),
+        ("domain-bad", k("domain"), "不是 JSON", None),
+        ("answer", Req { title: "T".into(), text: " 选中 ".into(), ..k("answer") }, " 回答 ", None),
+        ("answer-summarize", Req { title: "T".into(), text: "选中".into(), context: "前后文".into(), format: "summarize".into(), ..k("answer") }, "摘", None),
+        ("explain", Req { title: "T".into(), text: "词".into(), context: " ".into(), ..k("explain") }, " 解释 ", None),
+        (
+            "lookup",
+            Req { title: "T".into(), text: " hello ".into(), context: "Hello world".into(), trans: " 你好世界 ".into(), ..k("lookup") },
+            r#"{"meaning":"问候","aligned":"你好"}"#,
+            None,
+        ),
+        ("lookup-bad", Req { text: "x".into(), ..k("lookup") }, "不是 JSON", None),
+        ("note", Req { title: "T".into(), text: "目标".into(), context: "全文".into(), ..k("note") }, r#"{"quote":" 笔记 "}"#, None),
+        ("note-plain", Req { title: "T".into(), text: "目标".into(), ..k("note") }, "quote: \"纯文本笔记\"", None),
+        ("note-empty", Req { ..k("note") }, "  ", None),
+        ("refine", Req { title: "T".into(), text: "原笔记".into(), ..k("refine") }, r#"{"quote":"改后"}"#, None),
+        ("rewrite", Req { text: " 原文 ".into(), format: "xhs".into(), ..k("rewrite") }, " 改写 ", None),
+        ("replyread", Req { text: "对方的话".into(), write: w("reply", 1), ..k("replyread") }, r#"{"ask":"问价。","facts":"事实","relation":"客户"}"#, None),
+        ("write-reply-3", Req { text: "收到的消息 12:30".into(), write: w("reply", 3), ..k("write") }, " 好的，12:30 见 ", None),
+        ("write-reply-1", Req { text: "消息".into(), write: w("reply", 1), ..k("write") }, "OK", None),
+        ("write-tweak", Req { text: "草稿".into(), write: w("tweak", 1), ..k("write") }, " 改后 ", None),
+        ("write-tweak-empty", Req { text: "草稿".into(), write: w("tweak", 1), ..k("write") }, " ", None),
+        ("write-default-2", Req { text: "草稿 3 个".into(), write: w("polish", 2), ..k("write") }, "同一版", None),
+        (
+            "write-persona",
+            Req { text: "草稿".into(), write: crate::writing::Opts { extra: "人设 9".into(), ..w("persona", 1) }, ..k("write") },
+            "写了 100 个",
+            None,
+        ),
+        ("write-empty", Req { text: "草稿".into(), write: w("polish", 1), ..k("write") }, "", None),
+        ("style", Req { text: "我写的一段话。".into(), ..k("style") }, "简洁，爱用短句", None),
+        ("style-empty", Req { text: "x".into(), ..k("style") }, "", None),
+        ("grammar-ok", Req { text: "他们是好人 .".into(), ..k("grammar") }, r#"{"issues":[{"from":"他们是好人 .","to":"他们是好人。","why":"标点"}]}"#, None),
+        ("grammar-model-junk", Req { text: "ok  text".into(), ..k("grammar") }, "不是 JSON", None),
+        ("stats-empty-plan", Req { text: "一段文字".into(), ..k("stats") }, r#"{"queries":[]}"#, None),
+        ("unsupported", k("nope"), "x", None),
+        ("empty-lang-default", Req { lines: l3(), lang: "  ".into(), ..k("namer") }, r#"["a","b","c"]"#, None),
+    ]
+}
+
+#[tokio::test]
+async fn process_output_matches_the_recorded_snapshots() {
+    let mut got = String::new();
+    for (name, r, reply, cancel) in golden_requests() {
+        got.push_str(&format!("=== {name}\n{}\n", trace(&r, reply, cancel).await));
+    }
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/vsum_golden.txt");
+    if std::env::var("VSUM_GOLDEN").as_deref() == Ok("update") {
+        std::fs::write(path, &got).unwrap();
+    }
+    assert_eq!(got, include_str!("vsum_golden.txt"), "process 的输出变了：确认是有意的改动后，用 VSUM_GOLDEN=update 重新生成");
+}

@@ -967,11 +967,36 @@ fn assemble(placed: &[Placed], clips: &[Clip], audio: bool, stmts: &mut Vec<Stri
     Ok((cv, audio.then_some(ca)))
 }
 
-pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path, mode: Mode, default_font: Option<&Path>) -> AppResult<EditPlan> {
-    let mut plan = EditPlan::default();
-    let preview = mode == Mode::Preview;
+/// `build` 各阶段共用的只读环境：工程、素材、ffmpeg 能力和算出来的输出规格。
+struct Ctx<'a> {
+    p: &'a Project,
+    src: &'a HashMap<String, Source>,
+    caps: &'a Caps,
+    tmp: &'a Path,
+    default_font: Option<&'a Path>,
+    preview: bool,
+    /// 输出画面宽高、帧率（预览时已缩小）
+    w: u32,
+    h: u32,
+    fps: (u32, u32),
+    fps_txt: String,
+    /// 时间线总时长（毫秒）
+    total: u64,
+}
 
-    // 素材检查
+/// 叠加素材在输入里的位置：(叠加轨里的序号, 叠加素材)
+type OverlayInputs<'a> = Vec<(usize, &'a Overlay)>;
+
+fn need_filter(caps: &Caps, name: &str, what: &str) -> AppResult<()> {
+    if caps.has_filter(name) {
+        Ok(())
+    } else {
+        Err(AppError::invalid(format!("当前的 ffmpeg 没有“{name}”滤镜，{what}。请在“设置 → 组件”里更新或安装完整版 ffmpeg。")))
+    }
+}
+
+/// 素材检查：每个片段、叠加素材、音频轨都读到了信息，且有要用的画面 / 声音。
+fn check_sources(p: &Project, src: &HashMap<String, Source>, plan: &mut EditPlan) -> AppResult<()> {
     for (n, c) in p.clips.iter().enumerate() {
         let sr = src.get(&c.path).ok_or_else(|| AppError::invalid(format!("没有读取到第 {} 个片段的素材信息。", n + 1)))?;
         if !sr.has_video {
@@ -993,13 +1018,26 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
             return Err(AppError::invalid(format!("第 {} 条音频轨的素材里没有声音。", n + 1)));
         }
     }
-    let need = |name: &str, what: &str| -> AppResult<()> {
-        if caps.has_filter(name) {
-            Ok(())
-        } else {
-            Err(AppError::invalid(format!("当前的 ffmpeg 没有“{name}”滤镜，{what}。请在“设置 → 组件”里更新或安装完整版 ffmpeg。")))
-        }
-    };
+    Ok(())
+}
+
+/// 防抖：预览不做（要先把整段分析一遍，太慢）；有 vidstab 用 vidstab，没有退回 deshake。
+fn choose_stabilizer(p: &Project, caps: &Caps, preview: bool, plan: &mut EditPlan) -> AppResult<&'static str> {
+    Ok(if preview || !p.clips.iter().any(Clip::wants_stabilize) {
+        ""
+    } else if caps.vidstab() {
+        "vidstab"
+    } else if caps.has_filter("deshake") {
+        plan.warnings.push("当前的 ffmpeg 没有 vidstab，防抖改用 deshake，效果较弱。在“设置 → 组件”里安装完整版 ffmpeg 可以使用 vidstab。".into());
+        "deshake"
+    } else {
+        return Err(AppError::invalid("当前的 ffmpeg 没有防抖滤镜（vidstab / deshake），无法防抖。请在“设置 → 组件”里安装完整版 ffmpeg，或关掉片段的防抖。"));
+    })
+}
+
+/// 检查工程用到的功能，ffmpeg 都有对应的滤镜；返回防抖用哪个滤镜。
+fn check_filters(p: &Project, caps: &Caps, preview: bool, plan: &mut EditPlan) -> AppResult<&'static str> {
+    let need = |name: &str, what: &str| need_filter(caps, name, what);
     if !p.texts.is_empty() {
         need("drawtext", "无法添加文字")?;
     }
@@ -1012,17 +1050,7 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     if p.clips.iter().any(|c| !c.lut.is_empty()) {
         need("lut3d", "无法套用 LUT")?;
     }
-    // 防抖：预览不做（要先把整段分析一遍，太慢）；有 vidstab 用 vidstab，没有退回 deshake
-    let stab: &'static str = if preview || !p.clips.iter().any(Clip::wants_stabilize) {
-        ""
-    } else if caps.vidstab() {
-        "vidstab"
-    } else if caps.has_filter("deshake") {
-        plan.warnings.push("当前的 ffmpeg 没有 vidstab，防抖改用 deshake，效果较弱。在“设置 → 组件”里安装完整版 ffmpeg 可以使用 vidstab。".into());
-        "deshake"
-    } else {
-        return Err(AppError::invalid("当前的 ffmpeg 没有防抖滤镜（vidstab / deshake），无法防抖。请在“设置 → 组件”里安装完整版 ffmpeg，或关掉片段的防抖。"));
-    };
+    let stab = choose_stabilizer(p, caps, preview, plan)?;
     if preview && p.clips.iter().any(Clip::wants_stabilize) {
         plan.notes.push("预览里不做防抖，导出时才做".into());
     }
@@ -1076,85 +1104,475 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
     if p.overlays.iter().any(|o| o.keys("rotate").is_some() || (quarter_turn(o).is_none() && o.angle() > 1e-6)) {
         need("rotate", "无法旋转叠加素材")?;
     }
+    Ok(stab)
+}
 
-    // 输出规格
-    let (mut w, mut h) = output_size(p, src);
-    let mut fps = output_fps(p, src);
-    if preview {
-        if h > PREVIEW_HEIGHT {
-            w = even((f64::from(w) * f64::from(PREVIEW_HEIGHT) / f64::from(h)).round() as u32);
-            h = PREVIEW_HEIGHT;
+impl<'a> Ctx<'a> {
+    /// 输出规格：宽高和帧率（预览缩到 360 高、帧率不超过 24），并写进 `plan`。
+    fn new(
+        p: &'a Project,
+        src: &'a HashMap<String, Source>,
+        caps: &'a Caps,
+        tmp: &'a Path,
+        default_font: Option<&'a Path>,
+        preview: bool,
+        plan: &mut EditPlan,
+    ) -> Self {
+        let (mut w, mut h) = output_size(p, src);
+        let mut fps = output_fps(p, src);
+        if preview {
+            if h > PREVIEW_HEIGHT {
+                w = even((f64::from(w) * f64::from(PREVIEW_HEIGHT) / f64::from(h)).round() as u32);
+                h = PREVIEW_HEIGHT;
+            }
+            if frac_f(fps) > 24.5 {
+                fps = (24, 1);
+            }
         }
-        if frac_f(fps) > 24.5 {
-            fps = (24, 1);
-        }
+        let fps_txt = frac_text(fps);
+        let total = total_ms(&p.clips);
+        plan.width = w;
+        plan.height = h;
+        plan.fps = frac_f(fps);
+        plan.out_ms = total;
+        Ctx { p, src, caps, tmp, default_font, preview, w, h, fps, fps_txt, total }
     }
-    let fps_txt = frac_text(fps);
-    let total = total_ms(&p.clips);
-    let placed = layout(&p.clips);
-    plan.width = w;
-    plan.height = h;
-    plan.fps = frac_f(fps);
-    plan.out_ms = total;
 
-    // 输入
-    let mut args: Vec<String> = vec![];
-    for c in &p.clips {
-        match c.kind {
-            ClipKind::Video => {
-                if c.in_ms > 0 {
-                    args.extend(["-ss".into(), sec(c.in_ms)]);
+    fn need(&self, name: &str, what: &str) -> AppResult<()> {
+        need_filter(self.caps, name, what)
+    }
+
+    /// 输入参数：主轨片段，然后是音频轨。
+    fn clip_and_music_inputs(&self) -> Vec<String> {
+        let mut args: Vec<String> = vec![];
+        for c in &self.p.clips {
+            match c.kind {
+                ClipKind::Video => {
+                    if c.in_ms > 0 {
+                        args.extend(["-ss".into(), sec(c.in_ms)]);
+                    }
+                    // 定格只要入点那一帧，多读一点点就够
+                    let span = if c.freeze { (c.out_ms - c.in_ms).min(500) } else { c.out_ms - c.in_ms };
+                    args.extend(["-t".into(), sec(span), "-i".into(), c.path.clone()]);
                 }
-                // 定格只要入点那一帧，多读一点点就够
-                let span = if c.freeze { (c.out_ms - c.in_ms).min(500) } else { c.out_ms - c.in_ms };
-                args.extend(["-t".into(), sec(span), "-i".into(), c.path.clone()]);
-            }
-            ClipKind::Image => {
-                args.extend(["-loop".into(), "1".into(), "-framerate".into(), fps_txt.clone(), "-t".into(), sec(c.out_ms), "-i".into(), c.path.clone()]);
+                ClipKind::Image => {
+                    args.extend([
+                        "-loop".into(),
+                        "1".into(),
+                        "-framerate".into(),
+                        self.fps_txt.clone(),
+                        "-t".into(),
+                        sec(c.out_ms),
+                        "-i".into(),
+                        c.path.clone(),
+                    ]);
+                }
             }
         }
+        for a in &self.p.audio {
+            args.extend(["-i".into(), a.path.clone()]);
+        }
+        args
     }
-    for a in &p.audio {
-        args.extend(["-i".into(), a.path.clone()]);
+
+    /// 叠加素材：起点在成片结束之后的不会出现，不放进输入。
+    fn overlay_inputs(&self, plan: &mut EditPlan) -> OverlayInputs<'a> {
+        let mut ovs: OverlayInputs = vec![];
+        for (n, o) in self.p.overlays.iter().enumerate().filter(|(_, o)| !o.adjust) {
+            if o.start_ms >= self.total {
+                plan.warnings.push(format!("第 {} 个叠加素材的起点在成片结束之后，不会出现。", n + 1));
+            } else {
+                ovs.push((n, o));
+            }
+        }
+        ovs
     }
-    // 叠加素材：起点在成片结束之后的不会出现，不放进输入
-    let mut ovs: Vec<(usize, &Overlay)> = vec![];
-    for (n, o) in p.overlays.iter().enumerate().filter(|(_, o)| !o.adjust) {
-        if o.start_ms >= total {
-            plan.warnings.push(format!("第 {} 个叠加素材的起点在成片结束之后，不会出现。", n + 1));
+
+    fn overlay_input_args(&self, ovs: &[(usize, &Overlay)]) -> Vec<String> {
+        let mut args: Vec<String> = vec![];
+        for (_, o) in ovs {
+            match o.kind {
+                ClipKind::Video => {
+                    if o.looped {
+                        args.extend(["-stream_loop".into(), "-1".into()]);
+                    }
+                    if o.in_ms > 0 {
+                        args.extend(["-ss".into(), sec(o.in_ms)]);
+                    }
+                    args.extend(["-t".into(), sec(o.out_ms - o.in_ms), "-i".into(), o.path.clone()]);
+                }
+                ClipKind::Image => {
+                    args.extend([
+                        "-loop".into(),
+                        "1".into(),
+                        "-framerate".into(),
+                        self.fps_txt.clone(),
+                        "-t".into(),
+                        sec(o.out_ms),
+                        "-i".into(),
+                        o.path.clone(),
+                    ]);
+                }
+            }
+        }
+        args
+    }
+
+    /// 成片里有没有声音：有音频轨，或叠加素材 / 主轨片段带声音。
+    fn has_audio(&self, ovs: &[(usize, &Overlay)]) -> bool {
+        let (p, src) = (self.p, self.src);
+        let ov_audio = |o: &Overlay| o.kind == ClipKind::Video && !o.mute && o.volume > 1e-6 && src.get(&o.path).is_some_and(|s| s.has_audio);
+        !p.audio.is_empty()
+            || ovs.iter().any(|(_, o)| ov_audio(o))
+            || p.clips.iter().any(|c| c.kind == ClipKind::Video && !c.mute && src.get(&c.path).is_some_and(|s| s.has_audio))
+    }
+
+    /// 主轨：每个片段的画面和声音，再按转场接起来。返回（画面标签，声音标签）。
+    fn main_track(&self, has_audio: bool, rg: &mut Regions, stmts: &mut Vec<String>, plan: &mut EditPlan) -> AppResult<(String, Option<String>)> {
+        let (p, src, caps) = (self.p, self.src, self.caps);
+        let placed = layout(&p.clips);
+        let frame = Frame { w: self.w, h: self.h, fps: &self.fps_txt, fit: &p.out.fit, blur: caps.background_blur() };
+        let fx = FxCaps::from_caps(caps, None);
+        for (i, c) in p.clips.iter().enumerate() {
+            clip_video(i, c, src.get(&c.path).expect("checked above"), &frame, rg, stmts);
+            if has_audio {
+                clip_audio(i, c, src.get(&c.path).is_some_and(|s| s.has_audio), &fx, stmts, &mut plan.warnings);
+            }
+        }
+        assemble(&placed, &p.clips, has_audio, stmts, caps)
+    }
+
+    /// 叠加轨：从下到上依次盖到主轨画面上。返回要混进成片的叠加素材声音标签。
+    fn overlay_track(
+        &self,
+        ovs: &[(usize, &Overlay)],
+        ov_first: usize,
+        has_audio: bool,
+        video: &mut String,
+        stmts: &mut Vec<String>,
+        plan: &mut EditPlan,
+    ) -> Vec<String> {
+        let (p, src, total) = (self.p, self.src, self.total);
+        let mut ov_mix: Vec<String> = vec![];
+        if !ovs.is_empty() || p.overlays.iter().any(|o| o.adjust) {
+            let mut slot: HashMap<usize, usize> = HashMap::new();
+            for (j, (n, _)) in ovs.iter().enumerate() {
+                slot.insert(*n, j);
+            }
+            for n in overlay_order(&p.overlays) {
+                let o = &p.overlays[n];
+                if o.adjust {
+                    // 调整图层：只在这段时间里把下面合成好的画面调色
+                    if let Some(tone) = tone_expr(o.brightness, o.contrast, o.saturation) {
+                        if o.start_ms < total {
+                            let (a, b) = (o.start_ms, o.end_ms().min(total));
+                            stmts.push(format!("[{video}]{tone}:enable='between(t,{},{})'[adj{n}]", sec(a), sec(b)));
+                            *video = format!("adj{n}");
+                        }
+                    }
+                    continue;
+                }
+                let Some(&j) = slot.get(&n) else { continue };
+                let o = &p.overlays[n];
+                let sr = src.get(&o.path).expect("checked above");
+                let idx = ov_first + j;
+                overlay_video(j, idx, o, sr, (self.w, &self.fps_txt), stmts);
+                *video = overlay_on(j, video, o, stmts);
+                if has_audio && overlay_audio(j, idx, o, sr.has_audio, stmts) {
+                    ov_mix.push(format!("oa{j}"));
+                }
+                if o.end_ms() > total {
+                    plan.notes.push(format!("第 {} 个叠加素材超出成片结尾，超出的部分被截掉", n + 1));
+                }
+            }
+            plan.notes.push(format!("叠加轨上有 {} 个素材", ovs.len()));
+        }
+        ov_mix
+    }
+
+    /// 文字：普通文字用 drawtext，逐字高亮的交给 libass。
+    fn text_layer(&self, video: &mut String, stmts: &mut Vec<String>, plan: &mut EditPlan) -> AppResult<()> {
+        let (p, caps, tmp, h) = (self.p, self.caps, self.tmp, self.h);
+        if !p.texts.is_empty() {
+            let font = p.texts.iter().find_map(|t| t.font.as_deref().map(Path::new)).or(self.default_font);
+            if font.is_none() {
+                plan.warnings.push("没有找到可用的字体，文字可能显示不出来（特别是中文）。请在文字属性里选择一个字体文件。".into());
+            }
+            // 逐字高亮的文字交给 libass（ASS 滤镜）画；没有这个滤镜时按普通文字画
+            let karaoke_ok = caps.has_filter("ass");
+            let (ass_idx, plain_idx): (Vec<usize>, Vec<usize>) = (0..p.texts.len()).partition(|&k| karaoke_ok && p.texts[k].karaoke());
+            if !karaoke_ok && p.texts.iter().any(TextItem::karaoke) {
+                plan.warnings.push("当前的 ffmpeg 没有“ass”滤镜，逐字高亮的字幕按普通文字显示。".into());
+            }
+            let mut chain: Vec<String> = vec![];
+            for &k in &plain_idx {
+                let t = &p.texts[k];
+                let own = t.font.as_deref().map(Path::new).or(font);
+                chain.push(drawtext(k, t, h, own, tmp)?);
+            }
+            if !chain.is_empty() {
+                stmts.push(format!("[{video}]{}[vtx]", chain.join(",")));
+                *video = "vtx".into();
+            }
+            if !ass_idx.is_empty() {
+                std::fs::create_dir_all(tmp)?;
+                let items: Vec<&TextItem> = ass_idx.iter().map(|&k| &p.texts[k]).collect();
+                let file = tmp.join("captions.ass");
+                let family = font.and_then(super::fonts::family_name);
+                std::fs::write(&file, super::captions::document(&items, self.w, h, family.as_deref()))?;
+                let dir = font.and_then(Path::parent).map(|d| format!(":fontsdir={}", filter_path(d))).unwrap_or_default();
+                stmts.push(format!("[{video}]ass=filename={}{dir}[vass]", filter_path(&file)));
+                *video = "vass".into();
+            }
+        }
+        Ok(())
+    }
+
+    /// 配乐和叠加素材的声音：混在主轨声音上面。返回混音后的声音标签。
+    fn mix_audio(
+        &self,
+        main_audio: Option<String>,
+        ov_mix: &[String],
+        has_audio: bool,
+        stmts: &mut Vec<String>,
+        plan: &mut EditPlan,
+    ) -> AppResult<Option<String>> {
+        let (p, src, total) = (self.p, self.src, self.total);
+        let mut audio_out: Option<String> = main_audio;
+        if has_audio {
+            let fx = FxCaps::from_caps(self.caps, None);
+            let main = audio_out.clone().expect("main audio exists when anything has sound");
+            // (标签, 要不要在主轨有声音时压低)
+            let mut heard: Vec<(String, bool)> = ov_mix.iter().map(|l| (l.clone(), false)).collect();
+            for (k, a) in p.audio.iter().enumerate() {
+                let idx = p.clips.len() + k;
+                let sr = src.get(&a.path).expect("checked above");
+                let (heard_it, note) = music_track(k, idx, a, sr, total, &fx, stmts);
+                warn_once(&mut plan.warnings, note);
+                if heard_it {
+                    heard.push((format!("m{k}"), a.duck));
+                } else {
+                    plan.warnings.push(format!("第 {} 条音频轨的起点在视频结束之后，不会被听到。", k + 1));
+                }
+            }
+            if !heard.is_empty() {
+                let ducked = heard.iter().filter(|(_, d)| *d).count();
+                let mut mix_main = main.clone();
+                if ducked > 0 {
+                    let outs: String = (0..ducked).map(|j| format!("[sc{j}]")).collect();
+                    stmts.push(format!("[{main}]asplit={}[mm]{outs}", ducked + 1));
+                    mix_main = "mm".into();
+                }
+                let mut ins = format!("[{mix_main}]");
+                let mut j = 0;
+                for (label, duck) in &heard {
+                    if *duck {
+                        // 压低后的标签沿用配乐的编号：[m0] → [d0]
+                        let d = format!("d{}", label.trim_start_matches('m'));
+                        stmts.push(format!("[{label}][sc{j}]sidechaincompress=threshold=0.02:ratio=8:attack=30:release=500[{d}]"));
+                        ins.push_str(&format!("[{d}]"));
+                        j += 1;
+                    } else {
+                        ins.push_str(&format!("[{label}]"));
+                    }
+                }
+                self.need("amix", "无法混入配乐")?;
+                stmts.push(format!("{ins}amix=inputs={}:duration=first:dropout_transition=0:normalize=0[amx]", heard.len() + 1));
+                audio_out = Some("amx".into());
+            }
+        }
+        Ok(audio_out)
+    }
+
+    /// 导出哪一段：整条 / 选定的时间段 / 一帧。返回（导出类型，起点毫秒）；裁剪写进滤镜图和 `plan.out_ms`。
+    fn trim_range(&self, video: &mut String, audio_out: &mut Option<String>, stmts: &mut Vec<String>, plan: &mut EditPlan) -> AppResult<(&'a str, u64)> {
+        let (p, total) = (self.p, self.total);
+        // 预览总是整条时间线的视频
+        let kind: &str = if self.preview { "video" } else { p.out.kind.as_str() };
+        let (from, to) = if self.preview { (0, total) } else { out_range(p.out.from_ms, p.out.to_ms, total, kind)? };
+        if kind == "frame" {
+            stmts.push(format!("[{video}]trim=start={},setpts=PTS-STARTPTS[vrg]", sec(from)));
+            *video = "vrg".into();
+            plan.out_ms = 1000;
         } else {
-            ovs.push((n, o));
+            if from > 0 || to < total {
+                stmts.push(format!("[{video}]trim=start={}:end={},setpts=PTS-STARTPTS[vrg]", sec(from), sec(to)));
+                *video = "vrg".into();
+                if let Some(a) = &*audio_out {
+                    stmts.push(format!("[{a}]atrim=start={}:end={},asetpts=PTS-STARTPTS[arg]", sec(from), sec(to)));
+                    *audio_out = Some("arg".into());
+                }
+                plan.notes.push(format!("只导出 {} – {}", clock(from), clock(to)));
+            }
+            plan.out_ms = to - from;
+        }
+        Ok((kind, from))
+    }
+
+    /// 响度标准化：放在最后，整条成片一起算。
+    fn normalize_loudness(&self, kind: &str, audio_out: &mut Option<String>, stmts: &mut Vec<String>, plan: &mut EditPlan) -> AppResult<()> {
+        let p = self.p;
+        if !self.preview && p.out.loudness != 0.0 && matches!(kind, "video" | "audio") {
+            if let Some(a) = &*audio_out {
+                self.need("loudnorm", "无法做响度标准化")?;
+                stmts.push(format!("[{a}]{},aresample=48000[aln]", loudnorm_filter(p.out.loudness, None, None)));
+                *audio_out = Some("aln".into());
+                plan.notes.push(format!("声音响度标准化到 {} LUFS", p.out.loudness));
+            }
+        }
+        Ok(())
+    }
+
+    /// 只导出声音（m4a）。
+    fn tail_audio(&self, video: &str, audio_out: &Option<String>, stmts: &mut Vec<String>, plan: &mut EditPlan) -> AppResult<(Vec<String>, &'static str)> {
+        let a = audio_out.clone().ok_or_else(|| AppError::invalid("成片里没有声音，不能只导出声音。"))?;
+        stmts.push(format!("[{video}]nullsink"));
+        plan.notes.push("只导出声音（m4a）".into());
+        let mut t = vec!["-map".to_string(), format!("[{a}]")];
+        t.extend(s(&["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]));
+        t.extend(["-t".into(), sec(plan.out_ms)]);
+        Ok((t, "m4a"))
+    }
+
+    /// 导出 GIF（声音丢掉）。
+    fn tail_gif(&self, video: &str, audio_out: &mut Option<String>, stmts: &mut Vec<String>, plan: &mut EditPlan) -> AppResult<(Vec<String>, &'static str)> {
+        let p = self.p;
+        self.need("palettegen", "无法导出 GIF")?;
+        self.need("paletteuse", "无法导出 GIF")?;
+        if plan.out_ms > MAX_GIF_MS {
+            return Err(AppError::invalid(format!("GIF 最长 {} 秒（再长文件会非常大）。请在导出设置里选一段时间，或导出视频。", MAX_GIF_MS / 1000)));
+        }
+        if let Some(a) = audio_out.take() {
+            stmts.push(format!("[{a}]anullsink"));
+        }
+        let gw = p.out.gif_width.min(self.w);
+        stmts.push(format!(
+            "[{video}]fps={},scale={gw}:-2:flags=lanczos:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,split[gs0][gs1]",
+            p.out.gif_fps
+        ));
+        stmts.push("[gs0]palettegen[gpal]".into());
+        stmts.push("[gs1][gpal]paletteuse=dither=bayer:bayer_scale=4[vout]".into());
+        plan.notes.push(format!("导出 GIF：宽 {gw}，每秒 {} 帧", p.out.gif_fps));
+        let mut t = s(&["-map", "[vout]", "-loop", "0"]);
+        t.extend(["-t".into(), sec(plan.out_ms)]);
+        Ok((t, "gif"))
+    }
+
+    /// 导出一帧图片（PNG，声音丢掉）。
+    fn tail_frame(&self, video: &str, from: u64, audio_out: &mut Option<String>, stmts: &mut Vec<String>, plan: &mut EditPlan) -> (Vec<String>, &'static str) {
+        if let Some(a) = audio_out.take() {
+            stmts.push(format!("[{a}]anullsink"));
+        }
+        stmts.push(format!("[{video}]scale=in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24[vout]"));
+        plan.notes.push(format!("导出 {} 这一帧（PNG）", clock(from)));
+        (s(&["-map", "[vout]", "-frames:v", "1"]), "png")
+    }
+
+    /// 导出成片：选编码器（HEVC / H.264 / 预览用的最快档）、像素格式、声音编码和色彩标记。
+    fn tail_video(&self, video: &str, audio_out: &Option<String>, stmts: &mut Vec<String>, plan: &mut EditPlan) -> (Vec<String>, &'static str) {
+        let (p, caps, preview) = (self.p, self.caps, self.preview);
+        let level = match p.out.quality.as_str() {
+            "small" => 0,
+            "high" => 2,
+            _ => 1,
+        };
+        let pps = f64::from(self.w) * f64::from(self.h) * frac_f(self.fps);
+        let want_hevc = p.out.codec == "hevc" && !preview;
+        let hevc = if want_hevc { hevc_args(caps, level, target_kbps(pps, level)) } else { None };
+        if want_hevc && hevc.is_none() {
+            plan.warnings.push(format!(
+                "当前的 ffmpeg 没有 HEVC 编码器，已改用 H.264。{}",
+                if caps.gpl { "" } else { "在“设置 → 组件”里安装完整版 ffmpeg 可以使用 libx265。" }
+            ));
+        }
+        let want_ext = if p.out.format == "mkv" && !preview { "mkv" } else { "mp4" };
+        let vc: VideoCodec = if preview && caps.encoders.h264 == Some("libx264") {
+            VideoCodec {
+                args: s(&["-c:v", "libx264", "-preset", "ultrafast", "-crf", "32", "-pix_fmt", "yuv420p"]),
+                ext: "mp4",
+                audio: s(&["-c:a", "aac", "-b:a", "96k"]),
+                note: None,
+                pix: "yuv420p",
+            }
+        } else {
+            let mut vc = video_codec_for(&caps.encoders, if preview { "small" } else { &p.out.quality }, want_ext, Some(pps));
+            // 编辑后的成片画质比“压缩”高一档
+            if !preview && vc.args.iter().any(|a| a == "libx264") {
+                if let Some(i) = vc.args.iter().position(|a| a == "-crf") {
+                    vc.args[i + 1] = ["26", "22", "18"][level].into();
+                }
+            }
+            vc
+        };
+        let (vargs, pix, ext, acodec): (Vec<String>, &str, &'static str, Vec<String>) = match hevc {
+            Some((a, pix)) => {
+                plan.notes.push("视频编码为 HEVC".into());
+                (a, pix, want_ext, s(&["-c:a", "aac", "-b:a", "192k"]))
+            }
+            None => {
+                if let Some(n) = vc.note.clone() {
+                    plan.warnings.push(n);
+                }
+                let ext = if preview && vc.ext == "mkv" && vc.args.iter().any(|a| a == "libvpx-vp9") { "webm" } else { vc.ext };
+                (vc.args.clone(), vc.pix, ext, vc.audio.clone())
+            }
+        };
+        // 收尾：像素格式（编码器要求的）和色彩标记（BT.709、电视范围）
+        stmts.push(format!("[{video}]format={pix},setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv[vout]"));
+        let mut t = s(&["-map", "[vout]"]);
+        if let Some(a) = audio_out {
+            t.extend(["-map".into(), format!("[{a}]")]);
+        }
+        t.extend(vargs);
+        if audio_out.is_some() {
+            t.extend(acodec);
+            t.extend(s(&["-ar", "48000", "-ac", "2"]));
+        }
+        t.extend(["-t".into(), sec(plan.out_ms)]);
+        t.extend(s(&["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv", "-max_muxing_queue_size", "4096"]));
+        (t, ext)
+    }
+
+    /// 按导出类型生成输出参数和扩展名。
+    fn output_tail(
+        &self,
+        kind: &str,
+        from: u64,
+        video: &str,
+        audio_out: &mut Option<String>,
+        stmts: &mut Vec<String>,
+        plan: &mut EditPlan,
+    ) -> AppResult<(Vec<String>, &'static str)> {
+        match kind {
+            "audio" => self.tail_audio(video, audio_out, stmts, plan),
+            "gif" => self.tail_gif(video, audio_out, stmts, plan),
+            "frame" => Ok(self.tail_frame(video, from, audio_out, stmts, plan)),
+            _ => Ok(self.tail_video(video, audio_out, stmts, plan)),
         }
     }
+}
+
+pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path, mode: Mode, default_font: Option<&Path>) -> AppResult<EditPlan> {
+    let mut plan = EditPlan::default();
+    let preview = mode == Mode::Preview;
+
+    check_sources(p, src, &mut plan)?;
+    let stab = check_filters(p, caps, preview, &mut plan)?;
+    let ctx = Ctx::new(p, src, caps, tmp, default_font, preview, &mut plan);
+
+    // 输入：主轨片段、音频轨、叠加素材
+    let mut args = ctx.clip_and_music_inputs();
+    let ovs = ctx.overlay_inputs(&mut plan);
     let ov_first = p.clips.len() + p.audio.len();
-    for (_, o) in &ovs {
-        match o.kind {
-            ClipKind::Video => {
-                if o.looped {
-                    args.extend(["-stream_loop".into(), "-1".into()]);
-                }
-                if o.in_ms > 0 {
-                    args.extend(["-ss".into(), sec(o.in_ms)]);
-                }
-                args.extend(["-t".into(), sec(o.out_ms - o.in_ms), "-i".into(), o.path.clone()]);
-            }
-            ClipKind::Image => {
-                args.extend(["-loop".into(), "1".into(), "-framerate".into(), fps_txt.clone(), "-t".into(), sec(o.out_ms), "-i".into(), o.path.clone()]);
-            }
-        }
-    }
+    args.extend(ctx.overlay_input_args(&ovs));
 
     // 滤镜图
-    let ov_audio = |o: &Overlay| o.kind == ClipKind::Video && !o.mute && o.volume > 1e-6 && src.get(&o.path).is_some_and(|s| s.has_audio);
-    let has_audio = !p.audio.is_empty()
-        || ovs.iter().any(|(_, o)| ov_audio(o))
-        || p.clips.iter().any(|c| c.kind == ClipKind::Video && !c.mute && src.get(&c.path).is_some_and(|s| s.has_audio));
-    let frame = Frame { w, h, fps: &fps_txt, fit: &p.out.fit, blur: caps.background_blur() };
+    let has_audio = ctx.has_audio(&ovs);
     let mut rg = Regions {
         preview,
         tmp,
         first_input: ov_first + ovs.len(),
-        out_aspect: f64::from(w) / f64::from(h),
+        out_aspect: f64::from(ctx.w) / f64::from(ctx.h),
         masks: vec![],
         mattes: vec![],
         warnings: vec![],
@@ -1163,259 +1581,13 @@ pub fn build(p: &Project, src: &HashMap<String, Source>, caps: &Caps, tmp: &Path
         stabs: vec![],
     };
     let mut stmts: Vec<String> = vec![];
-    let fx = FxCaps::from_caps(caps, None);
-    for (i, c) in p.clips.iter().enumerate() {
-        clip_video(i, c, src.get(&c.path).expect("checked above"), &frame, &mut rg, &mut stmts);
-        if has_audio {
-            clip_audio(i, c, src.get(&c.path).is_some_and(|s| s.has_audio), &fx, &mut stmts, &mut plan.warnings);
-        }
-    }
-    let (mut video, main_audio) = assemble(&placed, &p.clips, has_audio, &mut stmts, caps)?;
-
-    // 叠加轨：从下到上依次盖到主轨画面上
-    let mut ov_mix: Vec<String> = vec![];
-    if !ovs.is_empty() || p.overlays.iter().any(|o| o.adjust) {
-        let mut slot: HashMap<usize, usize> = HashMap::new();
-        for (j, (n, _)) in ovs.iter().enumerate() {
-            slot.insert(*n, j);
-        }
-        for n in overlay_order(&p.overlays) {
-            let o = &p.overlays[n];
-            if o.adjust {
-                // 调整图层：只在这段时间里把下面合成好的画面调色
-                if let Some(tone) = tone_expr(o.brightness, o.contrast, o.saturation) {
-                    if o.start_ms < total {
-                        let (a, b) = (o.start_ms, o.end_ms().min(total));
-                        stmts.push(format!("[{video}]{tone}:enable='between(t,{},{})'[adj{n}]", sec(a), sec(b)));
-                        video = format!("adj{n}");
-                    }
-                }
-                continue;
-            }
-            let Some(&j) = slot.get(&n) else { continue };
-            let o = &p.overlays[n];
-            let sr = src.get(&o.path).expect("checked above");
-            let idx = ov_first + j;
-            overlay_video(j, idx, o, sr, (w, &fps_txt), &mut stmts);
-            video = overlay_on(j, &video, o, &mut stmts);
-            if has_audio && overlay_audio(j, idx, o, sr.has_audio, &mut stmts) {
-                ov_mix.push(format!("oa{j}"));
-            }
-            if o.end_ms() > total {
-                plan.notes.push(format!("第 {} 个叠加素材超出成片结尾，超出的部分被截掉", n + 1));
-            }
-        }
-        plan.notes.push(format!("叠加轨上有 {} 个素材", ovs.len()));
-    }
-
-    // 文字
-    if !p.texts.is_empty() {
-        let font = p.texts.iter().find_map(|t| t.font.as_deref().map(Path::new)).or(default_font);
-        if font.is_none() {
-            plan.warnings.push("没有找到可用的字体，文字可能显示不出来（特别是中文）。请在文字属性里选择一个字体文件。".into());
-        }
-        // 逐字高亮的文字交给 libass（ASS 滤镜）画；没有这个滤镜时按普通文字画
-        let karaoke_ok = caps.has_filter("ass");
-        let (ass_idx, plain_idx): (Vec<usize>, Vec<usize>) = (0..p.texts.len()).partition(|&k| karaoke_ok && p.texts[k].karaoke());
-        if !karaoke_ok && p.texts.iter().any(TextItem::karaoke) {
-            plan.warnings.push("当前的 ffmpeg 没有“ass”滤镜，逐字高亮的字幕按普通文字显示。".into());
-        }
-        let mut chain: Vec<String> = vec![];
-        for &k in &plain_idx {
-            let t = &p.texts[k];
-            let own = t.font.as_deref().map(Path::new).or(font);
-            chain.push(drawtext(k, t, h, own, tmp)?);
-        }
-        if !chain.is_empty() {
-            stmts.push(format!("[{video}]{}[vtx]", chain.join(",")));
-            video = "vtx".into();
-        }
-        if !ass_idx.is_empty() {
-            std::fs::create_dir_all(tmp)?;
-            let items: Vec<&TextItem> = ass_idx.iter().map(|&k| &p.texts[k]).collect();
-            let file = tmp.join("captions.ass");
-            let family = font.and_then(super::fonts::family_name);
-            std::fs::write(&file, super::captions::document(&items, w, h, family.as_deref()))?;
-            let dir = font.and_then(Path::parent).map(|d| format!(":fontsdir={}", filter_path(d))).unwrap_or_default();
-            stmts.push(format!("[{video}]ass=filename={}{dir}[vass]", filter_path(&file)));
-            video = "vass".into();
-        }
-    }
-
-    // 配乐和叠加素材的声音：混在主轨声音上面
-    let mut audio_out: Option<String> = main_audio;
-    if has_audio {
-        let main = audio_out.clone().expect("main audio exists when anything has sound");
-        // (标签, 要不要在主轨有声音时压低)
-        let mut heard: Vec<(String, bool)> = ov_mix.iter().map(|l| (l.clone(), false)).collect();
-        for (k, a) in p.audio.iter().enumerate() {
-            let idx = p.clips.len() + k;
-            let sr = src.get(&a.path).expect("checked above");
-            let (heard_it, note) = music_track(k, idx, a, sr, total, &fx, &mut stmts);
-            warn_once(&mut plan.warnings, note);
-            if heard_it {
-                heard.push((format!("m{k}"), a.duck));
-            } else {
-                plan.warnings.push(format!("第 {} 条音频轨的起点在视频结束之后，不会被听到。", k + 1));
-            }
-        }
-        if !heard.is_empty() {
-            let ducked = heard.iter().filter(|(_, d)| *d).count();
-            let mut mix_main = main.clone();
-            if ducked > 0 {
-                let outs: String = (0..ducked).map(|j| format!("[sc{j}]")).collect();
-                stmts.push(format!("[{main}]asplit={}[mm]{outs}", ducked + 1));
-                mix_main = "mm".into();
-            }
-            let mut ins = format!("[{mix_main}]");
-            let mut j = 0;
-            for (label, duck) in &heard {
-                if *duck {
-                    // 压低后的标签沿用配乐的编号：[m0] → [d0]
-                    let d = format!("d{}", label.trim_start_matches('m'));
-                    stmts.push(format!("[{label}][sc{j}]sidechaincompress=threshold=0.02:ratio=8:attack=30:release=500[{d}]"));
-                    ins.push_str(&format!("[{d}]"));
-                    j += 1;
-                } else {
-                    ins.push_str(&format!("[{label}]"));
-                }
-            }
-            need("amix", "无法混入配乐")?;
-            stmts.push(format!("{ins}amix=inputs={}:duration=first:dropout_transition=0:normalize=0[amx]", heard.len() + 1));
-            audio_out = Some("amx".into());
-        }
-    }
-
-    // 导出哪一段、导出成什么（预览总是整条时间线的视频）
-    let kind: &str = if preview { "video" } else { p.out.kind.as_str() };
-    let (from, to) = if preview { (0, total) } else { out_range(p.out.from_ms, p.out.to_ms, total, kind)? };
-    if kind == "frame" {
-        stmts.push(format!("[{video}]trim=start={},setpts=PTS-STARTPTS[vrg]", sec(from)));
-        video = "vrg".into();
-        plan.out_ms = 1000;
-    } else {
-        if from > 0 || to < total {
-            stmts.push(format!("[{video}]trim=start={}:end={},setpts=PTS-STARTPTS[vrg]", sec(from), sec(to)));
-            video = "vrg".into();
-            if let Some(a) = &audio_out {
-                stmts.push(format!("[{a}]atrim=start={}:end={},asetpts=PTS-STARTPTS[arg]", sec(from), sec(to)));
-                audio_out = Some("arg".into());
-            }
-            plan.notes.push(format!("只导出 {} – {}", clock(from), clock(to)));
-        }
-        plan.out_ms = to - from;
-    }
-    // 响度标准化：放在最后，整条成片一起算
-    if !preview && p.out.loudness != 0.0 && matches!(kind, "video" | "audio") {
-        if let Some(a) = &audio_out {
-            need("loudnorm", "无法做响度标准化")?;
-            stmts.push(format!("[{a}]{},aresample=48000[aln]", loudnorm_filter(p.out.loudness, None, None)));
-            audio_out = Some("aln".into());
-            plan.notes.push(format!("声音响度标准化到 {} LUFS", p.out.loudness));
-        }
-    }
-    let (tail_args, ext): (Vec<String>, &'static str) = match kind {
-        "audio" => {
-            let a = audio_out.clone().ok_or_else(|| AppError::invalid("成片里没有声音，不能只导出声音。"))?;
-            stmts.push(format!("[{video}]nullsink"));
-            plan.notes.push("只导出声音（m4a）".into());
-            let mut t = vec!["-map".to_string(), format!("[{a}]")];
-            t.extend(s(&["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]));
-            t.extend(["-t".into(), sec(plan.out_ms)]);
-            (t, "m4a")
-        }
-        "gif" => {
-            need("palettegen", "无法导出 GIF")?;
-            need("paletteuse", "无法导出 GIF")?;
-            if plan.out_ms > MAX_GIF_MS {
-                return Err(AppError::invalid(format!("GIF 最长 {} 秒（再长文件会非常大）。请在导出设置里选一段时间，或导出视频。", MAX_GIF_MS / 1000)));
-            }
-            if let Some(a) = audio_out.take() {
-                stmts.push(format!("[{a}]anullsink"));
-            }
-            let gw = p.out.gif_width.min(w);
-            stmts.push(format!(
-                "[{video}]fps={},scale={gw}:-2:flags=lanczos:in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24,split[gs0][gs1]",
-                p.out.gif_fps
-            ));
-            stmts.push("[gs0]palettegen[gpal]".into());
-            stmts.push("[gs1][gpal]paletteuse=dither=bayer:bayer_scale=4[vout]".into());
-            plan.notes.push(format!("导出 GIF：宽 {gw}，每秒 {} 帧", p.out.gif_fps));
-            let mut t = s(&["-map", "[vout]", "-loop", "0"]);
-            t.extend(["-t".into(), sec(plan.out_ms)]);
-            (t, "gif")
-        }
-        "frame" => {
-            if let Some(a) = audio_out.take() {
-                stmts.push(format!("[{a}]anullsink"));
-            }
-            stmts.push(format!("[{video}]scale=in_color_matrix=bt709:in_range=tv:out_range=pc,format=rgb24[vout]"));
-            plan.notes.push(format!("导出 {} 这一帧（PNG）", clock(from)));
-            (s(&["-map", "[vout]", "-frames:v", "1"]), "png")
-        }
-        _ => {
-            let level = match p.out.quality.as_str() {
-                "small" => 0,
-                "high" => 2,
-                _ => 1,
-            };
-            let pps = f64::from(w) * f64::from(h) * frac_f(fps);
-            let want_hevc = p.out.codec == "hevc" && !preview;
-            let hevc = if want_hevc { hevc_args(caps, level, target_kbps(pps, level)) } else { None };
-            if want_hevc && hevc.is_none() {
-                plan.warnings.push(format!(
-                    "当前的 ffmpeg 没有 HEVC 编码器，已改用 H.264。{}",
-                    if caps.gpl { "" } else { "在“设置 → 组件”里安装完整版 ffmpeg 可以使用 libx265。" }
-                ));
-            }
-            let want_ext = if p.out.format == "mkv" && !preview { "mkv" } else { "mp4" };
-            let vc: VideoCodec = if preview && caps.encoders.h264 == Some("libx264") {
-                VideoCodec {
-                    args: s(&["-c:v", "libx264", "-preset", "ultrafast", "-crf", "32", "-pix_fmt", "yuv420p"]),
-                    ext: "mp4",
-                    audio: s(&["-c:a", "aac", "-b:a", "96k"]),
-                    note: None,
-                    pix: "yuv420p",
-                }
-            } else {
-                let mut vc = video_codec_for(&caps.encoders, if preview { "small" } else { &p.out.quality }, want_ext, Some(pps));
-                // 编辑后的成片画质比“压缩”高一档
-                if !preview && vc.args.iter().any(|a| a == "libx264") {
-                    if let Some(i) = vc.args.iter().position(|a| a == "-crf") {
-                        vc.args[i + 1] = ["26", "22", "18"][level].into();
-                    }
-                }
-                vc
-            };
-            let (vargs, pix, ext, acodec): (Vec<String>, &str, &'static str, Vec<String>) = match hevc {
-                Some((a, pix)) => {
-                    plan.notes.push("视频编码为 HEVC".into());
-                    (a, pix, want_ext, s(&["-c:a", "aac", "-b:a", "192k"]))
-                }
-                None => {
-                    if let Some(n) = vc.note.clone() {
-                        plan.warnings.push(n);
-                    }
-                    let ext = if preview && vc.ext == "mkv" && vc.args.iter().any(|a| a == "libvpx-vp9") { "webm" } else { vc.ext };
-                    (vc.args.clone(), vc.pix, ext, vc.audio.clone())
-                }
-            };
-            // 收尾：像素格式（编码器要求的）和色彩标记（BT.709、电视范围）
-            stmts.push(format!("[{video}]format={pix},setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv[vout]"));
-            let mut t = s(&["-map", "[vout]"]);
-            if let Some(a) = &audio_out {
-                t.extend(["-map".into(), format!("[{a}]")]);
-            }
-            t.extend(vargs);
-            if audio_out.is_some() {
-                t.extend(acodec);
-                t.extend(s(&["-ar", "48000", "-ac", "2"]));
-            }
-            t.extend(["-t".into(), sec(plan.out_ms)]);
-            t.extend(s(&["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv", "-max_muxing_queue_size", "4096"]));
-            (t, ext)
-        }
-    };
+    let (mut video, main_audio) = ctx.main_track(has_audio, &mut rg, &mut stmts, &mut plan)?;
+    let ov_mix = ctx.overlay_track(&ovs, ov_first, has_audio, &mut video, &mut stmts, &mut plan);
+    ctx.text_layer(&mut video, &mut stmts, &mut plan)?;
+    let mut audio_out = ctx.mix_audio(main_audio, &ov_mix, has_audio, &mut stmts, &mut plan)?;
+    let (kind, from) = ctx.trim_range(&mut video, &mut audio_out, &mut stmts, &mut plan)?;
+    ctx.normalize_loudness(kind, &mut audio_out, &mut stmts, &mut plan)?;
+    let (tail_args, ext) = ctx.output_tail(kind, from, &video, &mut audio_out, &mut stmts, &mut plan)?;
 
     // 区域效果的遮罩视频：作为额外的输入，排在片段和音频轨之后
     for a in &rg.extra {
@@ -1460,7 +1632,7 @@ mod tests {
         assert!(out_range(6000, 0, 5000, "audio").is_err());
         assert_eq!(out_range(9000, 0, 5000, "frame").unwrap().0, 4950, "一帧图片不超过最后一帧");
     }
-    use super::super::spec::{TextItem, TrackMeta, Transition};
+    use super::super::spec::{OutputSpec, TextItem, TextWord, TrackMeta, Transition};
     use super::*;
     use crate::media_tools::Encoders;
 
@@ -2225,5 +2397,194 @@ mod tests {
         assert!(g.find("rotate=").unwrap() > key, "{g}");
         o.chroma.despill = false;
         assert!(!graph(&o).contains("despill"));
+    }
+
+    // ---- 特征化：整条 `build` 的输出快照（拆分函数前先固定住行为；用 BUILD_GOLDEN=update 重新生成） ----
+
+    fn snapshot(name: &str, r: AppResult<EditPlan>, tmp: &Path) -> String {
+        let t = tmp.to_string_lossy().to_string();
+        let mut out = format!("=== {name}\n");
+        match r {
+            Err(e) => out.push_str(&format!("ERR {e}\n")),
+            Ok(pl) => {
+                out.push_str(&format!("ext={} out_ms={} size={}x{} fps={:.3}\n", pl.ext, pl.out_ms, pl.width, pl.height, pl.fps));
+                for a in &pl.args {
+                    out.push_str(&format!("arg {}\n", a.replace(&t, "<TMP>").replace(';', ";\n    ")));
+                }
+                for n in &pl.notes {
+                    out.push_str(&format!("note {n}\n"));
+                }
+                for w in &pl.warnings {
+                    out.push_str(&format!("warn {w}\n"));
+                }
+                out.push_str(&format!("masks={} mattes={} stabs={}\n", pl.masks.len(), pl.mattes.len(), pl.stabs.len()));
+                for st in &pl.stabs {
+                    out.push_str(&format!("stab {}\n", st.join(" ").replace(&t, "<TMP>")));
+                }
+            }
+        }
+        out
+    }
+
+    fn rich_project() -> Project {
+        let mut p = Project {
+            clips: vec![with_t(clip("/m/a.mp4", 1000, 7000), "fade", 800), clip("/m/b.mp4", 0, 4000), clip("/m/silent.mp4", 0, 2000)],
+            overlays: vec![
+                Overlay { kind: ClipKind::Image, ..ov("/o/p.png", 1, 1000, 0, 2000) },
+                ov("/o/v.mp4", 2, 500, 0, 3000),
+                ov("/o/late.mp4", 2, 99_000, 0, 1000),
+                Overlay { id: 9, adjust: true, track: 3, start_ms: 1000, out_ms: 3000, brightness: 0.2, ..Default::default() },
+            ],
+            texts: vec![TextItem { text: "标题".into(), start_ms: 500, end_ms: 3000, y: 0.8, ..Default::default() }],
+            ..Default::default()
+        };
+        p.audio = vec![
+            AudioTrack { path: "/m/bgm.mp3".into(), volume: 0.5, duck: true, ..Default::default() },
+            AudioTrack { path: "/m/loop.mp3".into(), looped: true, start_ms: 1000, ..Default::default() },
+            AudioTrack { path: "/m/late.mp3".into(), start_ms: 90_000, ..Default::default() },
+        ];
+        p
+    }
+
+    const ALL_SRC: [&str; 11] =
+        ["/m/a.mp4", "/m/b.mp4", "/m/silent.mp4", "/m/bgm.mp3", "/m/loop.mp3", "/m/late.mp3", "/o/p.png", "/o/v.mp4", "/o/late.mp4", "/o/x", "/o/y"];
+
+    fn caps_plus(extra: &[&str]) -> Caps {
+        let mut c = caps();
+        c.filters.extend(extra.iter().map(|n| n.to_string()));
+        c
+    }
+
+    fn golden_cases() -> String {
+        let tmp = tmp();
+        let font = Some(Path::new("/fonts/msyh.ttc"));
+        let mut out = String::new();
+        let mut case = |name: &str, p: Project, caps: &Caps, mode: Mode, font: Option<&Path>| {
+            let p = p.checked().unwrap();
+            out.push_str(&snapshot(name, build(&p, &sources(&ALL_SRC), caps, &tmp, mode, font), &tmp));
+        };
+        let with_out = |f: &dyn Fn(&mut Project)| {
+            let mut p = rich_project();
+            f(&mut p);
+            p
+        };
+        case("rich-export", rich_project(), &caps(), Mode::Export, font);
+        case("rich-preview", rich_project(), &caps(), Mode::Preview, font);
+        case(
+            "rich-range-loudness",
+            with_out(&|p| {
+                p.out.from_ms = 1000;
+                p.out.to_ms = 9000;
+                p.out.loudness = -14.0;
+            }),
+            &caps_plus(&["loudnorm"]),
+            Mode::Export,
+            font,
+        );
+        case("rich-audio", with_out(&|p| p.out.kind = "audio".into()), &caps(), Mode::Export, font);
+        case(
+            "rich-gif",
+            with_out(&|p| {
+                p.out.kind = "gif".into();
+                p.out.to_ms = 5000;
+            }),
+            &caps_plus(&["palettegen", "paletteuse"]),
+            Mode::Export,
+            font,
+        );
+        case(
+            "rich-frame",
+            with_out(&|p| {
+                p.out.kind = "frame".into();
+                p.out.from_ms = 2000;
+            }),
+            &caps(),
+            Mode::Export,
+            font,
+        );
+        case(
+            "rich-hevc-mkv-high",
+            with_out(&|p| {
+                p.out.codec = "hevc".into();
+                p.out.format = "mkv".into();
+                p.out.quality = "high".into();
+            }),
+            &caps(),
+            Mode::Export,
+            font,
+        );
+        let mut no_hevc = caps();
+        no_hevc.hevc = None;
+        case(
+            "rich-hevc-missing",
+            with_out(&|p| {
+                p.out.codec = "hevc".into();
+                p.out.quality = "small".into();
+            }),
+            &no_hevc,
+            Mode::Export,
+            None,
+        );
+        let mut no_x264 = caps();
+        no_x264.encoders.h264 = None;
+        case("rich-no-x264-preview", rich_project(), &no_x264, Mode::Preview, font);
+        case(
+            "rich-gif-too-long",
+            with_out(&|p| {
+                p.out.kind = "gif".into();
+                p.clips = vec![clip("/m/a.mp4", 0, 59_000), clip("/m/b.mp4", 0, 59_000)];
+            }),
+            &caps_plus(&["palettegen", "paletteuse"]),
+            Mode::Export,
+            font,
+        );
+        case(
+            "silent-audio-only",
+            Project { clips: vec![clip("/m/silent.mp4", 0, 2000)], out: OutputSpec { kind: "audio".into(), ..Default::default() }, ..Default::default() },
+            &caps(),
+            Mode::Export,
+            None,
+        );
+        case(
+            "range-too-short",
+            with_out(&|p| {
+                p.out.from_ms = 1000;
+                p.out.to_ms = 1050;
+            }),
+            &caps(),
+            Mode::Export,
+            font,
+        );
+        case("loudness-without-filter", with_out(&|p| p.out.loudness = -16.0), &caps(), Mode::Export, font);
+        let mut kara = rich_project();
+        kara.texts.push(TextItem {
+            text: "你好 世界".into(),
+            start_ms: 1000,
+            end_ms: 4000,
+            highlight: "#FFD400".into(),
+            words: vec![TextWord { t: "你好 ".into(), a: 0, b: 1000 }, TextWord { t: "世界".into(), a: 1000, b: 2500 }],
+            ..Default::default()
+        });
+        case("karaoke-with-ass", kara.clone(), &caps_plus(&["ass"]), Mode::Export, font);
+        case("karaoke-without-ass", kara, &caps(), Mode::Export, font);
+        let mut stab = rich_project();
+        stab.clips[0].stabilize = "normal".into();
+        case("stab-vidstab", stab.clone(), &caps_plus(&["vidstabdetect", "vidstabtransform"]), Mode::Export, font);
+        case("stab-deshake", stab.clone(), &caps_plus(&["deshake"]), Mode::Export, font);
+        case("stab-none", stab.clone(), &caps(), Mode::Export, font);
+        case("stab-preview", stab, &caps(), Mode::Preview, font);
+        let _ = std::fs::remove_dir_all(tmp);
+        out
+    }
+
+    #[test]
+    fn build_output_matches_the_recorded_snapshots() {
+        let got = golden_cases();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/edit/build_golden.txt");
+        if std::env::var("BUILD_GOLDEN").as_deref() == Ok("update") {
+            std::fs::write(path, &got).unwrap();
+        }
+        let want = include_str!("build_golden.txt");
+        assert_eq!(got, want, "build 的输出变了：确认是有意的改动后，用 BUILD_GOLDEN=update 重新生成");
     }
 }
