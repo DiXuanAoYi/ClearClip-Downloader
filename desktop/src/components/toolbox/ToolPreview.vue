@@ -243,7 +243,7 @@ const ratio = computed(() => {
           <div class="aud"><span class="mute">处理后</span><audio :src="src(audio.after)" controls preload="none" /></div>
           <div v-for="n in audio.notes" :key="n" class="mute small">{{ n }}</div>
         </template>
-        <div v-else-if="!error" class="empty mute">{{ trialBusy ? '正在处理这一小段…' : '点“' + (spec.kind === 'loudness' ? '试听一下' : '试一下') + '”，只处理这一小段，不生成文件。' }}</div>
+        <div v-else-if="!error" class="empty mute">{{ trialBusy ? '正在处理这一小段…' : spec.kind === 'loudness' ? '点“试听一下”，只处理这一小段，不生成文件。' : '点“试一下”，只处理这一小段，不生成文件。' }}</div>
       </div>
 
       <div v-if="needsScrubber && !fixedStart" class="scrub">
