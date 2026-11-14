@@ -4,6 +4,7 @@
 
 ## 1.16.0（开发中，未发版）
 
+- 内部：vite 7 → 8.3.8（构建器换成 Rolldown；`vite.config.ts` 无需改动，插件 @vitejs/plugin-vue 6 / unplugin-vue-components 32 已兼容）。主入口 JS 953.8 KB → 601 KB，但共享依赖被拆成更多公共块，首屏实际加载的 JS（入口 + modulepreload）946.6 KB（原 953.8 KB），CSS 427.3 KB（原 427.5 KB），assets 3.18 MB（原 3.19 MB）。vitest 3.2 仍自带 vite 7（仅测试用）。**未验证**：真实 Tauri 窗口 / Windows WebView2 里的运行。
 - 内部：pinia 3.0.4 → 4.1.0（仅有 setup 风格的 store 与 `createPinia`，未用到被移除的 API；新增必需的对等依赖 `@vue/devtools-api` 8.x，仅开发调试用）。构建产物大小不变；类型检查、单元 / 组件测试、全部界面测试通过。不改产品行为。
 - 内部：依赖升级——GitHub Actions（checkout/setup-node/upload-artifact 4→7、cache 4→6）、npm 小版本（tauri api/cli、vue 3.5.45、element-plus 2.14.8、playwright 1.65.0 等；vue-tsc 暂留 3.3.13，3.3.14 对模板里的常量/store 误报类型错误）、cargo 小版本/补丁（tauri 2.12.2、updater 2.14.1、librqbit 9.1.0 等 30 个包，Cargo.lock 保持 v3 格式）。修复：`CcSelect` 的 `filterable` 不传时被 Vue 当成 false，“选项超过 8 项自动可搜索”此前并未生效。
 - 内部：前端组件级测试体系——vitest + @vue/test-utils + jsdom（`npm run test:component`，覆盖率摘要 `npm run test:coverage`），先覆盖 pinia stores、api 层（mock invoke）、Cc* 基础组件的渲染 / 事件 / 无障碍属性、useTauriEvent、progressBatch；新增“命令契约检查”（`npm run check:commands`：前端 api 里 invoke 的命令名都必须在 Rust `generate_handler!` 列表里）。CI 新增并行任务 `frontend-component`（暂未加入必需检查）。不改产品行为。
