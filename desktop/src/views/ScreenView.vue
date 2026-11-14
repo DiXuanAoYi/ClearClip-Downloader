@@ -10,6 +10,9 @@ import { formatBytes, formatDateTime } from '../utils/format'
 import { clone, merge3 } from '../utils/merge3'
 import { useTauriEvents } from '../composables/useTauriEvent'
 import { toastErr } from '../utils/toastErr'
+import { notifyError } from '../utils/notify'
+import CcButton from '../components/ui/CcButton.vue'
+import CcSelect from '../components/ui/CcSelect.vue'
 const ev = useTauriEvents()
 
 /** 实时屏幕翻译：翻译别的软件和游戏画面上的文字。控制在这里，也可以用悬浮窗里的“译”、托盘和快捷键。 */
@@ -38,11 +41,11 @@ const hist = ref<ScreenEntry[]>([])
 const tab = ref<'main' | 'ocr' | 'sub' | 'manga' | 'audio' | 'apps' | 'terms' | 'history'>('main')
 let offs: UnlistenFn[] = []
 
-const MODES: { id: ScreenSettings['mode']; name: string; desc: string }[] = [
-  { id: 'standard', name: '标准', desc: '画面上的文字块被译文盖住，适合游戏界面、软件菜单、网页和文档。' },
-  { id: 'subtitle', name: '字幕', desc: '只盯字幕区，译文稳定后才显示；换句子时去重、跨屏合并，适合看视频。' },
-  { id: 'manga', name: '漫画', desc: '用视觉模型整页识别、翻译，竖排原文译成竖排，横排译成横排；翻页自动清除。' },
-  { id: 'voice', name: '语音', desc: '听电脑正在播放的声音或麦克风（视频、直播、会议），先转成文字再翻译，显示在字幕条里；可导出字幕、一键总结。' },
+const MODES: { id: ScreenSettings['mode']; name: string; short: string; desc: string }[] = [
+  { id: 'standard', short: '译文盖在原文上', name: '标准', desc: '画面上的文字块被译文盖住，适合游戏界面、软件菜单、网页和文档。' },
+  { id: 'subtitle', short: '只盯字幕区', name: '字幕', desc: '只盯字幕区，译文稳定后才显示；换句子时去重、跨屏合并，适合看视频。' },
+  { id: 'manga', short: '整页识别竖排 / 横排', name: '漫画', desc: '用视觉模型整页识别、翻译，竖排原文译成竖排，横排译成横排；翻页自动清除。' },
+  { id: 'voice', short: '听声音转文字再翻译', name: '语音', desc: '听电脑正在播放的声音或麦克风（视频、直播、会议），先转成文字再翻译，显示在字幕条里；可导出字幕、一键总结。' },
 ]
 const OCRS: { id: ScreenSettings['ocr']; name: string }[] = [
   { id: 'system', name: 'Windows 自带（快、不用下载）' },
@@ -51,6 +54,14 @@ const OCRS: { id: ScreenSettings['ocr']; name: string }[] = [
   { id: 'vision', name: '视觉模型（直接看图，会上传图片）' },
 ]
 
+const optsOpen = ref(false)
+const winOpts = computed(() => wins.value.map((w) => ({ value: w.hwnd, label: `${w.title || w.exe}（${w.exe}）` })))
+const expertOpts = computed(() => [{ value: '__auto', label: '自动匹配' }, ...experts.value.map((e) => ({ value: e.id, label: e.name }))])
+const optsSummary = computed(() => `${SPEEDS.find(([n]) => n === form.value.fps)?.[1] ?? `${form.value.fps} 帧/秒`} · ${glossaryOn.value ? '术语库：开' : '术语库：关'}`)
+function onTargetCmd(c: string) {
+  if (c === 'pick') void pick()
+  else if (c === 'screen') void startScreen()
+}
 const targetText = computed(() => {
   const t = st.value.target
   if (!t) return '还没有选'
@@ -174,7 +185,7 @@ async function start(target?: ScreenTarget) {
     await save()
     st.value = await api.scStart(target, form.value.mode)
   } catch (e) {
-    ElMessage.error(errorText(e))
+    notifyError('没能开始屏幕翻译', { detail: errorText(e), onRetry: () => void start(target) })
   }
 }
 async function stop() {
@@ -184,7 +195,7 @@ async function pick() {
   try {
     await api.scPick()
   } catch (e) {
-    ElMessage.error(errorText(e))
+    notifyError('没能打开框选', { detail: errorText(e), onRetry: () => void pick() })
   }
 }
 async function startWindow() {
@@ -426,52 +437,32 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 
     <section v-else class="card">
       <h3>1. 翻译哪里</h3>
+      <div v-if="st.target" class="tgt"><b>{{ targetText }}</b></div>
       <div class="row">
-        <b>{{ targetText }}</b>
-        <el-button type="primary" :disabled="!st.supported" @click="pick">框选区域 / 点选窗口</el-button>
-        <el-select v-model="winPick" size="default" placeholder="或从窗口列表选" style="width: 260px" filterable clearable @visible-change="onWinOpen">
-          <el-option v-for="w in wins" :key="w.hwnd" :value="w.hwnd" :label="`${w.title || w.exe}（${w.exe}）`" />
-        </el-select>
-        <el-button :disabled="!winPick || !st.supported" @click="startWindow">翻译这个窗口</el-button>
+        <el-dropdown trigger="click" :disabled="!st.supported" @command="onTargetCmd">
+          <CcButton :kind="st.target ? 'secondary' : 'primary'" :size="st.target ? 'm' : 'l'" :disabled="!st.supported">{{ st.target ? '重新选择' : '选择目标' }} ▾</CcButton>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="pick">框选区域 / 点选窗口</el-dropdown-item>
+              <el-dropdown-item command="screen">整个屏幕</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <small v-if="!st.target" class="mute">框选区域 · 点选窗口 · 整个屏幕</small>
       </div>
-      <div class="drow">
-        <div class="t"><b>取景方式</b><small>“跟随窗口”先在上面的下拉框里选窗口；框选后译文会盖在原处。</small></div>
-        <div class="ctl">
-          <el-button-group>
-            <el-button :disabled="!st.supported" @click="pick">框选区域</el-button>
-            <el-button :disabled="!winPick || !st.supported" @click="startWindow">跟随窗口</el-button>
-            <el-button :disabled="!st.supported" @click="startScreen">整个屏幕</el-button>
-          </el-button-group>
-        </div>
+      <div class="row winrow">
+        <span class="mute">或从窗口列表选</span>
+        <CcSelect v-model="winPick" :options="winOpts" size="s" width="l" placeholder="选择窗口" filterable aria-label="从窗口列表选" @visible-change="onWinOpen" />
+        <CcButton kind="secondary" size="s" :disabled="!winPick || !st.supported" @click="startWindow">跟随这个窗口</CcButton>
       </div>
-      <div class="drow">
-        <div class="t"><b>刷新速度</b><small>越快越灵敏，也越费资源。</small></div>
-        <div class="ctl">
-          <el-radio-group v-model="form.fps">
-            <el-radio-button v-for="[n, t] in SPEEDS" :key="n" :value="n">{{ t }}</el-radio-button>
-          </el-radio-group>
-        </div>
-      </div>
-      <div class="drow">
-        <div class="t"><b>术语库</b><small>翻译时带上你的术语库，译法统一。</small></div>
-        <div class="ctl"><el-switch v-model="glossaryOn" /></div>
-      </div>
-      <div class="drow">
-        <div class="t"><b>专家</b><small>按场景选翻译风格；默认自动匹配。</small></div>
-        <div class="ctl">
-          <el-select v-model="expertId" style="width: 180px" placeholder="自动匹配">
-            <el-option value="__auto" label="自动匹配" />
-            <el-option v-for="e in experts" :key="e.id" :value="e.id" :label="e.name" />
-          </el-select>
-        </div>
-      </div>
-      <div class="row">
-        <el-button v-if="!st.running" type="success" :disabled="!st.supported || !st.target" @click="start()">开始（{{ form.hotkey }}）</el-button>
-        <el-button v-else type="danger" @click="stop">停止（{{ form.hotkey }}）</el-button>
-        <el-button :disabled="!st.supported || !st.target" :loading="trying" @click="tryOnce">试识别一次</el-button>
-        <el-button v-if="st.running" @click="api.scPause()">{{ st.paused ? '继续' : '暂停' }}</el-button>
-        <el-button v-if="st.running" @click="api.scHide()">{{ st.hidden ? '显示译文' : '隐藏译文' }}（{{ form.hotkeyHide }}）</el-button>
-        <el-button v-if="st.running" @click="api.scShot()">保存译图（{{ form.hotkeyShot }}）</el-button>
+      <div class="row go">
+        <CcButton v-if="!st.running" :kind="st.target ? 'primary' : 'secondary'" :disabled="!st.supported || !st.target" disabled-reason="先选择一个目标" @click="start()">开始翻译（{{ form.hotkey }}）</CcButton>
+        <CcButton v-else kind="danger" @click="stop">停止（{{ form.hotkey }}）</CcButton>
+        <CcButton kind="secondary" :disabled="!st.supported || !st.target" :loading="trying" @click="tryOnce">试识别一次</CcButton>
+        <span v-if="!st.target" class="mute why">先选择一个目标</span>
+        <CcButton v-if="st.running" kind="secondary" @click="api.scPause()">{{ st.paused ? '继续' : '暂停' }}</CcButton>
+        <CcButton v-if="st.running" kind="secondary" @click="api.scHide()">{{ st.hidden ? '显示译文' : '隐藏译文' }}（{{ form.hotkeyHide }}）</CcButton>
+        <CcButton v-if="st.running" kind="secondary" @click="api.scShot()">保存译图（{{ form.hotkeyShot }}）</CcButton>
       </div>
       <div v-if="tried" class="try">
         <div class="mute">用“{{ tried.engine }}”识别 {{ tried.w }}×{{ tried.h }}，{{ tried.ms }} 毫秒，{{ tried.lines.length }} 段：</div>
@@ -481,12 +472,38 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
     </section>
 
     <section class="card">
-      <h3>2. 模式</h3>
+      <h3>{{ form.mode === 'voice' ? '2. 模式' : '2. 模式' }}</h3>
       <div class="modes">
         <button v-for="m in MODES" :key="m.id" type="button" class="mode" :class="{ sel: form.mode === m.id }" @click="setMode(m.id)">
           <b>{{ m.name }}</b>
-          <small>{{ m.desc }}</small>
+          <small :title="m.desc">{{ m.short }}</small>
         </button>
+      </div>
+    </section>
+
+    <section v-if="form.mode !== 'voice'" class="card optc">
+      <div class="opthd">
+        <h3>选项 <small class="mute">默认折叠</small></h3>
+        <button type="button" class="optbtn" :aria-expanded="optsOpen" aria-controls="sc-opts" @click="optsOpen = !optsOpen">{{ optsOpen ? '收起' : '展开' }} {{ optsOpen ? '▴' : '▾' }}</button>
+      </div>
+      <div v-if="!optsOpen" class="mute">{{ optsSummary }}</div>
+      <div v-show="optsOpen" id="sc-opts">
+        <div class="drow">
+          <div class="t"><b>刷新速度</b><small>越快越灵敏，也越费资源。</small></div>
+          <div class="ctl">
+            <el-radio-group v-model="form.fps">
+              <el-radio-button v-for="[n, t] in SPEEDS" :key="n" :value="n">{{ t }}</el-radio-button>
+            </el-radio-group>
+          </div>
+        </div>
+        <div class="drow">
+          <div class="t"><b>术语库</b><small>翻译时带上你的术语库，译法统一。</small></div>
+          <div class="ctl"><el-switch v-model="glossaryOn" aria-label="术语库" /></div>
+        </div>
+        <div class="drow">
+          <div class="t"><b>专家</b><small>按场景选翻译风格；默认自动匹配。</small></div>
+          <div class="ctl"><CcSelect v-model="expertId" :options="expertOpts" size="s" width="m" aria-label="专家" /></div>
+        </div>
       </div>
     </section>
 
@@ -759,10 +776,19 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 .card { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px }
 .card h3 { margin: 0; font-size: 15px; font-weight: 700 }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
-.modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px }
-.mode { text-align: left; border: 1px solid var(--cc-line); background: var(--cc-panel2); border-radius: 12px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; color: var(--cc-fg) }
-.mode small { color: var(--cc-mute); line-height: 1.5 }
-.mode.sel { border-color: var(--cc-amber); background: var(--cc-acc-soft) }
+.modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--cc-sp-2) }
+.tgt { padding: var(--cc-sp-2) var(--cc-sp-3); border-radius: var(--cc-r-md); background: var(--cc-fill) }
+.winrow { padding-top: var(--cc-sp-2); border-top: 1px solid var(--cc-line-soft) }
+.go .why { font-size: var(--cc-fs-sm) }
+.optc { gap: var(--cc-sp-2) }
+.opthd { display: flex; align-items: center; justify-content: space-between }
+.opthd h3 small { font-weight: 400; margin-left: var(--cc-sp-2) }
+.optbtn { all: unset; cursor: pointer; font-size: var(--cc-fs-sm); color: var(--cc-link) }
+.optbtn:focus-visible, .mode:focus-visible { outline: var(--cc-focus-w) solid var(--cc-focus); outline-offset: var(--cc-focus-off) }
+.mode { text-align: left; border: 1px solid var(--cc-line); background: var(--cc-panel2); border-radius: var(--cc-r-md); padding: var(--cc-sp-2) var(--cc-sp-3); cursor: pointer; display: flex; flex-direction: column; gap: 2px; color: var(--cc-fg) }
+.mode b { font-size: var(--cc-fs-md) }
+.mode small { color: var(--cc-mute); font-size: var(--cc-fs-sm); line-height: 1.4 }
+.mode.sel { border-color: var(--cc-acc-line); background: var(--cc-acc-soft); box-shadow: inset 3px 0 0 var(--cc-acc-strong) }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 6px 24px }
 .field { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 }
 .field label { font-size: 13.5px; font-weight: 700 }
@@ -778,19 +804,19 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 .drow .ctl { flex: none; display: flex; align-items: center; gap: 10px }
 .mono :deep(input) { font-family: ui-monospace, Consolas, monospace }
 .ok { color: var(--cc-cyan); font-size: 13px }
-.try { padding: 8px 10px; border-radius: 6px; background: var(--cc-hover); display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto }
+.try { padding: 8px 10px; border-radius: var(--cc-r-md); background: var(--cc-hover); display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto }
 .tl { font-size: 13px }
 .prof { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--cc-line-soft) }
-.hrow { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; font-size: 13px }
+.hrow { padding: 8px 10px; border-radius: var(--cc-r-md); cursor: pointer; display: flex; flex-direction: column; gap: 2px; font-size: 13px }
 .hrow:hover { background: var(--cc-hover) }
 .hs { color: var(--cc-mute); font-size: 12px }
 .pack { align-items: center }
 .pname { width: 330px; flex: none; font-size: 13px }
 .vbox { margin-top: 12px; display: flex; flex-direction: column; gap: 8px }
-.vlist { max-height: 260px; overflow-y: auto; border: 1px solid var(--cc-line-soft); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px }
+.vlist { max-height: 260px; overflow-y: auto; border: 1px solid var(--cc-line-soft); border-radius: var(--cc-r-md); padding: 6px 10px; display: flex; flex-direction: column; gap: 4px }
 .vrow { display: grid; grid-template-columns: 52px 1fr 1fr; gap: 8px; font-size: 12.5px }
 .vt { color: var(--cc-mute); font-variant-numeric: tabular-nums }
 .vs { color: var(--cc-fg2) }
 .vx { font-weight: 600 }
-.vsum pre { white-space: pre-wrap; font: inherit; margin: 4px 0 0; padding: 8px 10px; background: var(--cc-fill); border-radius: 8px; max-height: 320px; overflow: auto }
+.vsum pre { white-space: pre-wrap; font: inherit; margin: 4px 0 0; padding: 8px 10px; background: var(--cc-fill); border-radius: var(--cc-r-md); max-height: 320px; overflow: auto }
 </style>

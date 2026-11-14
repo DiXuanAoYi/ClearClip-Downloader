@@ -227,9 +227,10 @@ function sample(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, 
     r = Math.round(r / n)
     g = Math.round(g / n)
     b = Math.round(b / n)
-    return { bg: `rgb(${r},${g},${b})`, fg: 0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#111' : '#fff' }
+    const hex = (n: number) => n.toString(16).padStart(2, '0')
+    return { bg: `#${hex(r)}${hex(g)}${hex(b)}`, fg: 0.299 * r + 0.587 * g + 0.114 * b > 140 ? 'black' : 'white' }
   } catch {
-    return { bg: '#fff', fg: '#111' }
+    return { bg: 'white', fg: 'black' }
   }
 }
 
@@ -380,24 +381,24 @@ const listStyle = computed(() => {
 </template>
 
 <style scoped>
-.root { position: fixed; inset: 0; overflow: hidden; cursor: crosshair; user-select: none; background: #000; }
+.root { position: fixed; inset: 0; overflow: hidden; cursor: crosshair; user-select: none; background: black; }
 .bg { position: absolute; inset: 0; width: 100%; height: 100%; filter: brightness(0.6); pointer-events: none; }
-.tip { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); background: #0b1424; color: #fff; border-radius: 8px; padding: 6px 14px; font-size: 13px; pointer-events: none; }
-.frame { position: absolute; border: 2px solid #ffb547; box-shadow: 0 0 0 9999px #0000; background: transparent; pointer-events: none; overflow: hidden; }
-.result { position: absolute; cursor: default; box-shadow: 0 0 0 2px #ffb547, 0 8px 30px #0008; }
-.bar { position: absolute; display: flex; gap: 6px; align-items: center; background: #fff; color: #0b1424; border-radius: 8px; padding: 6px 8px; box-shadow: 0 6px 24px #0006; font-size: 13px; cursor: default; }
-.bar button { border: 1px solid #aebfd8; background: #fff; border-radius: 6px; padding: 3px 9px; cursor: pointer; font: inherit; color: inherit; }
-.bar button.on { background: #ffb547; border-color: #ffb547; color: #fff; }
-.err { color: #c4283d; }
-.list { position: absolute; width: 320px; max-height: 60vh; overflow: auto; background: #fff; color: #0b1424; border-radius: 10px; padding: 6px 12px; box-shadow: 0 6px 24px #0006; font-size: 13px; line-height: 1.5; cursor: default; }
-.row { padding: 6px 0; border-top: 1px solid #eee; cursor: pointer; }
+.tip { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); background: var(--cc-card); color: var(--cc-fg); border: 1px solid var(--cc-line-strong); border-radius: 8px; padding: 6px 14px; font-size: 13px; pointer-events: none; }
+.frame { position: absolute; border: 2px solid var(--cc-acc-strong); box-shadow: 0 0 0 9999px transparent; background: transparent; pointer-events: none; overflow: hidden; }
+.result { position: absolute; cursor: default; box-shadow: 0 0 0 2px var(--cc-acc-strong), var(--cc-sh-3); }
+.bar { position: absolute; display: flex; gap: 6px; align-items: center; background: var(--cc-card); color: var(--cc-fg); border-radius: 8px; padding: 6px 8px; box-shadow: var(--cc-sh-2); font-size: 13px; cursor: default; }
+.bar button { border: 1px solid var(--cc-line-strong); background: var(--cc-card); border-radius: 6px; padding: 3px 9px; cursor: pointer; font: inherit; color: inherit; }
+.bar button.on { background: var(--cc-acc-strong); border-color: var(--cc-acc-strong); color: var(--cc-on-acc); }
+.err { color: var(--cc-err); }
+.list { position: absolute; width: 320px; max-height: 60vh; overflow: auto; background: var(--cc-card); color: var(--cc-fg); border-radius: 10px; padding: 6px 12px; box-shadow: var(--cc-sh-2); font-size: 13px; line-height: 1.5; cursor: default; }
+.row { padding: 6px 0; border-top: 1px solid var(--cc-line-soft); cursor: pointer; }
 .row:first-child { border-top: 0; }
-.o { color: #777; font-size: 12px; }
+.o { color: var(--cc-mute); font-size: 12px; }
 .t { font-weight: 600; }
-.cmp { border-bottom: 2px solid #ffb547; margin-bottom: 4px; }
-.ci { padding: 6px 0; border-top: 1px solid #eee; cursor: pointer; }
+.cmp { border-bottom: 2px solid var(--cc-acc-strong); margin-bottom: 4px; }
+.ci { padding: 6px 0; border-top: 1px solid var(--cc-line-soft); cursor: pointer; }
 .ci:first-child { border-top: 0; }
-.ci b { font-size: 12px; color: #b45f00; }
-.keys { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: #1d2420cc; color: #fff; padding: 4px 12px; border-radius: 999px; font-size: 12px; pointer-events: none; }
-.toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #0b1424; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 13px; }
+.ci b { font-size: 12px; color: var(--cc-acc-text); }
+.keys { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: var(--cc-card); color: var(--cc-fg); border: 1px solid var(--cc-line-strong); padding: 4px 12px; border-radius: 999px; font-size: 12px; pointer-events: none; }
+.toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: var(--cc-card); color: var(--cc-fg); border: 1px solid var(--cc-line-strong); padding: 6px 14px; border-radius: 8px; font-size: 13px; }
 </style>

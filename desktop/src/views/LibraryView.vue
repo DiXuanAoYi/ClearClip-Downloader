@@ -12,6 +12,12 @@ import { useAppStore, useParseStore, useQueueStore } from '../stores/app'
 import type { HistoryItem, LibraryFilter, LibraryItem, PlatformCount, TagCount } from '../types'
 import { formatBytes, formatDateTime, formatDuration } from '../utils/format'
 import { useTauriEvents } from '../composables/useTauriEvent'
+import CcEmpty from '../components/ui/CcEmpty.vue'
+import CcSkeleton from '../components/ui/CcSkeleton.vue'
+import CcSelect from '../components/ui/CcSelect.vue'
+import CcSegmented from '../components/ui/CcSegmented.vue'
+import CcButton from '../components/ui/CcButton.vue'
+import { notifyError } from '../utils/notify'
 const ev = useTauriEvents()
 
 const app = useAppStore()
@@ -71,6 +77,54 @@ function stopSelecting() {
   selecting.value = false
   selected.value = new Set()
 }
+
+const filterOpen = ref(false)
+const kindOpts = [
+  { value: '', label: '全部' },
+  { value: 'video', label: '视频' },
+  { value: 'image', label: '图片' },
+  { value: 'audio', label: '音频' },
+  { value: 'cover', label: '封面' },
+  { value: 'subtitle', label: '字幕 / 弹幕' },
+]
+const sinceOpts = [
+  { value: '', label: '全部时间' },
+  { value: 'today', label: '今天' },
+  { value: '7d', label: '最近 7 天' },
+  { value: '30d', label: '最近 30 天' },
+]
+const ratingOpts = [{ value: 0, label: '不限评分' }, ...[1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${n} 星以上` }))]
+const sortOpts = [
+  { value: 'finished', label: '最近下载' },
+  { value: 'size', label: '文件大小' },
+  { value: 'title', label: '标题' },
+  { value: 'rating', label: '评分' },
+]
+const platformOpts = computed(() => [{ value: '', label: '全部平台' }, ...platforms.value.map((p) => ({ value: p.platform, label: `${platformName.value[p.platform] ?? p.name}（${p.count}）` }))])
+const tagOpts = computed(() => [{ value: '', label: '全部标签' }, ...tags.value.map((t) => ({ value: t.name, label: `${t.name}（${t.count}）` }))])
+/** 已生效的筛选（排序不算）：给“筛选”按钮上的数字和下面可移除的小标签用。 */
+const activeFilters = computed(() => {
+  const out: { key: string; label: string; clear: () => void }[] = []
+  if (fPlatform.value) out.push({ key: 'platform', label: `平台：${platformName.value[fPlatform.value] ?? fPlatform.value}`, clear: () => (fPlatform.value = '') })
+  if (fKind.value) out.push({ key: 'kind', label: `类型：${kindOpts.find((k) => k.value === fKind.value)?.label ?? fKind.value}`, clear: () => (fKind.value = '') })
+  if (fSince.value) out.push({ key: 'since', label: `时间：${sinceOpts.find((k) => k.value === fSince.value)?.label ?? ''}`, clear: () => (fSince.value = '') })
+  if (fTag.value) out.push({ key: 'tag', label: `标签：${fTag.value}`, clear: () => (fTag.value = '') })
+  if (fRating.value) out.push({ key: 'rating', label: `${fRating.value} 星以上`, clear: () => (fRating.value = 0) })
+  if (fFavorite.value) out.push({ key: 'fav', label: '只看收藏', clear: () => (fFavorite.value = false) })
+  if (fMissing.value) out.push({ key: 'missing', label: '文件已丢失', clear: () => (fMissing.value = false) })
+  return out
+})
+function resetFilters() {
+  fPlatform.value = ''
+  fKind.value = ''
+  fSince.value = ''
+  fTag.value = ''
+  fRating.value = 0
+  fFavorite.value = false
+  fMissing.value = false
+  fSort.value = 'finished'
+}
+const hasFilter = computed(() => activeFilters.value.length > 0 || !!query.value)
 
 const selectedIds = computed(() => [...selected.value])
 
@@ -232,7 +286,7 @@ async function load() {
     }
     else history.value = await api.listHistory(query.value)
   } catch (e) {
-    ElMessage.error(errorText(e))
+    notifyError('媒体库加载失败', { desc: '读取本地记录时出错。', detail: errorText(e), onRetry: load })
   } finally {
     loading.value = false
   }
@@ -346,36 +400,34 @@ async function clearHistory() {
     </div>
 
     <div v-if="tab === 'files'" class="filters">
-      <el-select v-model="fPlatform" size="small" clearable placeholder="全部平台" class="fsel">
-        <el-option v-for="p in platforms" :key="p.platform" :value="p.platform" :label="`${platformName[p.platform] ?? p.name}（${p.count}）`" />
-      </el-select>
-      <el-select v-model="fKind" size="small" clearable placeholder="全部类型" class="fsel">
-        <el-option value="video" label="视频" />
-        <el-option value="image" label="图片" />
-        <el-option value="audio" label="音频" />
-        <el-option value="cover" label="封面" />
-        <el-option value="subtitle" label="字幕 / 弹幕" />
-      </el-select>
-      <el-select v-model="fSince" size="small" clearable placeholder="全部时间" class="fsel">
-        <el-option value="today" label="今天" />
-        <el-option value="7d" label="最近 7 天" />
-        <el-option value="30d" label="最近 30 天" />
-      </el-select>
-      <el-select v-if="tags.length" v-model="fTag" size="small" clearable placeholder="全部标签" class="fsel">
-        <el-option v-for="t in tags" :key="t.name" :value="t.name" :label="`${t.name}（${t.count}）`" />
-      </el-select>
-      <el-select v-model="fRating" size="small" class="fsel narrow">
-        <el-option :value="0" label="不限评分" />
-        <el-option v-for="n in 5" :key="n" :value="n" :label="`${n} 星以上`" />
-      </el-select>
-      <el-select v-model="fSort" size="small" class="fsel narrow">
-        <el-option value="finished" label="最近下载" />
-        <el-option value="size" label="文件大小" />
-        <el-option value="title" label="标题" />
-        <el-option value="rating" label="评分" />
-      </el-select>
-      <el-checkbox v-model="fFavorite" size="small">只看收藏</el-checkbox>
-      <el-checkbox v-model="fMissing" size="small">只看文件已丢失的</el-checkbox>
+      <el-popover v-model:visible="filterOpen" trigger="click" placement="bottom-start" :width="320" popper-class="lib-filter-pop">
+        <template #reference>
+          <button type="button" class="fbtn" :class="{ on: activeFilters.length }" aria-haspopup="dialog" :aria-expanded="filterOpen" :aria-label="activeFilters.length ? `筛选，已选 ${activeFilters.length} 项` : '筛选'">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 3h10L8 7.5V11L6 12V7.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+            筛选<span v-if="activeFilters.length" class="fnum">{{ activeFilters.length }}</span>
+          </button>
+        </template>
+        <div class="fpanel" role="dialog" aria-label="筛选条件">
+          <div class="frow"><span class="flbl">平台</span><CcSelect v-model="fPlatform" :options="platformOpts" placeholder="全部平台" size="s" width="full" aria-label="平台" /></div>
+          <div class="frow"><span class="flbl">类型</span><CcSegmented v-model="fKind" :options="kindOpts" size="s" aria-label="类型" /></div>
+          <div class="frow"><span class="flbl">时间</span><CcSelect v-model="fSince" :options="sinceOpts" placeholder="全部时间" size="s" width="full" aria-label="时间" /></div>
+          <div v-if="tags.length" class="frow"><span class="flbl">标签</span><CcSelect v-model="fTag" :options="tagOpts" placeholder="全部标签" size="s" width="full" aria-label="标签" /></div>
+          <div class="frow two">
+            <div><span class="flbl">评分</span><CcSelect v-model="fRating" :options="ratingOpts" size="s" width="full" aria-label="评分" /></div>
+            <div><span class="flbl">排序</span><CcSelect v-model="fSort" :options="sortOpts" size="s" width="full" aria-label="排序" /></div>
+          </div>
+          <label class="fsw"><span>只看收藏</span><el-switch v-model="fFavorite" size="small" /></label>
+          <label class="fsw"><span>只看文件已丢失的</span><el-switch v-model="fMissing" size="small" /></label>
+          <div class="ffoot">
+            <CcButton kind="text" size="s" @click="resetFilters">重置</CcButton>
+            <CcButton kind="primary" size="s" @click="filterOpen = false">完成</CcButton>
+          </div>
+        </div>
+      </el-popover>
+      <span class="chips">
+        <button v-for="c in activeFilters" :key="c.key" type="button" class="chip" :aria-label="`移除筛选：${c.label}`" @click="c.clear()">{{ c.label }} <span aria-hidden="true">×</span></button>
+        <button v-if="activeFilters.length" type="button" class="clr" @click="resetFilters">清除筛选</button>
+      </span>
       <span class="mute count">{{ files.length }} 项</span>
     </div>
 
@@ -395,9 +447,19 @@ async function clearHistory() {
 
     <InboxPanel v-if="tab === 'inbox'" :query="query" />
     <TransferPanel v-else-if="tab === 'transfer'" />
-    <div v-else v-loading="loading" class="list">
+    <div v-else class="list" :aria-busy="loading">
+      <div v-if="loading && !(tab === 'files' ? files.length : history.length)" class="skel" :class="{ grid: tab === 'files' && mode === 'grid' }">
+        <template v-if="tab === 'files' && mode === 'grid'">
+          <div v-for="i in 8" :key="i" class="sk-tile"><CcSkeleton height="110px" radius="var(--cc-r-md)" label="正在读取媒体库…" /><CcSkeleton height="12" width="80%" /><CcSkeleton height="10" width="50%" /></div>
+        </template>
+        <template v-else>
+          <div v-for="i in 6" :key="i" class="sk-row"><CcSkeleton width="32px" height="42px" label="正在读取媒体库…" /><CcSkeleton :lines="2" height="12" /></div>
+        </template>
+      </div>
+      <template v-else>
       <template v-if="tab === 'files'">
-        <div v-if="!files.length" class="empty mute">{{ query || fPlatform || fKind || fSince || fMissing ? '没有匹配的文件。' : '还没有下载过文件。' }}</div>
+        <CcEmpty v-if="!files.length && hasFilter" title="没有符合条件的文件" desc="换个关键词，或放宽筛选条件试试。"><CcButton kind="secondary" size="s" @click="resetFilters(); query = ''">清除筛选</CcButton></CcEmpty>
+        <CcEmpty v-else-if="!files.length" title="还没下载过文件" desc="下载完成的视频、音频和图片会出现在这里。"><CcButton kind="primary" @click="app.view = 'parse'">去解析链接</CcButton></CcEmpty>
         <VirtualList v-else-if="mode === 'grid'" :items="gridRows" :item-height="190" :gap="10" :item-key="(r) => r.key" class="vl">
           <template #default="{ item: r }">
             <div class="grid-row">
@@ -458,7 +520,8 @@ async function clearHistory() {
       </template>
 
       <template v-else>
-        <div v-if="!history.length" class="empty mute">{{ query ? '没有匹配的记录。' : '还没有解析记录。' }}</div>
+        <CcEmpty v-if="!history.length" :title="query ? '没有匹配的记录' : '还没有解析记录'" :desc="query ? '换个关键词试试。' : '在解析页粘贴链接后，记录会留在这里。'"><CcButton v-if="!query" kind="primary" @click="app.view = 'parse'">去解析链接</CcButton></CcEmpty>
+        <TransitionGroup name="lib-list" tag="div" class="hgroup">
         <div v-for="h in history" :key="h.id" class="item card hist">
           <img v-if="h.cover" :src="h.cover" class="thumb" referrerpolicy="no-referrer" alt="" />
           <div v-else class="thumb" />
@@ -474,6 +537,8 @@ async function clearHistory() {
             <el-button link size="small" @click="run(api.deleteHistory, h.id).then(load)">删除</el-button>
           </div>
         </div>
+        </TransitionGroup>
+      </template>
       </template>
     </div>
     <ItemDrawer v-model="detailOpen" :item="detail" :tags="tags" @changed="load" />
@@ -492,14 +557,32 @@ async function clearHistory() {
   align-items: center;
   flex-wrap: wrap;
 }
-.fsel {
-  width: 150px;
-}
-.fsel.narrow {
-  width: 110px;
-}
+.fbtn { display: inline-flex; align-items: center; gap: 6px; height: var(--cc-h-sm); padding: 0 var(--cc-sp-3); border: 1px solid var(--cc-line); border-radius: var(--cc-r-md); background: var(--cc-card); color: var(--cc-fg); font: inherit; font-size: var(--cc-fs-sm); cursor: pointer; }
+.fbtn:hover { background: var(--cc-hover); }
+.fbtn.on { border-color: var(--cc-acc-line); color: var(--cc-acc-text); }
+.fbtn:focus-visible, .chip:focus-visible, .clr:focus-visible { outline: var(--cc-focus-w) solid var(--cc-focus); outline-offset: var(--cc-focus-off); }
+.fnum { min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: var(--cc-r-pill); background: var(--cc-acc-strong); color: var(--cc-on-acc); font-size: var(--cc-fs-xs); line-height: 16px; text-align: center; }
+.chips { display: inline-flex; gap: var(--cc-sp-2); align-items: center; flex-wrap: wrap; min-width: 0; }
+.chip { all: unset; cursor: pointer; box-sizing: border-box; padding: 0 var(--cc-sp-2); line-height: 22px; font-size: var(--cc-fs-sm); border-radius: var(--cc-r-pill); background: var(--cc-acc-soft); color: var(--cc-acc-text); border: 1px solid var(--cc-acc-line); }
+.chip:hover { background: var(--cc-hover); }
+.clr { all: unset; cursor: pointer; font-size: var(--cc-fs-sm); color: var(--cc-link); text-decoration: underline; }
+.fpanel { display: flex; flex-direction: column; gap: var(--cc-sp-3); }
+.frow { display: flex; flex-direction: column; gap: var(--cc-sp-1); }
+.frow.two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--cc-sp-3); }
+.frow.two > div { display: flex; flex-direction: column; gap: var(--cc-sp-1); min-width: 0; }
+.flbl { font-size: var(--cc-fs-sm); color: var(--cc-mute); }
+.fsw { display: flex; align-items: center; justify-content: space-between; font-size: var(--cc-fs-sm); color: var(--cc-fg); }
+.ffoot { display: flex; justify-content: flex-end; gap: var(--cc-sp-2); border-top: 1px solid var(--cc-line-soft); padding-top: var(--cc-sp-3); }
+.skel { display: flex; flex-direction: column; gap: var(--cc-sp-2); }
+.skel.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--cc-sp-3); }
+.sk-row { display: grid; grid-template-columns: 32px 1fr; gap: var(--cc-sp-3); align-items: center; padding: var(--cc-sp-2) var(--cc-sp-3); border: 1px solid var(--cc-line-soft); border-radius: var(--cc-r-md); }
+.sk-tile { display: flex; flex-direction: column; gap: var(--cc-sp-2); padding: var(--cc-sp-2); border: 1px solid var(--cc-line-soft); border-radius: var(--cc-r-md); }
+.hgroup { display: flex; flex-direction: column; gap: var(--cc-sp-2); }
+.lib-list-enter-active, .lib-list-leave-active { transition: opacity var(--cc-dur-base) var(--cc-ease-out), transform var(--cc-dur-base) var(--cc-ease-out); }
+.lib-list-enter-from, .lib-list-leave-to { opacity: 0; transform: translateY(-4px); }
+@media (prefers-reduced-motion: reduce) { .lib-list-enter-active, .lib-list-leave-active { transition: none; } .lib-list-enter-from, .lib-list-leave-to { transform: none; } }
 .count {
-  font-size: 12px;
+  font-size: var(--cc-fs-sm);
   margin-left: auto;
 }
 .bulk {
@@ -546,7 +629,7 @@ async function clearHistory() {
   width: 100%;
   height: 130px;
   object-fit: cover;
-  border-radius: 5px;
+  border-radius: var(--cc-r-md);
   background: var(--cc-line);
   display: block;
 }
@@ -554,8 +637,8 @@ async function clearHistory() {
   position: absolute;
   top: 4px;
   right: 6px;
-  color: #f5b73b;
-  text-shadow: 0 0 3px #000a;
+  color: var(--cc-warn);
+  text-shadow: 0 0 3px color-mix(in srgb, black 60%, transparent);
 }
 .tile .pick {
   position: absolute;
@@ -566,17 +649,17 @@ async function clearHistory() {
   position: absolute;
   right: 4px;
   bottom: 4px;
-  font-size: 10px;
-  background: #000a;
-  color: #fff;
+  font-size: var(--cc-fs-xs);
+  background: color-mix(in srgb, black 65%, transparent);
+  color: white;
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: var(--cc-r-sm);
 }
 .tile .tname {
   font-size: 12px;
 }
 .tile small {
-  font-size: 10.5px;
+  font-size: var(--cc-fs-sm);
 }
 .tile.missing {
   opacity: 0.55;
@@ -599,10 +682,6 @@ async function clearHistory() {
   gap: 8px;
   min-height: 120px;
   flex: 1;
-}
-.empty {
-  padding: 40px 0;
-  text-align: center;
 }
 .item {
   height: 100%;
@@ -645,15 +724,15 @@ async function clearHistory() {
   line-height: 1;
 }
 .star.on {
-  color: #e6a23c;
+  color: var(--cc-warn);
 }
 .star:focus-visible {
   outline: 2px solid var(--cc-acc);
-  border-radius: 3px;
+  border-radius: var(--cc-r-sm);
 }
 .rate {
-  color: #e6a23c;
-  font-size: 10px;
+  color: var(--cc-warn);
+  font-size: var(--cc-fs-xs);
   letter-spacing: -1px;
   flex: none;
 }
@@ -661,13 +740,13 @@ async function clearHistory() {
   display: flex;
   gap: 4px;
   align-items: center;
-  font-size: 10.5px;
+  font-size: var(--cc-fs-sm);
   margin-top: 1px;
 }
 .tg {
   all: unset;
   cursor: pointer;
-  font-size: 10.5px;
+  font-size: var(--cc-fs-sm);
   padding: 0 6px;
   line-height: 16px;
   border-radius: 999px;
@@ -683,7 +762,7 @@ async function clearHistory() {
   flex-direction: column;
 }
 .info small {
-  font-size: 10.5px;
+  font-size: var(--cc-fs-sm);
 }
 .actions {
   display: flex;

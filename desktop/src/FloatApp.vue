@@ -225,7 +225,7 @@ html, body, #app { background: transparent !important; overflow: hidden; }
 </style>
 
 <style scoped>
-/* 胶囊不跟随主题：始终是深蓝黑底 + 细亮边 + 阴影，在浅色和深色桌面上都看得清圆角 */
+/* 胶囊颜色走主题令牌（实色底 + 描边 + 阴影），在浅色和深色桌面上都看得清圆角 */
 .wrap {
   position: fixed;
   inset: 0;
@@ -244,10 +244,10 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   height: 48px;
   box-sizing: border-box;
   border-radius: 24px;
-  background: #0b1424;
-  border: 1px solid rgba(232, 240, 253, 0.22);
-  box-shadow: 0 2px 8px rgba(2, 6, 14, 0.45);
-  color: #e8f0fd;
+  background: var(--cc-card);
+  border: 1px solid var(--cc-line-strong);
+  box-shadow: var(--cc-sh-2);
+  color: var(--cc-fg);
 }
 .ball {
   position: relative;
@@ -265,15 +265,15 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
 }
 .ball:focus-visible {
-  border-color: #4be3d0;
+  border-color: var(--cc-cyan);
 }
 .ball.over {
-  border-color: #ffb547;
-  background: #2a2016;
-  box-shadow: 0 0 0 3px rgba(255, 181, 71, 0.28), 0 2px 8px rgba(2, 6, 14, 0.45);
+  border-color: var(--cc-acc-strong);
+  background: var(--cc-acc-soft);
+  box-shadow: 0 0 0 3px var(--cc-amber-glow), var(--cc-sh-1);
 }
 .ball.bad {
-  border-color: #ff7b8a;
+  border-color: var(--cc-err);
 }
 .ball.busy .ic svg {
   animation: spin 1s linear infinite;
@@ -283,8 +283,8 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: rgba(255, 181, 71, 0.16);
-  color: #ffb547;
+  background: var(--cc-acc-soft);
+  color: var(--cc-acc-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -315,8 +315,8 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   text-overflow: ellipsis;
 }
 .tx small {
-  font-size: 10.5px;
-  color: #9aabc6;
+  font-size: var(--cc-fs-sm);
+  color: var(--cc-mute);
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
@@ -329,7 +329,7 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  color: #9aabc6;
+  color: var(--cc-mute);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -343,13 +343,13 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   stroke-linecap: round;
 }
 .x:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--cc-hover);
+  color: var(--cc-fg);
 }
 .x:focus-visible,
 .tr:focus-visible,
 .panel button:focus-visible {
-  outline: 2px solid #4be3d0;
+  outline: 2px solid var(--cc-cyan);
   outline-offset: 1px;
 }
 .tr {
@@ -359,18 +359,19 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #1c2b43;
-  color: #e8f0fd;
+  background: var(--cc-fill);
+  color: var(--cc-fg);
   font-size: 12px;
   font-weight: 700;
   text-align: center;
   line-height: 26px;
 }
 .tr.on {
-  background: #007a70;
+  background: var(--cc-ok);
+  color: var(--cc-card);
 }
 .tr.open {
-  box-shadow: 0 0 0 2px #ffb547;
+  box-shadow: 0 0 0 2px var(--cc-acc-strong);
 }
 .panel {
   flex: 0 0 auto;
@@ -386,20 +387,20 @@ html, body, #app { background: transparent !important; overflow: hidden; }
   padding: 0 10px;
   height: 30px;
   background: transparent;
-  color: #d3deec;
+  color: var(--cc-fg2);
   font: 600 12px/1 inherit;
   cursor: pointer;
   white-space: nowrap;
 }
 .panel button:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--cc-hover);
 }
 .panel button.sel {
-  background: #ffb547;
-  color: #1a1100;
+  background: var(--cc-acc-strong);
+  color: var(--cc-on-acc);
 }
 .live {
-  color: #ffb547;
+  color: var(--cc-acc-text);
   padding: 0 6px;
   font-size: 12px;
   white-space: nowrap;
