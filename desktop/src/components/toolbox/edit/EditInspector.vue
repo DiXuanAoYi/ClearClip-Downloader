@@ -150,7 +150,7 @@ function arrangeNow() {
   const parts = [`${r.arranged} 个片段已对齐节拍（转场已去掉）`]
   if (r.short) parts.push(`${r.short} 个视频素材不够长，已用满它`)
   if (r.left) parts.push(`${r.left} 个片段没有拍子可用，保持原样`)
-  ElMessage.success(parts.join('；') + '。可以撤回。')
+  ElMessage.success(`${parts.join('；')}。可以撤回。`)
 }
 function fitNow() {
   const a = audio.value

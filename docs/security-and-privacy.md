@@ -57,7 +57,6 @@
 
 保险箱空闲 15 分钟（可调）自动上锁。“覆盖后删除”是写零再删除：机械硬盘上有效，固态硬盘和有写时复制的文件系统不能保证覆盖到原来的位置，所以对安全要求高时请同时开启系统的整盘加密（Windows BitLocker、macOS FileVault、Linux LUKS）。
 
-![保险箱](screenshots/safebox.png)
 
 ## 一键清除
 
