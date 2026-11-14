@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { api, errorKind, errorText, events } from '../api'
 import { clone } from '../utils/merge3'
+import { createProgressBatcher, mergeProgress } from '../utils/progressBatch'
 import type { AppInfo, BatchRequest, ErrorKind, HistoryItem, LockStatus, MediaInfo, Settings, TaskSnapshot } from '../types'
 
 export type ViewName = 'parse' | 'queue' | 'subs' | 'live' | 'screen' | 'filetr' | 'library' | 'vocab' | 'tools' | 'settings'
@@ -172,20 +173,30 @@ export const useAppStore = defineStore('app', () => {
   return { homeMode, filetrRequest, goFiletr, settings, info, view, settingsTab, shortcutError, libraryTab, inboxUnhandled, loginRequest, lock, libraryQuery, pendingParse, batchRequest, openBatch, queueBatch, goQueueBatch, player, openPlayer, previewTask, goLibraryQuery, toolboxRequest, toolFiles, toolsFrom, navOpen, layoutWork, setNavOpen, refreshLock, goSettings, goLibrary, goToolbox, goLogin, load, save, patch, applyTheme, settingsRev }
 })
 
-/** 下载队列，监听后端事件保持同步。 */
+/**
+ * 下载队列，监听后端事件保持同步。
+ *
+ * 列表用 shallowRef：进度事件很密（任务多时每秒几百次），不用把每个任务深度变成响应式对象；
+ * 同一帧内同一任务的多条进度合并成最后一条，一帧只换一次数组（没变的任务对象引用不变）。
+ */
 export const useQueueStore = defineStore('queue', () => {
-  const tasks = ref<TaskSnapshot[]>([])
+  const tasks = shallowRef<TaskSnapshot[]>([])
+  const batcher = createProgressBatcher<TaskSnapshot>((updates) => {
+    const next = mergeProgress(tasks.value, updates)
+    if (next !== tasks.value) tasks.value = next as TaskSnapshot[]
+  })
   let started = false
 
   async function start() {
     if (started) return
     started = true
     tasks.value = await api.listTasks()
-    await events.onTasks((list) => (tasks.value = list))
-    await events.onProgress((t) => {
-      const i = tasks.value.findIndex((x) => x.id === t.id)
-      if (i >= 0) tasks.value[i] = t
+    await events.onTasks((list) => {
+      // 完整列表比还没写入的进度新，旧进度不能再盖回去
+      batcher.clear()
+      tasks.value = list
     })
+    await events.onProgress((t) => batcher.push(t))
   }
 
   const counts = computed(() => {
