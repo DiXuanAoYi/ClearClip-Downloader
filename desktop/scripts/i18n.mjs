@@ -21,12 +21,16 @@ import { NodeTypes } from '@vue/compiler-dom'
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'src')
 const CJK = /[一-鿿]/
 
+/** 开发 / e2e 用的陈列页（不进安装包，文案不面向用户）：不扫描、不翻译。 */
+export const EXCLUDED = ['ui-gallery.ts', 'components/ui/UiGallery.vue']
+export const isExcluded = (p) => EXCLUDED.some((e) => p.split('\\').join('/').endsWith('/' + e))
+
 function* walk(dir) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
     if (statSync(p).isDirectory()) {
       if (name !== 'i18n') yield* walk(p)
-    } else if (['.vue', '.ts'].includes(extname(p)) && !p.endsWith('.d.ts')) {
+    } else if (['.vue', '.ts'].includes(extname(p)) && !p.endsWith('.d.ts') && !isExcluded(p)) {
       yield p
     }
   }

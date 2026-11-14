@@ -695,7 +695,55 @@ async fn handle(app: AppHandle, mut sock: TcpStream, peer: SocketAddr) {
     let _ = tokio::time::timeout(SMALL_TIMEOUT, route(&app, &state, &mut sock, &peer, &req, &token, authorized)).await;
 }
 
+/// 令牌的作用域。同一个令牌按来源地址决定能用什么：
+/// - `Phone`：局域网来源。只能用互传 / 聊天 / 上传下载 / 下载队列控制等手机和网页控制台需要的接口；
+/// - `Local`：回环地址（127.0.0.1 / ::1）来源，浏览器扩展和命令行走这里，另外可以用 AI、字幕、生词本、扩展数据等敏感接口。
+///
+/// 已配对设备的旧令牌不变：局域网来源仍是 `Phone`，不会因升级获得 `Local`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Scope {
+    Phone,
+    Local,
+}
+
+pub fn scope_for(peer: &SocketAddr) -> Scope {
+    if peer.ip().to_canonical().is_loopback() {
+        Scope::Local
+    } else {
+        Scope::Phone
+    }
+}
+
+/// 访问这个接口至少需要的作用域。未列出的 `/api/v1/*` 一律按 `Local`（默认拒绝局域网）。
+pub fn required_scope(method: &str, path: &str) -> Scope {
+    if let Some(rest) = path.strip_prefix("/api/v1/") {
+        let phone_ok = match (method, rest) {
+            ("GET", "status" | "tasks" | "library") => true,
+            ("POST", "add" | "tasks/pause_all" | "tasks/resume_all" | "tasks/clear_finished") => true,
+            // 单个任务的暂停 / 继续 / 取消 / 移除（reveal 会在电脑上弹窗，只限本机）
+            ("POST", r) => r
+                .strip_prefix("tasks/")
+                .and_then(|t| t.split_once('/'))
+                .is_some_and(|(id, a)| id.parse::<i64>().is_ok() && matches!(a, "pause" | "resume" | "cancel" | "remove")),
+            _ => false,
+        };
+        return if phone_ok { Scope::Phone } else { Scope::Local };
+    }
+    match path {
+        "/api/cookies" | "/api/grab" | "/api/to_phone" => Scope::Local,
+        _ => Scope::Phone,
+    }
+}
+
+pub fn scope_permits(have: Scope, method: &str, path: &str) -> bool {
+    have >= required_scope(method, path)
+}
+
 async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, peer: &SocketAddr, req: &Request, token: &str, authorized: bool) {
+    if !scope_permits(scope_for(peer), &req.method, &req.path) {
+        json(sock, "403 Forbidden", serde_json::json!({"error": "这个接口只能从本机访问"})).await;
+        return;
+    }
     let app = app.clone();
     let peer = *peer;
     match (req.method.as_str(), req.path.as_str()) {
@@ -1096,6 +1144,82 @@ fn page(token: &str) -> String {
 }
 
 const PAGE: &str = include_str!("phone_page.html");
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+
+    fn addr(s: &str) -> SocketAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn scope_by_origin() {
+        assert_eq!(scope_for(&addr("127.0.0.1:1")), Scope::Local);
+        assert_eq!(scope_for(&addr("[::1]:1")), Scope::Local);
+        assert_eq!(scope_for(&addr("[::ffff:127.0.0.1]:1")), Scope::Local);
+        assert_eq!(scope_for(&addr("192.168.1.5:1")), Scope::Phone);
+        assert_eq!(scope_for(&addr("[fe80::1]:1")), Scope::Phone);
+    }
+
+    #[test]
+    fn lan_denied_on_sensitive_endpoints() {
+        let lan = scope_for(&addr("192.168.1.5:1"));
+        for (m, p) in [
+            ("POST", "/api/v1/subtitle/generate"),
+            ("POST", "/api/v1/subtitle/correct"),
+            ("POST", "/api/v1/ai/run"),
+            ("GET", "/api/v1/ai/status"),
+            ("POST", "/api/v1/vocab/add"),
+            ("GET", "/api/v1/extdata"),
+            ("POST", "/api/v1/health/run"),
+            ("GET", "/api/v1/login_needed"),
+            ("POST", "/api/v1/show"),
+            ("POST", "/api/v1/tasks/3/reveal"),
+            ("POST", "/api/v1/unknown"),
+            ("POST", "/api/cookies"),
+            ("POST", "/api/grab"),
+            ("POST", "/api/to_phone"),
+        ] {
+            assert!(!scope_permits(lan, m, p), "{m} {p} 不应对局域网开放");
+        }
+    }
+
+    #[test]
+    fn loopback_passes_everything() {
+        let local = scope_for(&addr("127.0.0.1:9"));
+        for (m, p) in [("POST", "/api/v1/subtitle/generate"), ("POST", "/api/v1/ai/run"), ("POST", "/api/grab"), ("POST", "/api/send")] {
+            assert!(scope_permits(local, m, p));
+        }
+    }
+
+    #[test]
+    fn phone_scope_keeps_transfer_and_console() {
+        let lan = scope_for(&addr("10.0.0.8:1"));
+        for (m, p) in [
+            ("GET", "/"),
+            ("GET", "/console"),
+            ("POST", "/api/send"),
+            ("GET", "/api/chat"),
+            ("POST", "/api/chat"),
+            ("GET", "/api/box"),
+            ("GET", "/api/thumb"),
+            ("GET", "/api/hello"),
+            ("GET", "/api/status"),
+            ("POST", "/api/upload"),
+            ("GET", "/api/download"),
+            ("GET", "/api/v1/status"),
+            ("GET", "/api/v1/tasks"),
+            ("GET", "/api/v1/library"),
+            ("POST", "/api/v1/add"),
+            ("POST", "/api/v1/tasks/pause_all"),
+            ("POST", "/api/v1/tasks/7/pause"),
+            ("POST", "/api/v1/tasks/7/remove"),
+        ] {
+            assert!(scope_permits(lan, m, p), "{m} {p} 手机作用域应可用");
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
