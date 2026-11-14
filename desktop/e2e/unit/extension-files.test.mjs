@@ -45,7 +45,7 @@ test('manifest 静态内容脚本里的文件存在', () => {
 
 test('其他代码里没有手写的注入文件数组（必须引用 ccFiles）', () => {
   const offenders = []
-  for (const f of ['features.js', 'bg-actions.js', 'bg-trans.js', 'bg-capture.js', 'bg-link.js', 'background.js']) {
+  for (const f of ['features.js', 'bg-page.js', 'bg-actions.js', 'bg-menus.js', 'bg-trans.js', 'bg-capture.js', 'bg-link.js', 'background.js']) {
     const lines = read(f).split('\n')
     lines.forEach((line, i) => {
       if (/\.js'\s*,\s*'[\w/-]+\.js'/.test(line) && !/importScripts|ccFiles/.test(line) && !/^\s*\/\//.test(line)) offenders.push(`${f}:${i + 1}`)

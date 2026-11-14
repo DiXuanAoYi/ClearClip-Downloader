@@ -4,9 +4,10 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const VSUM = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum.js']
-const SUB = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js']
-const SEL = ['content/ui.js', 'selbar-logic.js', 'content/wordcard.js', 'content/selbar.js']
+const { group } = require('./ext-files.cjs')
+const VSUM = group('vsum')
+const SUB = group('subLayer')
+const SEL = group('selbar')
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -256,7 +257,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
   ok('划词词卡加入生词本', added2?.word === 'resilient' && /resilient garden/.test(added2.sentence), JSON.stringify(added2))
 
   // 7. 划词工具条的“翻译”：打开网页翻译的同一张卡片（多服务、翻译窗、存为笔记），页面上不再有单独的“译”按钮
-  await inject(['trans-logic.js', 'content/webtrans.js'])
+  await inject(group('trans').filter((f) => f !== 'content/ui.js'))
   await page.evaluate(() => {
     const p = document.getElementById('txt')
     const tn = p.firstChild

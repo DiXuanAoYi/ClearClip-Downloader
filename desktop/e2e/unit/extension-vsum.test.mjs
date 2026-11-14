@@ -4,11 +4,13 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../extension')
 const ctx = vm.createContext({ URL, URLSearchParams, console, navigator: { language: 'zh-CN' } })
 ctx.globalThis = ctx
-vm.runInContext(fs.readFileSync(path.join(dir, 'vsum-logic.js'), 'utf8'), ctx, { filename: 'vsum-logic.js' })
+// 视频摘要纯逻辑分成几个文件，加载顺序取自 files-manifest.js
+for (const f of createRequire(import.meta.url)('../ext-files.cjs').vsumLogic()) vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f })
 const V = vm.runInContext('ccVsum', ctx)
 const plain = (v) => JSON.parse(JSON.stringify(v))
 

@@ -4,9 +4,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
 const ext = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../extension')
 const read = (f) => fs.readFileSync(path.join(ext, f), 'utf8')
+// 注入的文件和顺序取自 files-manifest.js（唯一来源）
+const WRITE_FILES = createRequire(import.meta.url)('../ext-files.cjs').group('write')
 
 const html = `<!doctype html><meta charset=utf-8><body style="margin:0">
 <textarea id=ta style="position:absolute;left:100px;top:100px;width:420px;height:120px">王经理你好，下周的交付可能要推迟两天。</textarea>
@@ -67,7 +70,7 @@ page.on('pageerror', (e) => errors.push(e.message))
 await page.addInitScript(mock)
 await page.route('http://t.test/**', (r) => r.fulfill({ contentType: 'text/html', body: html }))
 await page.goto('http://t.test/')
-for (const f of ['content/ui.js', 'writing-logic.js', 'content/writing.js']) await page.addScriptTag({ content: read(f) })
+for (const f of WRITE_FILES) await page.addScriptTag({ content: read(f) })
 
 const shadow = (sel) => page.locator(`div[style*="2147483647"] >> ${sel}`)
 
@@ -152,7 +155,7 @@ assert.equal(last.write.facts[0].code, 'SP.POP.TOTL')
 
 // 10. 面板底下不能多出一行“null”（Element.append(null) 会把 null 当文字），额外要求输入框能打字
 await page.goto('http://t.test/')
-for (const f of ['content/ui.js', 'writing-logic.js', 'content/writing.js']) await page.addScriptTag({ content: read(f) })
+for (const f of WRITE_FILES) await page.addScriptTag({ content: read(f) })
 await page.focus('#ta')
 await shadow('.badge').click()
 await page.waitForSelector('div[style*="2147483647"] >> .panel')
@@ -170,7 +173,7 @@ const dialogs = {
 for (const [url, body] of Object.entries(dialogs)) {
   await page.route(url, (r) => r.fulfill({ contentType: 'text/html', body }))
   await page.goto(url)
-  for (const f of ['content/ui.js', 'writing-logic.js', 'content/writing.js']) await page.addScriptTag({ content: read(f) })
+  for (const f of WRITE_FILES) await page.addScriptTag({ content: read(f) })
   await page.evaluate(() => document.activeElement?.blur())
   await page.focus('#ta')
   await shadow('.badge').click()

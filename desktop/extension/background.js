@@ -17,7 +17,7 @@ ccDefer.on('badge', (tabId) => paintBadge(Number(tabId)))
 
 // ---------- 右键菜单 ----------
 
-// 菜单项由 bg-actions.js 的 buildMenus 创建
+// 菜单项由 bg-menus.js 的 buildMenus 创建
 
 /** 把浏览器里的一个文件地址交给清影下载（带 Referer、Cookie、文件名）。item：{ url, finalUrl?, referrer?, filename?, fileSize?, mime? } */
 async function grabUrl(item, extra = {}) {

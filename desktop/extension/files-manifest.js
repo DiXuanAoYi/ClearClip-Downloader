@@ -1,5 +1,5 @@
 // 脚本文件清单的唯一来源：后台脚本的加载顺序、各功能注入页面的文件顺序、文件之间的依赖。
-// 其他地方（background.js 的 importScripts、features.js 的常驻脚本、bg-actions.js / bg-trans.js / bg-capture.js 的按需注入）
+// 其他地方（background.js 的 importScripts、features.js 的常驻脚本、bg-page.js / bg-trans.js / bg-capture.js 的按需注入）
 // 都从这里取，不再各写一份。只有 manifest.json 的 background.scripts 必须写成静态数组（Firefox 以它加载后台脚本），
 // 由单元测试（extension-files.test.mjs）保证它和这里的 BG_SCRIPTS 一致。
 //
@@ -9,6 +9,8 @@
 const ccFiles = (() => {
   const UI = 'content/ui.js'
   const VDOCK = 'content/vdock.js'
+  // 视频摘要的纯逻辑：几个部分按顺序加载，最后的 vsum-logic.js 汇总成 ccVsum 对象
+  const VLOGIC = ['vsum-logic-parse.js', 'vsum-logic-page.js', 'vsum-logic-maps.js', 'vsum-logic-notes.js', 'vsum-logic-comments.js', 'vsum-logic.js']
 
   // 后台脚本，按加载顺序（不含 background.js：它最后加载，manifest 里排在最末）。files-manifest.js 自己排第一。
   const BG_SCRIPTS = [
@@ -32,7 +34,9 @@ const ccFiles = (() => {
     'bg-link.js',
     'bg-capture.js',
     'bg-vcache.js',
+    'bg-page.js',
     'bg-actions.js',
+    'bg-menus.js',
   ]
   const BG_MAIN = 'background.js'
 
@@ -42,14 +46,14 @@ const ccFiles = (() => {
     zoom: [UI, 'content/original.js', 'content/hover-zoom.js'],
     audio: [UI, VDOCK, 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'],
     video: [UI, VDOCK, 'content/video-logic.js', 'content/video-control.js'],
-    trans: [UI, 'trans-logic.js', 'content/webtrans.js'],
+    trans: [UI, 'trans-logic.js', 'content/webtrans-hover.js', 'content/webtrans-pick.js', 'content/webtrans.js'],
     selbar: [UI, 'selbar-logic.js', 'content/wordcard.js', 'content/selbar.js'],
-    write: [UI, 'writing-logic.js', 'content/writing.js'],
+    write: [UI, 'writing-logic.js', 'content/writing-field.js', 'content/writing-options.js', 'content/writing-result.js', 'content/writing.js'],
     unlock: ['content/unlock.js'],
     bypass: ['bypass.js'],
     stub: ['content/stub.js'],
-    vsum: [UI, VDOCK, 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum.js'],
-    subLayer: [UI, VDOCK, 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js'],
+    vsum: [UI, VDOCK, ...VLOGIC, 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum-util.js', 'content/vsum-session.js', 'content/vsum-flow.js', 'content/vsum-local.js', 'content/vsum-tabs.js', 'content/vsum.js'],
+    subLayer: [UI, VDOCK, ...VLOGIC, 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer-data.js', 'content/sublayer-learn.js', 'content/sublayer-listen.js', 'content/sublayer.js'],
     shot: [UI, 'trans-logic.js', 'content/shot.js'],
     picker: [UI, 'content/picker.js'],
     excludePick: [UI, 'content/excludepick.js'],
@@ -67,10 +71,15 @@ const ccFiles = (() => {
     'content/audio-chain.js': ['content/audio-logic.js'],
     'content/audio-fx.js': [UI, VDOCK, 'content/audio-logic.js', 'content/audio-chain.js'],
     'content/video-control.js': [UI, VDOCK, 'content/video-logic.js'],
-    'content/webtrans.js': [UI, 'trans-logic.js'],
+    'content/webtrans-hover.js': [],
+    'content/webtrans-pick.js': [],
+    'content/webtrans.js': [UI, 'trans-logic.js', 'content/webtrans-hover.js', 'content/webtrans-pick.js'],
     'content/wordcard.js': [UI],
     'content/selbar.js': [UI, 'selbar-logic.js', 'content/wordcard.js'],
-    'content/writing.js': [UI, 'writing-logic.js'],
+    'content/writing-field.js': [],
+    'content/writing-options.js': [UI],
+    'content/writing-result.js': [],
+    'content/writing.js': [UI, 'writing-logic.js', 'content/writing-field.js', 'content/writing-options.js', 'content/writing-result.js'],
     'content/vsum-source.js': [UI, 'vsum-logic.js'],
     'content/vsession.js': [UI, 'vsum-logic.js', 'content/vsum-source.js'],
     'content/vsum-style.js': [],
@@ -80,9 +89,17 @@ const ccFiles = (() => {
     'content/vsum-vocab.js': [],
     'content/vsum-mindmap.js': [],
     'content/vsum-more.js': [],
+    'content/vsum-util.js': [UI, 'trans-logic.js'],
+    'content/vsum-session.js': [UI],
+    'content/vsum-flow.js': [],
+    'content/vsum-local.js': [],
+    'content/vsum-tabs.js': [],
     'content/vsum-dock.js': [VDOCK],
-    'content/vsum.js': [UI, VDOCK, 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-dock.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js'],
-    'content/sublayer.js': [UI, VDOCK, 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsession.js', 'content/wordcard.js'],
+    'content/vsum.js': [UI, VDOCK, 'vsum-logic.js', 'trans-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-dock.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-util.js', 'content/vsum-session.js', 'content/vsum-flow.js', 'content/vsum-local.js', 'content/vsum-tabs.js'],
+    'content/sublayer-data.js': [UI],
+    'content/sublayer-learn.js': [],
+    'content/sublayer-listen.js': [],
+    'content/sublayer.js': [UI, VDOCK, 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer-data.js', 'content/sublayer-learn.js', 'content/sublayer-listen.js'],
     'content/shot.js': [UI],
     'content/picker.js': [UI],
     'content/excludepick.js': [UI],
