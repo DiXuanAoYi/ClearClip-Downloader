@@ -23,7 +23,8 @@ ccDefer.on('badge', (tabId) => paintBadge(Number(tabId)))
 async function grabUrl(item, extra = {}) {
   let cookie = ''
   try {
-    cookie = cookieHeader(await api.cookies.getAll({ url: item.finalUrl || item.url }))
+    // Cookie 是可选权限：没授权就不带 Cookie（公开文件照样能下）
+    if (api.cookies?.getAll) cookie = cookieHeader(await api.cookies.getAll({ url: item.finalUrl || item.url }))
   } catch (e) {
     logErr('grabUrl cookies', e) // 没有 Cookie 权限或地址无效：不带 Cookie
   }
@@ -125,14 +126,24 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 const MIN_INTERVAL = 5 * 60 * 1000
 const COOKIE_QUIET_MS = 10000
 
-api.cookies.onChanged.addListener(async ({ cookie }) => {
+/** Cookie 是可选权限：授权前 api.cookies 不存在，授权后（permissions.onAdded）再挂上监听。 */
+let cookieWatchBound = false
+function bindCookieWatch() {
+  if (cookieWatchBound || !api.cookies?.onChanged) return
+  cookieWatchBound = true
+  api.cookies.onChanged.addListener(onCookieChanged)
+}
+api.permissions?.onAdded?.addListener(() => bindCookieWatch())
+bindCookieWatch()
+
+async function onCookieChanged({ cookie }) {
   const c = await getConfig()
   if (!c.autoSync || !c.syncSites.length) return
   const site = registrable(cookie.domain.replace(/^\./, ''))
   if (!c.syncSites.includes(site)) return
   // 去抖：Cookie 安静 10 秒后同步。待办存进存储并设了 alarm，后台被回收也不会丢
   ccDefer.schedule(`cookie-sync:${site}`, COOKIE_QUIET_MS).catch((e) => console.warn('schedule cookie sync failed', e))
-})
+}
 
 ccDefer.on('cookie-sync', async (site) => {
   const now = await getConfig()

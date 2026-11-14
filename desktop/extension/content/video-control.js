@@ -4,7 +4,7 @@
   if (globalThis.__ccVideo) return
   globalThis.__ccVideo = true
   const L = globalThis.ccVideo
-  const { api, mount, h, send, onSettings, listed } = globalThis.ccUI
+  const { api, life, mount, h, send, onSettings, listed } = globalThis.ccUI
   const host = location.hostname.toLowerCase()
 
   const DEF_FEAT = { videoMaster: false, speed: true, speedMemory: true, seek: true, videoTools: true, videoAdvanced: true }
@@ -102,10 +102,20 @@
 
   let lastActive = null
   let moTimer = 0
-  new MutationObserver(() => {
+  life.observe(
+    new MutationObserver(() => {
+      clearTimeout(moTimer)
+      moTimer = setTimeout(scan, 400)
+    }),
+    document,
+    { childList: true, subtree: true },
+  )
+  life.add(() => {
     clearTimeout(moTimer)
-    moTimer = setTimeout(scan, 400)
-  }).observe(document, { childList: true, subtree: true })
+    clearTimeout(saveTimer)
+    teardown()
+    delete globalThis.__ccVideo
+  })
   scan()
 
   function activeMedia() {
@@ -397,7 +407,7 @@
 
   const editable = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
 
-  document.addEventListener('keydown', (e) => {
+  life.on(document, 'keydown', (e) => {
     lastGesture = performance.now()
     if (off || e.isComposing || editable(e.composedPath?.()[0] || e.target)) return
     const id = L.matchKey(e, cfg.keys)
@@ -408,8 +418,8 @@
     e.stopImmediatePropagation()
     run(id, el)
   }, true)
-  document.addEventListener('pointerdown', () => (lastGesture = performance.now()), true)
-  document.addEventListener('click', () => (lastGesture = performance.now()), true)
+  life.on(document, 'pointerdown', () => (lastGesture = performance.now()), true)
+  life.on(document, 'click', () => (lastGesture = performance.now()), true)
 
   // ---------- 控制条 ----------
 
@@ -475,8 +485,8 @@
     closePanel()
     hovered = null
   }
-  addEventListener('scroll', () => panel && place(), { capture: true, passive: true })
-  addEventListener('resize', () => panel && place())
+  life.on(window, 'scroll', () => panel && place(), { capture: true, passive: true })
+  life.on(window, 'resize', () => panel && place())
 
   // ---------- “⋯”面板 ----------
 
@@ -547,8 +557,8 @@
     place()
   }
 
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && panel && closePanel(), true)
-  document.addEventListener('mousedown', (e) => panel && !e.composedPath().includes(ui.host) && !Dock.owns(e) && closePanel(), true)
+  life.on(document, 'keydown', (e) => e.key === 'Escape' && panel && closePanel(), true)
+  life.on(document, 'mousedown', (e) => panel && !e.composedPath().includes(ui.host) && !Dock.owns(e) && closePanel(), true)
 
   function teardown() {
     hideBar()

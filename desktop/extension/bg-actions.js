@@ -2,6 +2,7 @@
 
 const CONTENT_MATCHES = ['http://*/*', 'https://*/*']
 let residentLock = Promise.resolve()
+const STUB_SCRIPT = { id: 'cc-stub', get js() { return ccFiles.GROUPS.stub } }
 
 /** 按功能开关注册 / 注销常驻内容脚本。串行执行，避免连续改开关时互相覆盖。 */
 function syncResident(reset = false) {
@@ -15,19 +16,27 @@ async function syncResidentNow(reset) {
   const features = await getFeatures()
   const rules = await getSiteRules()
   const trans = await getTransCfg()
+  const ctx = { takeover: await getTakeover() }
   // 编号 → 要匹配的网址；匹配范围为空的（比如解除限制的名单是空的）不注册
   const want = new Map()
+  let lazyNeeded = false
   for (const s of RESIDENT_SCRIPTS) {
-    if (!s.need(normalizeFeatures(features))) continue
+    if (!s.need(normalizeFeatures(features), ctx)) continue
+    if (s.lazy) {
+      lazyNeeded = true // 视频类：不直接注册，由下面的探测 stub 按需加载
+      continue
+    }
     const matches = s.matches ? s.matches(rules, trans) : CONTENT_MATCHES
-    if (matches.length) want.set(s.id, matches)
+    // 网页访问是可选权限：没授权的范围不注册（否则注册会报错），授权后 permissions.onAdded 会再同步一次
+    if (matches.length && (await ccPerms.has({ origins: matches }))) want.set(s.id, matches)
   }
+  if (lazyNeeded && (await ccPerms.has({ origins: CONTENT_MATCHES }))) want.set('cc-stub', CONTENT_MATCHES)
   const have = (await sc.getRegisteredContentScripts()).filter((s) => s.id.startsWith('cc-'))
   const same = (a, b) => a.length === b.length && a.every((x) => b.includes(x))
   const drop = have.filter((s) => reset || !want.has(s.id) || !same(s.matches || [], want.get(s.id))).map((s) => s.id)
   if (drop.length) await sc.unregisterContentScripts({ ids: drop })
   const keep = new Set(have.map((s) => s.id).filter((id) => !drop.includes(id)))
-  for (const s of RESIDENT_SCRIPTS) {
+  for (const s of [...RESIDENT_SCRIPTS, STUB_SCRIPT]) {
     if (!want.has(s.id) || keep.has(s.id)) continue
     const def = { id: s.id, js: s.js, matches: want.get(s.id), allFrames: true, runAt: s.runAt || 'document_idle', ...(s.world ? { world: s.world } : {}) }
     try {
@@ -514,6 +523,18 @@ const HANDLERS = {
   // 视频摘要读到字幕后，把文稿作为字幕层叠在视频上
   'cc-sublayer-open': async (_m, sender) => (sender?.tab && (await startSubLayer(sender.tab)), {}),
   // 视频胶囊菜单里的“视频摘要”（再注入一次会关掉，所以胶囊只在没打开时显示这一项）
+  // 探测 stub 发现本 frame 里有 <video>/<audio>：按当前开关把视频类常驻功能的主体注入进来
+  'cc-stub-load': async (_m, sender) => {
+    const f = normalizeFeatures(await getFeatures())
+    const ctx = { takeover: await getTakeover() }
+    const loaded = []
+    for (const s of RESIDENT_SCRIPTS) {
+      if (!s.lazy || !s.need(f, ctx)) continue
+      await api.scripting.executeScript({ target: { tabId: sender.tab.id, frameIds: [sender.frameId || 0] }, files: s.js })
+      loaded.push(s.id)
+    }
+    return { loaded }
+  },
   'cc-vsum-open': async (_m, sender) => (sender?.tab && (await startVsum(sender.tab)), {}),
   'cc-tr-clear': async () => (await clearTransCache(), {}),
   // 把笔记存进清影的“摘录”；字数上限在设置里（0 = 不限制，默认）
@@ -743,6 +764,9 @@ api.runtime.onInstalled.addListener(async (d) => {
   syncResident(true)
 })
 api.runtime.onStartup?.addListener(() => syncResident())
+// 用户在弹窗里授权 / 撤销网页访问权限后，重新决定要注册哪些常驻脚本
+api.permissions?.onAdded?.addListener(() => syncResident())
+api.permissions?.onRemoved?.addListener(() => syncResident())
 api.storage.onChanged.addListener((ch, area) => {
   if (area !== 'local') return
   if (ch.features) {
@@ -750,7 +774,7 @@ api.storage.onChanged.addListener((ch, area) => {
     rebuildMenusSoon()
   }
   if (ch.engines) rebuildMenusSoon()
-  if (ch.siteRules || ch.transCfg) syncResident()
+  if (ch.siteRules || ch.transCfg || ch.takeover) syncResident()
   if (EXT_KEYS.some((k) => ch[k])) pushExtDataSoon()
   // 刚连上清影（填了令牌 / 配对成功）：本地还没有的笔记、高亮从清影取回
   if (ch.token?.newValue && !ch.token.oldValue) pullExtData()

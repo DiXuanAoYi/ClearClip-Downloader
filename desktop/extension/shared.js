@@ -76,6 +76,8 @@ function registrable(host) {
 async function syncCookies(pageUrl, label, auto = false) {
   const u = new URL(pageUrl)
   const site = registrable(u.hostname)
+  // Cookie 是可选权限：没授权时给出可操作的说明，不是一句“没有 Cookie”
+  if (!api.cookies?.getAll || !(await ccPerms.hasCookies(site))) throw ccPerms.permError('cookies')
   const cookies = await api.cookies.getAll({ domain: site })
   if (!cookies.length) throw new Error('这个网站没有 Cookie，请先在浏览器里登录')
   const r = await call('/api/cookies', { url: pageUrl, label: label || '', auto, cookies: cookies.map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path, expirationDate: c.expirationDate ?? null, secure: c.secure, httpOnly: c.httpOnly, hostOnly: c.hostOnly })) })

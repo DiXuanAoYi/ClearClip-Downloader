@@ -6,7 +6,7 @@
   if (globalThis.__ccAudioFx) return
   globalThis.__ccAudioFx = true
   const A = globalThis.ccAudio
-  const { api, mount, h, listed } = globalThis.ccUI
+  const { api, life, mount, h, listed } = globalThis.ccUI
   const host = location.hostname.toLowerCase()
 
   let cfg = A.normalizeCfg()
@@ -148,9 +148,9 @@
   }
   const scan = () => deepAll('video,audio').forEach(consider)
 
-  for (const ev of ['playing', 'volumechange']) document.addEventListener(ev, (e) => consider(e.target), true)
-  for (const ev of ['emptied', 'loadstart']) document.addEventListener(ev, (e) => chains.get(e.target)?.reset(), true)
-  document.addEventListener('playing', (e) => {
+  for (const ev of ['playing', 'volumechange']) life.on(document, ev, (e) => consider(e.target), true)
+  for (const ev of ['emptied', 'loadstart']) life.on(document, ev, (e) => chains.get(e.target)?.reset(), true)
+  life.on(document, 'playing', (e) => {
     const c = chains.get(e.target)
     if (c) c.last = performance.now()
   }, true)
@@ -181,7 +181,7 @@
       c.tick(now)
     }
   }
-  setInterval(tick, 100)
+  life.interval(tick, 100)
 
   // ---------- 音量放大（倍速面板里的“音量增益”共用这条链） ----------
 
@@ -318,7 +318,7 @@
   }
 
   // Alt+Shift+A：用快捷键打开同一个音效面板（胶囊上不显示音效状态时也能用）
-  document.addEventListener('keydown', (e) => {
+  life.on(document, 'keydown', (e) => {
     if (!featOn || !e.altKey || !e.shiftKey || e.code !== 'KeyA' || e.ctrlKey || e.metaKey) return
     const vids = [...document.querySelectorAll('video')].filter((v) => v.getBoundingClientRect().width >= 240)
     const v = Dock.current() || hovered || vids.find((x) => !x.paused) || vids[0]
@@ -329,12 +329,20 @@
     Dock.show(v)
     place()
   }, true)
-  addEventListener('scroll', () => panel && place(), { capture: true, passive: true })
-  addEventListener('resize', () => panel && place())
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && panel && closePanel(), true)
-  document.addEventListener('mousedown', (e) => panel && ui && !e.composedPath().includes(ui.host) && !Dock.owns(e) && closePanel(), true)
+  life.on(window, 'scroll', () => panel && place(), { capture: true, passive: true })
+  life.on(window, 'resize', () => panel && place())
+  life.on(document, 'keydown', (e) => e.key === 'Escape' && panel && closePanel(), true)
+  life.on(document, 'mousedown', (e) => panel && ui && !e.composedPath().includes(ui.host) && !Dock.owns(e) && closePanel(), true)
 
   const REV_QUICK = [['', '关'], ['room', '房间'], ['hall', '大厅']]
+
+  life.add(() => {
+    clearInterval(meterTimer)
+    panel?.remove()
+    ui?.remove()
+    ui = null
+    delete globalThis.__ccAudioFx
+  })
 
   function closePanel() {
     panel?.remove()
