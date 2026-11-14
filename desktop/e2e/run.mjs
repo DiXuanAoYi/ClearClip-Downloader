@@ -7,7 +7,7 @@ import net from 'node:net'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
-const suites = process.argv.slice(2).length ? process.argv.slice(2) : ['ops.cjs', 'edit.cjs', 'region.cjs', 'hdr.cjs', 'subtitle.cjs', 'proxy.cjs', 'transcript.cjs', 'keyframes.cjs', 'beats.cjs', 'highlights.cjs', 'background.cjs', 'vocals.cjs', 'vsum-panel.cjs', 'sublayer-session.cjs', 'video-dock.cjs', 'merge-ui.cjs', 'parse-ui.cjs', 'write-ui.cjs', 'webtrans.cjs', 'bili-sub.cjs', 'batch-ui.cjs', 'audio.cjs', 'pdfcanvas.cjs', 'filetr-ui.cjs', 'toolbox-ui.cjs', 'tracks-ui.cjs', 'groups-ui.cjs', 'meters-ui.cjs', 'compound-ui.cjs', 'home-batch.cjs', 'overview-naming.cjs', 'phone-page.cjs', 'transfer-ui.cjs', 'queue-progress-ui.cjs', 'settings-layout.cjs', 'ui-gallery.cjs', 'p3-ui.cjs', 'ext-smoke.cjs']
+const suites = process.argv.slice(2).length ? process.argv.slice(2) : ['ops.cjs', 'edit.cjs', 'region.cjs', 'hdr.cjs', 'subtitle.cjs', 'proxy.cjs', 'transcript.cjs', 'keyframes.cjs', 'beats.cjs', 'highlights.cjs', 'background.cjs', 'vocals.cjs', 'vsum-panel.cjs', 'sublayer-session.cjs', 'video-dock.cjs', 'merge-ui.cjs', 'parse-ui.cjs', 'write-ui.cjs', 'webtrans.cjs', 'bili-sub.cjs', 'batch-ui.cjs', 'audio.cjs', 'pdfcanvas.cjs', 'filetr-ui.cjs', 'toolbox-ui.cjs', 'tracks-ui.cjs', 'groups-ui.cjs', 'meters-ui.cjs', 'compound-ui.cjs', 'home-batch.cjs', 'overview-naming.cjs', 'phone-page.cjs', 'transfer-ui.cjs', 'queue-progress-ui.cjs', 'shell-queue-ui.cjs', 'settings-layout.cjs', 'ui-gallery.cjs', 'p3-ui.cjs', 'ext-smoke.cjs']
 
 for (const tool of ['ffmpeg', 'ffprobe']) {
   if (spawnSync(tool, ['-version'], { stdio: 'ignore' }).status !== 0) {

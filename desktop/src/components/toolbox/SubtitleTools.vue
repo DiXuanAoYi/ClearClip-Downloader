@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CcButton from '../ui/CcButton.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../../api'
@@ -137,7 +138,8 @@ async function run() {
       </div>
       <SubtitleEditor v-if="files.length" v-model="editing" :path="files[0]" />
       <div v-if="op !== 'edit'" class="go">
-        <el-button type="primary" :loading="busy" :disabled="!files.length" @click="run">开始处理</el-button>
+        <CcButton kind="primary" :loading="busy" :disabled="!files.length" disabled-reason="先把字幕文件拖进文件篮，或点“添加文件”" @click="run">开始处理</CcButton>
+        <span v-if="!files.length" class="gohint" data-testid="go-hint">先把字幕文件拖进文件篮，或点“添加文件”</span>
         <span v-if="result" class="res">
           已保存为 <span class="mono selectable">{{ result.output.split(/[\\/]/).pop() }}</span><template v-if="result.count">（{{ result.count }} 条）</template>
           <el-button link size="small" type="primary" @click="api.revealFile(result.output)">所在文件夹</el-button>
@@ -223,5 +225,10 @@ h3 {
 }
 .res {
   font-size: 12.5px;
+}
+.gohint {
+  font-size: var(--cc-fs-sm);
+  color: var(--cc-mute);
+  align-self: center;
 }
 </style>
