@@ -120,7 +120,8 @@ const PUNCT_OPTS = [{ value: 'conservative', label: '保守' }, { value: 'aggres
       <h3>语音转文字（给没有字幕的视频生成字幕）</h3>
       <CcField label="方式"><CcSegmented v-model="ai.sttEngine" :options="STT_ENGINE_OPTS" size="s" /></CcField>
       <template v-if="ai.sttEngine === 'volc'">
-        <small class="mute">豆包语音“大模型录音文件极速版识别”：整段上传、接近说话速度出结果，中文很准。音频会先在本机转成 16 kHz 单声道 WAV，每 10 分钟一段上传到火山引擎。需要在火山引擎控制台开通该资源。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先拿一小段音频试。</small>
+        <small class="mute">豆包语音“大模型录音文件极速版识别”：整段上传、接近说话速度出结果，中文很准。音频会先在本机转成 16 kHz 单声道 WAV，每 10 分钟一段上传到火山引擎。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先点“测试连接”。</small>
+        <CcField label="需要哪些凭据" desc="在火山引擎控制台“语音技术 → 应用管理”创建应用并开通“大模型录音文件极速版识别”：旧版控制台填 AppId + Access Token；新版控制台只填 API Key（AppId 留空）。资源 ID 已内置。" layout="col" />
         <CcField label="AppId（用新版控制台的 API Key 时留空）" layout="col">
           <template #default="{ id }"><el-input :id="id" v-model="ai.sttVolcAppId" size="small" class="mono" placeholder="旧版控制台的 AppId，没有就留空" /></template>
         </CcField>
@@ -141,7 +142,8 @@ const PUNCT_OPTS = [{ value: 'conservative', label: '保守' }, { value: 'aggres
         </div>
       </template>
       <template v-else-if="ai.sttEngine === 'xfyun'">
-        <small class="mute">讯飞开放平台“录音文件转写”：整个文件上传到讯飞，转写完成后取回带时间的句子。需要在讯飞控制台开通该服务并拿到 AppID 和 SecretKey。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先拿一小段音频试。</small>
+        <small class="mute">讯飞开放平台“录音文件转写”：整个文件上传到讯飞，转写完成后取回带时间的句子。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先点“测试连接”。</small>
+        <CcField label="需要哪些凭据" desc="在讯飞开放平台控制台“我的应用”里开通“录音文件转写”，拿到 AppID 和 SecretKey；“实时语音转写”是另一个服务，用另一个 APIKey（同一个 AppID）。两个服务各有额度，用完要到控制台购买或领取。" layout="col" />
         <CcField label="AppID" layout="col">
           <template #default="{ id }"><el-input :id="id" v-model="ai.sttXfyunAppId" size="small" class="mono" placeholder="例如 595f23df" /></template>
         </CcField>
