@@ -4,9 +4,10 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const VSUM = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum.js']
-const SUB = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js']
-const SEL = ['content/ui.js', 'selbar-logic.js', 'content/wordcard.js', 'content/selbar.js']
+const { group } = require('./ext-files.cjs')
+const VSUM = group('vsum')
+const SUB = group('subLayer')
+const SEL = group('selbar')
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
