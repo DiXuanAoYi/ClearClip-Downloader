@@ -16,8 +16,8 @@ async function paintBadge(tabId) {
     const { progressBadge = '' } = await sessionStore.get('progressBadge')
     await action.setBadgeText({ tabId, text: n ? String(n) : progressBadge })
     await action.setBadgeBackgroundColor({ tabId, color: n ? BADGE_SNIFF : BADGE_TASKS })
-  } catch {
-    // 标签页可能已关闭
+  } catch (e) {
+    logErr('paintBadge', e) // 标签页可能已关闭
   }
 }
 
@@ -50,8 +50,8 @@ function browserFamily() {
 async function pingWriting() {
   try {
     await call('/api/v1/ai/status?ext=' + browserFamily())
-  } catch {
-    // 清影没有运行：下次再报
+  } catch (e) {
+    logErr('pingWriting', e) // 清影没有运行：下次再报
   }
 }
 

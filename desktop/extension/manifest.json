@@ -14,6 +14,7 @@
   "background": {
     "service_worker": "background.js",
     "scripts": [
+      "files-manifest.js",
       "shared.js",
       "features.js",
       "clean-link.js",
@@ -21,10 +22,13 @@
       "takeover.js",
       "sniff.js",
       "media-sniff.js",
+      "naming.js",
       "engines.js",
       "later.js",
       "capture-plan.js",
       "trans-logic.js",
+      "bg-guard.js",
+      "bg-defer.js",
       "bg-trans.js",
       "bg-link.js",
       "bg-capture.js",
