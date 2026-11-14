@@ -65,7 +65,7 @@ const init = `
   const page = await browser.newPage({ viewport: { width: 1180, height: 780 }, deviceScaleFactor: 1 })
   page.on('pageerror', (e) => errors.push(e.message))
   await page.addInitScript(init)
-  await page.goto('http://127.0.0.1:5199/merge-harness.html#transfer')
+  await page.goto(`http://127.0.0.1:${process.env.E2E_PORT || 5199}/merge-harness.html#transfer`)
   await page.waitForSelector('.xfer .bub')
   if (process.env.DARK) await page.evaluate(() => document.documentElement.classList.add('dark'))
   const t = (sel) => page.locator(sel).allInnerTexts()
@@ -108,7 +108,7 @@ const init = `
   pend.on('pageerror', (e) => errors.push(e.message))
   const withPending = { ...info, devices: [], pending: [{ deviceId: 'p1', name: '小米手机', ip: '192.168.1.9', code: '482913' }] }
   await pend.addInitScript(init.replace(JSON.stringify(info), JSON.stringify(withPending)))
-  await pend.goto('http://127.0.0.1:5199/merge-harness.html#transfer')
+  await pend.goto(`http://127.0.0.1:${process.env.E2E_PORT || 5199}/merge-harness.html#transfer`)
   await pend.waitForSelector('.xfer .dev.pend')
   const pt = await pend.locator('.dev.pend').innerText()
   ok('待配对的设备显示在发送对象里，带验证码', /小米手机/.test(pt) && /482913/.test(pt), pt)

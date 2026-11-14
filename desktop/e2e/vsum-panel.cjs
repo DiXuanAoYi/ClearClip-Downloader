@@ -7,10 +7,15 @@ const EXT = path.join(__dirname, '../extension')
 const FILES = ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum.js'].map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
+const { soon, settle: flush } = require('./lib.cjs')
 const ok = (name, cond, extra = '') => {
   if (cond) pass++
   else fail++
   console.log(`${cond ? '  ok ' : 'FAIL '} ${name}${cond ? '' : '  ← ' + extra}`)
+}
+const okSoon = async (name, cond, extra) => {
+  const r = await soon(cond, extra)
+  ok(name, r.pass, r.extra)
 }
 
 const YT = 'https://www.youtube.com/watch?v=abc123XYZ_-'
@@ -119,7 +124,6 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       if (!b) throw new Error('没有按钮：' + l)
       b.click()
     }, [label, sel])
-  const settle = (page, ms = 1200) => page.waitForTimeout(ms)
 
 
   // ---- 收到右边：收起成小标签、点开、停在上面预览、拖动换位置、状态提示
@@ -152,68 +156,57 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('收起：展开时面板可见，没有小标签', !s.hide && !s.tabOn && !s.inert)
     ok('收起：标题栏有“收起到右边”按钮', await page.evaluate(() => !!window.__roots.map((r) => r.querySelector('.hd .dockbtn[aria-label="收起到右边"]')).find(Boolean)))
     await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
-    await page.waitForTimeout(300)
-    s = await st(page)
-    ok('收起：面板滑走，只剩右边缘一个小标签', s.hide && s.inert && s.tabOn && s.tab.right === 1280 && s.tab.w === 30 && s.tab.h === 84, JSON.stringify(s))
+    await okSoon('收起：面板滑走，只剩右边缘一个小标签', async () => { s = await st(page); return s.hide && s.inert && s.tabOn && s.tab.right === 1280 && s.tab.w === 30 && s.tab.h === 84 }, async () => JSON.stringify(s))
     ok('收起：小标签默认在窗口高度 38% 附近', Math.abs(s.tab.top + 42 - 0.38 * 800) <= 2, String(s.tab.top))
     ok('收起：文稿还在（没有重新读取）', await page.evaluate(() => /段/.test(window.__roots.map((r) => r.querySelector('.meta')).find(Boolean)?.textContent || '')))
     // 点标签展开
     let c = await tabCenter(page)
     await page.mouse.click(c.x, c.y)
-    await page.waitForTimeout(250)
-    s = await st(page)
-    ok('点小标签：展开（固定），标签消失', !s.hide && !s.peek && !s.tabOn && !s.inert, JSON.stringify(s))
+    await okSoon('点小标签：展开（固定），标签消失', async () => { s = await st(page); return !s.hide && !s.peek && !s.tabOn && !s.inert }, async () => JSON.stringify(s))
     // 快捷键 = 再次注入 vsum.js：展开 ↔ 收起；不会关掉面板
     await page.addScriptTag({ path: FILES[FILES.length - 1] })
-    await page.waitForTimeout(250)
-    ok('快捷键：展开时按一下 → 收起', (await st(page)).hide)
+    await okSoon('快捷键：展开时按一下 → 收起', async () => (await st(page)).hide)
     await page.addScriptTag({ path: FILES[FILES.length - 1] })
-    await page.waitForTimeout(250)
-    ok('快捷键：收起时按一下 → 展开', !(await st(page)).hide && (await page.evaluate(() => !!window.__ccVsum)))
+    await okSoon('快捷键：收起时按一下 → 展开', async () => !(await st(page)).hide && (await page.evaluate(() => !!window.__ccVsum)))
     // 预览：停 0.35 秒弹出来，移开 0.8 秒收回去（先把鼠标挪开：它还停在刚才标签的位置，标签再出现会算“停在上面”）
     await page.mouse.move(600, 300)
     await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
-    await page.waitForTimeout(300)
+    await soon(async () => { const x = await st(page); return x.hide && x.tabOn && x.tab.right === 1280 }, null, 5000) // 等收起动画走完、小标签就位
     c = await tabCenter(page)
     await page.mouse.move(c.x, c.y)
+    // 计时类断言：要等的就是真实时间过去（悬停延时 / 延时收回），不能改成轮询
     await page.waitForTimeout(150)
     ok('预览：只路过 150 毫秒不弹', (await st(page)).hide)
     await page.mouse.move(600, 300)
-    await page.waitForTimeout(100)
+    await page.waitForTimeout(100) // 计时：先让鼠标离开一会儿，悬停计时才会重置
     c = await tabCenter(page)
     await page.mouse.move(c.x, c.y)
-    await page.waitForTimeout(600)
-    s = await st(page)
-    ok('预览：停够 0.35 秒弹出来，带预览条，标签粘在面板左边', s.peek && !s.hide && s.barOn && s.tab.right === 880 && /peek/.test(s.tabCls), JSON.stringify(s))
+    await okSoon('预览：停够 0.35 秒弹出来，带预览条，标签粘在面板左边', async () => { s = await st(page); return s.peek && !s.hide && s.barOn && s.tab.right === 880 && /peek/.test(s.tabCls) }, async () => JSON.stringify(s))
     await page.mouse.move(300, 300)
-    await page.waitForTimeout(400)
+    await page.waitForTimeout(400) // 计时：0.4 秒内还在
     ok('预览：鼠标刚移开 0.4 秒还在', (await st(page)).peek)
-    await page.waitForTimeout(700)
+    await page.waitForTimeout(700) // 计时：累计超过 0.8 秒要收回
     ok('预览：移开超过 0.8 秒收回去', (await st(page)).hide)
     // 预览中点“固定”
     c = await tabCenter(page)
     await page.mouse.move(c.x, c.y)
-    await page.waitForTimeout(600)
+    await soon(async () => { const x = await st(page); return x.peek && x.tab.right === 880 }, null, 5000) // 等悬停预览弹出来（停够 0.35 秒）并滑到位
     await page.evaluate(() => window.__roots.map((r) => r.querySelector('.peekbar button')).find(Boolean).click())
-    await page.waitForTimeout(250)
-    s = await st(page)
-    ok('预览：点“固定”→ 展开，不再自动收回', !s.hide && !s.peek && !s.barOn, JSON.stringify(s))
+    await okSoon('预览：点“固定”→ 展开，不再自动收回', async () => { s = await st(page); return !s.hide && !s.peek && !s.barOn }, async () => JSON.stringify(s))
     await page.mouse.move(300, 300)
-    await page.waitForTimeout(1200)
+    await page.waitForTimeout(1200) // 计时：要确认“过了收回时间也没收”
     ok('固定后鼠标移开也不收', !(await st(page)).hide)
     // 预览中点面板里的任何地方 = 固定
     await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
-    await page.waitForTimeout(300)
+    await soon(async () => { const x = await st(page); return x.hide && x.tabOn && x.tab.right === 1280 }, null, 5000) // 等收起动画走完、小标签就位
     c = await tabCenter(page)
     await page.mouse.move(c.x, c.y)
-    await page.waitForTimeout(600)
+    await soon(async () => { const x = await st(page); return x.peek && x.tab.right === 880 }, null, 5000) // 等悬停预览弹出来（停够 0.35 秒）并滑到位
     await page.mouse.click(1000, 400)
-    await page.waitForTimeout(250)
-    s = await st(page)
-    ok('预览：在面板里点一下也算固定', !s.hide && !s.peek, JSON.stringify(s))
+    await okSoon('预览：在面板里点一下也算固定', async () => { s = await st(page); return !s.hide && !s.peek }, async () => JSON.stringify(s))
     // 拖动换位置：记住，点击不触发展开
     await page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
-    await page.waitForTimeout(300)
+    await soon(async () => { const x = await st(page); return x.hide && x.tabOn && x.tab.right === 1280 }, null, 5000) // 等收起动画走完、小标签就位
     const before = (await st(page)).tab.top
     c = await tabCenter(page)
     await page.mouse.move(c.x, c.y)
@@ -221,9 +214,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.mouse.move(c.x, c.y + 60, { steps: 4 })
     await page.mouse.move(c.x, c.y + 120, { steps: 4 })
     await page.mouse.up()
-    await page.waitForTimeout(250)
-    s = await st(page)
-    ok('拖动：标签上下移动了约 120 像素', Math.abs(s.tab.top - before - 120) <= 3, `${before} → ${s.tab.top}`)
+    await okSoon('拖动：标签上下移动了约 120 像素', async () => { s = await st(page); return Math.abs(s.tab.top - before - 120) <= 3 }, async () => `${before} → ${s.tab.top}`)
     ok('拖动：松手不会当作点击（还是收起）', s.hide && !s.peek, JSON.stringify(s))
     const frac = await page.evaluate(() => window.__store.vsumTabFrac)
     ok('拖动：位置存进了存储', typeof frac === 'number' && Math.abs(frac - (s.tab.top + 42) / 800) < 0.01, String(frac))
@@ -234,8 +225,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       const p2 = await open(YT, { local: { vsumTabFrac: 0.7 } })
       await p2.page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
       await p2.page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
-      await p2.page.waitForTimeout(300)
-      ok('位置记住：新页面标签在 70% 高度', Math.abs((await st(p2.page)).tab.top + 42 - 0.7 * 800) <= 2)
+      await okSoon('位置记住：新页面标签在 70% 高度', async () => Math.abs((await st(p2.page)).tab.top + 42 - 0.7 * 800) <= 2)
       await p2.page.close()
     }
     // 设置：预览关掉 / 打开时默认收起
@@ -246,11 +236,10 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       ok('设置“打开时默认收起”：一打开就是小标签', t.hide && t.tabOn, JSON.stringify(t))
       const cc = await tabCenter(p3.page)
       await p3.page.mouse.move(cc.x, cc.y)
-      await p3.page.waitForTimeout(700)
+      await p3.page.waitForTimeout(700) // 计时：要确认“过了预览延时也没弹”
       ok('设置“鼠标停在标签上预览”关掉后不弹', (await st(p3.page)).hide)
       await p3.page.mouse.click(cc.x, cc.y)
-      await p3.page.waitForTimeout(250)
-      ok('关了预览，点一下照样展开', !(await st(p3.page)).hide)
+      await okSoon('关了预览，点一下照样展开', async () => !(await st(p3.page)).hide)
       await p3.page.close()
     }
     // 状态：没设置大模型 → 琥珀点 + 一句原因
@@ -258,9 +247,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       const p4 = await open(YT, { ready: false })
       await p4.page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
       await p4.page.evaluate(() => window.__roots.map((r) => r.querySelector('.dockbtn')).find(Boolean).click())
-      await p4.page.waitForTimeout(900)
-      const t = await st(p4.page)
-      ok('没设置大模型：收起后标签有琥珀点，弹一句原因', /warn/.test(t.tabCls) && /还没设置大模型/.test(t.toast), JSON.stringify(t))
+      await okSoon('没设置大模型：收起后标签有琥珀点，弹一句原因', async () => { const t = await st(p4.page); return /warn/.test(t.tabCls) && /还没设置大模型/.test(t.toast) }, async () => { const t = await st(p4.page); return JSON.stringify(t) })
       await p4.page.close()
     }
     // 状态：收起时生成好了 → 绿点 + 提示，展开后消失
@@ -276,8 +263,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       ok('生成好了：绿点 + “摘要生成好了 · 点开看”', /fresh/.test(t.tabCls) && /摘要生成好了/.test(t.toast), JSON.stringify(t))
       const cc = await tabCenter(p5.page)
       await p5.page.mouse.click(cc.x, cc.y)
-      await p5.page.waitForTimeout(250)
-      ok('展开后绿点和提示都去掉', (await st(p5.page)).toast === '' && !(await st(p5.page)).tabOn)
+      await okSoon('展开后绿点和提示都去掉', async () => (await st(p5.page)).toast === '' && !(await st(p5.page)).tabOn)
       ok('收起相关操作没有页面报错', p5.errors.length === 0 && errors.length === 0, p5.errors.concat(errors).join('|'))
       await p5.page.close()
     }
@@ -290,8 +276,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '文稿')
     // 点 ＋ 记一条
     await page.evaluate(() => window.__roots.map((r) => r.querySelector('.ln .rec')).find(Boolean).click())
-    await settle(page, 300)
-    ok('点 ＋ 存进了笔记', await page.evaluate(() => window.__store.vsumNotes?.length === 1))
+    await okSoon('点 ＋ 存进了笔记', async () => await page.evaluate(() => window.__store.vsumNotes?.length === 1))
     // 划词
     await page.evaluate(() => {
       const r = window.__roots.find((x) => x.querySelector('.ln'))
@@ -312,8 +297,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const ex = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1).req)
     ok('解释请求带选中文字和上下文', ex.kind === 'explain' && ex.text.length > 0 && typeof ex.context === 'string', JSON.stringify(ex).slice(0, 160))
     await clickText(page, '存为笔记')
-    await settle(page, 300)
-    ok('划词存为笔记（原文）', await page.evaluate(() => window.__store.vsumNotes.length === 2))
+    await okSoon('划词存为笔记（原文）', async () => await page.evaluate(() => window.__store.vsumNotes.length === 2))
     // 顺句
     await clickText(page, '顺句')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('还原顺句前')), null, { timeout: 8000 })
@@ -326,8 +310,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, 'AI 整理')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('整理后的完整句子')), null, { timeout: 8000 })
     await clickText(page, '替换')
-    await settle(page, 300)
-    ok('AI 整理后替换原文', await page.evaluate(() => window.__store.vsumNotes.some((n) => n.text === '整理后的完整句子。')))
+    await okSoon('AI 整理后替换原文', async () => await page.evaluate(() => window.__store.vsumNotes.some((n) => n.text === '整理后的完整句子。')))
     // 导出
     const dl = page.waitForEvent('download', { timeout: 5000 }).catch(() => null)
     await clickText(page, '导出笔记 (.md)')
@@ -345,8 +328,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       sel.value = 'dark'
       sel.dispatchEvent(new Event('change'))
     })
-    await settle(page, 300)
-    ok('外观：选“深色”后面板用深色样式', await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('style')].some((st) => /@media|#0b1424/.test(st.textContent) && st.textContent.includes('.src') && !st.textContent.includes('@media'))) ))
+    await okSoon('外观：选“深色”后面板用深色样式', async () => await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('style')].some((st) => /@media|#0b1424/.test(st.textContent) && st.textContent.includes('.src') && !st.textContent.includes('@media'))) ))
     ok('笔记流程无页面错误', errors.length === 0, errors.join('|'))
     await page.close()
   }
@@ -359,8 +341,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     page.on('request', (r) => seen.push(r.url()))
     await page.evaluate(() => history.pushState({}, '', '/watch?v=second12345'))
     await page.waitForFunction(() => true)
-    await settle(page, 2500)
-    ok('切换视频后自动去读新视频的字幕', seen.some((u) => u.includes('v=second12345')), seen.join('|'))
+    await okSoon('切换视频后自动去读新视频的字幕', async () => seen.some((u) => u.includes('v=second12345')), async () => seen.join('|'))
     ok('切换后面板重新显示文稿', /段/.test(await text(page, '.meta')))
     ok('切换视频流程无页面错误', errors.length === 0, errors.join('|'))
     await page.close()
@@ -377,12 +358,9 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const bar = await text(page, '#cleanbar')
     ok('文稿显示清理后的（少了一行），并提示“已清理 3 处”', n1 === 2 && /已清理 3 处/.test(bar) && /非语音说明 1 行/.test(bar) && /口水词 1 行/.test(bar), n1 + ' ' + bar)
     await page.evaluate(() => window.__roots.map((r) => r.querySelector('#cleantoggle')).find(Boolean).click())
-    await settle(page, 300)
-    const n2 = await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))
-    ok('点“显示原始”换回原始文稿（3 行），按钮变成“显示清理后”', n2 === 3 && /显示清理后/.test(await text(page, '#cleantoggle')), String(n2))
+    await okSoon('点“显示原始”换回原始文稿（3 行），按钮变成“显示清理后”', async () => { const n2 = await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0)); return n2 === 3 && /显示清理后/.test(await text(page, '#cleantoggle')) }, async () => { const n2 = await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0)); return String(n2) })
     await page.evaluate(() => window.__roots.map((r) => r.querySelector('#cleantoggle')).find(Boolean).click())
-    await settle(page, 300)
-    ok('再点一下回到清理后的', (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 2)
+    await okSoon('再点一下回到清理后的', async () => (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 2)
     ok('预处理没有页面错误', errors.length === 0, errors.join('|'))
     await page.close()
   }
@@ -439,32 +417,29 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('悬停单词时视频暂停', await page.evaluate(() => document.querySelector('video').paused === true))
     ok('以前的整句译文小窗没有了', await page.evaluate(() => !window.__roots.some((r) => r.querySelector('.hov'))))
     await page.mouse.move(5, 5)
-    await settle(page, 600)
-    ok('鼠标移开后查词浮窗关闭', !(await popBox()))
-    ok('词卡关闭后视频接着播', await page.evaluate(() => document.querySelector('video').paused === false))
+    await okSoon('鼠标移开后查词浮窗关闭', async () => !(await popBox()))
+    await okSoon('词卡关闭后视频接着播', async () => await page.evaluate(() => document.querySelector('video').paused === false))
     // 用户自己暂停的视频：悬停、移开都不去动它
     await page.evaluate(() => document.querySelector('video').pause())
     const w0b = await wordAt(0)
     await page.mouse.move(w0b.x, w0b.y)
-    await settle(page, 900)
+    await page.waitForTimeout(900) // 必要：断言“悬停 / 移开都没去动视频”，要让悬停延时和收回延时真实走完
     await page.mouse.move(5, 5)
-    await settle(page, 900)
-    ok('用户自己暂停的视频，悬停和移开后仍然是暂停', await page.evaluate(() => document.querySelector('video').paused === true))
+    await okSoon('用户自己暂停的视频，悬停和移开后仍然是暂停', async () => await page.evaluate(() => document.querySelector('video').paused === true))
     await page.evaluate(() => document.querySelector('video').play())
     await page.evaluate(() => {
       const i = window.__roots.map((r) => r.querySelector('input#tsearch')).find(Boolean)
       i.value = 'rust'
       i.dispatchEvent(new Event('input'))
     })
-    await settle(page, 300)
-    ok('搜索：全部行保留，命中的行加亮并标出词', (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 3 && (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln.hit mark').length, 0))) >= 1)
+    await okSoon('搜索：全部行保留，命中的行加亮并标出词', async () => (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln').length, 0))) === 3 && (await page.evaluate(() => window.__roots.reduce((n, r) => n + r.querySelectorAll('.ln.hit mark').length, 0))) >= 1)
     ok('搜索：显示 1/1 计数', /1\/1/.test(await text(page)))
     await page.evaluate(() => {
       const i = window.__roots.map((r) => r.querySelector('input#tsearch')).find(Boolean)
       i.value = ''
       i.dispatchEvent(new Event('input'))
     })
-    await settle(page, 300)
+    await flush(page)
     // 文稿显示：原文 / 译文 / 双语（没翻译时是原文，选译文或双语才去翻译，原文始终保留）
     const viewSel = () => window.__roots.flatMap((r) => [...r.querySelectorAll('select')]).find((x) => [...x.options].some((o) => o.value === 'tr') && x.options.length === 3)
     ok('文稿里有“原文 / 译文 / 双语”选择，没翻译时停在原文', await page.evaluate((f) => { const x = eval('(' + f + ')')(); return x && [...x.options].map((o) => o.text).join('|') === '原文|译文|双语' && x.value === 'orig' }, viewSel.toString()))
@@ -483,21 +458,18 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('双语查词请求带上这一句的译文', lk2 && /^译:/.test(lk2.trans || ''), JSON.stringify(lk2))
     ok('悬停的单词本身也标出来', await page.evaluate(() => window.__roots.some((r) => r.querySelector('.ln .mn i.w.on'))))
     await page.mouse.move(5, 5)
-    await settle(page, 600)
-    ok('浮窗关闭后译文高亮去掉、文字不变', await page.evaluate(() => !window.__roots.some((r) => r.querySelector('mark.al, i.w.on')) && window.__roots.some((r) => /^译:Welcome/.test(r.querySelector('.ln .tr')?.textContent || ''))))
+    await okSoon('浮窗关闭后译文高亮去掉、文字不变', async () => await page.evaluate(() => !window.__roots.some((r) => r.querySelector('mark.al, i.w.on')) && window.__roots.some((r) => /^译:Welcome/.test(r.querySelector('.ln .tr')?.textContent || ''))))
     ok('翻译后每行下方有译文', true)
     // 生词页：切到这一页就主动刷新（不再有“刷新”按钮）
     const vocabCalls = () => page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-vocab' && c.op === 'list').length)
     const v0 = await vocabCalls()
     const tabVocab = () => page.evaluate(() => [...window.__roots.flatMap((r) => [...r.querySelectorAll('.tabs button')])].find((b) => /^生词/.test(b.textContent.trim())).click())
     await tabVocab()
-    await settle(page, 300)
+    await soon(async () => (await vocabCalls()) > v0, null, 5000) // 等“生词”页向后台要了一次
     const v1 = await vocabCalls()
     await clickText(page, '文稿')
     await tabVocab()
-    await settle(page, 300)
-    const v2 = await vocabCalls()
-    ok('每次切到“生词”都向清影要最新的生词', v1 > v0 && v2 > v1, `${v0} → ${v1} → ${v2}`)
+    await okSoon('每次切到“生词”都向清影要最新的生词', async () => { const v2 = await vocabCalls(); return v1 > v0 && v2 > v1 }, async () => { const v2 = await vocabCalls(); return `${v0} → ${v1} → ${v2}` })
     ok('生词页没有“刷新”按钮', !(await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('.acts button, button')].some((b) => b.textContent.trim() === '刷新')))))
     await clickText(page, '文稿')
 
@@ -554,17 +526,13 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('改写请求带格式与摘要 Markdown', rewrite.format === 'xhs' && rewrite.text.includes('这个视频介绍了 Rust') && rewrite.text.includes('t=41s'), rewrite.text?.slice(0, 120))
     // 存进摘录
     await clickText(page, '存进清影的摘录')
-    await settle(page, 300)
-    const note = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-note'))
-    ok('摘录内容是 Markdown 笔记（末尾带来源）', note && note.text.startsWith('# Demo "video"') && note.text.includes('Rust 又快又安全') && /\n来源：.*\nhttps:\/\/www.youtube.com/.test(note.text), note?.text?.slice(-120))
+    await okSoon('摘录内容是 Markdown 笔记（末尾带来源）', async () => { const note = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-note')); return note && note.text.startsWith('# Demo "video"') && note.text.includes('Rust 又快又安全') && /\n来源：.*\nhttps:\/\/www.youtube.com/.test(note.text) }, async () => { const note = await page.evaluate(() => window.__calls.find((c) => c.type === 'cc-note')); return note?.text?.slice(-120) })
 
     // 缓存：同样的摘要不再请求
     const before = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)
     await clickText(page, '摘要')
     await clickText(page, '重新生成')
-    await settle(page, 600)
-    const after = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)
-    ok('相同文稿 + 设置的结果走缓存，不再提交', after === before, `${before} → ${after}`)
+    await okSoon('相同文稿 + 设置的结果走缓存，不再提交', async () => { const after = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length); return after === before }, async () => { const after = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length); return `${before} → ${after}` })
 
     // 关闭
     await clickText(page, '✕')
@@ -583,9 +551,8 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '生成问答卡片')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('Rust 的特点')), null, { timeout: 8000 })
     await clickText(page, '✕')
-    await settle(page, 500)
+    await okSoon('关闭时保存了这个视频的会话', async () => { const saved = await page.evaluate(() => JSON.parse(JSON.stringify(window.__store))); return Object.keys(saved.vsumSessions || {}).length === 1 })
     const saved = await page.evaluate(() => JSON.parse(JSON.stringify(window.__store)))
-    ok('关闭时保存了这个视频的会话', Object.keys(saved.vsumSessions || {}).length === 1)
     await page.close()
 
     const again = await open(YT, { local: saved })
@@ -593,9 +560,8 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await again.page.waitForFunction(() => window.__roots?.some((r) => r.textContent.includes('Rust 的特点')), null, { timeout: 8000 })
     ok('重新打开：回到上次的标签页，问答卡片直接带出', true)
     await clickText(again.page, '摘要')
-    await settle(again.page, 300)
+    await okSoon('重新打开：摘要也在，没有请求清影', async () => { const t = await text(again.page); return /这个视频介绍了 Rust/.test(t) && (await again.page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)) === 0 })
     const t = await text(again.page)
-    ok('重新打开：摘要也在，没有请求清影', /这个视频介绍了 Rust/.test(t) && (await again.page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)) === 0)
     ok('重新打开：提示是已保存的结果', /生成，已保存/.test(t))
     await again.page.close()
   }
@@ -605,11 +571,9 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const { page } = await open(YT, { hold: true })
     await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
     await clickText(page, '生成摘要')
-    await settle(page, 1800)
-    ok('生成中记下了任务', await page.evaluate(() => Object.keys(window.__store.vsumJobs || {}).length === 1))
+    await okSoon('生成中记下了任务', async () => await page.evaluate(() => Object.keys(window.__store.vsumJobs || {}).length === 1))
     await clickText(page, '✕')
-    await settle(page, 1200)
-    ok('关闭面板不会取消任务', await page.evaluate(() => !window.__calls.some((c) => c.type === 'cc-ai-cancel')))
+    await okSoon('关闭面板不会取消任务', async () => await page.evaluate(() => !window.__calls.some((c) => c.type === 'cc-ai-cancel')))
     const saved = await page.evaluate(() => JSON.parse(JSON.stringify(window.__store)))
     await page.close()
 
@@ -670,9 +634,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('转写完成后文稿有 2 段、轨道是清影转写', /2 段/.test(await text(page, '.meta')) && /清影转写/.test(await text(page, '.meta')), await text(page, '.meta'))
     const before = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').length)
     await clickText(page, '生成摘要').catch(() => {})
-    await settle(page, 400)
-    const sumReq = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1)?.req)
-    ok('转写出的文稿可以继续做摘要', sumReq && (sumReq.kind === 'summary' ? sumReq.lines.length === 2 && sumReq.lines[1].t === 5000 : before > 0), JSON.stringify(sumReq)?.slice(0, 200))
+    await okSoon('转写出的文稿可以继续做摘要', async () => { const sumReq = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1)?.req); return sumReq && (sumReq.kind === 'summary' ? sumReq.lines.length === 2 && sumReq.lines[1].t === 5000 : before > 0) }, async () => { const sumReq = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1)?.req); return JSON.stringify(sumReq)?.slice(0, 200) })
     await page.evaluate(() => {})
     await page.close()
   }
@@ -711,12 +673,10 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       window.__roots.map((r) => r.querySelector('#paste')).find(Boolean).value = '[0:00] 第一句\n[0:05] 第二句'
     })
     await clickText(page, '使用粘贴的文字')
-    await settle(page, 300)
-    const saved = await page.evaluate(() => window.__store.vsumLocal && Object.values(window.__store.vsumLocal)[0]?.data?.lines?.length)
-    ok('粘贴的文字按视频记住', saved >= 1, String(saved))
+    await okSoon('粘贴的文字按视频记住', async () => { const saved = await page.evaluate(() => window.__store.vsumLocal && Object.values(window.__store.vsumLocal)[0]?.data?.lines?.length); return saved >= 1 }, async () => { const saved = await page.evaluate(() => window.__store.vsumLocal && Object.values(window.__store.vsumLocal)[0]?.data?.lines?.length); return String(saved) })
     // 导入 / 粘贴的文稿：带时间的显示时间戳；没有时间戳的行文字要占满整行（以前被挤进 48px 的时间列，一个单词一行）
     await clickText(page, '文稿')
-    await settle(page, 200)
+    await flush(page)
     const w = await page.evaluate(() => {
       const ln = window.__roots.map((r) => r.querySelector('#lines .ln')).find(Boolean)
       return ln ? { cls: ln.className, text: (ln.querySelector('.one, .mn')?.parentElement || ln).getBoundingClientRect().width, row: ln.getBoundingClientRect().width } : null
@@ -739,9 +699,8 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       inp.files = dt.files
       inp.dispatchEvent(new Event('change'))
     }, srt)
-    await settle(page, 600)
     await clickText(page, '文稿')
-    await settle(page, 300)
+    await page.waitForFunction(() => window.__roots.some((r) => r.querySelectorAll('#lines .ln').length >= 2), null, { timeout: 8000 }) // 等导入的字幕解析、渲染出来
     const info = await page.evaluate(() => {
       const root = window.__roots.find((r) => r.querySelector('#lines'))
       const lns = root ? [...root.querySelectorAll('#lines .ln')] : []
@@ -761,7 +720,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const { page } = await open(YT)
     await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
     await clickText(page, '文稿')
-    await settle(page, 300)
+    await flush(page)
     const box = () => page.evaluate(() => window.__roots.flatMap((r) => [...r.querySelectorAll('label.mute input[type=checkbox]')]).find((i) => i.parentElement.textContent.includes('显示在视频上')))
     ok('文稿页有“显示在视频上”', !!(await box()))
     // 字幕层开着但字幕被关掉：重新勾选要调用 show()
@@ -778,9 +737,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('取消勾选：字幕层关闭', await page.evaluate(() => !globalThis.ccSubLayerRun))
     const n0 = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-sublayer-open').length)
     await tick(true)
-    await settle(page, 200)
-    const n1 = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-sublayer-open').length)
-    ok('刚取消又勾上：立刻重新打开字幕层（不被 4 秒防重复挡住）', n1 > n0, `${n0} → ${n1}`)
+    await okSoon('刚取消又勾上：立刻重新打开字幕层（不被 4 秒防重复挡住）', async () => { const n1 = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-sublayer-open').length); return n1 > n0 }, async () => { const n1 = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-sublayer-open').length); return `${n0} → ${n1}` })
     await page.evaluate(() => {
       window.__shown = 0
       globalThis.ccSubLayerRun = { destroy() {}, show() { window.__shown++ }, setLines() {} }
@@ -795,7 +752,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const { page } = await open(YT + '&notracks=1', { subs: false, stream: true, streamHold: true })
     await page.waitForFunction(() => window.__roots?.some((r) => /识别中 50%/.test(r.textContent)), null, { timeout: 8000 })
     await clickText(page, '文稿')
-    await settle(page, 300)
+    await flush(page)
     await page.evaluate(() => window.__roots.map((r) => r.querySelector('#lines .ln')).find(Boolean).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
     ok('识别中双击一句：变成输入框', await page.evaluate(() => window.__roots.some((r) => r.querySelector('#lines textarea.ledit'))))
     await page.evaluate(() => {
@@ -803,8 +760,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       ta.value = '大家好，今天讲讲 Rusty。'
       ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
-    await settle(page, 1800)
-    ok('识别中改的字，新一批结果来了也还在', (await text(page, '#lines')).includes('Rusty'))
+    await okSoon('识别中改的字，新一批结果来了也还在', async () => (await text(page, '#lines')).includes('Rusty'))
     await page.evaluate(() => (window.__release = true))
     await page.waitForFunction(() => window.__roots?.some((r) => /2 段/.test(r.querySelector('.meta')?.textContent || '') && !/识别中/.test(r.textContent)), null, { timeout: 10000 })
     ok('识别完成后最终结果里仍是改过的字', (await text(page, '#lines')).includes('Rusty'))
@@ -817,7 +773,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const { page } = await open(YT)
     await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
     await clickText(page, '文稿')
-    await settle(page, 300)
+    await flush(page)
     const first = () => page.evaluate(() => window.__roots.map((r) => r.querySelector('#lines .ln')?.textContent || '').find(Boolean) || '')
     const before = await first()
     await page.evaluate(() => {
@@ -830,8 +786,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       ta.value = '手动改过的第一句'
       ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
-    await settle(page, 300)
-    ok('回车保存：这一句变成新文字', (await first()).includes('手动改过的第一句') && (await first()) !== before, await first())
+    await okSoon('回车保存：这一句变成新文字', async () => (await first()).includes('手动改过的第一句') && (await first()) !== before, async () => await first())
     ok('改动存在本地（下次同一个视频自动带出）', await page.evaluate(() => Object.keys(window.__store.vsumEdits || {}).length === 1))
     ok('改过的句子有标记', await page.evaluate(() => window.__roots.some((r) => r.querySelector('#lines .ln.fx'))))
     // Esc 取消
@@ -841,8 +796,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
       ta.value = '不该保存'
       ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     })
-    await settle(page, 200)
-    ok('Esc 取消：不保存', !(await first()).includes('不该保存'))
+    await okSoon('Esc 取消：不保存', async () => !(await first()).includes('不该保存'))
     // AI 纠错
     await clickText(page, 'AI 纠错')
     await page.waitForFunction(() => window.__roots.some((r) => r.textContent.includes('撤销纠错')), null, { timeout: 8000 })
@@ -862,7 +816,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '生成思维导图')
     await page.waitForFunction(() => window.__roots.some((r) => r.querySelector('.svgbox svg')), null, { timeout: 8000 })
     await clickText(page, '全屏查看 / 缩放')
-    await settle(page, 300)
+    await flush(page)
     const tf = () => page.evaluate(() => window.__roots.map((r) => r.querySelector('.mapview .stage > svg')).find(Boolean)?.style.transform || '')
     const scale = async () => Number((await tf()).match(/scale\(([\d.]+)\)/)?.[1] || 0)
     const s0 = await scale()
@@ -872,8 +826,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     ok('点 + 放大', s1 > s0, `${s0} → ${s1}`)
     await page.mouse.move(640, 400)
     await page.mouse.wheel(0, -300)
-    await settle(page, 200)
-    ok('滚轮放大', (await scale()) > s1)
+    await okSoon('滚轮放大', async () => (await scale()) > s1)
     const t1 = await tf()
     await page.mouse.move(640, 400)
     await page.mouse.down()
@@ -883,8 +836,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await clickText(page, '适应窗口')
     ok('适应窗口还原缩放', Math.abs((await scale()) - s0) < 0.01)
     await page.keyboard.press('Escape')
-    await settle(page, 200)
-    ok('Esc 关闭全屏导图', !(await page.evaluate(() => window.__roots.some((r) => r.querySelector('.mapview')))))
+    await okSoon('Esc 关闭全屏导图', async () => !(await page.evaluate(() => window.__roots.some((r) => r.querySelector('.mapview')))))
     await page.close()
   }
 
@@ -894,8 +846,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.waitForFunction(() => (window.__roots || []).some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
     await clickText(page, '导图')
     await clickText(page, '流程图')
-    await settle(page, 200)
-    ok('导图页里有“思维导图 / 流程图”两个切换', await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('.mapsw button')].map((b) => b.textContent).join('|') === '思维导图|流程图')))
+    await okSoon('导图页里有“思维导图 / 流程图”两个切换', async () => await page.evaluate(() => window.__roots.some((r) => [...r.querySelectorAll('.mapsw button')].map((b) => b.textContent).join('|') === '思维导图|流程图')))
     await clickText(page, '生成流程图')
     await page.waitForFunction(() => window.__roots.some((r) => r.querySelector('.svgbox svg .fn')), null, { timeout: 8000 })
     const n = await page.evaluate(() => window.__roots.map((r) => r.querySelectorAll('.svgbox svg .fn').length).find(Boolean))
@@ -904,14 +855,15 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const req = await page.evaluate(() => window.__calls.filter((c) => c.type === 'cc-ai-run').at(-1)?.req)
     ok('请求的是 flowgraph', req && req.kind === 'flowgraph', JSON.stringify(req && req.kind))
     await clickText(page, '全屏查看 / 缩放')
-    await settle(page, 300)
-    ok('全屏标题和提示说明点节点跳到视频', await page.evaluate(() => window.__roots.some((r) => /点节点跳到视频/.test(r.querySelector('.mapview .hint')?.textContent || ''))))
+    await okSoon('全屏标题和提示说明点节点跳到视频', async () => await page.evaluate(() => window.__roots.some((r) => /点节点跳到视频/.test(r.querySelector('.mapview .hint')?.textContent || ''))))
     await page.evaluate(() => { const v = document.querySelector('video'); window.__seeks = []; Object.defineProperty(v, 'currentTime', { configurable: true, get: () => 0, set: (t) => window.__seeks.push(t) }) })
-    const box = await page.evaluate(() => { const g = window.__roots.map((r) => r.querySelector('.mapview .fn[data-ms="41000"]')).find(Boolean); const b = g.querySelector('rect').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 } })
+    // 全屏有进入动画：等节点位置连续两次读到一样（动画停了）再点，否则会点到半路上的位置
+    const readBox = () => page.evaluate(() => { const g = window.__roots.map((r) => r.querySelector('.mapview .fn[data-ms="41000"]')).find(Boolean); const b = g.querySelector('rect').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 } })
+    let prevBox = null
+    await soon(async () => { const b = await readBox(); const same = prevBox && Math.abs(b.x - prevBox.x) < 0.5 && Math.abs(b.y - prevBox.y) < 0.5; prevBox = b; return same }, null, 5000)
+    const box = await readBox()
     await page.mouse.click(box.x, box.y)
-    await settle(page, 200)
-    const seeks = await page.evaluate(() => window.__seeks)
-    ok('点节点：视频跳到它的时间（0:41）', seeks.length >= 1 && Math.abs(seeks[seeks.length - 1] - 41) < 0.01, JSON.stringify(seeks))
+    await okSoon('点节点：视频跳到它的时间（0:41）', async () => { const seeks = await page.evaluate(() => window.__seeks); return seeks.length >= 1 && Math.abs(seeks[seeks.length - 1] - 41) < 0.01 }, async () => { const seeks = await page.evaluate(() => window.__seeks); return JSON.stringify(seeks) })
     await page.keyboard.press('Escape')
     await page.close()
   }
@@ -932,11 +884,9 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
   {
     const { page } = await open(YT, { ready: false })
     await page.waitForFunction(() => window.__roots?.some((r) => /段/.test(r.querySelector('.meta')?.textContent || '')), null, { timeout: 8000 })
-    await settle(page, 400)
-    ok('未设置大模型：顶部提示', /未设置大模型/.test(await text(page, '.meta')))
+    await okSoon('未设置大模型：顶部提示', async () => /未设置大模型/.test(await text(page, '.meta')))
     await clickText(page, '生成摘要')
-    await settle(page, 600)
-    ok('点生成会提示去设置', await page.evaluate(() => window.__roots.some((r) => /设置 → AI/.test(r.textContent))))
+    await okSoon('点生成会提示去设置', async () => await page.evaluate(() => window.__roots.some((r) => /设置 → AI/.test(r.textContent))))
     await page.close()
   }
 
@@ -948,7 +898,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     const seen = []
     for (const tab of ['摘要', '章节', '文稿', '导图', '问答', '笔记', '生词', '评论', '更多']) {
       await clickText(page, tab)
-      await settle(page, 350)
+      await flush(page)
       const t = await text(page)
       seen.push(`${tab}:${t.replace(/\s+/g, '').length}`)
     }

@@ -1,6 +1,6 @@
 // 批量添加面板 + 队列按批次显示：假后端按命令名回答，测试界面的筛选、勾选、提交和批次操作。
 const { chromium } = require('playwright')
-const PORT = 5199
+const PORT = Number(process.env.E2E_PORT) || 5199
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
