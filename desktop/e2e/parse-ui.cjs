@@ -148,7 +148,7 @@ const init = (result, dark, extra = {}) => `
     await page.mouse.move(5, 5)
     await page.waitForTimeout(300)
     const btn = await page.locator('.foot .el-button').evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color])
-    ok('主按钮：深琥珀底、白字', btn[0] === 'rgb(180, 95, 0)' && btn[1] === 'rgb(255, 255, 255)', btn.join(' '))
+    ok('主按钮：深琥珀底、白字', btn[0] === 'rgb(166, 86, 0)' && btn[1] === 'rgb(255, 255, 255)', btn.join(' '))
     await page.close()
   }
 
