@@ -3,11 +3,11 @@
 /**
  * 只下载 / 保留的时间段（毫秒）。
  */
-export type Clip = { startMs: bigint, 
+export type Clip = { startMs: number, 
 /**
  * 为空表示到结尾
  */
-endMs: bigint | null, 
+endMs: number | null, 
 /**
  * 重新编码，起点精确到帧；默认不重新编码，起点落在前一个关键帧
  */
