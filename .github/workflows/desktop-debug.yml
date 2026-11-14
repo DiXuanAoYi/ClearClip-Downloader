@@ -30,7 +30,7 @@ jobs:
     env:
       ARCH: ${{ inputs.arch || 'x64' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -42,7 +42,7 @@ jobs:
           # 调试版和正式版的编译产物不通用，缓存分开放
           prefix-key: debug-${{ inputs.arch || 'x64' }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -87,7 +87,7 @@ jobs:
           Compress-Archive -Path $dir -DestinationPath "$dir.zip" -Force
           "name=$dir" >> $env:GITHUB_OUTPUT
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.pack.outputs.name }}
           path: ${{ steps.pack.outputs.name }}.zip
@@ -106,7 +106,7 @@ jobs:
           Compress-Archive -Path desktop/extension/* -DestinationPath "$name.zip" -Force
           "name=$name" >> $env:GITHUB_OUTPUT
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.ext.outputs.name }}
           path: ${{ steps.ext.outputs.name }}.zip
