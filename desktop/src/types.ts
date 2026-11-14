@@ -198,6 +198,8 @@ export interface BackupInfo {
   appVersion: string
   createdAt: number
   size: number
+  /** 备份里有、但出于安全不会还原的设置项 */
+  skippedSettings: string[]
 }
 
 export interface DanmakuStyle {

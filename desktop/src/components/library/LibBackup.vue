@@ -91,6 +91,9 @@ async function restore() {
   if (typeof src !== 'string') return
   try {
     const info = await api.backupImport(src)
+    if (info.skippedSettings?.length) {
+      ElMessage.warning({ message: `出于安全，备份里的这些设置不会还原，保留当前的值：${info.skippedSettings.join('、')}`, duration: 10000, showClose: true })
+    }
     await ElMessageBox.confirm(
       `这是清影 ${info.appVersion} 的备份（${formatBytes(info.size)}）。还原会用备份里的媒体库记录、标签、订阅、直播间、设置，以及生词本、术语库、AI 专家、摘录、翻译记忆替换现在的内容（现在的数据会保留一份 .before-restore 副本）。需要重启清影才能生效，现在重启？`,
       '还原备份',
