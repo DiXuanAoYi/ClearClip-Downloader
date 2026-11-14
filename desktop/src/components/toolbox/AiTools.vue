@@ -9,6 +9,8 @@ import type { AiStatus, Chapter, JobSnap } from '../../types'
 import { parseChapterLines } from '../../utils/time'
 import FileInput from './FileInput.vue'
 import { pickKinds } from '../../utils/toolbox'
+import { useTauriEvents } from '../../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const props = defineProps<{ preset?: string[]; mode?: 'transcribe' | 'summarize' | 'correct'; bare?: boolean }>()
 const app = useAppStore()
@@ -55,11 +57,11 @@ const chapterVideo = ref<string[]>([])
 let un: UnlistenFn | undefined
 
 async function refresh() {
-  status.value = await api.aiStatus().catch(() => null)
+  status.value = await api.aiStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
 }
 onMounted(async () => {
   refresh()
-  un = await events.onMediaJobs(onJobs)
+  un = await ev.on(events.onMediaJobs(onJobs))
 })
 onBeforeUnmount(() => un?.())
 watch(mode, refresh)

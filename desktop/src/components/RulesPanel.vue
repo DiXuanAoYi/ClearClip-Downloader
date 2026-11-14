@@ -8,7 +8,7 @@ const rules = defineModel<AutoRule[]>({ required: true })
 const app = useAppStore()
 const platforms = computed(() => app.info?.providers ?? [])
 const presets = ref<NormPreset[]>([])
-onMounted(async () => (presets.value = await api.videoPresets().catch(() => [])))
+onMounted(async () => (presets.value = await api.videoPresets().catch(() => []))) // 忽略：可选数据，取不到就按空处理
 
 function add() {
   rules.value.push({

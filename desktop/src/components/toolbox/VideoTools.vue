@@ -72,7 +72,7 @@ watch(
   files,
   async (list) => {
     info.value = null
-    if (list.length === 1) info.value = await api.mediaInfo(list[0]).catch(() => null)
+    if (list.length === 1) info.value = await api.mediaInfo(list[0]).catch(() => null) // 忽略：可选数据，取不到就按空处理
   },
   { immediate: true },
 )

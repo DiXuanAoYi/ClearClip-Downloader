@@ -34,18 +34,18 @@ function normalizeFeatures(raw) {
   return out
 }
 
-/** 常驻内容脚本：key 是脚本编号，need 判断当前设置下是否要注册。文件在内容脚本里按顺序加载。 */
+/** 常驻内容脚本：key 是脚本编号，need 判断当前设置下是否要注册。文件清单和加载顺序在 files-manifest.js（需要先于本文件加载）。 */
 const RESIDENT_SCRIPTS = [
-  { id: 'cc-float', js: ['content/ui.js', 'content/vdock.js', 'content/float-button.js'], need: (f) => f.floatButton },
-  { id: 'cc-zoom', js: ['content/ui.js', 'content/original.js', 'content/hover-zoom.js'], need: (f) => f.hoverZoom },
-  { id: 'cc-audio', js: ['content/ui.js', 'content/vdock.js', 'content/audio-logic.js', 'content/audio-chain.js', 'content/audio-fx.js'], need: (f) => f.audioFx },
-  { id: 'cc-video', js: ['content/ui.js', 'content/vdock.js', 'content/video-logic.js', 'content/video-control.js'], need: (f) => f.videoMaster && (f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced) },
+  { id: 'cc-float', js: ccFiles.GROUPS.float, need: (f) => f.floatButton },
+  { id: 'cc-zoom', js: ccFiles.GROUPS.zoom, need: (f) => f.hoverZoom },
+  { id: 'cc-audio', js: ccFiles.GROUPS.audio, need: (f) => f.audioFx },
+  { id: 'cc-video', js: ccFiles.GROUPS.video, need: (f) => f.videoMaster && (f.speed || f.speedMemory || f.seek || f.videoTools || f.videoAdvanced) },
   // 解除限制：只在用户开启过的网站里注册（unlockAll 才是所有网站），在页面自己的环境（MAIN）里尽早运行
   // 网页翻译：只在用户设为“自动翻译”的网站里常驻；其他网站点了才注入
-  { id: 'cc-trans', js: ['content/ui.js', 'trans-logic.js', 'content/webtrans.js'], need: (f) => f.webtrans, matches: (_rules, trans) => (trans ? ccTrans.autoMatches(trans) : []) },
-  { id: 'cc-selbar', js: ['content/ui.js', 'selbar-logic.js', 'content/wordcard.js', 'content/selbar.js'], need: (f) => f.selbar },
-  { id: 'cc-write', js: ['content/ui.js', 'writing-logic.js', 'content/writing.js'], need: (f) => f.writing },
-  { id: 'cc-unlock', js: ['content/unlock.js'], need: (f) => f.unlock, world: 'MAIN', runAt: 'document_start', matches: (rules) => unlockMatches(rules) },
+  { id: 'cc-trans', js: ccFiles.GROUPS.trans, need: (f) => f.webtrans, matches: (_rules, trans) => (trans ? ccTrans.autoMatches(trans) : []) },
+  { id: 'cc-selbar', js: ccFiles.GROUPS.selbar, need: (f) => f.selbar },
+  { id: 'cc-write', js: ccFiles.GROUPS.write, need: (f) => f.writing },
+  { id: 'cc-unlock', js: ccFiles.GROUPS.unlock, need: (f) => f.unlock, world: 'MAIN', runAt: 'document_start', matches: (rules) => unlockMatches(rules) },
 ]
 
 const ALL_WEB = ['http://*/*', 'https://*/*']

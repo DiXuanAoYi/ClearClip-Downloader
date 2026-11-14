@@ -6,6 +6,7 @@
   if (globalThis.ccVSession) return
   const api = globalThis.browser ?? globalThis.chrome
   const KEEP = 12
+  const KEEP_BYTES = 2_500_000 // subLayerTrans 总字数上限
   const BATCH = 60
 
   const S = { vk: '', lines: [], track: '', source: '', trans: new Map(), pending: new Map(), subs: new Set(), pv: '' }
@@ -92,16 +93,16 @@
   async function rememberEdit(vk, t, from, to) {
     try {
       const all = (await api.storage.local.get(EDITS_KEY))[EDITS_KEY] || {}
-      const m = { ...(all[vk] || {}) }
-      if (to === from) delete m[`${t}|${from}`]
-      else m[`${t}|${from}`] = to
+      let m = { ...(all[vk] || {}) }
+      delete m[`${t}|${from}`] // 先删再放：最近改的排在最后，超限时丢最早的
+      if (to !== from) m[`${t}|${from}`] = to
+      m = globalThis.ccVsum.trimEdits(m)
       delete all[vk]
       if (Object.keys(m).length) all[vk] = m
-      const keys = Object.keys(all)
-      for (const x of keys.slice(0, Math.max(0, keys.length - 40))) delete all[x]
-      await api.storage.local.set({ [EDITS_KEY]: all })
-    } catch {
-      // 存不了就只在这次有效
+      // 最多记 40 个视频，用得最少的先丢
+      await globalThis.ccUI.storeSet(null, { [EDITS_KEY]: globalThis.ccVsum.lruTrim(all, 40, 1_500_000) })
+    } catch (e) {
+      globalThis.ccUI.log('rememberEdit', e) // 存不了就只在这次有效
     }
   }
   /** 把本地记的改动用到一份刚读到的字幕上 */
@@ -113,7 +114,8 @@
         const to = m[`${l.t}|${l.text}`]
         return to === undefined || to === l.text ? l : { ...l, text: to, src: l.text }
       })
-    } catch {
+    } catch (e) {
+      globalThis.ccUI.log('withEdits', e)
       return lines
     }
   }
@@ -151,12 +153,12 @@
   async function saveCache(target, arr) {
     try {
       const all = (await api.storage.local.get('subLayerTrans')).subLayerTrans || {}
-      all[cacheKey(target)] = arr
-      const keys = Object.keys(all)
-      for (const k of keys.slice(0, Math.max(0, keys.length - KEEP))) delete all[k]
-      await api.storage.local.set({ subLayerTrans: all })
-    } catch {
-      // 存储满了：下次再翻
+      const key = cacheKey(target)
+      delete all[key] // 先删再放：最近用的排在最后，超限时丢最早的
+      all[key] = arr
+      await globalThis.ccUI.storeSet(null, { subLayerTrans: globalThis.ccVsum.lruTrim(all, KEEP, KEEP_BYTES) })
+    } catch (e) {
+      globalThis.ccUI.log('saveCache', e) // 存储满了：下次再翻
     }
   }
 

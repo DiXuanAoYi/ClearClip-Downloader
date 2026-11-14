@@ -1,7 +1,6 @@
 // Markdown 预览页：显示提取结果，可以修改后保存成文件、复制，或存进清影的摘录。
 const $ = (id) => document.getElementById(id)
 const msg = (t, cls = '') => { $('msg').textContent = t; $('msg').className = cls }
-const sessionStore = api.storage.session || api.storage.local
 let data = { title: '', url: '', markdown: '', selection: false, chars: 0 }
 
 async function init() {

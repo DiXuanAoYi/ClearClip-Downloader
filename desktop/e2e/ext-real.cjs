@@ -48,7 +48,7 @@ let t0
     try { return JSON.stringify(await webTransDo(t, 'page-on')) } catch (e) { return 'ERR ' + e.message }
   })
   console.log('page-on ->', r)
-  console.log('inject:', await sw.evaluate(async () => { const t=(await chrome.tabs.query({})).find((x)=>/^http:\/\/127/.test(x.url)); try { const res = await chrome.scripting.executeScript({target:{tabId:t.id},files:TR_FILES}); return JSON.stringify(res)+' | '+JSON.stringify(TR_FILES) } catch(e) { return 'ERR '+e.message } }))
+  console.log('inject:', await sw.evaluate(async () => { const t=(await chrome.tabs.query({})).find((x)=>/^http:\/\/127/.test(x.url)); try { const res = await chrome.scripting.executeScript({target:{tabId:t.id},files:ccFiles.GROUPS.trans}); return JSON.stringify(res)+' | '+JSON.stringify(ccFiles.GROUPS.trans) } catch(e) { return 'ERR '+e.message } }))
   await new Promise((r) => setTimeout(r, 3000))
   console.log('probe:', await sw.evaluate(async () => { const t=(await chrome.tabs.query({})).find((x)=>/^http:\/\/127/.test(x.url)); const res = await chrome.scripting.executeScript({target:{tabId:t.id},func:()=>JSON.stringify({has:!!globalThis.ccWebTrans, ui:!!globalThis.ccUI, tr:document.querySelectorAll('[data-cc-tr]').length, vis:document.visibilityState, txt:document.body.innerText.slice(0,120)})}); return res[0].result }))
   const d = await sw.evaluate(async () => { try { const t0=Date.now(); const x = await translateTexts(['Hello world, this is a test sentence.'], { target: 'zh-CN', engine: 'clearclip', page: {host:'x.com',title:'T',sample:'some sample text here'}, domain: true }); return JSON.stringify(x)+' '+(Date.now()-t0)+'ms' } catch (e) { return 'ERR ' + e.message } })

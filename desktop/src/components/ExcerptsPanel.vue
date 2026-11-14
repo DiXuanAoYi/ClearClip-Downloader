@@ -6,6 +6,9 @@ import { save } from '@tauri-apps/plugin-dialog'
 import { api, errorText, events } from '../api'
 import type { Excerpt } from '../types'
 import { formatDateTime } from '../utils/format'
+import { useTauriEvents } from '../composables/useTauriEvent'
+import { toastErr } from '../utils/toastErr'
+const ev = useTauriEvents()
 
 /**
  * 摘录：清影里所有“记下这段文字”的地方都存到这里——
@@ -19,11 +22,11 @@ const draft = ref('')
 let off: UnlistenFn | undefined
 
 async function load() {
-  list.value = await api.excerptList().catch(() => [])
+  list.value = await api.excerptList().catch(() => []) // 忽略：可选数据，取不到就按空处理
 }
 onMounted(async () => {
   await load()
-  off = await events.onExcerptsChanged(load)
+  off = await ev.on(events.onExcerptsChanged(load))
 })
 onBeforeUnmount(() => off?.())
 
@@ -70,7 +73,7 @@ async function exportMd() {
   try {
     await api.excerptExport(dest)
     ElMessage.success('已导出')
-    api.revealFile(dest).catch(() => {})
+    api.revealFile(dest).catch(toastErr('打开文件夹'))
   } catch (e) {
     ElMessage.error(errorText(e))
   }

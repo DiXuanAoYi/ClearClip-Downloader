@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../api'
 import type { NotifyChannel, NotifySettings } from '../types'
+import { toastErr } from '../utils/toastErr'
 
 const notify = defineModel<NotifySettings>({ required: true })
 const secrets = reactive<Record<string, string>>({})
@@ -45,7 +46,7 @@ async function saveSecret(c: NotifyChannel) {
 
 async function remove(i: number) {
   const c = notify.value.channels[i]
-  await api.secretSet(`notify.${c.id}`, '').catch(() => {})
+  await api.secretSet(`notify.${c.id}`, '').catch(toastErr('清除密钥'))
   notify.value.channels.splice(i, 1)
 }
 

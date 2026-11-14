@@ -393,7 +393,13 @@ pub fn run() {
                 }
             }
 
-            let vault = vault::Vault::open(data_dir.join("vault.bin"), key.key);
+            let vault = vault::Vault::open_with(
+                data_dir.join("vault.bin"),
+                key.key,
+                (!key.persisted).then(|| {
+                    "加密密钥没能保存到系统钥匙串或密钥文件，为避免写出以后解不开的数据，本次运行不保存密钥。请检查数据目录的写入权限后重启。".to_string()
+                }),
+            );
             // 设置了应用锁的，每次启动都先锁住
             let locked = vault.has(security::APPLOCK);
             // 隐私模式：上次异常退出时没来得及清理的记录，启动时补清

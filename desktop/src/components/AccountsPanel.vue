@@ -8,6 +8,8 @@ import { useAppStore } from '../stores/app'
 import type { AccountSummary } from '../types'
 import { formatDateTime, formatRelative } from '../utils/format'
 import { METHOD_NAME, SITE_GUIDES, guideFor, type LoginMethod } from '../utils/siteGuides'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const app = useAppStore()
 const accounts = ref<AccountSummary[]>([])
@@ -86,13 +88,13 @@ let unlistenLogin: UnlistenFn | undefined
 onMounted(async () => {
   await load()
   // 浏览器扩展同步 Cookie、定期检查登录状态后刷新
-  unlistenAccounts = await listen('accounts://updated', load)
+  unlistenAccounts = await ev.on(listen('accounts://updated', load))
   // 登录窗口自动识别到登录完成
-  unlistenLogin = await listen<string>('login://auto-saved', async (e) => {
+  unlistenLogin = await ev.on(listen<string>('login://auto-saved', async (e) => {
     if (e.payload === targetSite.value) loginOpen.value = false
     await load()
     ElMessage.success('已识别到登录，登录状态已自动保存')
-  })
+  }))
 })
 onUnmounted(() => {
   unlistenAccounts?.()

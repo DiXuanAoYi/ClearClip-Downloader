@@ -39,6 +39,29 @@ const RATE_PER_MIN: u32 = 120;
 const SMALL_TIMEOUT: Duration = Duration::from_secs(15);
 /// 手机配对状态“最后活跃”更新的最小间隔（秒）
 const SEEN_EVERY: i64 = 60;
+/// 同时等待电脑上确认的配对请求上限：局域网里任何设备都能发起请求，不设上限会被刷满内存和界面。
+/// 正常家庭网络里同时待确认的设备远不到 10 台，32 留足余量。
+const MAX_PENDING: usize = 32;
+/// 同时处理的连接数上限：每个连接占一个任务和缓冲区，超过时直接断开新连接。
+/// 手机网页同时只有几个请求，文件传输是长连接，128 足够多台设备同时用。
+const MAX_CONNS: usize = 128;
+
+/// 把配对请求放进待确认队列。已有同一设备的请求返回 `Ok(false)`，队列已满返回错误。
+fn push_pending(list: &mut Vec<PairRequest>, req: PairRequest) -> AppResult<bool> {
+    if list.iter().any(|p| p.device_id == req.device_id) {
+        return Ok(false);
+    }
+    if list.len() >= MAX_PENDING {
+        return Err(AppError::invalid("等待确认的配对请求太多了，请先在电脑上处理已有的请求。"));
+    }
+    list.push(req);
+    Ok(true)
+}
+
+/// 取一个连接名额，满了返回 None。
+fn try_admit(sem: &Arc<tokio::sync::Semaphore>) -> Option<tokio::sync::OwnedSemaphorePermit> {
+    sem.clone().try_acquire_owned().ok()
+}
 
 #[derive(Default)]
 pub struct PhoneState {
@@ -334,12 +357,15 @@ pub fn ensure_paired(app: &AppHandle, device: &str, name: &str, peer: &SocketAdd
     }
     let name: String = if name.trim().is_empty() { "手机".into() } else { name.trim().chars().take(40).collect() };
     let mut pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner());
-    if !pending.iter().any(|p| p.device_id == device) {
-        let req = PairRequest { device_id: device.to_string(), name, ip: peer.ip().to_string(), code: pair_code() };
-        pending.push(req.clone());
-        drop(pending);
-        let _ = app.emit(EVT_PAIR_REQUEST, req);
-        tray::show_main(app);
+    let req = PairRequest { device_id: device.to_string(), name, ip: peer.ip().to_string(), code: pair_code() };
+    match push_pending(&mut pending, req.clone()) {
+        Ok(true) => {
+            drop(pending);
+            let _ = app.emit(EVT_PAIR_REQUEST, req);
+            tray::show_main(app);
+        }
+        Ok(false) => {}
+        Err(e) => log::warn!("pair request dropped: {}", e.message),
     }
     false
 }
@@ -420,16 +446,22 @@ pub async fn start(app: &AppHandle) -> AppResult<()> {
     }
     *state.phone.last_error.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let app2 = app.clone();
+    let conns = Arc::new(tokio::sync::Semaphore::new(MAX_CONNS));
     let task = tauri::async_runtime::spawn(async move {
         loop {
             let Ok((sock, peer)) = listener.accept().await else { continue };
             if !is_lan(peer.ip()) {
                 continue;
             }
+            let Some(permit) = try_admit(&conns) else {
+                log::warn!("phone server busy, connection from {} refused", peer.ip());
+                continue;
+            };
             let app = app2.clone();
             // 文件传输可能持续很久，不设总时限；各阶段有各自的超时（读请求头 / 普通接口 15 秒，文件传输 30 秒无数据）
             tokio::spawn(async move {
                 handle(app, sock, peer).await;
+                drop(permit);
             });
         }
     });
@@ -466,9 +498,7 @@ fn restore_pending(app: &AppHandle) {
     let since = db::now() - 86400;
     let mut pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner());
     for r in rows.into_iter().filter(|r| r.created_at > since && !r.device.is_empty()) {
-        if !pending.iter().any(|p| p.device_id == r.device) {
-            pending.push(PairRequest { device_id: r.device, name: r.device_name, ip: String::new(), code: pair_code() });
-        }
+        let _ = push_pending(&mut pending, PairRequest { device_id: r.device, name: r.device_name, ip: String::new(), code: pair_code() });
     }
 }
 
@@ -749,13 +779,13 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                 return;
             }
             match receive(&app, &device, &name, &peer, text) {
-                Some((id, state_name)) => {
+                Ok((id, state_name)) => {
                     if body.reveal && state_name != "pending_pair" {
                         tray::show_main(&app);
                     }
                     json(sock, "200 OK", serde_json::json!({"id": id, "state": state_name})).await
                 }
-                None => json(sock, "500 Internal Server Error", serde_json::json!({"error": "电脑上保存记录失败，请稍后再试"})).await,
+                Err(msg) => json(sock, "503 Service Unavailable", serde_json::json!({"error": msg})).await,
             }
         }
         ("GET", "/api/status") => {
@@ -949,12 +979,18 @@ pub fn receive_trusted(app: &AppHandle, source: &str, device: &str, name: &str, 
 }
 
 /// 收到一条链接：记录到收件箱；已配对的设备直接处理，新设备先请求配对。返回编号和状态。
-fn receive(app: &AppHandle, device: &str, name: &str, peer: &SocketAddr, text: String) -> Option<(i64, String)> {
+fn receive(app: &AppHandle, device: &str, name: &str, peer: &SocketAddr, text: String) -> Result<(i64, String), String> {
     let state = st(app);
     let paired = state.settings().phone.devices.iter().any(|d| d.id == device);
+    if !paired {
+        let pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner());
+        if pending.len() >= MAX_PENDING && !pending.iter().any(|p| p.device_id == device) {
+            return Err("等待确认的配对请求太多了，请先在电脑上处理已有的请求。".into());
+        }
+    }
     let initial = if paired { "resolving" } else { "pending_pair" };
     let source = if device.starts_with("ext-") { "extension" } else { "phone" };
-    let id = inbox::record(app, source, device, name, &text, initial)?;
+    let id = inbox::record(app, source, device, name, &text, initial).ok_or_else(|| "电脑上保存记录失败，请稍后再试".to_string())?;
     if paired {
         let now = db::now();
         let _ = update_phone_settings(app, |p| {
@@ -966,13 +1002,12 @@ fn receive(app: &AppHandle, device: &str, name: &str, peer: &SocketAddr, text: S
     } else {
         let req = PairRequest { device_id: device.to_string(), name: name.to_string(), ip: peer.ip().to_string(), code: pair_code() };
         let mut pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner());
-        if !pending.iter().any(|p| p.device_id == device) {
-            pending.push(req.clone());
+        if let Ok(true) = push_pending(&mut pending, req.clone()) {
             let _ = app.emit(EVT_PAIR_REQUEST, req);
             tray::show_main(app);
         }
     }
-    Some((id, initial.into()))
+    Ok((id, initial.into()))
 }
 
 #[derive(Deserialize)]
@@ -1085,6 +1120,33 @@ mod tests {
         assert_eq!(r.headers.get("x-token").map(String::as_str), Some("tok"));
         assert_eq!(len, 12);
         assert_eq!(url_decode("%E4%B8%AD+a%2"), "中 a%2");
+    }
+
+    fn req(id: &str) -> PairRequest {
+        PairRequest { device_id: id.into(), name: "n".into(), ip: String::new(), code: "123456".into() }
+    }
+
+    #[test]
+    fn pending_pair_queue_is_bounded_and_deduplicated() {
+        let mut list = vec![];
+        for i in 0..MAX_PENDING {
+            assert!(push_pending(&mut list, req(&format!("d{i}"))).unwrap());
+        }
+        assert_eq!(list.len(), MAX_PENDING);
+        // 同一设备重复请求不是错误也不新增
+        assert!(!push_pending(&mut list, req("d0")).unwrap());
+        // 超限返回错误，不增长
+        assert!(push_pending(&mut list, req("overflow")).is_err());
+        assert_eq!(list.len(), MAX_PENDING);
+    }
+
+    #[test]
+    fn connection_slots_are_bounded() {
+        let sem = Arc::new(tokio::sync::Semaphore::new(MAX_CONNS));
+        let held: Vec<_> = (0..MAX_CONNS).map(|_| try_admit(&sem).expect("slot")).collect();
+        assert!(try_admit(&sem).is_none(), "满了不再接新连接");
+        drop(held);
+        assert!(try_admit(&sem).is_some(), "释放后可以再接");
     }
 
     #[test]

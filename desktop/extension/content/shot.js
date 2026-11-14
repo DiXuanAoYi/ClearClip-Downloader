@@ -321,10 +321,19 @@
       try {
         const got = await store.get('vsumNotes')
         const cur = Array.isArray(got && got.vsumNotes) ? got.vsumNotes : []
-        await store.set({ vsumNotes: [...cur, note].slice(-2000) })
+        // 条数和总字数都要限（与视频摘要的笔记同一个上限），超出丢最早的
+        const keep = []
+        let bytes = 0
+        for (const n of [...cur, note].reverse()) {
+          bytes += JSON.stringify(n ?? '').length
+          if (keep.length >= 2000 || (keep.length && bytes > 3_000_000)) break
+          keep.unshift(n)
+        }
+        await store.set({ vsumNotes: keep })
         bNote.textContent = '已存笔记'
         toast(ui, '已存进笔记（视频摘要面板 → 笔记 里能看到）', false, 2200)
-      } catch {
+      } catch (e) {
+        globalThis.ccUI.log('shot note', e)
         toast(ui, '保存失败', true, 1800)
       }
     }

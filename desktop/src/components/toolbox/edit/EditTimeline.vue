@@ -544,7 +544,7 @@ function waveUrl(a: EditAudio): string | undefined {
       .then((f) => {
         if (f) waves[key] = convertFileSrc(f)
       })
-      .catch(() => undefined)
+      .catch(() => undefined) // 忽略：波形图是可选的
   }
   return undefined
 }

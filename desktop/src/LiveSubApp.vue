@@ -4,6 +4,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api } from './api'
 import type { ScreenSub } from './types'
+import { useTauriEvents } from './composables/useTauriEvent'
+const ev = useTauriEvents()
 
 /** 字幕悬浮条：屏幕字幕与系统声音实时字幕共用。按住空白处可拖动，边缘可缩放。 */
 const sub = ref<ScreenSub | null>(null)
@@ -17,7 +19,7 @@ function drag(e: MouseEvent) {
 onMounted(async () => {
   document.documentElement.style.background = 'transparent'
   document.body.style.background = 'transparent'
-  offs = await Promise.all([api.onScreenSub((s) => (sub.value = s.text || (s.draft && s.orig) ? s : null)), api.onScreenHidden((h) => (hidden.value = h))])
+  offs = await Promise.all([ev.on(api.onScreenSub((s) => (sub.value = s.text || (s.draft && s.orig) ? s : null))), ev.on(api.onScreenHidden((h) => (hidden.value = h)))])
 })
 onBeforeUnmount(() => offs.forEach((f) => f()))
 </script>

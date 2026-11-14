@@ -9,6 +9,7 @@ import { formatBytes, formatDateTime, formatDuration } from '../../utils/format'
 import { formatClock } from '../../utils/time'
 import SubtitleTab from './SubtitleTab.vue'
 import SubtitleEditor from './SubtitleEditor.vue'
+import { toastErr } from '../../utils/toastErr'
 
 const props = defineProps<{ modelValue: boolean; item: LibraryItem | null; tags: TagCount[] }>()
 const emit = defineEmits<{ 'update:modelValue': [v: boolean]; changed: [] }>()
@@ -110,7 +111,7 @@ async function split() {
   try {
     const dir = await api.librarySplitScenes(props.item.id, scenes.value)
     ElMessage.success(`已拆分为 ${scenes.value.length} 个文件`)
-    api.revealFile(dir).catch(() => {})
+    api.revealFile(dir).catch(toastErr('打开文件夹'))
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
