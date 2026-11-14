@@ -88,6 +88,32 @@ jobs:
         working-directory: desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
+  # 组件级测试（vitest + jsdom）、覆盖率摘要、前后端命令契约检查。独立的并行任务，暂未加入必需检查
+  frontend-component:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      # 前端 api 里 invoke 的命令名都要在 Rust 的 generate_handler! 列表里（只解析源码）
+      - name: Command contract (frontend invoke vs Rust handlers)
+        run: npm run check:commands
+
+      - name: Component tests with coverage summary
+        run: npm run test:coverage
+
   rust-test:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-22.04
