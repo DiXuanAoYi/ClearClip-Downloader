@@ -1610,475 +1610,633 @@ async fn process_comments(ep: &Endpoint, model: &str, lang: &str, req: &Req, pro
     }))
 }
 
+/// 一次 `process` 调用的环境：端点、模型、请求和算好的输出语言、文稿行。每种请求类型一个方法。
+struct Run<'a> {
+    ep: &'a Endpoint,
+    model: &'a str,
+    default_lang: &'a str,
+    batch: usize,
+    req: &'a Req,
+    progress: Progress<'a>,
+    lang: &'a str,
+    lines: Vec<String>,
+}
+
+impl Run<'_> {
+    async fn summary_or_article(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        let article = req.kind == "article";
+        let lines = if article { req.text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect() } else { self.lines.clone() };
+        let chunks = chunk_lines(&lines, CHUNK_CHARS);
+        if chunks.is_empty() {
+            return Err(AppError::invalid("没有可处理的内容。"));
+        }
+        let system = summary_system(lang, &req.style, !article, false);
+        let n = chunks.len() + usize::from(chunks.len() > 1);
+        let mut parts: Vec<(ai::Summary, Vec<String>)> = vec![];
+        // 某一段偶尔失败（超时 / 限流 / 模型没按格式回）：重试一次，还不行就跳过，别让整份摘要作废；
+        // 全部失败才报第一个真实错误。跳过的段落起点随结果返回，界面会提示。
+        let mut failed: Vec<(u64, u64)> = vec![];
+        let starts: Vec<u64> = chunks.iter().map(|c| chunk_start_ms(c)).collect();
+        let end_all = req.lines.iter().map(|l| l.t).max().unwrap_or(0) + 1000;
+        let mut first_err: Option<AppError> = None;
+        for (i, c) in chunks.iter().enumerate() {
+            progress(i, n)?;
+            let mut got = None;
+            let body = with_overlap(chunks.get(i.wrapping_sub(1)).filter(|_| i > 0), c);
+            for _ in 0..2 {
+                match chat(ep, model, &system, &body).await {
+                    Ok(resp) => match parse_summary(&resp) {
+                        Some(sm) => {
+                            got = Some((sm, parse_keywords(&resp)));
+                            break;
+                        }
+                        None => first_err = first_err.or_else(|| Some(model_err())),
+                    },
+                    Err(e) => first_err = first_err.or(Some(e)),
+                }
+            }
+            match got {
+                Some(p) => parts.push(p),
+                None => failed.push((starts[i], starts.get(i + 1).copied().unwrap_or(end_all))),
+            }
+        }
+        if parts.is_empty() {
+            return Err(first_err.unwrap_or_else(model_err));
+        }
+        let (mut sum, keywords) = if parts.len() == 1 {
+            let (s, k) = parts.remove(0);
+            (s, k)
+        } else {
+            progress(chunks.len(), n)?;
+            let joined =
+                parts.iter().enumerate().map(|(i, (p, _))| format!("Part {}: {}\n{}", i + 1, p.summary, p.points.join("; "))).collect::<Vec<_>>().join("\n\n");
+            let resp = chat(ep, model, &summary_system(lang, &req.style, false, true), &joined).await?;
+            let merged = parse_summary(&resp).unwrap_or_default();
+            let mut kw = parse_keywords(&resp);
+            if kw.is_empty() {
+                kw = merge_unique(parts.iter().map(|(_, k)| k.clone()), 8);
+            }
+            let mut chapters: Vec<crate::model::Chapter> = parts.into_iter().flat_map(|(p, _)| p.chapters).collect();
+            chapters.sort_by_key(|c| c.start_ms);
+            chapters.dedup_by_key(|c| c.start_ms);
+            (ai::Summary { summary: merged.summary, points: merged.points, chapters }, kw)
+        };
+        let total = req.lines.iter().map(|l| l.t).max().unwrap_or(0) + 1000;
+        sum.chapters = ai::close_chapters(sum.chapters, total);
+        progress(n, n)?;
+        Ok(
+            json!({"summary": sum.summary, "points": sum.points, "chapters": sum.chapters, "keywords": keywords, "failed": failed.iter().map(|(a, _)| clock_label(*a)).collect::<Vec<_>>(), "failedRanges": failed}),
+        )
+    }
+
+    async fn mindmap(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        let lines = &self.lines;
+        let chunks = chunk_lines(lines, CHUNK_CHARS);
+        let n = chunks.len() + usize::from(chunks.len() > 1);
+        let system = pick_system(req, mindmap_system(lang));
+        let mut outlines = vec![];
+        for (i, c) in chunks.iter().enumerate() {
+            progress(i, n)?;
+            outlines.push(chat(ep, model, &system, c).await?);
+        }
+        let text = if outlines.len() == 1 {
+            outlines.remove(0)
+        } else {
+            progress(chunks.len(), n)?;
+            let joined = outlines.iter().enumerate().map(|(i, o)| format!("Part {}:\n{o}", i + 1)).collect::<Vec<_>>().join("\n\n");
+            chat(ep, model, &format!("{} The input is several partial outlines of one video; merge them into one.", mindmap_system(lang)), &joined).await?
+        };
+        progress(n, n)?;
+        Ok(json!({"outline": clean_outline(&text).ok_or_else(model_err)?}))
+    }
+
+    async fn flowgraph(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        let lines = &self.lines;
+        let chunks = chunk_lines(lines, CHUNK_CHARS);
+        let system = pick_system(req, flowgraph_system(lang));
+        let mut graphs = vec![];
+        for (i, c) in chunks.iter().enumerate() {
+            progress(i, chunks.len())?;
+            if let Some(g) = parse_flowgraph(&chat(ep, model, &system, c).await?) {
+                graphs.push(g);
+            }
+        }
+        progress(chunks.len(), chunks.len())?;
+        let g = if graphs.len() == 1 { graphs.pop() } else { join_flowgraphs(graphs) };
+        Ok(json!({"flow": g.ok_or_else(model_err)?}))
+    }
+
+    async fn cards_or_quotes(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        let lines = &self.lines;
+        let cards = req.kind == "cards";
+        let chunks = chunk_lines(lines, CHUNK_CHARS);
+        let system = if cards { cards_system(lang) } else { quotes_system(lang) };
+        let mut items: Vec<Value> = vec![];
+        for (i, c) in chunks.iter().enumerate() {
+            progress(i, chunks.len())?;
+            let resp = chat(ep, model, &system, c).await?;
+            items.extend(if cards { parse_cards(&resp) } else { parse_quotes(&resp) });
+        }
+        progress(chunks.len(), chunks.len())?;
+        if items.is_empty() {
+            return Err(model_err());
+        }
+        items.truncate(if cards { 30 } else { 18 });
+        let mut out = serde_json::Map::new();
+        out.insert(if cards { "cards" } else { "quotes" }.into(), Value::Array(items));
+        Ok(Value::Object(out))
+    }
+
+    async fn ask(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        let lines = &self.lines;
+        progress(0, 1)?;
+        let excerpt = relevant_excerpt(lines, &req.question, ASK_CHARS);
+        let mut user = format!("Transcript excerpts:\n{excerpt}\n\n");
+        let recent: Vec<&Turn> = req.history.iter().filter(|t| !t.text.trim().is_empty()).rev().take(6).collect::<Vec<_>>().into_iter().rev().collect();
+        if !recent.is_empty() {
+            user.push_str("Conversation so far:\n");
+            for t in recent {
+                user.push_str(&format!("{}: {}\n", if t.role == "user" { "User" } else { "Assistant" }, t.text.trim()));
+            }
+            user.push('\n');
+        }
+        user.push_str(&format!("Question: {}", req.question.trim()));
+        let answer = chat(ep, model, &pick_system(req, ask_system(lang)), &user).await?;
+        progress(1, 1)?;
+        let answer = answer.trim().to_string();
+        Ok(json!({"refs": extract_refs(&answer), "answer": answer}))
+    }
+
+    async fn ask_comments(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        progress(0, 1)?;
+        let digest = comment_digest(&req.comments);
+        let excerpt = relevant_excerpt(&digest, &req.question, ASK_CHARS);
+        let user = format!("Comments (format: #number|likes|text):\n{excerpt}\n\nQuestion: {}", req.question.trim());
+        let system = format!(
+            "You answer questions about the comment section of a video, using ONLY the comments given. Answer in {lang}, concisely. \
+             Mention how many comments or how popular a view seems when you can tell. If the comments do not contain the answer, say so. Do not invent comments."
+        );
+        let answer = chat(ep, model, &pick_system(req, system), &user).await?;
+        progress(1, 1)?;
+        Ok(json!({"answer": answer.trim()}))
+    }
+
+    async fn translate(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        let batch = self.batch;
+        let cues: Vec<Cue> =
+            req.lines.iter().filter(|l| !l.text.trim().is_empty()).map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] }).collect();
+        // 中文字幕默认译成英文，其他语言译成用户的目标语言；中文输出时补上中英文排版规则
+        let target = if req.lang.trim().is_empty() && is_chinese(&req.lines) { "English" } else { lang };
+        let target = if target.contains('中') {
+            format!("{target} (modern colloquial wording, not translationese; put a space between Chinese and adjacent English words or digits; keep brand names, API, AI and similar terms in English)")
+        } else {
+            target.to_string()
+        };
+        let system = format!("{}{}", ai::translate_system(&target), req.guide);
+        let t = ai::map_cues_g(ep, model, &system, &cues, batch, &req.terms, progress).await?;
+        let out: Vec<Value> = cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
+        Ok(json!({"lines": out, "failed": t.failed}))
+    }
+
+    async fn webtrans(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        let batch = self.batch;
+        // 网页段落 / 划词 / 输入框翻译：行号当时间，译文按行号对回去；本来就是目标语言的段落原样返回
+        let cues: Vec<Cue> =
+            req.lines.iter().filter(|l| !l.text.trim().is_empty()).map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] }).collect();
+        let system = format!("{}{}", with_domain(pick_system(req, webtrans_system(lang)), &req.context), req.guide);
+        let t = ai::map_cues_g(ep, model, &system, &cues, batch.max(8), &req.terms, progress).await?;
+        let out: Vec<Value> = cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
+        Ok(json!({"lines": out, "failed": t.failed}))
+    }
+
+    async fn namer(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let default_lang = self.default_lang;
+        progress(0, 1)?;
+        let n = req.lines.len();
+        let list: Vec<String> = req.lines.iter().map(|l| format!("{}. {}", l.t + 1, l.text.trim())).collect();
+        let page_text: String = req.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(1200).collect();
+        let user = format!("PAGE TITLE: {}\nPAGE TEXT (excerpt): {}\nITEMS:\n{}", req.title.trim(), page_text, list.join("\n"));
+        let resp = chat(ep, model, &namer_system(if req.lang.trim().is_empty() { default_lang } else { req.lang.trim() }), &user).await?;
+        progress(1, 1)?;
+        let names = parse_names(&resp, n).ok_or_else(|| AppError::parser("模型没有按要求返回名字，请重试。"))?;
+        Ok(json!({"names": names}))
+    }
+
+    async fn domain(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        progress(0, 1)?;
+        let user = format!("TITLE: {}\nADDRESS: {}\nTEXT SAMPLE:\n{}", req.title.trim(), req.url.trim(), req.text.trim());
+        let resp = chat(ep, model, &domain_system(), &user).await?;
+        progress(1, 1)?;
+        let v = serde_json::from_str::<Value>(ai::strip_fences(&resp)).unwrap_or_else(|_| json!({}));
+        let g = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").trim().chars().take(400).collect::<String>();
+        Ok(json!({"domain": g("domain"), "note": g("note")}))
+    }
+
+    async fn punctuate(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let batch = self.batch;
+        let cues: Vec<Cue> =
+            req.lines.iter().filter(|l| !l.text.trim().is_empty()).map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] }).collect();
+        let system = format!("{}\nVideo title: {}", pick_system(req, punctuate_system()), req.title.trim());
+        let t = ai::map_cues(ep, model, &system, &cues, batch.max(20), progress).await?;
+        let out: Vec<Value> = cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
+        Ok(json!({"lines": out, "failed": t.failed}))
+    }
+
+    async fn fixasr(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let batch = self.batch;
+        let cues: Vec<Cue> =
+            req.lines.iter().filter(|l| !l.text.trim().is_empty()).map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] }).collect();
+        let system = format!("{}\nVideo title: {}", pick_system(req, fixasr_system()), req.title.trim());
+        let t = ai::map_cues(ep, model, &system, &cues, batch.max(20), progress).await?;
+        let out: Vec<Value> = cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
+        Ok(json!({"lines": out, "failed": t.failed}))
+    }
+
+    async fn answer(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        progress(0, 1)?;
+        let ctx = if req.context.trim().is_empty() { "None" } else { req.context.trim() };
+        let user = format!("PAGE TITLE: {}\nSELECTED TEXT:\n{}\n\nSURROUNDING TEXT:\n{}", req.title.trim(), req.text.trim(), ctx);
+        let system = if req.format == "summarize" { summarize_sel_system(lang) } else { answer_system(lang) };
+        let text = chat(ep, model, &pick_system(req, system), &user).await?;
+        progress(1, 1)?;
+        Ok(json!({"text": text.trim()}))
+    }
+
+    async fn explain(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        progress(0, 1)?;
+        let ctx = if req.context.trim().is_empty() { "None" } else { req.context.trim() };
+        let user = format!("VIDEO: {}\nSELECTED: \"{}\"\nCONTEXT:\n{}\n\nExplain briefly.", req.title.trim(), req.text.trim(), ctx);
+        let text = chat(ep, model, &pick_system(req, explain_system(lang)), &user).await?;
+        progress(1, 1)?;
+        Ok(json!({"text": text.trim()}))
+    }
+
+    async fn imgtrans(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        progress(0, 1)?;
+        let resp = ai::chat_img(ep, model, &crate::imgtrans::system(lang), "Translate the text in this image.", &req.image)
+            .await
+            .map_err(crate::imgtrans::vision_hint)?;
+        progress(1, 1)?;
+        let blocks = crate::imgtrans::parse_blocks(&resp).ok_or_else(model_err)?;
+        Ok(json!({"blocks": blocks}))
+    }
+
+    async fn lookup(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        progress(0, 1)?;
+        let word = req.text.trim();
+        let mut user = format!("WORD: {}\nSENTENCE: {}\nVIDEO: {}", word, req.context.trim(), req.title.trim());
+        let trans: String = req.trans.trim().chars().take(1000).collect();
+        if !trans.is_empty() {
+            user.push_str(&format!("\nTRANSLATION: {trans}"));
+        }
+        let resp = chat(ep, model, &pick_system(req, lookup_system(lang)), &user).await?;
+        progress(1, 1)?;
+        let mut v = serde_json::from_str::<Value>(ai::strip_fences(&resp)).map_err(|_| model_err())?;
+        let r = crate::vocab::rank(word);
+        if let Some(o) = v.as_object_mut() {
+            o.insert("word".into(), json!(word));
+            o.insert("rank".into(), json!(r));
+            o.insert("level".into(), json!(crate::vocab::level(r)));
+            let al = keep_aligned(o.get("aligned").and_then(Value::as_str).unwrap_or(""), &trans);
+            o.insert("aligned".into(), json!(al));
+        }
+        Ok(v)
+    }
+
+    async fn note_or_refine(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        progress(0, 1)?;
+        let refine = req.kind == "refine";
+        let (system, user) = if refine {
+            (refine_system(lang), format!("VIDEO: {}\nNOTE:\n{}", req.title.trim(), req.text.trim()))
+        } else {
+            (note_system(lang), format!("VIDEO: {}\nTARGET:\n{}\n\nFULL CONTEXT:\n{}", req.title.trim(), req.text.trim(), req.context.trim()))
+        };
+        let resp = chat(ep, model, &pick_system(req, system), &user).await?;
+        progress(1, 1)?;
+        let quote = ai::strip_fences(&resp);
+        let parsed = serde_json::from_str::<Value>(quote)
+            .ok()
+            .and_then(|v| v.get("quote").and_then(Value::as_str).map(|q| q.trim().to_string()))
+            .filter(|q| !q.is_empty());
+        // 没按 JSON 返回就把整段话当结果，去掉常见的开头
+        let text = parsed.unwrap_or_else(|| quote.trim().trim_start_matches("quote:").trim().trim_matches('"').to_string());
+        if text.is_empty() {
+            return Err(model_err());
+        }
+        Ok(json!({"quote": text.chars().take(3000).collect::<String>()}))
+    }
+
+    async fn rewrite(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let lang = self.lang;
+        progress(0, 1)?;
+        let text = chat(ep, model, &pick_system(req, rewrite_system(lang, &req.format)), req.text.trim()).await?;
+        progress(1, 1)?;
+        Ok(json!({"text": text.trim()}))
+    }
+
+    async fn reply_read(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        progress(0, 1)?;
+        let r = crate::writing::parse_reply_read(
+            &chat(ep, model, &crate::writing::reply_read_system(), &crate::writing::user_message(&req.write, &req.text)).await?,
+        );
+        progress(1, 1)?;
+        Ok(json!(r))
+    }
+
+    async fn write_reply(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        // 帮我回：每版一个说法（稳妥 / 热情 / 简短），同时发出去；写作窗要三版，扩展按自己的“几个候选”
+        let sources = crate::writing::reply_sources(&req.write, &req.text);
+        let user = crate::writing::user_message(&req.write, &req.text);
+        let n = req.write.candidates.clamp(1, 3) as usize;
+        progress(0, 1)?;
+        let jobs = crate::writing::ANGLES[..n].iter().map(|(angle, _)| {
+            let mut o = req.write.clone();
+            o.reply.angle = angle.to_string();
+            let system = crate::writing::system_prompt(&o);
+            let user = user.clone();
+            async move { chat(ep, model, &system, &user).await }
+        });
+        let got = futures_util::future::join_all(jobs).await;
+        let mut cands: Vec<Value> = Vec::new();
+        let mut seen: Vec<String> = Vec::new();
+        let mut last_err = None;
+        for ((_, label), r) in crate::writing::ANGLES[..n].iter().zip(got) {
+            match r.map(|t| crate::writing::clean_output(&t)) {
+                Ok(t) if !t.is_empty() && !seen.contains(&t) => {
+                    let label = if n > 1 { *label } else { "" };
+                    cands.push(json!({"text": t, "label": label, "guard": crate::writing::guard_reply(&sources, &t)}));
+                    seen.push(t);
+                }
+                Ok(_) => {}
+                Err(e) => last_err = Some(e),
+            }
+        }
+        progress(1, 1)?;
+        if cands.is_empty() {
+            return Err(last_err.unwrap_or_else(model_err));
+        }
+        Ok(json!({"candidates": cands}))
+    }
+
+    async fn write_tweak(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        progress(0, 1)?;
+        let o = &req.write;
+        let t = crate::writing::clean_output(&chat(ep, model, &crate::writing::system_prompt(o), &crate::writing::user_message(o, &req.text)).await?);
+        progress(1, 1)?;
+        if t.is_empty() {
+            return Err(model_err());
+        }
+        let guard = crate::writing::guard_reply(&crate::writing::reply_sources(o, &req.text), &t);
+        Ok(json!({"candidates": [{"text": t, "guard": guard}]}))
+    }
+
+    async fn write_candidates(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        let o = &req.write;
+        let n = o.candidates.clamp(1, 3) as usize;
+        let system = crate::writing::system_prompt(o);
+        let user = crate::writing::user_message(o, &req.text);
+        let mut outs: Vec<String> = Vec::new();
+        for k in 0..n {
+            progress(k, n)?;
+            let sys =
+                if k == 0 { system.clone() } else { format!("{system}\nGive a clearly different version from these earlier ones:\n{}", outs.join("\n---\n")) };
+            let t = crate::writing::clean_output(&chat(ep, model, &sys, &user).await?);
+            if t.is_empty() {
+                return Err(model_err());
+            }
+            if !outs.contains(&t) {
+                outs.push(t);
+            }
+        }
+        progress(n, n)?;
+        // 人设写出来的内容里不该有输入里没有的数字、时间、网址（可能是模型编的）
+        let persona_src = format!("{}\n{}", req.text, o.extra);
+        let cands: Vec<Value> = outs
+            .iter()
+            .map(|t| {
+                let g = if o.action == "persona" { crate::writing::guard_reply(&persona_src, t) } else { crate::writing::guard(&o.action, &req.text, t) };
+                json!({"text": t, "guard": g})
+            })
+            .collect();
+        Ok(json!({"candidates": cands}))
+    }
+
+    async fn style(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        progress(0, 1)?;
+        let resp = chat(ep, model, &crate::writing::style_system(), req.text.trim()).await?;
+        progress(1, 1)?;
+        let style = crate::writing::clean_style(&resp);
+        if style.is_empty() {
+            return Err(AppError::invalid("没有总结出风格，请多给几段你自己写的文字。"));
+        }
+        Ok(json!({"style": style}))
+    }
+
+    async fn grammar(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        progress(0, 1)?;
+        let quick = crate::writing::quick_issues(&req.text);
+        let resp = chat(ep, model, &crate::writing::grammar_system(), req.text.trim()).await;
+        // 模型不可用时，规则发现的问题照样给出
+        let found = match resp {
+            Ok(r) => crate::writing::parse_issues(&r, &req.text),
+            Err(e) if quick.is_empty() => return Err(e),
+            Err(_) => vec![],
+        };
+        let issues = crate::writing::merge_issues(quick, found);
+        progress(1, 1)?;
+        Ok(json!({"issues": issues, "corrected": crate::writing::apply_issues(&req.text, &issues)}))
+    }
+
+    async fn stats(&self) -> AppResult<Value> {
+        let ep = self.ep;
+        let model = self.model;
+        let req = self.req;
+        let progress = self.progress;
+        progress(0, 3)?;
+        let plan_resp = chat(ep, model, &crate::writing::stats_plan_system(), req.text.trim()).await?;
+        let plan = crate::writing::parse_plan(&plan_resp);
+        if plan.is_empty() {
+            progress(3, 3)?;
+            return Ok(json!({"facts": [], "note": "没有找到和这段文字相关、又能从开放数据库查证的统计数据。"}));
+        }
+        let mut facts = Vec::new();
+        let mut failed = 0usize;
+        // 一个国家一次请求：模型编造的国家码只会让它自己查不到，不会拖垮同批的有效国家
+        let plan: Vec<crate::writing::Query> = plan
+            .into_iter()
+            .flat_map(|q| {
+                q.countries.iter().map(|c| crate::writing::Query { code: q.code.clone(), countries: vec![c.clone()], why: q.why.clone() }).collect::<Vec<_>>()
+            })
+            .collect();
+        for (i, q) in plan.iter().enumerate() {
+            progress(i + 1, plan.len() + 1)?;
+            let got = ep.client.get(crate::writing::wb_url(q)).timeout(Duration::from_secs(25)).send().await;
+            let body = match got {
+                Ok(r) if r.status().is_success() => r.text().await.ok(),
+                _ => None,
+            };
+            match body {
+                Some(b) => {
+                    let mut f = crate::writing::parse_wb(&b, q);
+                    facts.append(&mut f);
+                }
+                None => failed += 1,
+            }
+        }
+        progress(plan.len() + 1, plan.len() + 1)?;
+        let note = if facts.is_empty() && failed > 0 {
+            "连不上开放数据库（世界银行开放数据），请检查网络或代理后重试。"
+        } else if facts.is_empty() {
+            "开放数据库里没有这些指标的最新数据。"
+        } else {
+            ""
+        };
+        Ok(json!({"facts": crate::writing::facts_json(&facts), "note": note, "failed": failed}))
+    }
+}
+
 /// 按类型处理，返回给扩展的 JSON。
 pub async fn process(ep: &Endpoint, model: &str, default_lang: &str, batch: usize, req: &Req, progress: Progress<'_>) -> AppResult<Value> {
     let lang = if req.lang.trim().is_empty() { default_lang } else { req.lang.trim() };
     let lang = if lang.is_empty() { "简体中文" } else { lang };
     let lines = fmt_lines(&req.lines);
+    let run = Run { ep, model, default_lang, batch, req, progress, lang, lines };
     match req.kind.as_str() {
-        "summary" | "article" => {
-            let article = req.kind == "article";
-            let lines = if article { req.text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect() } else { lines };
-            let chunks = chunk_lines(&lines, CHUNK_CHARS);
-            if chunks.is_empty() {
-                return Err(AppError::invalid("没有可处理的内容。"));
-            }
-            let system = summary_system(lang, &req.style, !article, false);
-            let n = chunks.len() + usize::from(chunks.len() > 1);
-            let mut parts: Vec<(ai::Summary, Vec<String>)> = vec![];
-            // 某一段偶尔失败（超时 / 限流 / 模型没按格式回）：重试一次，还不行就跳过，别让整份摘要作废；
-            // 全部失败才报第一个真实错误。跳过的段落起点随结果返回，界面会提示。
-            let mut failed: Vec<(u64, u64)> = vec![];
-            let starts: Vec<u64> = chunks.iter().map(|c| chunk_start_ms(c)).collect();
-            let end_all = req.lines.iter().map(|l| l.t).max().unwrap_or(0) + 1000;
-            let mut first_err: Option<AppError> = None;
-            for (i, c) in chunks.iter().enumerate() {
-                progress(i, n)?;
-                let mut got = None;
-                let body = with_overlap(chunks.get(i.wrapping_sub(1)).filter(|_| i > 0), c);
-                for _ in 0..2 {
-                    match chat(ep, model, &system, &body).await {
-                        Ok(resp) => match parse_summary(&resp) {
-                            Some(sm) => {
-                                got = Some((sm, parse_keywords(&resp)));
-                                break;
-                            }
-                            None => first_err = first_err.or_else(|| Some(model_err())),
-                        },
-                        Err(e) => first_err = first_err.or(Some(e)),
-                    }
-                }
-                match got {
-                    Some(p) => parts.push(p),
-                    None => failed.push((starts[i], starts.get(i + 1).copied().unwrap_or(end_all))),
-                }
-            }
-            if parts.is_empty() {
-                return Err(first_err.unwrap_or_else(model_err));
-            }
-            let (mut sum, keywords) = if parts.len() == 1 {
-                let (s, k) = parts.remove(0);
-                (s, k)
-            } else {
-                progress(chunks.len(), n)?;
-                let joined = parts
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (p, _))| format!("Part {}: {}\n{}", i + 1, p.summary, p.points.join("; ")))
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
-                let resp = chat(ep, model, &summary_system(lang, &req.style, false, true), &joined).await?;
-                let merged = parse_summary(&resp).unwrap_or_default();
-                let mut kw = parse_keywords(&resp);
-                if kw.is_empty() {
-                    kw = merge_unique(parts.iter().map(|(_, k)| k.clone()), 8);
-                }
-                let mut chapters: Vec<crate::model::Chapter> = parts.into_iter().flat_map(|(p, _)| p.chapters).collect();
-                chapters.sort_by_key(|c| c.start_ms);
-                chapters.dedup_by_key(|c| c.start_ms);
-                (ai::Summary { summary: merged.summary, points: merged.points, chapters }, kw)
-            };
-            let total = req.lines.iter().map(|l| l.t).max().unwrap_or(0) + 1000;
-            sum.chapters = ai::close_chapters(sum.chapters, total);
-            progress(n, n)?;
-            Ok(
-                json!({"summary": sum.summary, "points": sum.points, "chapters": sum.chapters, "keywords": keywords, "failed": failed.iter().map(|(a, _)| clock_label(*a)).collect::<Vec<_>>(), "failedRanges": failed}),
-            )
-        }
-        "mindmap" => {
-            let chunks = chunk_lines(&lines, CHUNK_CHARS);
-            let n = chunks.len() + usize::from(chunks.len() > 1);
-            let system = pick_system(req, mindmap_system(lang));
-            let mut outlines = vec![];
-            for (i, c) in chunks.iter().enumerate() {
-                progress(i, n)?;
-                outlines.push(chat(ep, model, &system, c).await?);
-            }
-            let text = if outlines.len() == 1 {
-                outlines.remove(0)
-            } else {
-                progress(chunks.len(), n)?;
-                let joined = outlines.iter().enumerate().map(|(i, o)| format!("Part {}:\n{o}", i + 1)).collect::<Vec<_>>().join("\n\n");
-                chat(ep, model, &format!("{} The input is several partial outlines of one video; merge them into one.", mindmap_system(lang)), &joined).await?
-            };
-            progress(n, n)?;
-            Ok(json!({"outline": clean_outline(&text).ok_or_else(model_err)?}))
-        }
-        "flowgraph" => {
-            let chunks = chunk_lines(&lines, CHUNK_CHARS);
-            let system = pick_system(req, flowgraph_system(lang));
-            let mut graphs = vec![];
-            for (i, c) in chunks.iter().enumerate() {
-                progress(i, chunks.len())?;
-                if let Some(g) = parse_flowgraph(&chat(ep, model, &system, c).await?) {
-                    graphs.push(g);
-                }
-            }
-            progress(chunks.len(), chunks.len())?;
-            let g = if graphs.len() == 1 { graphs.pop() } else { join_flowgraphs(graphs) };
-            Ok(json!({"flow": g.ok_or_else(model_err)?}))
-        }
-        "cards" | "quotes" => {
-            let cards = req.kind == "cards";
-            let chunks = chunk_lines(&lines, CHUNK_CHARS);
-            let system = if cards { cards_system(lang) } else { quotes_system(lang) };
-            let mut items: Vec<Value> = vec![];
-            for (i, c) in chunks.iter().enumerate() {
-                progress(i, chunks.len())?;
-                let resp = chat(ep, model, &system, c).await?;
-                items.extend(if cards { parse_cards(&resp) } else { parse_quotes(&resp) });
-            }
-            progress(chunks.len(), chunks.len())?;
-            if items.is_empty() {
-                return Err(model_err());
-            }
-            items.truncate(if cards { 30 } else { 18 });
-            let mut out = serde_json::Map::new();
-            out.insert(if cards { "cards" } else { "quotes" }.into(), Value::Array(items));
-            Ok(Value::Object(out))
-        }
-        "ask" => {
-            progress(0, 1)?;
-            let excerpt = relevant_excerpt(&lines, &req.question, ASK_CHARS);
-            let mut user = format!("Transcript excerpts:\n{excerpt}\n\n");
-            let recent: Vec<&Turn> = req.history.iter().filter(|t| !t.text.trim().is_empty()).rev().take(6).collect::<Vec<_>>().into_iter().rev().collect();
-            if !recent.is_empty() {
-                user.push_str("Conversation so far:\n");
-                for t in recent {
-                    user.push_str(&format!("{}: {}\n", if t.role == "user" { "User" } else { "Assistant" }, t.text.trim()));
-                }
-                user.push('\n');
-            }
-            user.push_str(&format!("Question: {}", req.question.trim()));
-            let answer = chat(ep, model, &pick_system(req, ask_system(lang)), &user).await?;
-            progress(1, 1)?;
-            let answer = answer.trim().to_string();
-            Ok(json!({"refs": extract_refs(&answer), "answer": answer}))
-        }
+        "summary" | "article" => run.summary_or_article().await,
+        "mindmap" => run.mindmap().await,
+        "flowgraph" => run.flowgraph().await,
+        "cards" | "quotes" => run.cards_or_quotes().await,
+        "ask" => run.ask().await,
         "comments" => process_comments(ep, model, lang, req, progress).await,
-        "askcomments" => {
-            progress(0, 1)?;
-            let digest = comment_digest(&req.comments);
-            let excerpt = relevant_excerpt(&digest, &req.question, ASK_CHARS);
-            let user = format!("Comments (format: #number|likes|text):\n{excerpt}\n\nQuestion: {}", req.question.trim());
-            let system = format!(
-                "You answer questions about the comment section of a video, using ONLY the comments given. Answer in {lang}, concisely. \
-                 Mention how many comments or how popular a view seems when you can tell. If the comments do not contain the answer, say so. Do not invent comments."
-            );
-            let answer = chat(ep, model, &pick_system(req, system), &user).await?;
-            progress(1, 1)?;
-            Ok(json!({"answer": answer.trim()}))
-        }
-        "translate" => {
-            let cues: Vec<Cue> = req
-                .lines
-                .iter()
-                .filter(|l| !l.text.trim().is_empty())
-                .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
-                .collect();
-            // 中文字幕默认译成英文，其他语言译成用户的目标语言；中文输出时补上中英文排版规则
-            let target = if req.lang.trim().is_empty() && is_chinese(&req.lines) { "English" } else { lang };
-            let target = if target.contains('中') {
-                format!("{target} (modern colloquial wording, not translationese; put a space between Chinese and adjacent English words or digits; keep brand names, API, AI and similar terms in English)")
-            } else {
-                target.to_string()
-            };
-            let system = format!("{}{}", ai::translate_system(&target), req.guide);
-            let t = ai::map_cues_g(ep, model, &system, &cues, batch, &req.terms, progress).await?;
-            let out: Vec<Value> =
-                cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
-            Ok(json!({"lines": out, "failed": t.failed}))
-        }
-        "webtrans" => {
-            // 网页段落 / 划词 / 输入框翻译：行号当时间，译文按行号对回去；本来就是目标语言的段落原样返回
-            let cues: Vec<Cue> = req
-                .lines
-                .iter()
-                .filter(|l| !l.text.trim().is_empty())
-                .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
-                .collect();
-            let system = format!("{}{}", with_domain(pick_system(req, webtrans_system(lang)), &req.context), req.guide);
-            let t = ai::map_cues_g(ep, model, &system, &cues, batch.max(8), &req.terms, progress).await?;
-            let out: Vec<Value> =
-                cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
-            Ok(json!({"lines": out, "failed": t.failed}))
-        }
-        "namer" => {
-            progress(0, 1)?;
-            let n = req.lines.len();
-            let list: Vec<String> = req.lines.iter().map(|l| format!("{}. {}", l.t + 1, l.text.trim())).collect();
-            let page_text: String = req.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(1200).collect();
-            let user = format!("PAGE TITLE: {}\nPAGE TEXT (excerpt): {}\nITEMS:\n{}", req.title.trim(), page_text, list.join("\n"));
-            let resp = chat(ep, model, &namer_system(if req.lang.trim().is_empty() { default_lang } else { req.lang.trim() }), &user).await?;
-            progress(1, 1)?;
-            let names = parse_names(&resp, n).ok_or_else(|| AppError::parser("模型没有按要求返回名字，请重试。"))?;
-            Ok(json!({"names": names}))
-        }
-        "domain" => {
-            progress(0, 1)?;
-            let user = format!("TITLE: {}\nADDRESS: {}\nTEXT SAMPLE:\n{}", req.title.trim(), req.url.trim(), req.text.trim());
-            let resp = chat(ep, model, &domain_system(), &user).await?;
-            progress(1, 1)?;
-            let v = serde_json::from_str::<Value>(ai::strip_fences(&resp)).unwrap_or_else(|_| json!({}));
-            let g = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").trim().chars().take(400).collect::<String>();
-            Ok(json!({"domain": g("domain"), "note": g("note")}))
-        }
-        "punctuate" => {
-            let cues: Vec<Cue> = req
-                .lines
-                .iter()
-                .filter(|l| !l.text.trim().is_empty())
-                .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
-                .collect();
-            let system = format!("{}\nVideo title: {}", pick_system(req, punctuate_system()), req.title.trim());
-            let t = ai::map_cues(ep, model, &system, &cues, batch.max(20), progress).await?;
-            let out: Vec<Value> =
-                cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
-            Ok(json!({"lines": out, "failed": t.failed}))
-        }
-        "fixasr" => {
-            let cues: Vec<Cue> = req
-                .lines
-                .iter()
-                .filter(|l| !l.text.trim().is_empty())
-                .map(|l| Cue { start: l.t, end: l.t + 1, lines: vec![l.text.trim().to_string()] })
-                .collect();
-            let system = format!("{}\nVideo title: {}", pick_system(req, fixasr_system()), req.title.trim());
-            let t = ai::map_cues(ep, model, &system, &cues, batch.max(20), progress).await?;
-            let out: Vec<Value> =
-                cues.iter().zip(&t.texts).map(|(c, tr)| json!({"t": c.start, "text": tr.clone().unwrap_or_else(|| c.lines.join(" "))})).collect();
-            Ok(json!({"lines": out, "failed": t.failed}))
-        }
-        "answer" => {
-            progress(0, 1)?;
-            let ctx = if req.context.trim().is_empty() { "None" } else { req.context.trim() };
-            let user = format!("PAGE TITLE: {}\nSELECTED TEXT:\n{}\n\nSURROUNDING TEXT:\n{}", req.title.trim(), req.text.trim(), ctx);
-            let system = if req.format == "summarize" { summarize_sel_system(lang) } else { answer_system(lang) };
-            let text = chat(ep, model, &pick_system(req, system), &user).await?;
-            progress(1, 1)?;
-            Ok(json!({"text": text.trim()}))
-        }
-        "explain" => {
-            progress(0, 1)?;
-            let ctx = if req.context.trim().is_empty() { "None" } else { req.context.trim() };
-            let user = format!("VIDEO: {}\nSELECTED: \"{}\"\nCONTEXT:\n{}\n\nExplain briefly.", req.title.trim(), req.text.trim(), ctx);
-            let text = chat(ep, model, &pick_system(req, explain_system(lang)), &user).await?;
-            progress(1, 1)?;
-            Ok(json!({"text": text.trim()}))
-        }
-        "imgtrans" => {
-            progress(0, 1)?;
-            let resp = ai::chat_img(ep, model, &crate::imgtrans::system(lang), "Translate the text in this image.", &req.image)
-                .await
-                .map_err(crate::imgtrans::vision_hint)?;
-            progress(1, 1)?;
-            let blocks = crate::imgtrans::parse_blocks(&resp).ok_or_else(model_err)?;
-            Ok(json!({"blocks": blocks}))
-        }
-        "lookup" => {
-            progress(0, 1)?;
-            let word = req.text.trim();
-            let mut user = format!("WORD: {}\nSENTENCE: {}\nVIDEO: {}", word, req.context.trim(), req.title.trim());
-            let trans: String = req.trans.trim().chars().take(1000).collect();
-            if !trans.is_empty() {
-                user.push_str(&format!("\nTRANSLATION: {trans}"));
-            }
-            let resp = chat(ep, model, &pick_system(req, lookup_system(lang)), &user).await?;
-            progress(1, 1)?;
-            let mut v = serde_json::from_str::<Value>(ai::strip_fences(&resp)).map_err(|_| model_err())?;
-            let r = crate::vocab::rank(word);
-            if let Some(o) = v.as_object_mut() {
-                o.insert("word".into(), json!(word));
-                o.insert("rank".into(), json!(r));
-                o.insert("level".into(), json!(crate::vocab::level(r)));
-                let al = keep_aligned(o.get("aligned").and_then(Value::as_str).unwrap_or(""), &trans);
-                o.insert("aligned".into(), json!(al));
-            }
-            Ok(v)
-        }
-        "note" | "refine" => {
-            progress(0, 1)?;
-            let refine = req.kind == "refine";
-            let (system, user) = if refine {
-                (refine_system(lang), format!("VIDEO: {}\nNOTE:\n{}", req.title.trim(), req.text.trim()))
-            } else {
-                (note_system(lang), format!("VIDEO: {}\nTARGET:\n{}\n\nFULL CONTEXT:\n{}", req.title.trim(), req.text.trim(), req.context.trim()))
-            };
-            let resp = chat(ep, model, &pick_system(req, system), &user).await?;
-            progress(1, 1)?;
-            let quote = ai::strip_fences(&resp);
-            let parsed = serde_json::from_str::<Value>(quote)
-                .ok()
-                .and_then(|v| v.get("quote").and_then(Value::as_str).map(|q| q.trim().to_string()))
-                .filter(|q| !q.is_empty());
-            // 没按 JSON 返回就把整段话当结果，去掉常见的开头
-            let text = parsed.unwrap_or_else(|| quote.trim().trim_start_matches("quote:").trim().trim_matches('"').to_string());
-            if text.is_empty() {
-                return Err(model_err());
-            }
-            Ok(json!({"quote": text.chars().take(3000).collect::<String>()}))
-        }
-        "rewrite" => {
-            progress(0, 1)?;
-            let text = chat(ep, model, &pick_system(req, rewrite_system(lang, &req.format)), req.text.trim()).await?;
-            progress(1, 1)?;
-            Ok(json!({"text": text.trim()}))
-        }
-        "replyread" => {
-            progress(0, 1)?;
-            let r = crate::writing::parse_reply_read(
-                &chat(ep, model, &crate::writing::reply_read_system(), &crate::writing::user_message(&req.write, &req.text)).await?,
-            );
-            progress(1, 1)?;
-            Ok(json!(r))
-        }
-        "write" if req.write.action == "reply" => {
-            // 帮我回：每版一个说法（稳妥 / 热情 / 简短），同时发出去；写作窗要三版，扩展按自己的“几个候选”
-            let sources = crate::writing::reply_sources(&req.write, &req.text);
-            let user = crate::writing::user_message(&req.write, &req.text);
-            let n = req.write.candidates.clamp(1, 3) as usize;
-            progress(0, 1)?;
-            let jobs = crate::writing::ANGLES[..n].iter().map(|(angle, _)| {
-                let mut o = req.write.clone();
-                o.reply.angle = angle.to_string();
-                let system = crate::writing::system_prompt(&o);
-                let user = user.clone();
-                async move { chat(ep, model, &system, &user).await }
-            });
-            let got = futures_util::future::join_all(jobs).await;
-            let mut cands: Vec<Value> = Vec::new();
-            let mut seen: Vec<String> = Vec::new();
-            let mut last_err = None;
-            for ((_, label), r) in crate::writing::ANGLES[..n].iter().zip(got) {
-                match r.map(|t| crate::writing::clean_output(&t)) {
-                    Ok(t) if !t.is_empty() && !seen.contains(&t) => {
-                        let label = if n > 1 { *label } else { "" };
-                        cands.push(json!({"text": t, "label": label, "guard": crate::writing::guard_reply(&sources, &t)}));
-                        seen.push(t);
-                    }
-                    Ok(_) => {}
-                    Err(e) => last_err = Some(e),
-                }
-            }
-            progress(1, 1)?;
-            if cands.is_empty() {
-                return Err(last_err.unwrap_or_else(model_err));
-            }
-            Ok(json!({"candidates": cands}))
-        }
-        "write" if req.write.action == "tweak" => {
-            progress(0, 1)?;
-            let o = &req.write;
-            let t = crate::writing::clean_output(&chat(ep, model, &crate::writing::system_prompt(o), &crate::writing::user_message(o, &req.text)).await?);
-            progress(1, 1)?;
-            if t.is_empty() {
-                return Err(model_err());
-            }
-            let guard = crate::writing::guard_reply(&crate::writing::reply_sources(o, &req.text), &t);
-            Ok(json!({"candidates": [{"text": t, "guard": guard}]}))
-        }
-        "write" => {
-            let o = &req.write;
-            let n = o.candidates.clamp(1, 3) as usize;
-            let system = crate::writing::system_prompt(o);
-            let user = crate::writing::user_message(o, &req.text);
-            let mut outs: Vec<String> = Vec::new();
-            for k in 0..n {
-                progress(k, n)?;
-                let sys = if k == 0 {
-                    system.clone()
-                } else {
-                    format!("{system}\nGive a clearly different version from these earlier ones:\n{}", outs.join("\n---\n"))
-                };
-                let t = crate::writing::clean_output(&chat(ep, model, &sys, &user).await?);
-                if t.is_empty() {
-                    return Err(model_err());
-                }
-                if !outs.contains(&t) {
-                    outs.push(t);
-                }
-            }
-            progress(n, n)?;
-            // 人设写出来的内容里不该有输入里没有的数字、时间、网址（可能是模型编的）
-            let persona_src = format!("{}\n{}", req.text, o.extra);
-            let cands: Vec<Value> = outs
-                .iter()
-                .map(|t| {
-                    let g = if o.action == "persona" { crate::writing::guard_reply(&persona_src, t) } else { crate::writing::guard(&o.action, &req.text, t) };
-                    json!({"text": t, "guard": g})
-                })
-                .collect();
-            Ok(json!({"candidates": cands}))
-        }
-        "style" => {
-            progress(0, 1)?;
-            let resp = chat(ep, model, &crate::writing::style_system(), req.text.trim()).await?;
-            progress(1, 1)?;
-            let style = crate::writing::clean_style(&resp);
-            if style.is_empty() {
-                return Err(AppError::invalid("没有总结出风格，请多给几段你自己写的文字。"));
-            }
-            Ok(json!({"style": style}))
-        }
-        "grammar" => {
-            progress(0, 1)?;
-            let quick = crate::writing::quick_issues(&req.text);
-            let resp = chat(ep, model, &crate::writing::grammar_system(), req.text.trim()).await;
-            // 模型不可用时，规则发现的问题照样给出
-            let found = match resp {
-                Ok(r) => crate::writing::parse_issues(&r, &req.text),
-                Err(e) if quick.is_empty() => return Err(e),
-                Err(_) => vec![],
-            };
-            let issues = crate::writing::merge_issues(quick, found);
-            progress(1, 1)?;
-            Ok(json!({"issues": issues, "corrected": crate::writing::apply_issues(&req.text, &issues)}))
-        }
-        "stats" => {
-            progress(0, 3)?;
-            let plan_resp = chat(ep, model, &crate::writing::stats_plan_system(), req.text.trim()).await?;
-            let plan = crate::writing::parse_plan(&plan_resp);
-            if plan.is_empty() {
-                progress(3, 3)?;
-                return Ok(json!({"facts": [], "note": "没有找到和这段文字相关、又能从开放数据库查证的统计数据。"}));
-            }
-            let mut facts = Vec::new();
-            let mut failed = 0usize;
-            // 一个国家一次请求：模型编造的国家码只会让它自己查不到，不会拖垮同批的有效国家
-            let plan: Vec<crate::writing::Query> = plan
-                .into_iter()
-                .flat_map(|q| {
-                    q.countries
-                        .iter()
-                        .map(|c| crate::writing::Query { code: q.code.clone(), countries: vec![c.clone()], why: q.why.clone() })
-                        .collect::<Vec<_>>()
-                })
-                .collect();
-            for (i, q) in plan.iter().enumerate() {
-                progress(i + 1, plan.len() + 1)?;
-                let got = ep.client.get(crate::writing::wb_url(q)).timeout(Duration::from_secs(25)).send().await;
-                let body = match got {
-                    Ok(r) if r.status().is_success() => r.text().await.ok(),
-                    _ => None,
-                };
-                match body {
-                    Some(b) => {
-                        let mut f = crate::writing::parse_wb(&b, q);
-                        facts.append(&mut f);
-                    }
-                    None => failed += 1,
-                }
-            }
-            progress(plan.len() + 1, plan.len() + 1)?;
-            let note = if facts.is_empty() && failed > 0 {
-                "连不上开放数据库（世界银行开放数据），请检查网络或代理后重试。"
-            } else if facts.is_empty() {
-                "开放数据库里没有这些指标的最新数据。"
-            } else {
-                ""
-            };
-            Ok(json!({"facts": crate::writing::facts_json(&facts), "note": note, "failed": failed}))
-        }
+        "askcomments" => run.ask_comments().await,
+        "translate" => run.translate().await,
+        "webtrans" => run.webtrans().await,
+        "namer" => run.namer().await,
+        "domain" => run.domain().await,
+        "punctuate" => run.punctuate().await,
+        "fixasr" => run.fixasr().await,
+        "answer" => run.answer().await,
+        "explain" => run.explain().await,
+        "imgtrans" => run.imgtrans().await,
+        "lookup" => run.lookup().await,
+        "note" | "refine" => run.note_or_refine().await,
+        "rewrite" => run.rewrite().await,
+        "replyread" => run.reply_read().await,
+        "write" if req.write.action == "reply" => run.write_reply().await,
+        "write" if req.write.action == "tweak" => run.write_tweak().await,
+        "write" => run.write_candidates().await,
+        "style" => run.style().await,
+        "grammar" => run.grammar().await,
+        "stats" => run.stats().await,
         _ => Err(AppError::invalid("不支持的类型")),
     }
 }
