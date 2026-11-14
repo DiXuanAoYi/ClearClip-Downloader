@@ -554,7 +554,7 @@ pub fn run() {
             Some(key) => tauri_plugin_updater::Builder::new().pubkey(key).build(),
             None => tauri::plugin::Builder::<tauri::Wry, tauri_plugin_updater::Config>::new("updater").build(),
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(security::lock_gate(tauri::generate_handler![
             commands::get_app_info,
             commands::get_settings,
             commands::bt_tracker_status,
@@ -948,7 +948,7 @@ pub fn run() {
             security_cmds::safebox_open,
             security_cmds::safebox_export,
             security_cmds::safebox_remove,
-        ])
+        ]))
         .build(tauri::generate_context!())
         .expect("error while building ClearClip")
         .run(|app, event| {
