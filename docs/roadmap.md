@@ -110,7 +110,7 @@
 | 体量 | Rust 约 9.7 万行（194 个文件，约 390 个界面命令），界面约 4.4 万行，浏览器扩展约 2 万行 |
 | 测试 | Rust 测试约 1190 个，前端和扩展的单元测试 25 个文件，默认套件里的界面测试脚本 26 个 |
 | 节奏 | 10 月 29 日到 11 月 11 日合并了 24 个 PR，发布流水线成功 25 次（0.5.2 → 1.14.0） |
-| 积压 | 没有未处理的 Issue 和 PR；远程有 34 个旧分支，只有 `feat/mcp` 是还没合并的工作 |
+| 积压 | 没有未处理的 Issue 和 PR；旧分支已清理（2026-11-13 核对：远程只剩 `main` 和 3 个进行中的分支 `design/system-v2`、`feat/ui-theme`、`fix/settings-layout-2`；`feat/mcp` 已合并并删除） |
 
 功能写得很快，验证跟不上。最近报上来的几个问题（B站创作者主页解析不了、YouTube 播放列表展不开、屏幕翻译点了没反应）都是在真实使用里才暴露的，当时测试全部通过。有三块东西在开发环境里验证不了：
 
@@ -149,7 +149,7 @@
 | ✅ | 界面测试：4 个自己启动浏览器的脚本（sublayer-session、video-dock、webtrans、bili-sub）改成认 `CHROMIUM_PATH`；4 个不在默认套件里的脚本（home-batch、overview-naming、phone-page、transfer-ui）确认还能通过后加进去（`ext-real` 要显示环境，放在 9.4） | 前 4 个在没装 Playwright 自带浏览器的机器上跑不起来；后 4 个 CI 从来不跑，坏了也没人知道 | 小 |
 | ✅ | 发版脚本：一条命令改版本号；发版后自动核对安装包是否齐全；Release 页面带上这一版的更新记录 | 每次发版要改 7 个文件（教程里只写了 3 个）；安装包齐不齐现在靠手工核对；每一版 Release 的说明文字都一样 | 小 |
 | ✅ | 仓库根目录加 `CLAUDE.md` | 测试命令、环境里的坑、发版步骤、和你的约定，现在每次新会话都要从摘要里重新摸索 | 小 |
-| 🟡 | 清理旧分支 | 已逐个核对，清单在 1.14.1 的汇报里，所有者已确认全部删除，但本环境的代理对删除分支返回 403，需要在 GitHub 网页上删（或在仓库设置里打开“合并后自动删除分支”）：合并后留下的 27 个分支（含本轮的）、压缩合并后留下的 7 个（`feat/ai-pool-wechat`、`feat/batch-download`、`feat/v1.6-batch`、`feat/v1.7-batch`、`feat/v1.8-refactor`、`fix/bili-subtitle-cookie`、`fix/v1.9.1`，都能对上已合并的 PR 的最后一个提交）、一次性的调试分支 `debug/phone-transfer`。`feat/mcp` 保留 | 小 |
+| ✅ | 清理旧分支 | 已清理（2026-11-13 用 GitHub 接口核对）：远程分支只剩 `main` 与 3 个进行中的分支（`design/system-v2`、`feat/ui-theme`、`fix/settings-layout-2`），`feat/mcp` 也已合并后删除。要避免再堆积：仓库设置里打开“合并后自动删除分支”（需要仓库管理员：Settings → General → Pull Requests → Automatically delete head branches） | 小 |
 | ✅ | 文档对齐 | 本文第一节停在 0.8；[desktop-plan.md](desktop-plan.md) 还写着“未做：多语言界面”；发布教程写构建约 15 分钟，最近两次是 26 和 29 分钟 | 小 |
 
 ### 9.4 第二步：1.15.0（稳定版）

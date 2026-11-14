@@ -421,7 +421,7 @@ async function dictate() {
       dictStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
     } catch (e) {
       void api.writeDictateStop(info.session)
-      throw new Error('无法使用麦克风：' + errorText(e))
+      throw new Error(`无法使用麦克风：${errorText(e)}`)
     }
     dictCtx = new AudioContext()
     const src = dictCtx.createMediaStreamSource(dictStream)

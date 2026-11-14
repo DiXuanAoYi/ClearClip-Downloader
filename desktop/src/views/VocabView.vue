@@ -270,7 +270,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <div v-if="w.sentence" class="src">{{ w.sentence }}</div>
             </div>
             <div class="src">
-              <a v-if="w.sourceUrl" class="lnk" :title="w.sourceUrl + '（双击整行也能打开）'" @click.stop="openSource(w)">{{ (w.sourceTitle || w.sourceUrl).slice(0, 28) }}<span class="tm">{{ clock(w.timeSec) }} ↗</span></a>
+              <a v-if="w.sourceUrl" class="lnk" :title="`${w.sourceUrl}（双击整行也能打开）`" @click.stop="openSource(w)">{{ (w.sourceTitle || w.sourceUrl).slice(0, 28) }}<span class="tm">{{ clock(w.timeSec) }} ↗</span></a>
               <template v-else>{{ (w.sourceTitle || '').slice(0, 28) }}</template>
               <div v-if="cacheOf(w)" class="cbadge"><span v-if="cacheOf(w)!.hasSummary">摘要</span><span v-if="cacheOf(w)!.hasSubs">字幕</span></div>
             </div>
@@ -287,14 +287,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <a class="act danger" @click="dropCache(picked)">清除缓存</a>
           </template>
           <a class="act danger" @click="remove(picked)">删除</a>
-          <span class="mute">{{ picked.reps ? '已复习 ' + picked.reps + ' 次' : '还没复习过' }}</span>
+          <span class="mute">{{ picked.reps ? `已复习 ${picked.reps} 次` : '还没复习过' }}</span>
         </div>
       </section>
 
       <aside class="rev">
         <div class="fc">
           <template v-if="current">
-            <div class="cap"><span>今日复习 {{ done + 1 }} / {{ total }}</span><span>{{ current.sourceTitle ? '来自 ' + current.sourceTitle.slice(0, 26) : '' }}</span></div>
+            <div class="cap"><span>今日复习 {{ done + 1 }} / {{ total }}</span><span>{{ current.sourceTitle ? `来自 ${current.sourceTitle.slice(0, 26)}` : '' }}</span></div>
             <div v-if="split(current)" class="sentc">
               {{ split(current)![0] }}<span class="blank" :class="{ open: shown }">{{ shown ? split(current)![1] : '＿＿＿＿' }}</span>{{ split(current)![2] }}
             </div>

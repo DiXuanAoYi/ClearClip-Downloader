@@ -110,7 +110,7 @@ const rest = computed(() => (plan.value ? Math.max(0, plan.value.segments - plan
           <br v-if="plan.scanned" /><span v-if="plan.scanned" class="warn">这份 PDF 有扫描页，要先识字，请求会更多。</span>
         </template>
         <span v-else class="mute">{{ busy ? '正在估算…' : '' }}</span>
-        <div class="mute">翻译用 AI 模型池{{ modelName ? '（' + modelName + '）' : '' }}，在“设置 → AI”里换。</div>
+        <div class="mute">{{ modelName ? `翻译用 AI 模型池（${modelName}），在“设置 → AI”里换。` : '翻译用 AI 模型池，在“设置 → AI”里换。' }}</div>
       </div>
     </div>
     <template #footer>

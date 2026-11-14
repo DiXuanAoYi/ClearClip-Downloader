@@ -2,7 +2,10 @@
 // 界面翻译辅助：找出源码里所有可见的中文文字，对照 src/i18n/en.ts 检查哪些还没有翻译。
 //
 //   node scripts/i18n.mjs            列出缺少翻译的条目（不影响退出码）
-//   node scripts/i18n.mjs --strict   有缺少翻译的条目时以退出码 1 结束
+//   node scripts/i18n.mjs --strict   有缺少翻译的条目、或翻译表里有无人引用的条目时以退出码 1 结束
+//   node scripts/i18n.mjs --strict --max-missing=N
+//                                    基线模式：缺少的条目不超过 N 个才算通过（多余条目仍必须为 0）。
+//                                    CI 里用 `npm run i18n -- --strict --max-missing=<N>`，补齐翻译后把 N 往下调
 //   node scripts/i18n.mjs --dump     输出全部中文条目（JSON）
 //
 // 带变量的文字用 {0}、{1} 占位：模板里的 {{ x }} 和脚本里的 `${x}` 都算一个占位，
@@ -48,6 +51,8 @@ function scriptStrings(code, out, file) {
     out.add(t)
   }
   const visit = (n) => {
+    // 搜索用的关键词（拼音、同义词）不会显示在界面上，不需要翻译
+    if (ts.isPropertyAssignment(n) && ts.isIdentifier(n.name) && n.name.text === 'keywords') return
     if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) add(n.text)
     else if (ts.isTemplateExpression(n)) {
       let s = n.head.text
@@ -126,6 +131,45 @@ async function loadEn() {
   return new Function(body)()
 }
 
+/** 后端（Rust）里的中文消息会原样显示在界面上，翻译表里为它们留的条目不算多余。 */
+function backendText() {
+  const dir = join(root, '..', 'src-tauri', 'src')
+  let text = ''
+  const rec = (d) => {
+    for (const name of readdirSync(d)) {
+      const p = join(d, name)
+      if (statSync(p).isDirectory()) rec(p)
+      else if (name.endsWith('.rs')) text += readFileSync(p, 'utf8') + '\n'
+    }
+  }
+  try {
+    rec(dir)
+  } catch {
+    /* 没有 Rust 源码时（只拿到 src/）不做这项检查 */
+  }
+  return text.replace(/\s+/g, ' ')
+}
+
+/** 条目里最长的一段固定文字（占位符之间）；Rust 的 `{}` / `{x}` 占位和这里的 `{0}` 写法不同，所以只比固定文字。 */
+export function longestFragment(key) {
+  return key.split(/\{\d+\}/).map((x) => x.trim()).sort((a, b) => b.length - a.length)[0] ?? ''
+}
+
+/** Rust 里用常量或拼接生成的消息：源码里找不到整段，登记在这里（键 → 说明）。 */
+const BACKEND_BUILT = new Set(['工程文件的扩展名是 .ccedit。'])
+
+export function findStale(en, all, backend = backendText()) {
+  const used = new Set(all)
+  const inBackend = (frag) => frag.length >= 2 && backend.includes(frag)
+  return Object.keys(en).filter((k) => {
+    if (used.has(k) || BACKEND_BUILT.has(k)) return false
+    if (inBackend(longestFragment(k))) return false
+    // 后端按“，”“：”分段拼出来的长句（例如“分段色彩匹配：…”）：每一段都能在后端找到才算
+    const chunks = k.split(/[，：]/).map(longestFragment).filter((x) => x.length >= 2)
+    return !(chunks.length > 1 && chunks.every(inBackend))
+  })
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const all = extract()
   if (process.argv.includes('--dump')) {
@@ -134,7 +178,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   const en = await loadEn()
   const missing = all.filter((s) => !(s in en))
-  const stale = Object.keys(en).filter((k) => !all.includes(k))
+  const stale = findStale(en, all)
   console.log(`中文条目 ${all.length} 个，已翻译 ${all.length - missing.length} 个，缺少 ${missing.length} 个，翻译表里多余 ${stale.length} 个。`)
   if (missing.length) {
     console.log('\n缺少翻译：')
@@ -144,6 +188,23 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.log('\n多余的（源码里已经没有）：')
     for (const s of stale) console.log('  ' + JSON.stringify(s))
   }
-  if (missing.length && process.argv.includes('--strict')) process.exit(1)
+  if (process.argv.includes('--strict')) {
+    const arg = process.argv.find((a) => a.startsWith('--max-missing='))
+    const maxMissing = arg ? Number(arg.slice('--max-missing='.length)) : 0
+    if (!Number.isInteger(maxMissing) || maxMissing < 0) {
+      console.error(`--max-missing 要是非负整数：${arg}`)
+      process.exit(2)
+    }
+    let bad = false
+    if (missing.length > maxMissing) {
+      console.error(`\n缺少翻译 ${missing.length} 个，超过允许的 ${maxMissing} 个。`)
+      bad = true
+    }
+    if (stale.length) {
+      console.error(`翻译表里有 ${stale.length} 个条目源码和后端都没有引用，请删除（用 --stale 查看）。`)
+      bad = true
+    }
+    if (bad) process.exit(1)
+  }
 }
 void relative
