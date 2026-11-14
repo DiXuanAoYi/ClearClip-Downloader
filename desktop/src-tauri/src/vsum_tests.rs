@@ -650,7 +650,8 @@ async fn trace(r: &Req, reply: &str, cancel_at: Option<usize>) -> String {
 fn golden_requests() -> Vec<(&'static str, Req, &'static str, Option<usize>)> {
     let l3 = || short_lines(3);
     let k = |kind: &str| Req { kind: kind.into(), ..Default::default() };
-    let sm = r#"{"summary":"概述","points":["要点一","要点二"],"chapters":[{"time":"0:00","title":"开头"},{"time":"1:05","title":"中段"}],"keywords":["甲","乙"]}"#;
+    let sm =
+        r#"{"summary":"概述","points":["要点一","要点二"],"chapters":[{"time":"0:00","title":"开头"},{"time":"1:05","title":"中段"}],"keywords":["甲","乙"]}"#;
     let flow = r#"{"nodes":[{"id":"a","title":"起","kind":"step","time":"0:10"},{"id":"b","title":"果","kind":"result"}],"edges":[{"from":"a","to":"b","label":"导致"}]}"#;
     let w = |action: &str, cands: u8| crate::writing::Opts { action: action.into(), candidates: cands, ..Default::default() };
     vec![
@@ -672,7 +673,11 @@ fn golden_requests() -> Vec<(&'static str, Req, &'static str, Option<usize>)> {
             Req {
                 lines: l3(),
                 question: " 讲了什么？ ".into(),
-                history: vec![Turn { role: "user".into(), text: "之前问".into() }, Turn { role: "assistant".into(), text: " ".into() }, Turn { role: "assistant".into(), text: "之前答".into() }],
+                history: vec![
+                    Turn { role: "user".into(), text: "之前问".into() },
+                    Turn { role: "assistant".into(), text: " ".into() },
+                    Turn { role: "assistant".into(), text: "之前答".into() },
+                ],
                 ..k("ask")
             },
             " 答案见 [1:05] ",
@@ -681,11 +686,27 @@ fn golden_requests() -> Vec<(&'static str, Req, &'static str, Option<usize>)> {
         ("ask-cancel", Req { lines: l3(), question: "q".into(), ..k("ask") }, "a", Some(1)),
         (
             "askcomments",
-            Req { question: "大家怎么看".into(), comments: vec![Cmt { author: "甲".into(), text: "好看".into(), likes: 5, t: -1, replies: 0 }, Cmt { author: "乙".into(), text: "一般".into(), likes: 1, t: 3000, replies: 2 }], ..k("askcomments") },
+            Req {
+                question: "大家怎么看".into(),
+                comments: vec![
+                    Cmt { author: "甲".into(), text: "好看".into(), likes: 5, t: -1, replies: 0 },
+                    Cmt { author: "乙".into(), text: "一般".into(), likes: 1, t: 3000, replies: 2 },
+                ],
+                ..k("askcomments")
+            },
             " 多数好评 ",
             None,
         ),
-        ("translate-zh", Req { lines: vec![Line { t: 0, text: "你好".into() }, Line { t: 1000, text: " ".into() }, Line { t: 2000, text: "再见".into() }], guide: "\nGuide".into(), ..k("translate") }, r#"["Hello","Bye"]"#, None),
+        (
+            "translate-zh",
+            Req {
+                lines: vec![Line { t: 0, text: "你好".into() }, Line { t: 1000, text: " ".into() }, Line { t: 2000, text: "再见".into() }],
+                guide: "\nGuide".into(),
+                ..k("translate")
+            },
+            r#"["Hello","Bye"]"#,
+            None,
+        ),
         ("translate-en", Req { lines: l3(), lang: "日本語".into(), ..k("translate") }, r#"["一","二","三"]"#, None),
         ("webtrans", Req { lines: l3(), context: "站点：x".into(), guide: "\nG".into(), ..k("webtrans") }, r#"["一","二","三"]"#, None),
         ("punctuate", Req { lines: l3(), title: " 标题 ".into(), ..k("punctuate") }, r#"["一。","二。","三。"]"#, None),
@@ -697,7 +718,12 @@ fn golden_requests() -> Vec<(&'static str, Req, &'static str, Option<usize>)> {
         ("answer", Req { title: "T".into(), text: " 选中 ".into(), ..k("answer") }, " 回答 ", None),
         ("answer-summarize", Req { title: "T".into(), text: "选中".into(), context: "前后文".into(), format: "summarize".into(), ..k("answer") }, "摘", None),
         ("explain", Req { title: "T".into(), text: "词".into(), context: " ".into(), ..k("explain") }, " 解释 ", None),
-        ("lookup", Req { title: "T".into(), text: " hello ".into(), context: "Hello world".into(), trans: " 你好世界 ".into(), ..k("lookup") }, r#"{"meaning":"问候","aligned":"你好"}"#, None),
+        (
+            "lookup",
+            Req { title: "T".into(), text: " hello ".into(), context: "Hello world".into(), trans: " 你好世界 ".into(), ..k("lookup") },
+            r#"{"meaning":"问候","aligned":"你好"}"#,
+            None,
+        ),
         ("lookup-bad", Req { text: "x".into(), ..k("lookup") }, "不是 JSON", None),
         ("note", Req { title: "T".into(), text: "目标".into(), context: "全文".into(), ..k("note") }, r#"{"quote":" 笔记 "}"#, None),
         ("note-plain", Req { title: "T".into(), text: "目标".into(), ..k("note") }, "quote: \"纯文本笔记\"", None),
@@ -710,7 +736,12 @@ fn golden_requests() -> Vec<(&'static str, Req, &'static str, Option<usize>)> {
         ("write-tweak", Req { text: "草稿".into(), write: w("tweak", 1), ..k("write") }, " 改后 ", None),
         ("write-tweak-empty", Req { text: "草稿".into(), write: w("tweak", 1), ..k("write") }, " ", None),
         ("write-default-2", Req { text: "草稿 3 个".into(), write: w("polish", 2), ..k("write") }, "同一版", None),
-        ("write-persona", Req { text: "草稿".into(), write: crate::writing::Opts { extra: "人设 9".into(), ..w("persona", 1) }, ..k("write") }, "写了 100 个", None),
+        (
+            "write-persona",
+            Req { text: "草稿".into(), write: crate::writing::Opts { extra: "人设 9".into(), ..w("persona", 1) }, ..k("write") },
+            "写了 100 个",
+            None,
+        ),
         ("write-empty", Req { text: "草稿".into(), write: w("polish", 1), ..k("write") }, "", None),
         ("style", Req { text: "我写的一段话。".into(), ..k("style") }, "简洁，爱用短句", None),
         ("style-empty", Req { text: "x".into(), ..k("style") }, "", None),
