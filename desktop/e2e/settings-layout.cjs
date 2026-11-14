@@ -40,7 +40,7 @@ const init = `
   page.on('pageerror', (e) => errors.push(e.message + ' @ ' + String(e.stack || '').split('\n').slice(1, 3).join(' | ')))
   await page.addInitScript(init)
   if (process.env.DARK) await page.emulateMedia({ colorScheme: 'dark' })
-  const BASE = process.env.E2E_BASE || 'http://127.0.0.1:5199'
+  const BASE = process.env.E2E_BASE || `http://127.0.0.1:${process.env.E2E_PORT || 5199}`
   await page.goto(BASE + '/merge-harness.html' + (process.env.DARK ? '?dark' : '') + '#settings')
   await page.waitForSelector('.bgrid .card')
   await page.waitForTimeout(600)
