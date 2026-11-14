@@ -13,4 +13,6 @@ const group = (name) => {
   if (!F.GROUPS[name]) throw new Error(`files-manifest.js 里没有 ${name} 组`)
   return [...F.GROUPS[name]]
 }
-module.exports = { group, EXT, GROUPS: F.GROUPS }
+/** 视频摘要纯逻辑的文件（vsum-logic-*.js + vsum-logic.js，按加载顺序）：单独加载它们就能得到 ccVsum。 */
+const vsumLogic = () => group('vsum').filter((f) => /^vsum-logic/.test(f))
+module.exports = { group, vsumLogic, EXT, GROUPS: F.GROUPS }

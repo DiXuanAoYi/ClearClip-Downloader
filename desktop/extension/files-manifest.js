@@ -9,6 +9,8 @@
 const ccFiles = (() => {
   const UI = 'content/ui.js'
   const VDOCK = 'content/vdock.js'
+  // 视频摘要的纯逻辑：几个部分按顺序加载，最后的 vsum-logic.js 汇总成 ccVsum 对象
+  const VLOGIC = ['vsum-logic-parse.js', 'vsum-logic-page.js', 'vsum-logic-maps.js', 'vsum-logic-notes.js', 'vsum-logic-comments.js', 'vsum-logic.js']
 
   // 后台脚本，按加载顺序（不含 background.js：它最后加载，manifest 里排在最末）。files-manifest.js 自己排第一。
   const BG_SCRIPTS = [
@@ -48,8 +50,8 @@ const ccFiles = (() => {
     unlock: ['content/unlock.js'],
     bypass: ['bypass.js'],
     stub: ['content/stub.js'],
-    vsum: [UI, VDOCK, 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum-util.js', 'content/vsum-session.js', 'content/vsum-flow.js', 'content/vsum-local.js', 'content/vsum-tabs.js', 'content/vsum.js'],
-    subLayer: [UI, VDOCK, 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer-data.js', 'content/sublayer-learn.js', 'content/sublayer-listen.js', 'content/sublayer.js'],
+    vsum: [UI, VDOCK, ...VLOGIC, 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum-util.js', 'content/vsum-session.js', 'content/vsum-flow.js', 'content/vsum-local.js', 'content/vsum-tabs.js', 'content/vsum.js'],
+    subLayer: [UI, VDOCK, ...VLOGIC, 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer-data.js', 'content/sublayer-learn.js', 'content/sublayer-listen.js', 'content/sublayer.js'],
     shot: [UI, 'trans-logic.js', 'content/shot.js'],
     picker: [UI, 'content/picker.js'],
     excludePick: [UI, 'content/excludepick.js'],

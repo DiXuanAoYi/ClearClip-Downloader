@@ -6,8 +6,10 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../extension')
+const vsumLogic = createRequire(import.meta.url)('../ext-files.cjs').vsumLogic // 取自 files-manifest.js
 const read = (f) => fs.readFileSync(path.join(dir, f), 'utf8')
 const plain = (v) => JSON.parse(JSON.stringify(v))
 const run = (files, globals = {}) => {
@@ -25,7 +27,7 @@ const memStore = (data = {}) => ({
 
 // ---------- vsum-logic：笔记、改字幕、最近使用淘汰 ----------
 
-const V = vm.runInContext('ccVsum', run(['vsum-logic.js']))
+const V = vm.runInContext('ccVsum', run(vsumLogic()))
 const note = (i, len = 10) => ({ id: `n${i}`, key: 'k', t: i, text: 'x'.repeat(len), created: i })
 
 test('笔记：条数上限 2000，留最新的', () => {
