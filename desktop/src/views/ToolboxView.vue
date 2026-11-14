@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, provide, ref, shallowRef, watch } from 'vue'
 import { useAppStore } from '../stores/app'
-import { ACCEPTS, PREVIEW_KEY, QUICK_TOOLS, byId, idFor, loadRecent, pickKinds, pushRecent, type PreviewSpec } from '../utils/toolbox'
+import { ACCEPTS, PREVIEW_KEY, QUICK_CARDS, QUICK_TOOLS, byId, idFor, loadRecent, pickKinds, pushRecent, type PreviewSpec } from '../utils/toolbox'
 import ToolboxSidebar from '../components/toolbox/ToolboxSidebar.vue'
 import FileBasket from '../components/toolbox/FileBasket.vue'
 import ToolPreview from '../components/toolbox/ToolPreview.vue'
@@ -91,6 +91,15 @@ const singleFile = computed(() => ['tags', 'subtitle', 'lut'].includes(cur.value
     <div class="content" :class="{ wide: cur === 'edit' }">
       <div class="dtop"><h1>工具箱</h1><span class="dspacer" /><span class="chip">{{ def.name }}</span></div>
       <p class="mute note">所有处理都在本机完成，会生成新文件并登记到媒体库，不会修改原文件。需要 ffmpeg（在“设置 → 组件”里安装）。</p>
+      <section class="quick" aria-labelledby="quick-h">
+        <h2 id="quick-h" class="qh">常用工具</h2>
+        <div class="qgrid">
+          <button v-for="c in QUICK_CARDS" :key="c.id" type="button" class="qcard" :class="{ on: cur === c.id }" :aria-current="cur === c.id ? 'true' : undefined" :data-testid="`quick-${c.id}`" @click="select(c.id)">
+            <span class="qic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path :d="c.icon" /></svg></span>
+            <span class="qt"><b>{{ byId(c.id).name.replace(/（.*）$/, '') }}</b><small>{{ c.sub }}</small></span>
+          </button>
+        </div>
+      </section>
       <FileBasket v-if="cur !== 'edit'" v-model="app.toolFiles" :accepts="accepts" :note="singleFile ? (usable > 1 ? '这个工具一次处理一个文件，用篮里的第一个。' : '') : note" />
       <div class="row">
         <div class="tool">
@@ -136,7 +145,74 @@ const singleFile = computed(() => ['tags', 'subtitle', 'lut'].includes(cur.value
 }
 .note {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--cc-fs-sm);
+}
+.qh {
+  margin: 0 0 var(--cc-sp-2);
+  font-size: var(--cc-fs-sm);
+  font-weight: 600;
+  color: var(--cc-mute);
+}
+.qgrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--cc-sp-3);
+}
+.qcard {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-3);
+  min-height: 56px;
+  padding: var(--cc-sp-2) var(--cc-sp-3);
+  border: 1px solid var(--cc-line-strong);
+  border-radius: var(--cc-r-lg);
+  background: var(--cc-panel);
+  cursor: pointer;
+}
+.qcard:hover {
+  background: var(--cc-acc-soft);
+}
+.qcard:focus-visible {
+  outline: var(--cc-focus-w) solid var(--cc-focus);
+  outline-offset: var(--cc-focus-off);
+}
+.qcard.on {
+  border-color: var(--cc-amber-line);
+  box-shadow: inset 0 0 0 1px var(--cc-amber-line);
+}
+.qic {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--cc-r-md);
+  background: var(--cc-acc-soft);
+  color: var(--cc-amber);
+}
+.qt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.qt b {
+  font-size: var(--cc-fs-md);
+  font-weight: 600;
+}
+.qt small {
+  font-size: var(--cc-fs-sm);
+  color: var(--cc-mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 1100px) {
+  .qgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .row {
   display: flex;

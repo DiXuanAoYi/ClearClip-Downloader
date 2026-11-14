@@ -8,6 +8,10 @@ import { useAppStore, useQueueStore } from '../stores/app'
 import type { BatchView, OrphanPart, TaskSnapshot } from '../types'
 import { fileNameOf, formatBytes, formatDateTime, formatEta, formatSpeed } from '../utils/format'
 import TaskDrawer from '../components/TaskDrawer.vue'
+import CcButton from '../components/ui/CcButton.vue'
+import CcSegmented from '../components/ui/CcSegmented.vue'
+import CcSelect from '../components/ui/CcSelect.vue'
+import CcDialog from '../components/ui/CcDialog.vue'
 import { useTauriEvents } from '../composables/useTauriEvent'
 const ev = useTauriEvents()
 
@@ -46,14 +50,27 @@ onBeforeUnmount(() => {
 
 const batchName = (id: string | null | undefined) => batches.value.find((b) => b.id === id)?.name
 // 从列表（播放列表、合集）展开下载的任务按列表筛选
-const listFilter = ref<string | null>(null)
+const listFilter = ref<string>('')
+const listOptions = computed(() => [{ value: '', label: '列表：全部' }, ...lists.value.map((l) => ({ value: l.name, label: `${l.name}（${l.count}）` }))])
+const tabOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'running', label: '进行中' },
+  { value: 'queued', label: '排队/暂停' },
+  { value: 'failed', label: '失败' },
+  { value: 'done', label: '已完成' },
+] as const
+const afterOptions = [
+  { value: 'none', label: '不操作' },
+  { value: 'sleep', label: '睡眠' },
+  { value: 'shutdown', label: '关机' },
+]
 const lists = computed(() => {
   const m = new Map<string, number>()
   for (const t of queue.tasks) if (t.listName) m.set(t.listName, (m.get(t.listName) ?? 0) + 1)
   return [...m].map(([name, count]) => ({ name, count }))
 })
 watch(lists, (v) => {
-  if (listFilter.value && !v.some((l) => l.name === listFilter.value)) listFilter.value = null
+  if (listFilter.value && !v.some((l) => l.name === listFilter.value)) listFilter.value = ''
 })
 
 onMounted(async () => {
@@ -83,10 +100,29 @@ async function confirmSchedule() {
   scheduling.value = null
 }
 
-function onMore(t: TaskSnapshot, cmd: string) {
-  if (cmd === 'schedule') openSchedule(t)
-  else if (cmd === 'now') run(api.scheduleTask, t.id, null)
-  else run(api.moveTask, t.id, cmd as 'top' | 'up' | 'down' | 'bottom')
+async function onMore(t: TaskSnapshot, cmd: string) {
+  switch (cmd) {
+    case 'schedule':
+      return openSchedule(t)
+    case 'now':
+      return run(api.scheduleTask, t.id, null)
+    case 'detail':
+      detailId.value = t.id
+      return
+    case 'subtitle':
+      return app.goToolbox([t.filePath], undefined, { tab: 'ai', aiMode: 'transcribe' })
+    case 'remove':
+      return run(api.removeTask, t.id)
+    case 'cancel':
+      try {
+        await ElMessageBox.confirm(`取消“${t.title}”的下载？已下载的部分会保留，可以之后重试。`, '取消下载', { type: 'warning', confirmButtonText: '取消下载', cancelButtonText: '先不取消' })
+      } catch {
+        return
+      }
+      return run(api.cancelTask, t.id)
+    default:
+      return run(api.moveTask, t.id, cmd as 'top' | 'up' | 'down' | 'bottom')
+  }
 }
 
 /** 单个音视频文件、已知大小、正在下载或暂停的任务才能边下边播（m3u8 / 站点解析的流要等合并后才有完整文件）。 */
@@ -227,27 +263,23 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
 
     <section class="dpanel qpanel">
       <div class="dtoolbar qbar">
-        <el-radio-group v-model="tab" size="small" aria-label="状态">
-          <el-radio-button v-for="[k, l] in [['all', '全部'], ['running', '进行中'], ['queued', '排队/暂停'], ['failed', '失败'], ['done', '已完成']]" :key="k" :value="k">{{ l }}</el-radio-button>
-        </el-radio-group>
-        <el-select v-if="lists.length" v-model="listFilter" size="small" clearable class="lsel" placeholder="列表：全部" data-testid="list-filter">
-          <el-option v-for="l in lists" :key="l.name" :value="l.name" :label="`${l.name}（${l.count}）`" />
-        </el-select>
-        <span v-if="batchFilter" class="mute small">只看批次“{{ batchName(batchFilter) }}” <el-button link size="small" @click="batchFilter = null">显示全部</el-button></span>
+        <CcSegmented v-model="tab" :options="[...tabOptions]" size="s" aria-label="状态" />
+        <CcSelect v-if="lists.length" v-model="listFilter" :options="listOptions" size="s" width="m" aria-label="按列表筛选" data-testid="list-filter" />
+        <span v-if="batchFilter" class="mute small">只看批次“{{ batchName(batchFilter) }}” <CcButton kind="text" size="s" @click="batchFilter = null">显示全部</CcButton></span>
         <span class="dspacer" />
-        <el-button size="small" :disabled="queue.active === 0" @click="run(api.pauseAll)">全部暂停</el-button>
-        <el-button size="small" :disabled="queue.counts.paused + queue.counts.failed === 0" @click="run(api.resumeAll)">全部继续 / 重试</el-button>
-        <el-button size="small" :disabled="!queue.tasks.some((t) => t.status === 'done' || t.status === 'canceled')" @click="run(api.clearFinished)">清除已完成</el-button>
+        <CcButton size="s" :disabled="queue.active === 0" disabled-reason="没有进行中或排队的任务" @click="run(api.pauseAll)">全部暂停</CcButton>
+        <CcButton size="s" :disabled="queue.counts.paused + queue.counts.failed === 0" disabled-reason="没有已暂停或失败的任务" @click="run(api.resumeAll)">全部继续 / 重试</CcButton>
+        <CcButton size="s" :disabled="!queue.tasks.some((t) => t.status === 'done' || t.status === 'canceled')" disabled-reason="还没有已完成的任务" @click="run(api.clearFinished)">清除已完成</CcButton>
       </div>
 
       <el-alert v-if="orphans.length" type="info" show-icon :closable="false">
         <template #title>下载目录里有 {{ orphans.length }} 个不属于任何任务的未完成文件（共 {{ formatBytes(orphanSize) }}）</template>
-        <el-button size="small" @click="cleanOrphans">清理</el-button>
+        <CcButton size="s" @click="cleanOrphans">清理</CcButton>
       </el-alert>
 
       <div v-if="tasks.length === 0" class="dempty mute">队列是空的。在“解析”页选择内容并点击“下载所选”后，任务会出现在这里。</div>
 
-      <VirtualList v-if="tasks.length" :items="tasks" :item-height="92" :gap="10" :item-key="(t) => t.id" class="list">
+      <div v-if="tasks.length" class="qlist"><VirtualList :items="tasks" :item-height="92" :gap="10" :item-key="(t) => t.id" class="list">
         <template #default="{ item: t }">
           <div class="task ditem" :class="t.status">
             <img v-if="t.cover" :src="t.cover" class="dthumb tcover" referrerpolicy="no-referrer" alt="" />
@@ -255,38 +287,57 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
             <div class="info grow">
               <div class="name ellipsis" :title="`${fileNameOf(t.filePath) || t.title}（作品：${t.title}）`"><span v-if="t.batchSeq" class="seq mono">#{{ t.batchSeq }}</span> {{ fileNameOf(t.filePath) || t.title }} <span class="mute">· {{ t.assetLabel }}</span> <span v-if="t.listName" class="chip" :title="`来自列表：${t.listName}`">{{ t.listName }}</span></div>
               <div class="dprog" :class="t.status === 'failed' ? 'red' : t.status === 'paused' || t.status === 'queued' || t.status === 'canceled' ? 'amber' : ''"><i :style="{ width: (t.status === 'failed' ? 100 : percent(t)) + '%' }" /></div>
-              <small class="mono detail ellipsis selectable" :title="detail(t)">{{ detail(t) }}</small>
-              <small v-if="t.warning" class="warn-line selectable" :title="t.warning">⚠ {{ t.warning }}</small>
-              <div class="tags">
-                <span v-if="t.resumable === false && t.status !== 'done'" class="chip">服务器不支持续传</span>
-                <span v-else-if="t.resumable && (t.status === 'paused' || t.status === 'running')" class="chip">可续传</span>
-                <el-button v-if="t.status === 'failed' && (t.errorKind === 'need_login' || t.errorKind === 'rate_limited')" link size="small" type="primary" @click="app.goLogin(t.site)">{{ t.site ? `登录${siteName(t.site, app.info?.providers)}后自动重试` : '添加 Cookie 后重试' }}</el-button>
+              <div class="meta">
+                <small class="mono detail ellipsis selectable" :title="detail(t)">{{ detail(t) }}</small>
+                <div class="tags">
+                  <span v-if="t.resumable === false && t.status !== 'done'" class="chip">服务器不支持续传</span>
+                  <span v-else-if="t.resumable && (t.status === 'paused' || t.status === 'running')" class="chip">可续传</span>
+                  <CcButton v-if="t.status === 'failed' && (t.errorKind === 'need_login' || t.errorKind === 'rate_limited')" kind="text" size="s" @click="app.goLogin(t.site)">{{ t.site ? `登录${siteName(t.site, app.info?.providers)}后自动重试` : '添加 Cookie 后重试' }}</CcButton>
+                </div>
               </div>
+              <small v-if="t.warning" class="warn-line selectable" :title="t.warning"><svg class="wic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19zM12 10v5M12 18v.5" /></svg><span class="cc-sr">警告：</span>{{ t.warning }}</small>
+              
             </div>
             <div class="st">
               <span class="state chip" :class="{ cyan: t.status === 'running' || t.status === 'done', acc: t.status === 'paused' || t.status === 'queued' }">{{ statusText[t.status] }}<template v-if="t.status === 'running' && t.total"> {{ percent(t) }}%</template></span>
               <div class="actions">
-                <el-button v-if="t.status === 'running' || t.status === 'queued'" link size="small" @click="run(api.pauseTask, t.id)">暂停</el-button>
-                <el-button v-if="canPreview(t)" link size="small" @click="app.previewTask(t.id)">边下边播</el-button>
-                <el-button v-if="t.status === 'paused'" link size="small" type="primary" @click="run(api.resumeTask, t.id)">继续</el-button>
-                <el-button v-if="t.status === 'failed' || t.status === 'canceled'" link size="small" type="primary" @click="run(api.resumeTask, t.id)">重试</el-button>
-                <el-button v-if="t.status === 'done'" link size="small" type="primary" @click="run(api.openFile, t.filePath)">打开</el-button>
-                <el-button v-if="t.status === 'done'" link size="small" @click="run(api.revealFile, t.filePath)">文件夹</el-button>
-                <el-button v-if="t.status === 'done' && isMedia(t.filePath)" link size="small" @click="app.goToolbox([t.filePath], undefined, { tab: 'ai', aiMode: 'transcribe' })">生成字幕</el-button>
-                <el-button link size="small" @click="detailId = t.id">详情</el-button>
-                <el-button v-if="t.status === 'running' || t.status === 'paused' || t.status === 'queued'" link size="small" @click="run(api.cancelTask, t.id)">取消</el-button>
-                <el-button v-else link size="small" @click="run(api.removeTask, t.id)">移除</el-button>
-                <el-button v-if="isWaiting(t)" link size="small" type="warning" title="排到最前并马上开始；下载位已满时，让优先级最低的任务暂时让位（它会自动回到队列，不丢进度）" @click="run(api.prioritizeTask, t.id)">优先</el-button>
-                <el-dropdown v-if="isWaiting(t)" trigger="click" @command="(c: string) => onMore(t, c)">
-                  <el-button link size="small">更多</el-button>
+                <CcButton v-if="t.status === 'running' || t.status === 'queued'" icon-only size="s" kind="text" aria-label="暂停" @click="run(api.pauseTask, t.id)">
+                  <template #icon><svg class="qi" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" /></svg></template>
+                </CcButton>
+                <CcButton v-if="canPreview(t)" icon-only size="s" kind="text" aria-label="边下边播" @click="app.previewTask(t.id)">
+                  <template #icon><svg class="qi" viewBox="0 0 24 24"><path d="M3 6h18v12H3zM10 9.5v5l4-2.5z" /></svg></template>
+                </CcButton>
+                <CcButton v-if="t.status === 'paused'" icon-only size="s" kind="text" aria-label="继续" @click="run(api.resumeTask, t.id)">
+                  <template #icon><svg class="qi" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg></template>
+                </CcButton>
+                <CcButton v-if="t.status === 'failed' || t.status === 'canceled'" kind="primary" size="s" @click="run(api.resumeTask, t.id)">重试</CcButton>
+                <CcButton v-if="isWaiting(t) && t.status !== 'failed'" icon-only size="s" kind="text" aria-label="优先" title="排到最前并马上开始；下载位已满时，让优先级最低的任务暂时让位（它会自动回到队列，不丢进度）" @click="run(api.prioritizeTask, t.id)">
+                  <template #icon><svg class="qi" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" /></svg></template>
+                </CcButton>
+                <CcButton v-if="t.status === 'done'" icon-only size="s" kind="text" aria-label="打开文件" @click="run(api.openFile, t.filePath)">
+                  <template #icon><svg class="qi" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg></template>
+                </CcButton>
+                <CcButton v-if="t.status === 'done'" icon-only size="s" kind="text" aria-label="打开所在文件夹" @click="run(api.revealFile, t.filePath)">
+                  <template #icon><svg class="qi" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z" /></svg></template>
+                </CcButton>
+                <el-dropdown trigger="click" @command="(c: string) => onMore(t, c)">
+                  <CcButton icon-only size="s" kind="text" aria-label="更多操作" data-testid="task-more">
+                    <template #icon><svg class="qi" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3" /></svg></template>
+                  </CcButton>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item command="top">置顶</el-dropdown-item>
-                      <el-dropdown-item command="up">上移</el-dropdown-item>
-                      <el-dropdown-item command="down">下移</el-dropdown-item>
-                      <el-dropdown-item command="bottom">置底</el-dropdown-item>
-                      <el-dropdown-item command="schedule" divided>定时开始…</el-dropdown-item>
-                      <el-dropdown-item v-if="t.startAt" command="now">取消定时，立即排队</el-dropdown-item>
+                      <template v-if="isWaiting(t) && t.status !== 'failed'">
+                        <el-dropdown-item command="top">置顶</el-dropdown-item>
+                        <el-dropdown-item command="up">上移</el-dropdown-item>
+                        <el-dropdown-item command="down">下移</el-dropdown-item>
+                        <el-dropdown-item command="bottom">置底</el-dropdown-item>
+                        <el-dropdown-item command="schedule" divided>定时开始…</el-dropdown-item>
+                        <el-dropdown-item v-if="t.startAt" command="now">取消定时，立即排队</el-dropdown-item>
+                      </template>
+                      <el-dropdown-item v-if="t.status === 'done' && isMedia(t.filePath)" command="subtitle">生成字幕</el-dropdown-item>
+                      <el-dropdown-item command="detail" :divided="isWaiting(t) && t.status !== 'failed'">详情</el-dropdown-item>
+                      <el-dropdown-item v-if="t.status === 'running' || t.status === 'paused' || t.status === 'queued'" command="cancel" divided class="danger-item">取消下载</el-dropdown-item>
+                      <el-dropdown-item v-else command="remove" divided>移除</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -294,15 +345,11 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
             </div>
           </div>
         </template>
-      </VirtualList>
+      </VirtualList></div>
 
       <div class="dtoolbar qfoot">
         <span class="mute small">全部完成后</span>
-        <el-radio-group v-model="afterAll" size="small" aria-label="全部完成后" @change="setAfterAll">
-          <el-radio-button value="none">不操作</el-radio-button>
-          <el-radio-button value="sleep">睡眠</el-radio-button>
-          <el-radio-button value="shutdown">关机</el-radio-button>
-        </el-radio-group>
+        <CcSegmented v-model="afterAll" :options="afterOptions" size="s" aria-label="全部完成后" @update:model-value="setAfterAll" />
         <span class="dspacer" />
         <span class="dnote">只对本次运行有效</span>
       </div>
@@ -310,62 +357,86 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
 
     <TaskDrawer v-model="detailId" />
 
-    <el-dialog :model-value="!!scheduling" title="定时开始" width="380px" append-to-body @close="scheduling = null">
+    <CcDialog :model-value="!!scheduling" title="定时开始" size="sm" @update:model-value="(v: boolean) => !v && (scheduling = null)">
       <p class="mute small">到时间后自动开始下载“{{ scheduling?.title }}”。程序需要保持运行（可最小化到托盘）。</p>
       <el-date-picker v-model="scheduleAt" type="datetime" :disabled-date="(d: Date) => d.getTime() < Date.now() - 86400_000" style="width: 100%" />
       <template #footer>
-        <el-button @click="scheduling = null">取消</el-button>
-        <el-button type="primary" @click="confirmSchedule">确定</el-button>
+        <CcButton @click="scheduling = null">取消</CcButton>
+        <CcButton kind="primary" @click="confirmSchedule">确定</CcButton>
       </template>
-    </el-dialog>
+    </CcDialog>
   </div>
 </template>
 
 <style scoped>
 .seq {
   color: var(--cc-acc);
-  font-size: 11px;
+  font-size: var(--cc-fs-xs);
 }
 .warn-line {
-  color: var(--cc-amber);
-  font-size: 11.5px;
-  white-space: normal;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cc-sp-1);
+  color: var(--cc-warn-text);
+  background: var(--cc-warn-soft);
+  border-radius: var(--cc-r-sm);
+  padding: 1px var(--cc-sp-2);
+  font-size: var(--cc-fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wic {
+  flex: none;
+  margin-top: 2px;
 }
 .page {
   height: 100%;
   box-sizing: border-box;
 }
 .speed {
-  font-size: 22px;
+  font-size: var(--cc-fs-xl);
+}
+/* 六张统计卡始终一行（900 宽也不折成两行，给列表留高度） */
+.dstats {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--cc-sp-2);
 }
 .qpanel {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--cc-sp-3);
 }
-.qbar :deep(.el-button) {
-  margin-left: 0;
+.qbar {
+  gap: var(--cc-sp-2);
 }
-.lsel {
-  width: 190px;
+/* 列表底部渐隐：底部留出 56px，最后一行滚到底时完整露在渐隐区之上 */
+.qlist {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 .list {
   flex: 1;
   min-height: 0;
   margin-right: -8px;
   padding-right: 8px;
+  padding-bottom: 56px;
+  box-sizing: border-box;
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 48px), transparent);
 }
 .small {
-  font-size: 12px;
+  font-size: var(--cc-fs-sm);
   align-self: center;
 }
 .dempty {
   padding: 40px 0;
   text-align: center;
   border: 1px dashed var(--cc-line-strong);
-  border-radius: 12px;
+  border-radius: var(--cc-r-lg);
 }
 .task {
   height: 100%;
@@ -381,14 +452,25 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
   min-width: 0;
 }
 .info .dprog {
-  margin: 6px 0 4px;
+  margin: 4px 0 3px;
 }
 .detail {
   display: block;
-  font-size: 11px;
+  font-size: var(--cc-fs-xs);
   color: var(--cc-mute);
 }
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--cc-sp-2);
+  min-width: 0;
+}
+.meta .detail {
+  flex: 0 1 auto;
+  min-width: 0;
+}
 .tags {
+  flex: none;
   display: flex;
   gap: 6px;
   align-items: center;
@@ -403,20 +485,32 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
-  font-size: 12px;
+  justify-content: center;
+  gap: var(--cc-sp-2);
+  font-size: var(--cc-fs-sm);
   max-width: 300px;
 }
 .actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 2px;
-  flex-wrap: wrap;
 }
-.actions :deep(.el-button) {
-  margin-left: 6px;
+.qi {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .qfoot {
   padding-top: 2px;
+}
+</style>
+<style>
+.el-dropdown-menu__item.danger-item {
+  color: var(--cc-err);
 }
 </style>

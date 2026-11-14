@@ -97,12 +97,43 @@ const navs: { id: ViewName; label: string; icon: string }[] = [
   { id: 'tools', label: '工具箱', icon: 'M4 8h16v11H4zM9 8V5h6v3M4 13h16' },
   { id: 'settings', label: '设置', icon: 'M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4' },
 ]
+// 侧栏收起：手动选择会记住；窗口矮于 560 时自动只显示图标
+const NAV_KEY = 'clearclip.nav.collapsed'
+const navManual = ref(false)
+try {
+  navManual.value = localStorage.getItem(NAV_KEY) === '1'
+} catch {
+  /* 读不到就按展开 */
+}
+const shortWin = ref(false)
+let shortMq: MediaQueryList | null = null
+const onShort = () => (shortWin.value = !!shortMq?.matches)
+const navCollapsed = computed(() => navManual.value || shortWin.value)
+function toggleNav() {
+  navManual.value = !navManual.value
+  try {
+    localStorage.setItem(NAV_KEY, navManual.value ? '1' : '0')
+  } catch {
+    /* 存不了只是下次不记得 */
+  }
+}
+function goNav(id: ViewName) {
+  if (id === 'library' && app.inboxUnhandled > 0) app.goLibrary('inbox')
+  else app.view = id
+}
+onMounted(() => {
+  shortMq = window.matchMedia('(max-height: 559px)')
+  onShort()
+  shortMq.addEventListener('change', onShort)
+})
+onBeforeUnmount(() => shortMq?.removeEventListener('change', onShort))
+
 /** 设置放在导航栏最下面，和上面的页面隔开 */
 const mainNavs = computed(() => navs.filter((n) => n.id !== 'settings'))
 const settingsNav = navs.find((n) => n.id === 'settings')!
 
+// 下载进度已经在“下载队列”的角标和页头里，页脚只留版本（短，不截断）
 const footer = computed(() => {
-  if (queue.active > 0) return `下载中 ${queue.counts.running} · 等待 ${queue.counts.queued}`
   if (!app.info) return ''
   // 调试版带上提交号，和正式版、其他调试包一眼就能分开
   return app.info.debug ? `v${app.info.version} · 调试版 ${app.info.commit}` : `v${app.info.version}`
@@ -299,32 +330,32 @@ onMounted(async () => {
     <h2>启动失败</h2>
     <p class="selectable">{{ loadError }}</p>
   </div>
-  <div v-else-if="ready && app.settings" class="shell" :inert="app.lock.locked" @dragover.prevent="dragging = true" @dragleave.self="dragging = false" @drop.prevent="onHtmlDrop">
-    <nav class="side" aria-label="主导航">
+  <div v-else-if="ready && app.settings" class="shell" :class="{ collapsed: navCollapsed }" :inert="app.lock.locked" @dragover.prevent="dragging = true" @dragleave.self="dragging = false" @drop.prevent="onHtmlDrop">
+    <nav class="side" :class="{ collapsed: navCollapsed }" aria-label="主导航">
       <div class="logo" role="img" aria-label="清影">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 3l3.5 6.1M20.2 8.2l-6.8 1M20.2 15.8 15 11M12 21l-3.5-6.1M3.8 15.8l6.8-1M3.8 8.2 9 13" /></svg>
       </div>
-      <button
-        v-for="n in [...mainNavs, null, settingsNav]"
-        :key="n ? n.id : 'gap'"
-        :class="n ? ['nav', { on: app.view === n.id }] : 'nav-gap'"
-        :disabled="!n"
-        :aria-current="n && app.view === n.id ? 'page' : undefined"
-        :aria-label="n?.label"
-        type="button"
-        @click="n && (n.id === 'library' && app.inboxUnhandled > 0 ? app.goLibrary('inbox') : (app.view = n.id))"
-      >
-        <template v-if="n">
+      <div class="navs">
+        <button v-for="n in mainNavs" :key="n.id" :class="['nav', { on: app.view === n.id }]" :aria-current="app.view === n.id ? 'page' : undefined" :aria-label="n.label" :title="navCollapsed ? n.label : undefined" type="button" @click="goNav(n.id)">
           <svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="n.icon" /></svg>
           <span>{{ n.label }}</span>
-          <em v-if="n.id === 'queue' && queue.active > 0">{{ queue.active }}</em>
+          <em v-if="n.id === 'queue' && queue.active > 0" :aria-label="`${queue.active} 个任务未完成`">{{ queue.active }}</em>
           <em v-if="n.id === 'library' && app.inboxUnhandled > 0" class="warn" :title="`收到的链接里有 ${app.inboxUnhandled} 条需要处理`">{{ app.inboxUnhandled }}</em>
-        </template>
-      </button>
-      <div class="foot">
-        <button v-if="app.settings.security.privacyMode" class="priv" type="button" title="点击关闭隐私模式" @click="togglePrivacy">● 隐私</button>
-        <div v-if="app.settings.watchClipboard" class="watch" title="剪贴板监听中">● 监听</div>
-        <div class="ver" :title="footer">{{ footer }}</div>
+        </button>
+      </div>
+      <div class="navbot">
+        <button class="nav" :class="{ on: app.view === settingsNav.id }" :aria-current="app.view === settingsNav.id ? 'page' : undefined" :aria-label="settingsNav.label" :title="navCollapsed ? settingsNav.label : undefined" type="button" @click="goNav(settingsNav.id)">
+          <svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="settingsNav.icon" /></svg>
+          <span>{{ settingsNav.label }}</span>
+        </button>
+        <button v-if="!shortWin" class="navtoggle" type="button" :aria-label="navManual ? '展开侧栏' : '收起侧栏'" :aria-expanded="!navManual" :title="navManual ? '展开侧栏' : '收起侧栏'" data-testid="nav-toggle" @click="toggleNav">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="navManual ? 'M9 5l7 7-7 7' : 'M15 5l-7 7 7 7'" /></svg>
+        </button>
+        <div class="foot">
+          <button v-if="app.settings.security.privacyMode" class="priv" type="button" title="点击关闭隐私模式" @click="togglePrivacy">● 隐私</button>
+          <div v-if="app.settings.watchClipboard" class="watch" title="剪贴板监听中" aria-label="剪贴板监听中">● <span class="wtx">监听</span></div>
+          <div v-if="footer" class="ver" :title="footer">{{ footer }}</div>
+        </div>
       </div>
     </nav>
     <main class="main">
@@ -361,32 +392,61 @@ onMounted(async () => {
   cursor: pointer;
   color: var(--cc-acc);
 }
+.priv:focus-visible,
+.navtoggle:focus-visible {
+  outline: var(--cc-focus-w) solid var(--cc-focus);
+  outline-offset: var(--cc-focus-off);
+}
 .shell {
+  --nav-w: 88px;
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
+  grid-template-columns: var(--nav-w) minmax(0, 1fr);
   height: 100%;
   background: var(--cc-page-bg);
+  transition: grid-template-columns var(--cc-dur-slow, 320ms) var(--cc-ease-out, ease);
+}
+.shell.collapsed {
+  --nav-w: 56px;
 }
 .side {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 18px 0 12px;
+  min-height: 0;
+  padding: var(--cc-sp-3) 0 var(--cc-sp-2);
   background: var(--cc-rail);
   border-right: 1px solid var(--cc-line);
   backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+/* 中间区可滚动；logo 在顶、设置 / 收起 / 监听钉在底，矮窗口也不会被推出视口 */
+.navs {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  padding: 2px 0;
+  mask-image: linear-gradient(to bottom, transparent 0, black 6px, black calc(100% - 14px), transparent 100%);
 }
-.side::-webkit-scrollbar {
-  display: none;
+.navbot {
+  flex: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-top: var(--cc-sp-1);
 }
 .logo {
   width: 44px;
   height: 44px;
-  margin-bottom: 14px;
+  margin-bottom: var(--cc-sp-2);
   display: grid;
   place-items: center;
   color: var(--cc-amber);
@@ -398,15 +458,16 @@ onMounted(async () => {
   position: relative;
   cursor: pointer;
   width: 64px;
-  padding: 10px 0 8px;
+  min-height: 52px;
+  padding: 7px 0 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  font-size: 11px;
+  gap: 4px;
+  font-size: var(--cc-fs-xs);
   line-height: 1.2;
   color: var(--cc-mute);
-  border-radius: 12px;
+  border-radius: var(--cc-r-lg);
   flex: none;
 }
 .nav:hover {
@@ -426,12 +487,12 @@ onMounted(async () => {
   flex: none;
 }
 .nav:focus-visible {
-  outline: 2px solid var(--cc-cyan);
-  outline-offset: 2px;
+  outline: var(--cc-focus-w) solid var(--cc-focus);
+  outline-offset: var(--cc-focus-off);
 }
 .nav em {
   position: absolute;
-  top: 4px;
+  top: 3px;
   right: 6px;
   font-style: normal;
   font-family: var(--cc-mono);
@@ -441,23 +502,33 @@ onMounted(async () => {
   text-align: center;
   background: var(--cc-amber);
   color: var(--cc-on-acc);
-  border-radius: 8px;
-  padding: 0 4px;
+  border-radius: var(--cc-r-md);
+  padding: 0 var(--cc-sp-1);
   font-weight: 700;
 }
 .nav em.warn {
   background: var(--cc-err);
-  color: #fff;
+  color: var(--cc-on-err);
 }
-.nav-gap {
+.navtoggle {
   all: unset;
-  flex: 1;
-  min-height: 8px;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--cc-r-md);
+  color: var(--cc-mute);
+  cursor: pointer;
+}
+.navtoggle:hover {
+  color: var(--cc-fg);
+  background: var(--cc-inset);
 }
 .foot {
   flex: none;
   width: 100%;
-  padding: 8px 4px 0;
+  padding: var(--cc-sp-1) var(--cc-sp-1) 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -476,6 +547,26 @@ onMounted(async () => {
 .watch {
   color: var(--cc-ok);
 }
+/* 收起：只剩图标，名称靠 aria-label 和悬停提示 */
+.collapsed .nav {
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+  justify-content: center;
+}
+.collapsed .nav span,
+.collapsed .foot .ver,
+.collapsed .foot .wtx {
+  display: none;
+}
+.collapsed .nav em {
+  top: 1px;
+  right: 0;
+}
+.collapsed .logo {
+  width: 36px;
+  height: 36px;
+}
 .main {
   min-width: 0;
   overflow: auto;
@@ -484,17 +575,22 @@ onMounted(async () => {
   position: fixed;
   inset: 12px;
   border: 2px dashed var(--cc-acc);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--cc-bg, #000) 70%, transparent);
+  border-radius: var(--cc-r-lg);
+  background: color-mix(in srgb, var(--cc-bg) 70%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: var(--cc-fs-lg);
   z-index: 3000;
   pointer-events: none;
 }
 .fatal {
   padding: 40px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell {
+    transition: none;
+  }
 }
 @media (max-width: 860px) {
   .shell {
@@ -508,14 +604,22 @@ onMounted(async () => {
     border-right: 0;
     border-bottom: 1px solid var(--cc-line);
     padding: 10px;
+    overflow: visible;
+  }
+  .navs,
+  .navbot {
+    display: contents;
+  }
+  .navs {
+    mask-image: none;
   }
   .logo {
     margin: 0 8px 0 0;
     width: 36px;
     height: 36px;
   }
-  .nav-gap,
-  .foot {
+  .foot,
+  .navtoggle {
     display: none;
   }
 }
