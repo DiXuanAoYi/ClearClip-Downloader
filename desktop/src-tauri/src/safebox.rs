@@ -120,6 +120,18 @@ fn corrupt() -> AppError {
 
 /// 加密文件。`progress(已处理, 总数)` 返回 false 表示取消。返回明文大小。
 pub fn encrypt_file(master: &[u8; 32], id: &str, src: &Path, dst: &Path, progress: &mut dyn FnMut(u64, u64) -> bool) -> AppResult<u64> {
+    // 先写 .part，写完同步后再改名：中途失败或取消时目标位置不会留下半截文件，也不会覆盖已有的好文件
+    let mut part_name = dst.as_os_str().to_os_string();
+    part_name.push(".part");
+    let part = std::path::PathBuf::from(part_name);
+    let result = encrypt_to(master, id, src, &part, progress).and_then(|n| std::fs::rename(&part, dst).map(|_| n).map_err(AppError::from));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    result
+}
+
+fn encrypt_to(master: &[u8; 32], id: &str, src: &Path, dst: &Path, progress: &mut dyn FnMut(u64, u64) -> bool) -> AppResult<u64> {
     let mut input = std::fs::File::open(src)?;
     let size = input.metadata()?.len();
     let c = cipher(&file_key(master, id));
@@ -456,15 +468,8 @@ impl Safebox {
         let master = self.master()?;
         std::fs::create_dir_all(&self.dir)?;
         let id = hex::encode(random_bytes::<12>());
-        let part = self.dir.join(format!("{id}.ccv.part"));
-        let size = match encrypt_file(&master, &id, src, &part, progress) {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = std::fs::remove_file(&part);
-                return Err(e);
-            }
-        };
-        std::fs::rename(&part, self.blob_path(&id))?;
+        // encrypt_file 自己写 .part 再改名，失败时清理
+        let size = encrypt_file(&master, &id, src, &self.blob_path(&id), progress)?;
         let entry = SafeEntry { id, name: name.to_string(), size, added_at: crate::db::now(), kind: kind_of(name).into(), from: from.into() };
         let mut g = self.guard();
         let Some(o) = g.as_mut() else {
@@ -618,6 +623,32 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(err.message, "canceled");
+        assert!(!dir.join("o").exists() && !dir.join("o.part").exists(), "取消后不留半截文件");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn failed_encryption_keeps_existing_target_and_cleans_part() {
+        let dir = tmp("atomic");
+        let src = dir.join("a.bin");
+        std::fs::write(&src, sample(CHUNK * 2)).unwrap();
+        let dst = dir.join("o.ccv");
+        std::fs::write(&dst, b"GOOD-OLD").unwrap();
+        let mut calls = 0;
+        assert!(encrypt_file(&[1u8; 32], "i", &src, &dst, &mut |_, _| {
+            calls += 1;
+            calls < 2
+        })
+        .is_err());
+        assert_eq!(std::fs::read(&dst).unwrap(), b"GOOD-OLD", "失败不动已有目标");
+        assert!(!dir.join("o.ccv.part").exists());
+        // 源文件不存在
+        assert!(encrypt_file(&[1u8; 32], "i", &dir.join("missing"), &dst, &mut |_, _| true).is_err());
+        assert!(!dir.join("o.ccv.part").exists());
+        // 成功时不留 .part
+        encrypt_file(&[1u8; 32], "i", &src, &dst, &mut |_, _| true).unwrap();
+        assert!(!dir.join("o.ccv.part").exists());
+        assert!(std::fs::read(&dst).unwrap().starts_with(MAGIC));
         let _ = std::fs::remove_dir_all(dir);
     }
 

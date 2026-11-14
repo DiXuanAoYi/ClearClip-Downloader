@@ -12,14 +12,23 @@ const ACCOUNT: &str = "cookie-key";
 pub struct KeyInfo {
     pub key: [u8; 32],
     pub in_keyring: bool,
+    /// 密钥是否真的保存下来了（钥匙串或密钥文件）。false 表示这把密钥只在内存里，
+    /// 用它加密的数据下次启动就解不开，所以不能拿它写保险箱。
+    pub persisted: bool,
 }
 
 pub fn load_or_create_key(data_dir: &Path) -> KeyInfo {
     match keyring_key() {
-        Ok(key) => KeyInfo { key, in_keyring: true },
+        Ok(key) => KeyInfo { key, in_keyring: true, persisted: true },
         Err(e) => {
             log::warn!("system keyring unavailable, falling back to key file: {e}");
-            KeyInfo { key: file_key(data_dir), in_keyring: false }
+            match file_key(data_dir) {
+                Ok(key) => KeyInfo { key, in_keyring: false, persisted: true },
+                Err(e) => {
+                    log::error!("key file unusable, secrets will not be saved this session: {e}");
+                    KeyInfo { key: new_key(), in_keyring: false, persisted: false }
+                }
+            }
         }
     }
 }
@@ -42,17 +51,38 @@ fn keyring_key() -> Result<[u8; 32], String> {
     }
 }
 
-fn file_key(data_dir: &Path) -> [u8; 32] {
+/// 读取（或第一次创建）密钥文件。已有文件但内容损坏时不覆盖，返回错误，避免丢掉还能手工恢复的旧密钥；
+/// 新密钥先写临时文件再改名，写不进去就返回错误，不会退回一把没存下来的内存密钥。
+fn file_key(data_dir: &Path) -> Result<[u8; 32], String> {
     let path = data_dir.join("cookie.key");
-    if let Some(key) = std::fs::read_to_string(&path).ok().and_then(|s| decode_key(s.trim())) {
-        return key;
+    match std::fs::read_to_string(&path) {
+        Ok(s) => return decode_key(s.trim()).ok_or_else(|| format!("{} 内容损坏", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("读取 {} 失败：{e}", path.display())),
     }
     let key = new_key();
-    let _ = std::fs::create_dir_all(data_dir);
-    if std::fs::write(&path, hex::encode(key)).is_ok() {
-        restrict_permissions(&path);
+    write_key_file(&path, &key).map_err(|e| format!("写入 {} 失败：{e}", path.display()))?;
+    Ok(key)
+}
+
+fn write_key_file(path: &Path, key: &[u8; 32]) -> std::io::Result<()> {
+    use std::io::Write;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
     }
-    key
+    let tmp = path.with_extension("key.tmp");
+    let r = (|| {
+        let mut f = std::fs::File::create(&tmp)?;
+        restrict_permissions(&tmp);
+        f.write_all(hex::encode(key).as_bytes())?;
+        f.sync_all()?;
+        drop(f);
+        std::fs::rename(&tmp, path)
+    })();
+    if r.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    r
 }
 
 pub fn restrict_permissions(path: &Path) {
@@ -110,9 +140,26 @@ mod tests {
     #[test]
     fn file_key_is_stable() {
         let dir = std::env::temp_dir().join(format!("clearclip-key-{}", std::process::id()));
-        let a = file_key(&dir);
-        let b = file_key(&dir);
+        let a = file_key(&dir).unwrap();
+        let b = file_key(&dir).unwrap();
         assert_eq!(a, b);
+        assert!(!dir.join("cookie.key.tmp").exists(), "临时文件不残留");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn file_key_never_falls_back_to_a_memory_key() {
+        let dir = std::env::temp_dir().join(format!("clearclip-key-bad-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // 数据目录的位置被一个普通文件占住：写不进去，必须报错而不是返回内存密钥
+        std::fs::write(&dir, "x").unwrap();
+        assert!(file_key(&dir).is_err());
+        std::fs::remove_file(&dir).unwrap();
+        // 已有的密钥文件损坏：不覆盖，报错
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("cookie.key"), "not-hex").unwrap();
+        assert!(file_key(&dir).is_err());
+        assert_eq!(std::fs::read_to_string(dir.join("cookie.key")).unwrap(), "not-hex");
         let _ = std::fs::remove_dir_all(dir);
     }
 }
