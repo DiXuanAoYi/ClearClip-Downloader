@@ -8,6 +8,8 @@ import { api, errorText, events } from '../../../api'
 import type { EditApi } from '../../../composables/useEditProject'
 import type { EditText, SttStatus, Transcript, TranscriptWord } from '../../../types'
 import { CAPTION_STYLES, DEFAULT_FILLERS, captionsFromWords, clamp, findFillers, msText, outputSize, parseFillers, sentencesOf, wordSpans, wordsInClip } from '../../../utils/edit'
+import { useTauriEvents } from '../../../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const props = defineProps<{ ed: EditApi }>()
 const emit = defineEmits<{ goto: [ms: number] }>()
@@ -38,14 +40,14 @@ const LANGS: { v: string; t: string }[] = [
 let seq = (Math.floor(Date.now() / 1000) % 1_000_000) * 1000 + 700
 let unlisten: UnlistenFn | undefined
 onMounted(async () => {
-  stt.value = await api.editSttStatus().catch(() => null)
-  unlisten = await events.onTrackProgress((p) => {
+  stt.value = await api.editSttStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
+  unlisten = await ev.on(events.onTrackProgress((p) => {
     if (job.running && p.id === job.id) job.percent = clamp(p.percent, 0, 100)
-  })
+  }))
 })
 onBeforeUnmount(() => {
   unlisten?.()
-  if (job.running) api.trackCancel(job.id).catch(() => undefined)
+  if (job.running) api.trackCancel(job.id).catch(() => undefined) // 忽略：取消时任务可能已结束
 })
 
 /** 能覆盖当前片段的识别结果 */
@@ -92,7 +94,7 @@ async function transcribe(force = false) {
   }
 }
 async function cancel() {
-  if (job.running) await api.trackCancel(job.id).catch(() => undefined)
+  if (job.running) await api.trackCancel(job.id).catch(() => undefined) // 忽略：取消时任务可能已结束
 }
 
 // ---------- 选词与删除 ----------

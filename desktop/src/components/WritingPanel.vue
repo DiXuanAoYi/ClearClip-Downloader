@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { api, errorText } from '../api'
 import { useAppStore } from '../stores/app'
 import type { WritingSettings } from '../types'
+import { toastErr } from '../utils/toastErr'
 
 /** 设置 → 写作：桌面端的写作快捷键、自动浮标、不出现的程序、模型路线、个人风格。 */
 const form = defineModel<WritingSettings>({ required: true })
@@ -19,11 +20,11 @@ async function saveMemory() {
   }
 }
 async function forget(i: number) {
-  await api.writeMemoryForget(i).catch(() => {})
+  await api.writeMemoryForget(i).catch(toastErr('忘记这条记忆'))
   form.value.memorySamples = (form.value.memorySamples ?? []).filter((_, k) => k !== i)
 }
 async function clearMemory() {
-  await api.writeMemoryClear().catch(() => {})
+  await api.writeMemoryClear().catch(toastErr('清空记忆'))
   form.value.memoryNotes = ''
   form.value.memorySamples = []
 }

@@ -10,6 +10,8 @@ import { formatBytes } from '../utils/format'
 import EditModels from './toolbox/edit/EditModels.vue'
 import WhisperCliRow from './WhisperCliRow.vue'
 import SttLocal from './SttLocal.vue'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const mirrors = defineModel<string[]>({ required: true })
 const edition = defineModel<'lite' | 'full'>('edition', { default: 'lite' })
@@ -41,7 +43,7 @@ async function refresh() {
   loading.value = true
   try {
     list.value = await api.toolsStatus()
-    caps.value = await api.videoCaps().catch(() => null)
+    caps.value = await api.videoCaps().catch(() => null) // 忽略：可选数据，取不到就按空处理
   } catch (e) {
     ElMessage.error(errorText(e))
   } finally {
@@ -134,8 +136,8 @@ function percent(p: ToolProgress): number {
 }
 
 onMounted(async () => {
-  unlisten = await events.onToolProgress((p) => (progress.value[p.tool] = p))
-  api.getSettings().then((s) => (sttLocal.value = s.ai.sttLocalModel ?? '')).catch(() => {})
+  unlisten = await ev.on(events.onToolProgress((p) => (progress.value[p.tool] = p)))
+  api.getSettings().then((s) => (sttLocal.value = s.ai.sttLocalModel ?? '')).catch(() => {}) // 忽略：取不到就保持空
   await refresh()
 })
 onUnmounted(() => unlisten?.())

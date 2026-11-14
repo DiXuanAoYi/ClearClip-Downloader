@@ -91,7 +91,7 @@ function onMeta() {
   if (v && p?.startMs) v.currentTime = p.startMs / 1000
   if (v) {
     v.playbackRate = speed.value
-    void v.play().catch(() => {})
+    void v.play().catch(() => {}) // 忽略：媒体元素/音频上下文已释放或被浏览器拦截，可忽略
   }
 }
 
@@ -100,7 +100,7 @@ watch(speed, (s) => video.value && (video.value.playbackRate = s))
 function seek(ms: number) {
   if (video.value) {
     video.value.currentTime = ms / 1000
-    void video.value.play().catch(() => {})
+    void video.value.play().catch(() => {}) // 忽略：媒体元素/音频上下文已释放或被浏览器拦截，可忽略
   }
 }
 

@@ -8,6 +8,8 @@ import { useAppStore, useQueueStore } from '../stores/app'
 import type { BatchView, OrphanPart, TaskSnapshot } from '../types'
 import { fileNameOf, formatBytes, formatDateTime, formatEta, formatSpeed } from '../utils/format'
 import TaskDrawer from '../components/TaskDrawer.vue'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const queue = useQueueStore()
 const app = useAppStore()
@@ -26,7 +28,7 @@ let unBatch: (() => void) | null = null
 let refreshTimer: number | undefined
 
 async function loadBatches() {
-  batches.value = await api.batchList().catch(() => [])
+  batches.value = await api.batchList().catch(() => []) // 忽略：可选数据，取不到就按空处理
   if (batchFilter.value && !batches.value.some((b) => b.id === batchFilter.value)) batchFilter.value = null
 }
 function refreshSoon() {
@@ -55,7 +57,7 @@ watch(lists, (v) => {
 })
 
 onMounted(async () => {
-  unBatch = await events.onBatchChanged(refreshSoon)
+  unBatch = await ev.on(events.onBatchChanged(refreshSoon))
   await loadBatches()
   try {
     orphans.value = await api.listOrphanParts()

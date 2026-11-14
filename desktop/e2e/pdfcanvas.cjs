@@ -1,6 +1,6 @@
 // PDF 版面画布：原文 / 译文 / 对比 / 导出效果切换、Ctrl+滚轮缩放、拖动平移、直接改译文。假后端按命令名回答。
 const { chromium } = require('playwright')
-const PORT = 5199
+const PORT = 5299
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {

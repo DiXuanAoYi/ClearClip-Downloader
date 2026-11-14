@@ -238,7 +238,7 @@ function drive(it: Item, el: HTMLVideoElement, l: LiveMain | LiveOverlay | undef
   if (playing) {
     if (el.paused) {
       started.set(it.key, performance.now())
-      el.play().catch(() => undefined)
+      el.play().catch(() => undefined) // 忽略：媒体元素/音频上下文已释放或被浏览器拦截，可忽略
     }
   } else if (!el.paused) el.pause()
 }
@@ -294,7 +294,7 @@ function syncMusic(t: number, playing: boolean) {
     const keyed = kfEval(a.keyframes.volume, local)
     el.volume = clamp((keyed ?? a.volume) * clamp(f, 0, 1), 0, 1)
     if (Math.abs(el.currentTime - want) > DRIFT) el.currentTime = want
-    if (el.paused) el.play().catch(() => undefined)
+    if (el.paused) el.play().catch(() => undefined) // 忽略：媒体元素/音频上下文已释放或被浏览器拦截，可忽略
   }
 }
 
@@ -415,7 +415,7 @@ watch(
 )
 onBeforeUnmount(() => {
   stopMeters()
-  void actx?.close().catch(() => undefined)
+  void actx?.close().catch(() => undefined) // 忽略：媒体元素/音频上下文已释放或被浏览器拦截，可忽略
   actx = null
 })
 

@@ -64,7 +64,7 @@ export function usePlayerFx(video: Ref<HTMLVideoElement | null>) {
     chain = null
     el = null
     info.value = ''
-    void ac?.close().catch(() => {})
+    void ac?.close().catch(() => {}) // 忽略：媒体元素/音频上下文已释放或被浏览器拦截，可忽略
     ac = null
   }
 
@@ -75,7 +75,7 @@ export function usePlayerFx(video: Ref<HTMLVideoElement | null>) {
     if ((v as HTMLVideoElement & { mediaKeys?: unknown }).mediaKeys) return
     try {
       const ctx = new AudioContext({ latencyHint: 'playback' })
-      await Promise.race([ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 300))])
+      await Promise.race([ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 300))]) // 忽略：媒体元素/音频上下文已释放或被浏览器拦截，可忽略
       if (ctx.state !== 'running') {
         void ctx.close()
         return // 等下一次播放（需要用户操作过）

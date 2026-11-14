@@ -8,6 +8,9 @@ import { useAppStore } from '../stores/app'
 import type { AppGlossaryPack, OcrPack, OcrStatus, ScreenEntry, ScreenSettings, ScreenStatus, ScreenTarget, ScreenTry, ScreenWindow, ShotEntry, VoiceEntry } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import { clone, merge3 } from '../utils/merge3'
+import { useTauriEvents } from '../composables/useTauriEvent'
+import { toastErr } from '../utils/toastErr'
+const ev = useTauriEvents()
 
 /** 实时屏幕翻译：翻译别的软件和游戏画面上的文字。控制在这里，也可以用悬浮窗里的“译”、托盘和快捷键。 */
 const app = useAppStore()
@@ -91,8 +94,8 @@ const histRows = computed<HistRow[]>(() => {
   return [...live, ...shot].sort((a, b) => b.at - a.at)
 })
 async function loadHist() {
-  hist.value = await api.scHistory(200).catch(() => [])
-  shotHist.value = await api.shotHistList().catch(() => [])
+  hist.value = await api.scHistory(200).catch(() => []) // 忽略：可选数据，取不到就按空处理
+  shotHist.value = await api.shotHistList().catch(() => []) // 忽略：可选数据，取不到就按空处理
 }
 const shotRec = ref(app.settings?.shotHistory ?? true)
 watch(() => app.settings?.shotHistory, (v) => v != null && (shotRec.value = v))
@@ -116,7 +119,7 @@ async function shotToExcerpt(h: ShotEntry) {
   }
 }
 async function loadWins() {
-  wins.value = await api.scWindows().catch(() => [])
+  wins.value = await api.scWindows().catch(() => []) // 忽略：可选数据，取不到就按空处理
 }
 
 onMounted(async () => {
@@ -129,12 +132,12 @@ onMounted(async () => {
   void loadWins()
   void loadHist()
   void loadPacks()
-  langs.value = await api.scOcrLangs().catch(() => [])
-  experts.value = (await api.expertsState().catch(() => null))?.experts ?? []
-  ocr.value = await api.ocrStatus().catch(() => null)
+  langs.value = await api.scOcrLangs().catch(() => []) // 忽略：可选数据，取不到就按空处理
+  experts.value = (await api.expertsState().catch(() => null))?.experts ?? [] // 忽略：可选数据，取不到就按空处理
+  ocr.value = await api.ocrStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
   offs = [
-    await api.onScreenState((s) => (st.value = s)),
-    await api.onOcrDownload((p) => (dl.value = p.got >= p.total && p.total > 0 ? null : { got: p.got, total: p.total })),
+    await ev.on(api.onScreenState((s) => (st.value = s))),
+    await ev.on(api.onOcrDownload((p) => (dl.value = p.got >= p.total && p.total > 0 ? null : { got: p.got, total: p.total }))),
   ]
 })
 onBeforeUnmount(() => {
@@ -150,7 +153,7 @@ async function ensureMangaAck(mode: string): Promise<boolean> {
     return false
   }
   form.value.mangaAck = true
-  await api.scAckManga().catch(() => {})
+  await api.scAckManga().catch(() => {}) // 忽略：确认标记写失败只会再问一次
   return true
 }
 
@@ -220,7 +223,7 @@ const glossaryOn = computed({
 
 const packs = ref<AppGlossaryPack[]>([])
 async function loadPacks() {
-  packs.value = await api.glossaryAppPacks().catch(() => [])
+  packs.value = await api.glossaryAppPacks().catch(() => []) // 忽略：可选数据，取不到就按空处理
 }
 async function installPacks(ids: string[]) {
   try {
@@ -324,7 +327,7 @@ async function audioOn() {
   }
 }
 async function audioOff() {
-  await api.audioStop().catch(() => {})
+  await api.audioStop().catch(toastErr('停止语音识别'))
   await refresh()
   await loadVoice()
 }
@@ -363,24 +366,24 @@ async function summarize() {
   }
 }
 async function clearVoice() {
-  await api.voiceClear().catch(() => {})
+  await api.voiceClear().catch(toastErr('清空语音记录'))
   voice.value = []
   summary.value = ''
 }
 async function clearCache() {
-  await api.scCacheClear().catch(() => {})
+  await api.scCacheClear().catch(toastErr('清空缓存'))
   ElMessage.success('译文缓存已清')
 }
 async function toggleBar(on: boolean) {
   form.value.floatButton = on
-  await api.scBar(on).catch(() => {})
+  await api.scBar(on).catch(toastErr('切换工具条'))
 }
 function removeProfile(exe: string) {
   form.value.profiles = form.value.profiles.filter((p) => p.exe !== exe)
 }
 async function clearHist() {
-  if (histKind.value !== 'shot') await api.scHistoryClear().catch(() => {})
-  if (histKind.value !== 'live') await api.shotHistClear(true).catch(() => {})
+  if (histKind.value !== 'shot') await api.scHistoryClear().catch(toastErr('清空历史'))
+  if (histKind.value !== 'live') await api.shotHistClear(true).catch(toastErr('清空历史'))
   await loadHist()
 }
 async function copy(t: string) {

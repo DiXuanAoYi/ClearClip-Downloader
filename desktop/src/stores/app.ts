@@ -127,6 +127,7 @@ export const useAppStore = defineStore('app', () => {
   let base: Settings | null = null
   /** 别处改了设置时加一，编辑设置的页面据此把改动合进自己的表单 */
   const settingsRev = ref(0)
+  // 设置变更监听随应用整个生命周期存在（store 不属于任何组件），不需要释放
   let listening = false
 
   async function load() {
@@ -233,7 +234,7 @@ export const useParseStore = defineStore('parse', () => {
       error.value = errorText(e)
       errorKindRef.value = errorKind(e)
       errorSite.value = null
-      if (errorKindRef.value === 'need_login' || errorKindRef.value === 'rate_limited') errorSite.value = await api.loginSite(t).catch(() => null)
+      if (errorKindRef.value === 'need_login' || errorKindRef.value === 'rate_limited') errorSite.value = await api.loginSite(t).catch(() => null) // 忽略：登录入口是可选提示，取不到就不显示
     } finally {
       loading.value = false
     }

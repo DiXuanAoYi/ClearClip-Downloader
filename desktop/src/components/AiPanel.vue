@@ -38,7 +38,7 @@ const STT_PRESETS = [
 const LANGS = TARGET_LANGS
 
 async function refresh() {
-  status.value = await api.aiStatus().catch(() => null)
+  status.value = await api.aiStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
 }
 async function refreshHas() {
   has.value = {

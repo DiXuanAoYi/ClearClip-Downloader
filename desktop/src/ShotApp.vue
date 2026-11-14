@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, errorText } from './api'
+import { toastErr } from './utils/toastErr'
 
 /** 截图翻译（桌面端）：快捷键截下整屏并冻结，框选一块，交给视觉模型识字、翻译，译文盖回原位。 */
 type Block = { text: string; translation: string; rect: [number, number, number, number] | null }
@@ -55,7 +56,7 @@ const loadImage = (src: string) =>
 
 onMounted(async () => {
   window.addEventListener('keydown', onKey, true)
-  const info = await api.shotTake().catch(() => null)
+  const info = await api.shotTake().catch(() => null) // 忽略：可选数据，取不到就按空处理
   if (!info) return api.shotClose()
   shotUrl.value = info.dataUrl
   try {
@@ -98,7 +99,7 @@ async function pin() {
 async function saveNote() {
   if (!histAt.value) return tip('历史记录已在设置里关闭')
   saved.value = !saved.value
-  await api.shotHistSave(histAt.value, saved.value).catch(() => {})
+  await api.shotHistSave(histAt.value, saved.value).catch(toastErr('保存到历史'))
   tip(saved.value ? '已存为笔记（设置 → 剪贴板里查看）' : '已取消笔记')
 }
 async function compare() {

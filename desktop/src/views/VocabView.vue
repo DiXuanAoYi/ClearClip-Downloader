@@ -63,10 +63,10 @@ const fmtMb = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : 
 const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
 async function loadCaches() {
   const urls = [...new Set(all.value.map((w) => w.sourceUrl).filter(Boolean))]
-  const list = urls.length ? await api.videocacheInfos(urls).catch(() => []) : []
+  const list = urls.length ? await api.videocacheInfos(urls).catch(() => []) : [] // 忽略：可选数据，取不到就按空处理
   caches.value = Object.fromEntries(list.map((i) => [i.videoKey, i]))
   cacheStats.value = await api.videocacheStats().catch(() => ({ videos: 0, bytes: 0 }))
-  const s = await api.getSettings().catch(() => null)
+  const s = await api.getSettings().catch(() => null) // 忽略：可选数据，取不到就按空处理
   if (s) {
     autoSync.value = s.videoCacheAuto
     limitMb.value = s.videoCacheMb
@@ -86,7 +86,7 @@ async function openSource(w: VocabWord, restore = false) {
   }
 }
 async function viewCache(w: VocabWord) {
-  viewing.value = await api.videocacheGet(w.sourceUrl).catch(() => null)
+  viewing.value = await api.videocacheGet(w.sourceUrl).catch(() => null) // 忽略：可选数据，取不到就按空处理
   if (!viewing.value) ElMessage.info('清影里没有这个视频的缓存')
 }
 async function dropCache(w: VocabWord) {

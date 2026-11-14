@@ -5,6 +5,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../../api'
 import { formatBytes } from '../../utils/format'
+import { useTauriEvents } from '../../composables/useTauriEvent'
+import { toastErr } from '../../utils/toastErr'
+const ev = useTauriEvents()
 
 const emit = defineEmits<{ changed: [] }>()
 const recursive = ref(true)
@@ -13,9 +16,9 @@ const prog = ref<{ done: number; total: number } | null>(null)
 let un: UnlistenFn | undefined
 
 onMounted(async () => {
-  un = await events.onLibraryProgress((p) => {
+  un = await ev.on(events.onLibraryProgress((p) => {
     if (p.task === 'import') prog.value = p.done >= p.total ? null : { done: p.done, total: p.total }
-  })
+  }))
 })
 onBeforeUnmount(() => un?.())
 
@@ -23,9 +26,9 @@ onBeforeUnmount(() => un?.())
 const extMb = ref(10)
 const ext = ref<{ size: number; ts: number; error: string; rejectedSize: number } | null>(null)
 async function loadExt() {
-  const s = await api.getSettings().catch(() => null)
+  const s = await api.getSettings().catch(() => null) // 忽略：可选数据，取不到就按空处理
   if (s) extMb.value = s.extDataMb || 10
-  ext.value = await api.extDataStatus().catch(() => null)
+  ext.value = await api.extDataStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
 }
 onMounted(loadExt)
 async function saveExtMb() {
@@ -65,7 +68,7 @@ async function exportList(format: 'csv' | 'json') {
   try {
     const n = await api.libraryExport(format, dest)
     ElMessage.success(`已导出 ${n} 条记录`)
-    api.revealFile(dest).catch(() => {})
+    api.revealFile(dest).catch(toastErr('打开文件夹'))
   } catch (e) {
     ElMessage.error(errorText(e))
   }
@@ -77,7 +80,7 @@ async function backup() {
   try {
     await api.backupExport(dest)
     ElMessage.success('备份完成')
-    api.revealFile(dest).catch(() => {})
+    api.revealFile(dest).catch(toastErr('打开文件夹'))
   } catch (e) {
     ElMessage.error(errorText(e))
   }

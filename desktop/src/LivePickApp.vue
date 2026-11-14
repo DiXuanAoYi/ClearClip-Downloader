@@ -15,7 +15,7 @@ let nh = 1
 
 onMounted(async () => {
   window.addEventListener('keydown', onKey, true)
-  const i = await api.scPickTake().catch(() => null)
+  const i = await api.scPickTake().catch(() => null) // 忽略：可选数据，取不到就按空处理
   if (!i) return void api.scPickCancel()
   info.value = i
   const im = new Image()
@@ -79,11 +79,11 @@ async function up(e: MouseEvent) {
     // 没拖动：点选窗口
     sel.value = null
     const w = windowAt(e.clientX, e.clientY)
-    if (w) await api.scPickDone([w.x, w.y, w.w, w.h], w.hwnd).catch(() => {})
+    if (w) await api.scPickDone([w.x, w.y, w.w, w.h], w.hwnd).catch(() => {}) // 忽略：选取完成后窗口随即关闭，回传失败无处可报
     return
   }
   const rect: [number, number, number, number] = [Math.round(i.x + r.x * kx()), Math.round(i.y + r.y * ky()), Math.max(1, Math.round(r.w * kx())), Math.max(1, Math.round(r.h * ky()))]
-  await api.scPickDone(rect, 0).catch(() => {})
+  await api.scPickDone(rect, 0).catch(() => {}) // 忽略：选取完成后窗口随即关闭，回传失败无处可报
 }
 
 const hoverStyle = computed(() => {

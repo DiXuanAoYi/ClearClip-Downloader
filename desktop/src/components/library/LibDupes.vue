@@ -7,6 +7,8 @@ import { api, errorText, events } from '../../api'
 import { useAppStore } from '../../stores/app'
 import type { DupGroup, LibraryItem } from '../../types'
 import { formatBytes, formatDateTime, formatDuration } from '../../utils/format'
+import { useTauriEvents } from '../../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const emit = defineEmits<{ changed: [] }>()
 const groups = ref<DupGroup[]>([])
@@ -18,9 +20,9 @@ const marked = ref<Set<number>>(new Set())
 let un: UnlistenFn | undefined
 
 onMounted(async () => {
-  un = await events.onLibraryProgress((p) => {
+  un = await ev.on(events.onLibraryProgress((p) => {
     if (p.task === 'similar') prog.value = p.done >= p.total ? null : { done: p.done, total: p.total }
-  })
+  }))
 })
 onBeforeUnmount(() => un?.())
 

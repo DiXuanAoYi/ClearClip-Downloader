@@ -12,6 +12,9 @@ import FtReader from '../components/filetrans/FtReader.vue'
 import FtTasks from '../components/filetrans/FtTasks.vue'
 import FtStartDialog from '../components/filetrans/FtStartDialog.vue'
 import { baseName, countView, etaSeconds, etaText, filterTasks, mergeTasks, rangesValid, sizeText, taskKey, type Task, type TaskFilter } from '../utils/ft'
+import { useTauriEvents } from '../composables/useTauriEvent'
+import { toastErr } from '../utils/toastErr'
+const ev = useTauriEvents()
 
 /** 文件翻译：拖入文件 →（在“翻译设置”里确认页范围和设置）→ 一页一页翻 → 左原文右译文 / 版面阅读 → 导出。任务能停、能续、重启后还在。 */
 const app = useAppStore()
@@ -69,7 +72,7 @@ watch(confirmStart, (v) => {
 const ocrSt = ref<OcrStatus | null>(null)
 const ocrBusy = ref(false)
 async function ocrRefresh() {
-  ocrSt.value = await api.ocrStatus().catch(() => null)
+  ocrSt.value = await api.ocrStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
 }
 async function ocrInstall() {
   ocrBusy.value = true
@@ -88,7 +91,7 @@ const apiReady = computed(() => !!app.settings?.live.ocrApi.key)
 const pdfx = ref<PdfxStatus | null>(null)
 const pdfxBusy = ref('')
 async function pdfxRefresh() {
-  pdfx.value = await api.pdfxStatus().catch(() => null)
+  pdfx.value = await api.pdfxStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
 }
 async function pdfxDo(what: 'install' | 'font' | 'remove') {
   pdfxBusy.value = what
@@ -165,9 +168,9 @@ onMounted(async () => {
     cur.value = last.path
     void loadView()
   }
-  experts.value = (await api.expertsState().catch(() => null))?.experts ?? []
+  experts.value = (await api.expertsState().catch(() => null))?.experts ?? [] // 忽略：可选数据，取不到就按空处理
   offs = [
-    await events.onMediaJobs((l) => {
+    await ev.on(events.onMediaJobs((l) => {
       const before = new Map(jobs.value.map((j) => [j.id, j.status]))
       jobs.value = l
       updateEta()
@@ -175,7 +178,7 @@ onMounted(async () => {
       const ended = l.some((j) => j.kind === 'filetr' && before.get(j.id) !== j.status && j.status !== 'running' && j.status !== 'queued')
       if (ended) void refreshRecents()
       if (mine && (mine.status === 'running' || before.get(mine.id) !== mine.status)) void loadView()
-    }),
+    })),
   ]
   release = registerDrop({
     accepts: () => true,
@@ -307,8 +310,8 @@ async function ask(msg: string, ok: string): Promise<boolean> {
   }
 }
 async function removeTask(t: Task) {
-  if (t.jobId != null) await api.mediaJobRemove(t.jobId).catch(() => {})
-  await api.filetrRecentRemove(t.path, t.target).catch(() => {})
+  if (t.jobId != null) await api.mediaJobRemove(t.jobId).catch(toastErr('移除任务'))
+  await api.filetrRecentRemove(t.path, t.target).catch(toastErr('移除任务'))
 }
 async function act(what: string, t: Task) {
   try {
@@ -375,7 +378,7 @@ async function bulk(what: 'clear' | 'stopAll' | 'resumeAll') {
     await Promise.all([refreshJobs(), refreshRecents()])
     ElMessage.success('已清除已结束的任务（译文缓存还在）')
   } else if (what === 'stopAll') {
-    for (const t of tasks.value) if ((t.state === 'running' || t.state === 'queued') && t.jobId != null) await api.mediaJobCancel(t.jobId).catch(() => {})
+    for (const t of tasks.value) if ((t.state === 'running' || t.state === 'queued') && t.jobId != null) await api.mediaJobCancel(t.jobId).catch(() => {}) // 忽略：取消时任务可能已结束
   } else {
     for (const t of filterTasks(tasks.value, 'all').filter((x) => x.state === 'stopped' && !x.missing)) await start(t.path, taskOpts(t))
   }

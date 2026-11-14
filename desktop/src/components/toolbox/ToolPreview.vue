@@ -35,7 +35,7 @@ watch(
     trial.value = null
     audio.value = null
     if (!v) return
-    const i = await api.mediaInfo(v).catch(() => null)
+    const i = await api.mediaInfo(v).catch(() => null) // 忽略：可选数据，取不到就按空处理
     if (video.value !== v) return
     duration.value = i?.durationMs ?? 0
     at.value = Math.min(Math.round(duration.value * 0.1), Math.max(0, duration.value - 1000))
