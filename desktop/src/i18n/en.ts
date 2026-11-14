@@ -1004,6 +1004,7 @@ export const en: Record<string, string> = {
   "清影备份-{0}.zip": "ClearClip-backup-{0}.zip",
   "清影媒体库-{0}.{1}": "ClearClip-library-{0}.{1}",
   "清影已锁定": "ClearClip is locked",
+  "应用已锁定": "The app is locked",
   "清影用于把你在抖音、B站、YouTube 等视频和图片网站上看到的作品保存到本地，方便个人收藏和学习。": "ClearClip saves works you see on video and image sites such as Douyin, Bilibili and YouTube to your computer for personal collection and study.",
   "清晰度": "Quality",
   "清晰度与格式": "Quality & format",
