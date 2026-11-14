@@ -1014,7 +1014,7 @@ defineExpose({ reveal, targetAt, hover, fit })
               type="button"
               class="mk"
               :style="{ left: markX(m) + 'px', '--mc': MARK_COLOR[m.color] }"
-              :title="(m.name || '标记') + ' · ' + tickLabel(m.ms, 1000) + '（拖动移动，右键更多，双击写备注）'"
+              :title="`${m.name || '标记'} · ${tickLabel(m.ms, 1000)}（拖动移动，右键更多，双击写备注）`"
               @pointerdown.stop.prevent="markerDown($event, m)"
               @dblclick.stop.prevent="renameMarker(m)"
               @contextmenu.stop.prevent="markerMenu($event, m)"

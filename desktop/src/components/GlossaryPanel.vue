@@ -346,7 +346,7 @@ function onTab(name: string | number) {
             <el-switch v-model="r.g.enabled" size="small" @change="toggle(r.g)" />
             <div class="info">
               <div class="nm">{{ r.g.name }} <el-tag size="small" effect="plain">{{ ORIGIN[r.g.origin] }}</el-tag></div>
-              <small class="mute">{{ countTerms(r.g.terms) }} 条 · {{ langName(r.g.lang) }} · {{ r.g.matches.length ? '仅 ' + r.g.matches.slice(0, 3).join('、') + (r.g.matches.length > 3 ? '…' : '') : '所有网站' }}</small>
+              <small class="mute">{{ countTerms(r.g.terms) }} 条 · {{ langName(r.g.lang) }} · {{ r.g.matches.length ? `仅 ${r.g.matches.slice(0, 3).join('、')}${r.g.matches.length > 3 ? '…' : ''}` : '所有网站' }}</small>
             </div>
             <el-button size="small" link type="primary" @click="edit(r.g)">编辑</el-button>
             <el-button size="small" link @click="exportCsv(r.g)">导出</el-button>

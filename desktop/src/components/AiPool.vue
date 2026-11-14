@@ -195,7 +195,8 @@ function state(e: PoolEntry): { text: string; cls: string } {
   if (s.badKey) return { text: '密钥无效', cls: 'bad' }
   if (s.coolingSecs > 0) {
     const m = Math.ceil(s.coolingSecs / 60)
-    return { text: `${REASON[s.coolReason] || '冷却中'}，${m >= 90 ? Math.round(m / 60) + ' 小时' : m + ' 分钟'}后再用`, cls: 'warn' }
+    const reason = REASON[s.coolReason] || '冷却中'
+    return { text: m >= 90 ? `${reason}，${Math.round(m / 60)} 小时后再用` : `${reason}，${m} 分钟后再用`, cls: 'warn' }
   }
   if (e.dailyLimit > 0 && s.used >= e.dailyLimit) return { text: '今日已达上限', cls: 'warn' }
   return { text: '可用', cls: 'ok' }
@@ -301,7 +302,7 @@ function state(e: PoolEntry): { text: string; cls: string } {
               <span class="caps"><el-tag v-for="c in r.caps" :key="c" size="small" :type="c === 'vision' ? 'warning' : 'info'">{{ CAP_LABEL[c] || c }}</el-tag><el-tag v-if="r.free" size="small" type="success">免费</el-tag></span>
               <span class="res">
                 <template v-if="r.testing">测试中…</template>
-                <template v-else-if="r.res"><span :class="r.res.ok ? 'ok' : 'bad'">{{ r.res.ok ? '✓ 可用' + (r.res.vision === true ? '，能看图' : r.res.vision === false ? '，不能看图' : '') : '✗ ' + r.res.text }}</span> <span class="mute">{{ (r.res.ms / 1000).toFixed(1) }} 秒</span></template>
+                <template v-else-if="r.res"><span :class="r.res.ok ? 'ok' : 'bad'">{{ r.res.ok ? (r.res.vision === true ? '✓ 可用，能看图' : r.res.vision === false ? '✓ 可用，不能看图' : '✓ 可用') : `✗ ${r.res.text}` }}</span> <span class="mute">{{ (r.res.ms / 1000).toFixed(1) }} 秒</span></template>
                 <a v-else href="#" @click.prevent="testRow(r)">测试</a>
               </span>
             </div>
