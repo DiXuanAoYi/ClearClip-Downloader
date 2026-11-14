@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorText } from '../api'
 import type { AiSettings, ModelInfo, PoolEntry, PoolPreset, PoolStatus, ProbeResult } from '../types'
+import { toastErr } from '../utils/toastErr'
 
 const ai = defineModel<AiSettings>({ required: true })
 const presets = ref<PoolPreset[]>([])
@@ -40,7 +41,7 @@ async function refresh() {
   supaHas.value = await api.secretHas('ai.supadata').catch(() => false)
 }
 onMounted(async () => {
-  presets.value = await api.aiPoolPresets().catch(() => [])
+  presets.value = await api.aiPoolPresets().catch(() => []) // 忽略：可选数据，取不到就按空处理
   await refresh()
   timer = setInterval(refresh, 5000)
 })
@@ -58,7 +59,7 @@ function addCustom() {
   ai.value.pool.push({ id: nextId('custom'), preset: 'custom', kind: '', name: '自定义服务', baseUrl: '', model: '', sttModel: '', enabled: true, tasks: [], priority: 20, dailyLimit: 0, monthlyChars: 0 })
 }
 function remove(e: PoolEntry) {
-  api.secretSet(`ai.pool.${e.id}`, '').catch(() => {})
+  api.secretSet(`ai.pool.${e.id}`, '').catch(toastErr('清除密钥'))
   ai.value.pool = ai.value.pool.filter((x) => x.id !== e.id)
 }
 async function saveKey(e: PoolEntry) {
@@ -178,7 +179,7 @@ function applyProbe() {
     const id = nextId(p.e.id.replace(/-\d+$/, ''))
     const stt = r.caps.includes('stt')
     ai.value.pool.push({ ...p.e, id, name: `${p.e.name} · ${r.id.split('/').pop()}`, model: r.id, tasks: stt ? ['stt'] : [...p.e.tasks], sttModel: stt ? r.id : p.e.sttModel, priority: p.e.priority + 1 })
-    api.aiPoolCopyKey(p.e.id, id).catch(() => {})
+    api.aiPoolCopyKey(p.e.id, id).catch(toastErr('复制密钥'))
   }
   ElMessage.success(rest.length ? `已选用 ${first.id}，另外 ${rest.length} 个作为新条目加入（记得点右下角“保存”）` : `已选用 ${first.id}（记得点右下角“保存”）`)
   probe.value = null

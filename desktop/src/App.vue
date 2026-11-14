@@ -1,34 +1,38 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { api, errorText, events } from './api'
 import { useAppStore, useParseStore, useQueueStore, type ViewName } from './stores/app'
 import ParseView from './views/ParseView.vue'
-import QueueView from './views/QueueView.vue'
-import LibraryView from './views/LibraryView.vue'
-import ToolboxView from './views/ToolboxView.vue'
-import SubsView from './views/SubsView.vue'
-import LiveView from './views/LiveView.vue'
-import ScreenView from './views/ScreenView.vue'
-import VocabView from './views/VocabView.vue'
-import FileTransView from './views/FileTransView.vue'
-import SettingsView from './views/SettingsView.vue'
 import LockScreen from './components/LockScreen.vue'
 import DisclaimerDialog from './components/DisclaimerDialog.vue'
 import OnboardingDialog from './components/OnboardingDialog.vue'
 import CommandPalette from './components/CommandPalette.vue'
 import PlayerDialog from './components/PlayerDialog.vue'
-import elEn from 'element-plus/es/locale/lang/en'
-import elZh from 'element-plus/es/locale/lang/zh-cn'
+import { elLocale } from './i18n/elLocale'
 import { useLanguage } from './i18n/useLanguage'
 import { dropFiles, dropLeave, dropOver } from './utils/dropHub'
 import type { PairRequest } from './types'
+import { useTauriEvents } from './composables/useTauriEvent'
+import { toastErr } from './utils/toastErr'
+
+// 除默认的解析页外，其余页面第一次切过去时才加载，减小首屏体积（切换行为不变：仍是 v-if 挂载）
+const QueueView = defineAsyncComponent(() => import('./views/QueueView.vue'))
+const LibraryView = defineAsyncComponent(() => import('./views/LibraryView.vue'))
+const ToolboxView = defineAsyncComponent(() => import('./views/ToolboxView.vue'))
+const SubsView = defineAsyncComponent(() => import('./views/SubsView.vue'))
+const LiveView = defineAsyncComponent(() => import('./views/LiveView.vue'))
+const ScreenView = defineAsyncComponent(() => import('./views/ScreenView.vue'))
+const VocabView = defineAsyncComponent(() => import('./views/VocabView.vue'))
+const FileTransView = defineAsyncComponent(() => import('./views/FileTransView.vue'))
+const SettingsView = defineAsyncComponent(() => import('./views/SettingsView.vue'))
+
+const ev = useTauriEvents()
 
 const app = useAppStore()
 const queue = useQueueStore()
 useLanguage()
-const elLocale = computed(() => (app.settings?.language === 'en' ? elEn : elZh))
 const parse = useParseStore()
 const ready = ref(false)
 const dragging = ref(false)
@@ -75,7 +79,7 @@ function onHtmlDrop(e: DragEvent) {
 function cancelPower() {
   window.clearInterval(countdownTimer)
   countdown.value = null
-  api.setAfterAllDone('none').catch(() => {})
+  api.setAfterAllDone('none').catch(toastErr('取消定时操作'))
   ElMessage.info('已取消')
 }
 const loadError = ref('')
@@ -113,7 +117,7 @@ let idleTimer: number | undefined
 function checkIdle() {
   const mins = app.settings?.security.autoLockMinutes ?? 0
   if (!app.lock.enabled || app.lock.locked || mins <= 0) return
-  if (Date.now() - lastActive > mins * 60_000) api.lockNow().catch(() => {})
+  if (Date.now() - lastActive > mins * 60_000) api.lockNow().catch(() => {}) // 忽略：空闲自动锁定：失败不打扰
 }
 
 async function togglePrivacy() {
@@ -151,10 +155,10 @@ async function askRestart(msg: string) {
 onMounted(async () => {
   // 先确定有没有锁住，再显示任何内容
   await app.refreshLock()
-  await events.onLock(() => app.refreshLock())
+  await ev.on(events.onLock(() => app.refreshLock()))
   // 取景窗口、截图翻译等后台功能失败时，原来只写日志，界面上什么都看不到
-  await events.onToastError((msg) => ElMessage.error({ message: msg, duration: 8000, showClose: true }))
-  await events.onWebviewBroken(askRestart)
+  await ev.on(events.onToastError((msg) => ElMessage.error({ message: msg, duration: 8000, showClose: true })))
+  await ev.on(events.onWebviewBroken(askRestart))
   ACTIVITY.forEach((t) => window.addEventListener(t, touch, { passive: true }))
   idleTimer = window.setInterval(checkIdle, 10_000)
   try {
@@ -167,7 +171,7 @@ onMounted(async () => {
   ready.value = true
 
   // 主窗口在前台时复制到链接：直接填入并解析
-  await events.onClipboardLink(async (p) => {
+  await ev.on(events.onClipboardLink(async (p) => {
     if (app.settings?.autoDownload) return
     if (p.links.length >= 2) {
       try {
@@ -185,12 +189,12 @@ onMounted(async () => {
     }
     app.view = 'parse'
     parse.parse(p.text)
-  })
-  await events.onBatchOpen((p) => app.openBatch(p.urls, p.source, p.truncated))
-  await events.onAutoResult((r) => {
+  }))
+  await ev.on(events.onBatchOpen((p) => app.openBatch(p.urls, p.source, p.truncated)))
+  await ev.on(events.onAutoResult((r) => {
     if (r.ok) ElMessage.success(r.message)
     else ElMessage.error(r.message)
-  })
+  }))
   // 手机发送：新设备请求配对
   const asking = new Set<string>()
   async function askPair(p: PairRequest) {
@@ -206,33 +210,33 @@ onMounted(async () => {
       await api.phonePairRespond(p.deviceId, true)
       ElMessage.success('已配对')
     } catch (e) {
-      if (e === 'cancel' || e === 'close') await api.phonePairRespond(p.deviceId, false).catch(() => {})
+      if (e === 'cancel' || e === 'close') await api.phonePairRespond(p.deviceId, false).catch(toastErr('回复配对请求'))
       else ElMessage.error(errorText(e))
     } finally {
       asking.delete(p.deviceId)
     }
   }
-  await events.onPairRequest(askPair)
+  await ev.on(events.onPairRequest(askPair))
   // 上次关闭前还没处理的配对请求
   api
     .phoneInfo()
     .then((info) => info.pending.forEach(askPair))
-    .catch(() => {})
+    .catch(() => {}) // 忽略：启动时的可选同步，取不到下次事件会补上
   // 收到的链接：侧栏角标
-  await events.onInbox((c) => (app.inboxUnhandled = c.unhandled))
+  await ev.on(events.onInbox((c) => (app.inboxUnhandled = c.unhandled)))
   api
     .inboxCounts()
     .then((c) => (app.inboxUnhandled = c.unhandled))
-    .catch(() => {})
-  await events.onPhoneReceived((text) => {
+    .catch(() => {}) // 忽略：角标是可选的，取不到就不显示
+  await ev.on(events.onPhoneReceived((text) => {
     const url = text.match(/https?:\/\/\S+/)?.[0] ?? text
     ElNotification({ title: '收到发送到清影的链接', message: `${url.slice(0, 80)}（可在“媒体库 → 收到的链接”查看）`, type: 'info', duration: 3000, onClick: () => app.goLibrary('inbox') })
-  })
-  await events.onTransferReceived((r) => {
+  }))
+  await ev.on(events.onTransferReceived((r) => {
     ElNotification({ title: '收到手机发来的内容', message: r.name.slice(0, 80), type: 'success', duration: 3000, onClick: () => app.goLibrary('transfer') })
-  })
+  }))
   // 全部完成后睡眠 / 关机的倒计时
-  await events.onPowerCountdown((p) => {
+  await ev.on(events.onPowerCountdown((p) => {
     window.clearInterval(countdownTimer)
     countdown.value = { action: p.action, left: p.seconds }
     countdownTimer = window.setInterval(() => {
@@ -243,9 +247,9 @@ onMounted(async () => {
         countdown.value = null
       }
     }, 1000)
-  })
+  }))
   // 拖入包含链接的文本文件
-  await getCurrentWebview().onDragDropEvent(async (e) => {
+  await ev.on(getCurrentWebview().onDragDropEvent(async (e) => {
     // 位置是物理像素，换成页面里的 CSS 像素；剪辑页等会自己接收拖进来的素材文件
     const at = (p: { x: number; y: number }) => ({ x: p.x / (window.devicePixelRatio || 1), y: p.y / (window.devicePixelRatio || 1) })
     if (e.payload.type === 'over' || e.payload.type === 'enter') {
@@ -268,13 +272,13 @@ onMounted(async () => {
       }
       if (texts.length) importText(texts.join('\n'))
     }
-  })
+  }))
 
   // 全局快捷键 / 托盘“解析剪贴板”
-  await events.onParseRequest((text) => {
+  await ev.on(events.onParseRequest((text) => {
     app.view = 'parse'
     if (text.trim()) parse.parse(text)
-  })
+  }))
 
   if (app.settings?.checkUpdate) {
     api
@@ -284,7 +288,7 @@ onMounted(async () => {
           ElMessage({ type: 'info', message: `发现新版本 v${u.latest}，可在“设置 → 关于”中下载。`, duration: 6000 })
         }
       })
-      .catch(() => {})
+      .catch(() => {}) // 忽略：尽力而为，失败不影响当前操作
   }
 })
 </script>

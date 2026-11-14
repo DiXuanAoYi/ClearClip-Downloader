@@ -8,6 +8,8 @@ import type { ChatMsg, PhoneInfo, TransferItem, TransferList } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import { registerDrop } from '../utils/dropHub'
 import { useAppStore } from '../stores/app'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const app = useAppStore()
 const list = ref<TransferList>({ incoming: [], outgoing: [], receiveDir: '' })
@@ -51,7 +53,7 @@ async function loadThumbs() {
     api
       .transferThumb(it.path)
       .then((u) => u && (thumbs.value[it.path] = u))
-      .catch(() => {})
+      .catch(() => {}) // 忽略：缩略图是可选的
   }
 }
 let unlisten: UnlistenFn[] = []
@@ -418,12 +420,12 @@ watch(
 
 onMounted(async () => {
   await Promise.all([load(), loadInfo()])
-  if (info.value?.peerChat) chat.value = await api.phoneChatList().catch(() => [])
+  if (info.value?.peerChat) chat.value = await api.phoneChatList().catch(() => []) // 忽略：可选数据，取不到就按空处理
   unlisten = [
-    await events.onChat(onChatMsg),
-    await events.onTransferChanged(scheduleLoad),
-    await events.onTransferProgress((p) => onProgress(p.id, p.done)),
-    await events.onPairRequest(loadInfo),
+    await ev.on(events.onChat(onChatMsg)),
+    await ev.on(events.onTransferChanged(scheduleLoad)),
+    await ev.on(events.onTransferProgress((p) => onProgress(p.id, p.done))),
+    await ev.on(events.onPairRequest(loadInfo)),
   ]
   // 整个窗口的文件拖放事件只有一个入口：这个页面可见时，拖进来的文件都是要发给手机的
   unregister = registerDrop({

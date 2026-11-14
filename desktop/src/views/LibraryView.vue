@@ -11,6 +11,8 @@ import LibraryTools, { type ToolTab } from '../components/library/LibraryTools.v
 import { useAppStore, useParseStore, useQueueStore } from '../stores/app'
 import type { HistoryItem, LibraryFilter, LibraryItem, PlatformCount, TagCount } from '../types'
 import { formatBytes, formatDateTime, formatDuration } from '../utils/format'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const app = useAppStore()
 const parse = useParseStore()
@@ -120,7 +122,7 @@ function bulkNormalize() {
 }
 
 async function bulkSafebox() {
-  const st = await api.safeboxStatus().catch(() => null)
+  const st = await api.safeboxStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
   if (!st?.unlocked) {
     ElMessage.info(st?.exists ? '请先到“设置 → 安全与隐私 → 加密保险箱”输入密码解锁。' : '还没有创建保险箱，请先到“设置 → 安全与隐私 → 加密保险箱”创建。')
     app.goSettings('security')
@@ -258,7 +260,7 @@ watch(() => app.libraryQuery, consumeQuery)
 onMounted(async () => {
   consumeQuery()
   await load()
-  await events.onLibraryChanged(() => tab.value === 'files' && load())
+  await ev.on(events.onLibraryChanged(() => tab.value === 'files' && load()))
 })
 
 async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ...args: A) {

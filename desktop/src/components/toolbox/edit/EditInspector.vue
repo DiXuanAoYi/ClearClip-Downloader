@@ -24,6 +24,8 @@ import TimeInput from './TimeInput.vue'
 import { LOUDNESS_PRESETS } from '../../../utils/loudness'
 import { REVERBS, reverbId, reverbOf } from '../../../utils/reverb'
 import { shownNos, trackCode, trackOf, trackTitle } from '../../../utils/tracks'
+import { useTauriEvents } from '../../../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const props = defineProps<{ ed: EditApi; rg: RegionApi }>()
 const emit = defineEmits<{ goto: [ms: number] }>()
@@ -296,7 +298,7 @@ async function relink() {
 const hdrJob = ref<{ id: number; path: string; percent: number } | null>(null)
 let unlistenJobs: UnlistenFn | undefined
 onMounted(async () => {
-  unlistenJobs = await events.onMediaJobs(async (list) => {
+  unlistenJobs = await ev.on(events.onMediaJobs(async (list) => {
     const cur = hdrJob.value
     if (!cur) return
     const j = list.find((x) => x.id === cur.id)
@@ -317,7 +319,7 @@ onMounted(async () => {
     } else {
       cur.percent = j.percent
     }
-  })
+  }))
 })
 onBeforeUnmount(() => unlistenJobs?.())
 

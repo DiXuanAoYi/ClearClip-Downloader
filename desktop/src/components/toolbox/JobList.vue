@@ -4,13 +4,15 @@ import { ElMessage } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText, events } from '../../api'
 import type { JobSnap } from '../../types'
+import { useTauriEvents } from '../../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const jobs = ref<JobSnap[]>([])
 let un: UnlistenFn | undefined
 
 onMounted(async () => {
-  jobs.value = await api.mediaJobs().catch(() => [])
-  un = await events.onMediaJobs((l) => (jobs.value = l))
+  jobs.value = await api.mediaJobs().catch(() => []) // 忽略：可选数据，取不到就按空处理
+  un = await ev.on(events.onMediaJobs((l) => (jobs.value = l)))
 })
 onBeforeUnmount(() => un?.())
 

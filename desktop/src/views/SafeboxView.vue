@@ -7,6 +7,8 @@ import { api, errorText, events } from '../api'
 import type { SafeEntry, SafeStatus } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import JobList from '../components/toolbox/JobList.vue'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const status = ref<SafeStatus | null>(null)
@@ -31,7 +33,7 @@ const mismatch = computed(() => !!confirm.value && password.value !== confirm.va
 
 async function refresh() {
   status.value = await api.safeboxStatus()
-  entries.value = status.value.unlocked ? await api.safeboxList().catch(() => []) : []
+  entries.value = status.value.unlocked ? await api.safeboxList().catch(() => []) : [] // 忽略：可选数据，取不到就按空处理
 }
 
 async function run(fn: () => Promise<unknown>, ok?: string) {
@@ -45,7 +47,7 @@ async function run(fn: () => Promise<unknown>, ok?: string) {
     ElMessage.error(error.value)
   } finally {
     busy.value = false
-    await refresh().catch(() => {})
+    await refresh().catch(() => {}) // 忽略：刷新失败时保留旧列表
   }
 }
 
@@ -109,8 +111,8 @@ const changePw = () =>
   }, '密码已修改')
 
 onMounted(async () => {
-  await refresh().catch(() => {})
-  un.push(await events.onSafebox(() => refresh().catch(() => {})))
+  await refresh().catch(() => {}) // 忽略：刷新失败时保留旧列表
+  un.push(await ev.on(events.onSafebox(() => refresh().catch(() => {})))) // 忽略：刷新失败时保留旧列表
 })
 onBeforeUnmount(() => un.forEach((f) => f()))
 </script>

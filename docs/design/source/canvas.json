@@ -289,6 +289,150 @@
       "title": "设置 · 通用",
       "expand": "fill",
       "is_interactive": true
+    },
+    "V2-Overview.dc.html": {
+      "x": 0,
+      "y": 17250,
+      "w": 1840,
+      "h": 926,
+      "title": "总览与待拍板事项",
+      "is_interactive": false
+    },
+    "V2-D.dc.html": {
+      "x": 1960,
+      "y": 17250,
+      "w": 1840,
+      "h": 1709,
+      "title": "D 实施清单与验收",
+      "is_interactive": false
+    },
+    "V2-DS-1.dc.html": {
+      "x": 0,
+      "y": 19079,
+      "w": 1840,
+      "h": 1950,
+      "title": "设计系统 · 度量与动效",
+      "is_interactive": false
+    },
+    "V2-DS-2.dc.html": {
+      "x": 1960,
+      "y": 19079,
+      "w": 1840,
+      "h": 2270,
+      "title": "设计系统 · 色彩与令牌清单",
+      "is_interactive": false
+    },
+    "V2-CMP-1.dc.html": {
+      "x": 0,
+      "y": 21469,
+      "w": 1840,
+      "h": 2305,
+      "title": "组件 · 按钮 分段 链接 选择",
+      "is_interactive": false
+    },
+    "V2-CMP-2.dc.html": {
+      "x": 1960,
+      "y": 21469,
+      "w": 1840,
+      "h": 3241,
+      "title": "组件 · 字段 空状态 骨架 对话框 提示",
+      "is_interactive": false
+    },
+    "V2-C1.dc.html": {
+      "x": 0,
+      "y": 24830,
+      "w": 1840,
+      "h": 1286,
+      "title": "C1 设置 · AI",
+      "is_interactive": false
+    },
+    "V2-C2.dc.html": {
+      "x": 1960,
+      "y": 24830,
+      "w": 1840,
+      "h": 1286,
+      "title": "C2 设置全局",
+      "is_interactive": false
+    },
+    "V2-C3.dc.html": {
+      "x": 0,
+      "y": 26236,
+      "w": 1840,
+      "h": 1286,
+      "title": "C3 下载队列",
+      "is_interactive": false
+    },
+    "V2-C4.dc.html": {
+      "x": 1960,
+      "y": 26236,
+      "w": 1840,
+      "h": 1286,
+      "title": "C4 设置 · 安全",
+      "is_interactive": false
+    },
+    "V2-C5.dc.html": {
+      "x": 0,
+      "y": 27642,
+      "w": 1840,
+      "h": 1448,
+      "title": "C5 写作窗",
+      "is_interactive": false
+    },
+    "V2-C6.dc.html": {
+      "x": 1960,
+      "y": 27642,
+      "w": 1840,
+      "h": 1286,
+      "title": "C6 工具箱首页",
+      "is_interactive": false
+    },
+    "V2-C7.dc.html": {
+      "x": 0,
+      "y": 29210,
+      "w": 1840,
+      "h": 1163,
+      "title": "C7 侧栏",
+      "is_interactive": false
+    },
+    "V2-C8.dc.html": {
+      "x": 1960,
+      "y": 29210,
+      "w": 1840,
+      "h": 1286,
+      "title": "C8 媒体库",
+      "is_interactive": false
+    },
+    "V2-C9.dc.html": {
+      "x": 0,
+      "y": 30616,
+      "w": 1840,
+      "h": 1226,
+      "title": "C9 空状态统一",
+      "is_interactive": false
+    },
+    "V2-C10.dc.html": {
+      "x": 1960,
+      "y": 30616,
+      "w": 1840,
+      "h": 1286,
+      "title": "C10 屏幕翻译",
+      "is_interactive": false
+    },
+    "V2-C11.dc.html": {
+      "x": 0,
+      "y": 32022,
+      "w": 1840,
+      "h": 2375,
+      "title": "C11 加载 · 错误 · 反馈",
+      "is_interactive": false
+    },
+    "V2-C12.dc.html": {
+      "x": 1960,
+      "y": 32022,
+      "w": 1840,
+      "h": 937,
+      "title": "C12 硬编码色对照",
+      "is_interactive": false
     }
   },
   "createdOnFiles": {
@@ -306,6 +450,13 @@
       "text": "清影 ClearClip · 全部页面设计（冷钢深空 + 镜头琥珀）",
       "kind": "title1",
       "maxW": 4200
+    },
+    "t2": {
+      "x": 0,
+      "y": 16950,
+      "text": "设计系统 v2 · UI 提升到 8–9 分（待产品负责人确认，确认前不改代码）",
+      "kind": "title1",
+      "maxW": 3800
     }
   },
   "order": [
@@ -340,7 +491,25 @@
     "Settings-security.dc.html",
     "Settings-components.dc.html",
     "Settings-diag.dc.html",
-    "Settings-general.dc.html"
+    "Settings-general.dc.html",
+    "V2-Overview.dc.html",
+    "V2-D.dc.html",
+    "V2-DS-1.dc.html",
+    "V2-DS-2.dc.html",
+    "V2-CMP-1.dc.html",
+    "V2-CMP-2.dc.html",
+    "V2-C1.dc.html",
+    "V2-C2.dc.html",
+    "V2-C3.dc.html",
+    "V2-C4.dc.html",
+    "V2-C5.dc.html",
+    "V2-C6.dc.html",
+    "V2-C7.dc.html",
+    "V2-C8.dc.html",
+    "V2-C9.dc.html",
+    "V2-C10.dc.html",
+    "V2-C11.dc.html",
+    "V2-C12.dc.html"
   ],
   "pages": [],
   "title": "清影界面设计"

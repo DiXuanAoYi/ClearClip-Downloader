@@ -250,7 +250,7 @@ async function sendPageVideoLinks(tab) {
 /** 打开页面媒体总览：收集页面里的媒体，放进会话存储，再打开总览页。 */
 async function openOverview(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用总览')
-  const frames = await injectFiles(tab.id, ['content/collect.js'], true)
+  const frames = await injectFiles(tab.id, ccFiles.GROUPS.collect, true)
   const items = []
   const seen = new Set()
   const excerpt = (frames.find((f) => f.excerpt && f.frame === tab.url) || frames.find((f) => f.excerpt))?.excerpt || ''
@@ -270,24 +270,24 @@ async function openOverview(tab) {
 
 async function startPicker(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能批量选取')
-  await injectFiles(tab.id, ['content/ui.js', 'content/picker.js'])
+  await injectFiles(tab.id, ccFiles.GROUPS.picker)
 }
 
 /** 打开视频摘要面板（再次注入 = 关闭）。 */
 async function startVsum(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用视频摘要')
-  await injectFiles(tab.id, ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum.js'])
+  await injectFiles(tab.id, ccFiles.GROUPS.vsum)
 }
 
 /** 在当前页面的视频上叠字幕层（再次注入 = 关闭）。 */
 async function startShot(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用截图翻译')
-  await injectFiles(tab.id, ['content/ui.js', 'trans-logic.js', 'content/shot.js'])
+  await injectFiles(tab.id, ccFiles.GROUPS.shot)
 }
 
 async function startSubLayer(tab) {
   if (!isWebPage(tab)) throw new Error('当前页面不能使用字幕层')
-  await injectFiles(tab.id, ['content/ui.js', 'content/vdock.js', 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js'])
+  await injectFiles(tab.id, ccFiles.GROUPS.subLayer)
 }
 
 // ---------- 以图搜图 ----------
@@ -326,7 +326,7 @@ const HANDLERS = {
     else if (m.action === 'shot') await startShot(tab)
     else if (m.action === 'batch-links') return await sendPageVideoLinks(tab)
     else if (m.action === 'webtrans') await webTransDo(tab, String(m.mode || 'toggle'))
-    else if (m.action === 'excludepick') await injectFiles(tab.id, ['content/ui.js', 'content/excludepick.js'])
+    else if (m.action === 'excludepick') await injectFiles(tab.id, ccFiles.GROUPS.excludePick)
     else throw new Error('未知操作')
     return {}
   },
@@ -367,7 +367,7 @@ const HANDLERS = {
   'cc-unlock-now': async (m) => {
     const tab = await api.tabs.get(Number(m.tabId))
     if (!isWebPage(tab)) throw new Error('当前页面不能使用这个功能')
-    await api.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ['content/unlock.js'], world: 'MAIN' })
+    await api.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ccFiles.GROUPS.unlock, world: 'MAIN' })
     return {}
   },
   // 视频摘要：面板把请求交给清影（本机），由清影调用设置里的大模型；长任务提交后轮询
@@ -505,7 +505,7 @@ const HANDLERS = {
     } catch {
       // 还没注入
     }
-    await api.scripting.executeScript({ target: { tabId: tab.id, frameIds: [frameId] }, files: TR_FILES })
+    await api.scripting.executeScript({ target: { tabId: tab.id, frameIds: [frameId] }, files: ccFiles.GROUPS.trans })
     await sleep(60)
     if (!ready(await api.tabs.sendMessage(tab.id, msg, { frameId }))) throw new Error('划词翻译没有启动（这个页面可能不允许扩展运行脚本）')
     return {}
@@ -528,11 +528,15 @@ const HANDLERS = {
 }
 
 api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  const handler = msg && HANDLERS[msg.type]
+  const handler = msg && typeof msg.type === 'string' && Object.prototype.hasOwnProperty.call(HANDLERS, msg.type) ? HANDLERS[msg.type] : null
   if (!handler) return false
-  // 内容脚本只能从有标签页的发送者来；扩展页面的消息 sender.tab 可能为空
-  if (/^cc-(sniffed|send-page|send-media|send-batch|engines|save|capture|area|shot|ai-status|ai-run|ai-job|ai-cancel|note|tr)$/.test(msg.type) && !sender.tab) return false
-  handler(msg, sender)
+  // 入口检查（bg-guard.js）：发送者是本扩展、需要标签页的消息来自内容脚本、字段按白名单整理并限长；不合规返回统一的错误
+  const g = ccGuard.check(msg, sender, api.runtime.id)
+  if (!g.ok) {
+    sendResponse({ ok: false, error: g.error, code: g.code })
+    return false
+  }
+  handler(g.msg, sender)
     .then((r) => sendResponse({ ok: true, ...r }))
     .catch(async (e) => {
       if (e.code === 'unconfigured') await openSetup()
@@ -587,11 +591,11 @@ async function buildMenus() {
   }
 }
 
-let menuTimer = 0
+// 设置连着改几次只重建一次；待办存进存储 + alarm 兜底，后台在这 300 毫秒里被回收也会补做
 function rebuildMenusSoon() {
-  clearTimeout(menuTimer)
-  menuTimer = setTimeout(() => buildMenus().catch((e) => console.warn('menus failed', e)), 300)
+  ccDefer.schedule('menus', 300).catch((e) => console.warn('schedule menus failed', e))
 }
+ccDefer.on('menus', () => buildMenus().catch((e) => console.warn('menus failed', e)))
 
 api.contextMenus.onClicked.addListener(async (info, tab) => {
   const id = String(info.menuItemId)
@@ -682,18 +686,17 @@ api.commands?.onCommand.addListener(async (cmd) => {
 // ---------- 扩展的用户数据同步到清影（笔记、高亮、本地导入的字幕）：进清影的备份；新装扩展时自动取回 ----------
 
 const EXT_KEYS = ['vsumNotes', 'hlData', 'vsumLocal']
-let extPushTimer = 0
 function pushExtDataSoon() {
-  clearTimeout(extPushTimer)
-  extPushTimer = setTimeout(async () => {
-    try {
-      const data = await api.storage.local.get(EXT_KEYS)
-      await call('/api/v1/extdata', { data })
-    } catch {
-      // 清影没开：下次改动时再同步
-    }
-  }, 15000)
+  ccDefer.schedule('ext-push', 15000).catch((e) => console.warn('schedule ext push failed', e))
 }
+ccDefer.on('ext-push', async () => {
+  try {
+    const data = await api.storage.local.get(EXT_KEYS)
+    await call('/api/v1/extdata', { data })
+  } catch {
+    // 清影没开：下次改动时再同步
+  }
+})
 async function pullExtData() {
   try {
     const r = await call('/api/v1/extdata')

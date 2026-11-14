@@ -9,6 +9,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "i18n": "node scripts/i18n.mjs",
+    "lint:colors": "node scripts/lint-colors.mjs",
     "release:version": "node scripts/version.mjs",
     "release:check": "node scripts/version.mjs --check",
     "tauri": "tauri",
@@ -33,6 +34,7 @@
     "@vitejs/plugin-vue": "^6.0.9",
     "playwright": "1.56.1",
     "typescript": "~5.9.0",
+    "unplugin-vue-components": "^32.1.0",
     "vite": "^7.0.0",
     "vue-tsc": "^3.3.12"
   }

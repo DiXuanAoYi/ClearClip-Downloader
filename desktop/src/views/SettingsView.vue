@@ -99,7 +99,7 @@ watch(layoutMode, (v) => {
     /* 记不住也不影响 */
   }
 })
-api.isPortable().then((v) => (portable.value = v)).catch(() => {})
+api.isPortable().then((v) => (portable.value = v)).catch(() => {}) // 忽略：探测是否便携版，失败按否处理
 
 function saveDomains() {
   form.value.clipboardDomains = domainsText.value

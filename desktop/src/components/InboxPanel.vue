@@ -8,6 +8,8 @@ import { useAppStore, useParseStore } from '../stores/app'
 import type { InboxFilter, InboxItem, InboxSource, InboxStatus } from '../types'
 import { formatDateTime } from '../utils/format'
 import { guideFor, siteName } from '../utils/siteGuides'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const props = defineProps<{ query: string }>()
 const app = useAppStore()
@@ -82,7 +84,7 @@ let unlisten: UnlistenFn | undefined
 let poll: number | undefined
 onMounted(async () => {
   await load()
-  unlisten = await events.onInbox(reloadSoon)
+  unlisten = await ev.on(events.onInbox(reloadSoon))
   // 下载进度在任务完成前不会触发事件，进行中时定期刷新
   poll = window.setInterval(() => {
     if (items.value.some((i) => i.status === 'downloading' || i.status === 'queued' || i.status === 'resolving')) load()

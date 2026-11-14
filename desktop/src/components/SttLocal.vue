@@ -5,6 +5,8 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import { ElMessage } from 'element-plus'
 import { api, errorText, events } from '../api'
 import type { ModelStatus, SenseVoiceStatus } from '../types'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const props = defineProps<{ modelValue: string; persist?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [id: string] }>()
@@ -70,9 +72,9 @@ const remove = (id: string) =>
   )
 
 onMounted(async () => {
-  un = await events.onModelProgress((p) => {
+  un = await ev.on(events.onModelProgress((p) => {
     if (busy.value && (p.id === busy.value || (busy.value === SV && p.id === 'sensevoice')) && p.total > 0) pct.value = Math.round((p.got / p.total) * 100)
-  })
+  }))
   try {
     await reload()
   } catch (e) {

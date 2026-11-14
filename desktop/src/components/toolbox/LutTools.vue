@@ -362,7 +362,7 @@ function useInNormalize() {
 }
 
 onMounted(async () => {
-  looks.value = await api.lutLooks().catch(() => [])
+  looks.value = await api.lutLooks().catch(() => []) // 忽略：可选数据，取不到就按空处理
   if (samplePath.value) loadSample()
 })
 onBeforeUnmount(() => window.clearTimeout(timer))

@@ -13,7 +13,7 @@ const local = {
   set: async (o) => Object.assign(store, JSON.parse(JSON.stringify(o))),
 }
 const ctx = vm.createContext({ URL, URLSearchParams, TextEncoder, console, api: { storage: { local } } })
-const FILES = ['features.js', 'clean-link.js', 'progress.js', 'engines.js', 'vendor/qrcode.js', 'qr.js', 'later.js', 'capture-plan.js']
+const FILES = ['files-manifest.js', 'features.js', 'clean-link.js', 'progress.js', 'engines.js', 'vendor/qrcode.js', 'qr.js', 'later.js', 'capture-plan.js']
 for (const f of FILES) vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f })
 const X = (name) => vm.runInContext(name, ctx)
 const plain = (v) => JSON.parse(JSON.stringify(v))

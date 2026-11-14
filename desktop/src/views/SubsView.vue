@@ -11,6 +11,8 @@ import { formatDateTime, formatDuration } from '../utils/format'
 import ErrorAlert from '../components/ErrorAlert.vue'
 import { errorKind } from '../api'
 import type { ErrorKind } from '../types'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 
 const app = useAppStore()
@@ -41,7 +43,7 @@ async function load() {
 
 onMounted(async () => {
   await load()
-  unlisten = await events.onSubs(load)
+  unlisten = await ev.on(events.onSubs(load))
 })
 onUnmounted(() => unlisten?.())
 
@@ -198,13 +200,13 @@ async function openDetail(s: Subscription) {
   detail.value = s
   tab.value = s.pending ? 'pending' : 'downloaded'
   await loadItems()
-  if (s.newCount) api.subsClearNew(s.id).then(load).catch(() => {})
+  if (s.newCount) api.subsClearNew(s.id).then(load).catch(() => {}) // 忽略：清除“新”标记是顺带的，失败下次再清
 }
 
 async function loadItems() {
   if (!detail.value) return
   picked.value = new Set()
-  items.value = await api.subsItems(detail.value.id, TAB_STATUSES[tab.value]).catch(() => [])
+  items.value = await api.subsItems(detail.value.id, TAB_STATUSES[tab.value]).catch(() => []) // 忽略：可选数据，取不到就按空处理
 }
 
 function toggle(id: string) {

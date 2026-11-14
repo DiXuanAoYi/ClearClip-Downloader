@@ -7,6 +7,8 @@ import { useAppStore } from '../stores/app'
 import type { BatchItem, BatchOpts, PreviewItem, PreviewStatus } from '../types'
 import { formatBytes, formatDuration } from '../utils/format'
 import { siteName } from '../utils/siteGuides'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const MAX = 500
 const app = useAppStore()
@@ -49,8 +51,8 @@ function defaults(): BatchOpts {
 }
 
 let unlisten: (() => void) | null = null
-events
-  .onBatchPreview((p) => {
+ev.on(
+  events.onBatchPreview((p) => {
     if (!visible.value || p.key !== key.value) return
     if ('finished' in p) {
       finished.value = true
@@ -63,8 +65,8 @@ events
     else if (it.status === 'dup' || it.status === 'done' || it.status === 'queued') picked.value.delete(it.url)
     picked.value = new Set(picked.value)
     if (it.status === 'playlist') ranges.value[it.url] = [1, it.entries.length]
-  })
-  .then((u) => (unlisten = u))
+  }),
+).then((u) => (unlisten = u))
 onBeforeUnmount(() => {
   unlisten?.()
   stopPreview()
@@ -80,7 +82,7 @@ watch(() => app.batchRequest, takeRequest)
 onMounted(takeRequest)
 
 function stopPreview() {
-  if (key.value) api.batchPreviewCancel(key.value).catch(() => {})
+  if (key.value) api.batchPreviewCancel(key.value).catch(() => {}) // 忽略：取消预览时任务可能已结束
 }
 
 async function start(list: string[], src: string, cut: boolean) {

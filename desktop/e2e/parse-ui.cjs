@@ -144,7 +144,7 @@ const init = (result, dark, extra = {}) => `
     await okSoon('下载所选：720p + 字幕（内嵌）+ 封面 + 这一章', async () => { const eq2 = await lastCall(page, 'enqueue'); return eq2 && ['v2', 's1', 'c1'].every((id) => eq2.assetIds.includes(id)) && eq2.post.subMode === 'soft' && eq2.post.clip.startMs === 62000 && eq2.post.clip.endMs === 480000 }, async () => { const eq2 = await lastCall(page, 'enqueue'); return JSON.stringify(eq2) })
     // 主按钮颜色：亮色是深一档的橙，白字（先把鼠标移开，免得量到悬停色）
     await page.mouse.move(5, 5)
-    await okSoon('主按钮：深琥珀底、白字', async () => { const btn = await page.locator('.foot .el-button').evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color]); return btn[0] === 'rgb(180, 95, 0)' && btn[1] === 'rgb(255, 255, 255)' }, async () => { const btn = await page.locator('.foot .el-button').evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color]); return btn.join(' ') })
+    await okSoon('主按钮：深琥珀底、白字', async () => { const btn = await page.locator('.foot .el-button').evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color]); return btn[0] === 'rgb(166, 86, 0)' && btn[1] === 'rgb(255, 255, 255)' }, async () => { const btn = await page.locator('.foot .el-button').evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color]); return btn.join(' ') })
     await page.close()
   }
 

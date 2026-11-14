@@ -10,7 +10,7 @@ const opacity = ref(1)
 onMounted(async () => {
   document.documentElement.style.background = 'transparent'
   document.body.style.background = 'transparent'
-  url.value = (await api.shotPinTake().catch(() => null)) ?? ''
+  url.value = (await api.shotPinTake().catch(() => null)) ?? '' // 忽略：可选数据，取不到就按空处理
   if (!url.value) void api.shotPinClose()
 })
 function down(e: MouseEvent) {

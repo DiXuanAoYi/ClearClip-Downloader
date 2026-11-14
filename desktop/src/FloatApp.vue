@@ -6,6 +6,8 @@ import type { ScreenStatus } from './types'
 import { useLanguage } from './i18n/useLanguage'
 import { useAppStore, useQueueStore } from './stores/app'
 import { formatSpeed } from './utils/format'
+import { useTauriEvents } from './composables/useTauriEvent'
+const ev = useTauriEvents()
 
 /**
  * 清影悬浮窗（桌面上只有这一个）：把浏览器里的链接（或一段带链接的文字）拖到这里就开始下载；点一下再按 Ctrl+V 也行。
@@ -130,7 +132,7 @@ function fit() {
   const w = Math.ceil(el.getBoundingClientRect().width) + 20
   if (w === lastFit) return
   lastFit = w
-  void api.floatFit(w).catch(() => {})
+  void api.floatFit(w).catch(() => {}) // 忽略：悬浮条尺寸调整失败无碍
 }
 watch([scOpen, scShown], () => void nextTick(fit))
 async function act(kind: string, arg = '') {
@@ -171,9 +173,9 @@ onMounted(async () => {
   await app.load()
   await queue.start()
   window.addEventListener('paste', onPaste)
-  sc.value = await api.scStatus().catch(() => null)
+  sc.value = await api.scStatus().catch(() => null) // 忽略：可选数据，取不到就按空处理
   calcFps()
-  offs = [await api.onScreenState((s) => ((sc.value = s), calcFps()))]
+  offs = [await ev.on(api.onScreenState((s) => ((sc.value = s), calcFps())))]
 })
 onBeforeUnmount(() => {
   ro?.disconnect()

@@ -8,6 +8,8 @@ import { useAppStore } from '../stores/app'
 import type { ErrorKind, LiveRoom, LiveSettings, LiveStatus, NormPreset, Recording } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import ErrorAlert from '../components/ErrorAlert.vue'
+import { useTauriEvents } from '../composables/useTauriEvent'
+const ev = useTauriEvents()
 
 const app = useAppStore()
 const rooms = ref<LiveRoom[]>([])
@@ -28,9 +30,9 @@ async function load() {
 const presets = ref<NormPreset[]>([])
 
 onMounted(async () => {
-  presets.value = await api.videoPresets().catch(() => [])
+  presets.value = await api.videoPresets().catch(() => []) // 忽略：可选数据，取不到就按空处理
   await load()
-  unlisten = await events.onLive(load)
+  unlisten = await ev.on(events.onLive(load))
   // 录制中刷新已录时长和大小
   timer = window.setInterval(() => {
     tick.value = Date.now()
@@ -141,7 +143,7 @@ const recs = ref<Recording[]>([])
 
 async function openRecs(r: LiveRoom) {
   recsFor.value = r
-  recs.value = await api.liveRecordings(r.id).catch(() => [])
+  recs.value = await api.liveRecordings(r.id).catch(() => []) // 忽略：可选数据，取不到就按空处理
 }
 
 const recordingCount = computed(() => rooms.value.filter((x) => x.state === 'recording').length)
