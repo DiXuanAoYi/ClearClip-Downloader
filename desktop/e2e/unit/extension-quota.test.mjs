@@ -221,7 +221,7 @@ test('翻译缓存：新条目先记进会话存储，后台重启后由存盘�
 })
 
 test('后台里的内存定时器都换成了 ccDefer（待办持久化 + alarm 兜底）', () => {
-  const bgActions = read('bg-actions.js')
+  const bgActions = ['bg-page.js', 'bg-actions.js', 'bg-menus.js'].map(read).join('\n')
   assert.ok(!/menuTimer|extPushTimer/.test(bgActions))
   assert.match(bgActions, /ccDefer\.schedule\('menus'/)
   assert.match(bgActions, /ccDefer\.schedule\('ext-push'/)

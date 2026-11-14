@@ -34,7 +34,9 @@
       "bg-link.js",
       "bg-capture.js",
       "bg-vcache.js",
+      "bg-page.js",
       "bg-actions.js",
+      "bg-menus.js",
       "background.js"
     ]
   },

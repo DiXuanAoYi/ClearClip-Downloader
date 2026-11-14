@@ -1,5 +1,5 @@
 // 脚本文件清单的唯一来源：后台脚本的加载顺序、各功能注入页面的文件顺序、文件之间的依赖。
-// 其他地方（background.js 的 importScripts、features.js 的常驻脚本、bg-actions.js / bg-trans.js / bg-capture.js 的按需注入）
+// 其他地方（background.js 的 importScripts、features.js 的常驻脚本、bg-page.js / bg-trans.js / bg-capture.js 的按需注入）
 // 都从这里取，不再各写一份。只有 manifest.json 的 background.scripts 必须写成静态数组（Firefox 以它加载后台脚本），
 // 由单元测试（extension-files.test.mjs）保证它和这里的 BG_SCRIPTS 一致。
 //
@@ -34,7 +34,9 @@ const ccFiles = (() => {
     'bg-link.js',
     'bg-capture.js',
     'bg-vcache.js',
+    'bg-page.js',
     'bg-actions.js',
+    'bg-menus.js',
   ]
   const BG_MAIN = 'background.js'
 
