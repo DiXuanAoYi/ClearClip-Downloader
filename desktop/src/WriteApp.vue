@@ -2,6 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { api, errorText } from './api'
+import CcSelect from './components/ui/CcSelect.vue'
+import CcSegmented from './components/ui/CcSegmented.vue'
+import CcLink from './components/ui/CcLink.vue'
+import CcSkeleton from './components/ui/CcSkeleton.vue'
+import CcButton from './components/ui/CcButton.vue'
+import { notifyError } from './utils/notify'
 import { useLanguage } from './i18n/useLanguage'
 import type { Excerpt, WritePending, WritePersona, WritingSettings } from './types'
 import { isWord, speechLang } from './utils/selection'
@@ -236,6 +242,17 @@ function addQuestion() {
   newQ.value = ''
 }
 
+const ENGINE_OPTS = [
+  { value: 'auto', label: '听写：跟随设置' },
+  { value: 'local', label: '本机开源模型' },
+  { value: 'api', label: '在线接口' },
+]
+const presetOpts = computed(() => [{ value: '', label: '场景：通用' }, ...PRESETS.map((p) => ({ value: p.id, label: p.name }))])
+const actionOpts = computed(() => tabActions.value.map((a) => ({ value: a.id, label: a.name })))
+function pickActionId(id: string) {
+  const a = tabActions.value.find((x) => x.id === id)
+  if (a) pickAction(a)
+}
 function pickTab(t: Tab) {
   if (tab.value === t) return
   tab.value = t
@@ -272,6 +289,7 @@ async function tweak(id: string) {
     }
   } catch (e) {
     error.value = errorText(e)
+    notifyError('生成失败', { desc: '模型没有给出结果。', detail: error.value, onRetry: () => void run() })
   } finally {
     busy.value = false
     progress.value = ''
@@ -680,11 +698,7 @@ onBeforeUnmount(() => {
             <button class="lnk" :disabled="!hasText || busy" @click="text = ''">清空</button>
             <span v-if="recording" class="meter" :title="dictLabel"><i :style="{ width: Math.round(dictLevel * 100) + '%' }" /></span>
             <span v-if="recording" class="cnt">实时听写 · {{ dictLabel }}</span>
-            <select v-else v-model="dictEngine" class="engsel" title="听写用哪个识别引擎：跟随设置，或临时指定本机开源模型 / 在线接口" aria-label="听写引擎">
-              <option value="auto">听写：跟随设置</option>
-              <option value="local">本机开源模型</option>
-              <option value="api">在线接口</option>
-            </select>
+            <CcSelect v-else v-model="dictEngine" :options="ENGINE_OPTS" size="s" width="m" aria-label="听写引擎" />
             <button class="lnk mic" :class="{ rec: recording }" :disabled="busy && !recording" @click="dictate">{{ recording ? '■ 停止' : '听写' }}</button>
           </div>
           <div v-if="hist.length > 1" class="histrow">
@@ -735,7 +749,7 @@ onBeforeUnmount(() => {
             <div class="picks">
               <button v-for="t in TONES" :key="t.id" class="pk" :class="{ on: form.tone === t.id }" :aria-pressed="form.tone === t.id" @click="form.tone = t.id">{{ t.name }}</button>
             </div>
-            <small v-if="risky" class="warn">对上级、客户开玩笑可能不合适，确定要用“幽默接话”吗？</small>
+            <small v-if="risky" class="warn"><svg class="wi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.5 20h19zM12 10v4.5M12 17.5v.5" /></svg>对上级、客户开玩笑可能不合适，确定要用“幽默接话”吗？</small>
             <div class="lenrow">
               <span>长度</span>
               <span class="seg3">
@@ -749,7 +763,8 @@ onBeforeUnmount(() => {
         <!-- 改写润色 -->
         <template v-else-if="tab === 'rewrite'">
           <div class="seg">
-            <button v-for="a in tabActions" :key="a.id" class="sg" :class="{ on: action.id === a.id }" @click="pickAction(a)">{{ a.name }}</button>
+            <span class="lbl">怎么改</span>
+            <CcSegmented :model-value="action.id" :options="actionOpts" size="s" aria-label="怎么改" @update:model-value="pickActionId" />
           </div>
           <section class="grp">
             <span class="lbl">怎么说（可不选）</span>
@@ -758,10 +773,7 @@ onBeforeUnmount(() => {
             </div>
           </section>
           <section class="opts">
-            <select v-model="presetId" aria-label="场景">
-              <option value="">场景：通用</option>
-              <option v-for="p in PRESETS" :key="p.id" :value="p.id">{{ p.name }}</option>
-            </select>
+            <CcSelect v-model="presetId" :options="presetOpts" placeholder="场景：通用" size="s" width="m" aria-label="场景" />
             <input v-model="extra" class="ex" placeholder="额外要求（可选）" maxlength="200" />
           </section>
           <div v-if="extras.length" class="recent">
@@ -792,7 +804,8 @@ onBeforeUnmount(() => {
         <!-- 翻译 · 更多 -->
         <template v-else>
           <div class="seg">
-            <button v-for="a in tabActions" :key="a.id" class="sg" :class="{ on: action.id === a.id }" @click="pickAction(a)">{{ a.name }}</button>
+            <span class="lbl">怎么改</span>
+            <CcSegmented :model-value="action.id" :options="actionOpts" size="s" aria-label="怎么改" @update:model-value="pickActionId" />
           </div>
           <section class="opts">
             <input v-if="action.id === 'translate'" v-model="target" class="tg" placeholder="目标语言" aria-label="目标语言" />
@@ -831,13 +844,14 @@ onBeforeUnmount(() => {
           <span v-if="busy" class="hint prog">{{ progress }}</span>
           <span v-else-if="missing && hasText" class="hint prog">还差：{{ missing }}</span>
         </div>
-        <div v-if="error" class="errbox">
+        <div v-if="error" class="errbox" role="alert">
           <p class="err">{{ error }}</p>
           <div class="row">
-            <button class="ghost" @click="run">重试</button>
-            <button class="ghost" @click="openSettings">{{ errHint ? '去设置模型' : '打开设置' }}</button>
+            <CcButton kind="secondary" size="s" @click="run">重试</CcButton>
+            <CcButton kind="secondary" size="s" @click="openSettings">{{ errHint ? '去设置模型' : '打开设置' }}</CcButton>
           </div>
         </div>
+        <section v-else-if="busy && !outs.length" class="res" aria-busy="true"><CcSkeleton :lines="3" height="14" label="正在生成…" /></section>
         <section v-if="outs.length" class="res">
           <div class="reshd">
             <b>{{ selMode ? selTitle : isReply ? '回复' : '结果' }}</b>
@@ -849,7 +863,7 @@ onBeforeUnmount(() => {
           </div>
           <div v-if="compare" class="out orig"><small>原文</small>{{ text }}</div>
           <div class="out" :class="{ big: isReply }">{{ out }}</div>
-          <small v-if="guardText" class="warn">⚠ {{ guardText }}</small>
+          <small v-if="guardText" class="warn"><svg class="wi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.5 20h19zM12 10v4.5M12 17.5v.5" /></svg>{{ guardText }}</small>
           <ul v-if="issues.length" class="issues">
             <li v-for="(it, i) in issues" :key="i"><s>{{ it.from }}</s> → <b>{{ it.to }}</b> <small>{{ it.reason }}</small></li>
           </ul>
@@ -876,7 +890,7 @@ onBeforeUnmount(() => {
       </main>
       <footer class="foot">
         <span>快捷键 <kbd>{{ hotkey || '未设置' }}</kbd></span>
-        <a href="#" @click.prevent="openSettings">修改</a>
+        <CcLink @click.prevent="openSettings">修改</CcLink>
         <span class="sp">Esc 关闭 · Alt+1/2/3 切版本</span>
       </footer>
     </div>
@@ -894,12 +908,6 @@ onBeforeUnmount(() => {
 <style>
 /* 窗口本身是透明的（阴影必须在窗口留白 --m 以内淡出，超出窗口边界会被切成一个看得见的方框）：页面底色一律透明，只有里面那张圆角卡片有颜色，窗口四周不会再有任何多余的底层容器 */
 html, body, #app { background: transparent !important; overflow: hidden; }
-html.dark .shell .wa { --acc: #ffb547; --accd: #ffb547; --soft: #ffb54721; --line: #1c2b43; --bg: #080d16; --card: #0e1625; --mut: #9aabc6; --err: #ff7b8a; --ok: #4be3d0; --fg: #e8f0fd; --edge: #2c4366; --shadow: 0 2px 10px rgba(0, 0, 0, 0.55); }
-html.dark .shell .sg.on { color: var(--acc); background: var(--soft); }
-html.dark .shell .ghost.on { color: var(--acc); }
-html.dark .shell .foot a { color: var(--acc); }
-/* 暗色：选中的选项和主按钮用亮橙底配深色字（亮色主题用深一档的橙） */
-html.dark .shell .wa { --pick: #ffc760; --go: #ffb547; --gofg: #1a1100; --look: #c2cfe4; --dash: #2c4366; }
 .personas { display: grid; grid-template-columns: 1fr 1fr; gap: 6px }
 .pcard { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; font: inherit }
 .pcard b { font-size: 13px }
@@ -909,11 +917,11 @@ html.dark .shell .wa { --pick: #ffc760; --go: #ffb547; --gofg: #1a1100; --look: 
 
 <style scoped>
 .shell { --m: 14px; position: relative; height: 100vh; padding: var(--m); box-sizing: border-box; }
-.wa { --pick: #8a4a00; --go: #b45f00; --gofg: #fff; --look: #34445f; --dash: #aebfd8; --acc: #b45f00; --accd: #b45f00; --soft: #f59e0b24; --line: #d3deec; --bg: #eaf0f7; --card: #f6f9fd; --mut: #4d5f7b; --err: #c4283d; --ok: #007a70; --fg: #0b1424; --edge: #7f95b8; --shadow: 0 2px 10px rgba(11, 20, 36, 0.32);
+.wa { --pick: var(--cc-acc-text); --go: var(--cc-acc-strong); --gofg: var(--cc-on-acc); --look: var(--cc-fg2); --dash: var(--cc-line-strong); --acc: var(--cc-acc-strong); --accd: var(--cc-acc-text); --soft: var(--cc-acc-soft); --line: var(--cc-line); --bg: var(--cc-bg); --card: var(--cc-card); --mut: var(--cc-mute); --err: var(--cc-err); --ok: var(--cc-ok); --fg: var(--cc-fg); --edge: var(--cc-line-strong); --shadow: var(--cc-shadow);
   height: 100%; display: flex; flex-direction: column; background: var(--card); color: var(--fg); border-radius: 14px; border: 1px solid var(--edge); box-shadow: var(--shadow); overflow: hidden; font: 13px/1.55 -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; }
 .bar { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px 14px; cursor: grab; user-select: none; background: var(--bg); border-bottom: 1px solid var(--line); }
 .bar:active { cursor: grabbing; }
-.logo { width: 24px; height: 24px; border-radius: 8px; background: var(--acc); color: var(--gofg, #1a1100); display: grid; place-items: center; font: 700 12px/1 inherit; flex: none; }
+.logo { width: 24px; height: 24px; border-radius: 8px; background: var(--acc); color: var(--gofg); display: grid; place-items: center; font: 700 12px/1 inherit; flex: none; }
 .ttl { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
 .ttl b { font-size: 14px; }
 .from { font-size: 11px; line-height: 20px; padding: 0 9px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
@@ -922,7 +930,7 @@ html.dark .shell .wa { --pick: #ffc760; --go: #ffb547; --gofg: #1a1100; --look: 
 .ib:hover { background: var(--bg); color: var(--fg); }
 .ib.on { color: var(--acc); }
 .ib.on svg { fill: currentColor; fill-opacity: 0.25; }
-.ib.close:hover { background: var(--err); color: #fff; }
+.ib.close:hover { background: var(--err); color: var(--cc-on-err); }
 main { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; }
 .box { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; display: flex; flex-direction: column; }
 .box:focus-within { border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 18%, transparent); }
@@ -934,10 +942,9 @@ main { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-dire
 .lnk:disabled { opacity: 0.4; cursor: default; }
 .lnk.mic.rec { color: var(--err); font-weight: 600; }
 .histrow { display: flex; gap: 6px; align-items: center; padding: 0 10px 8px; font-size: 11px; color: var(--mut); }
-.seg { display: flex; flex-wrap: wrap; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
-.sg { flex: 1; border: 0; background: none; color: var(--mut); border-radius: 7px; padding: 5px 4px; cursor: pointer; font: inherit; font-size: 12.5px; white-space: nowrap; }
-.sg:hover { color: var(--fg); }
-.sg.on { background: var(--card); color: var(--accd); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
+.seg { display: flex; flex-direction: column; gap: 6px; }
+.seg .cc-seg { width: 100%; }
+.seg .seg-item { flex: 1; }
 .more-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 999px; padding: 2px 11px; cursor: pointer; font: inherit; font-size: 12px; }
 .chip:hover { border-color: var(--acc); color: var(--accd); }
@@ -954,7 +961,7 @@ main { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-dire
 .go { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--go); color: var(--gofg); border: 0; border-radius: 10px; padding: 9px 14px; cursor: pointer; font: inherit; font-weight: 600; font-size: 14px; }
 .go kbd { font: 11px/1 inherit; opacity: 0.8; border: 1px solid currentColor; border-radius: 4px; padding: 2px 5px; font-weight: 400; }
 .go:hover:not(:disabled) { filter: brightness(1.08); }
-.go:disabled { opacity: 0.45; cursor: default; }
+.go:disabled { background: var(--cc-fill); color: var(--cc-mute); cursor: not-allowed; }
 .go.stop { background: var(--bg); color: var(--fg); border: 1px solid var(--line); }
 .go.sm { flex: 0 0 auto; padding: 6px 16px; font-size: 13px; }
 .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--acc); animation: sp 0.8s linear infinite; }
@@ -966,16 +973,16 @@ main { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-dire
 .ghost.star { padding: 5px 9px; }
 .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .row.after { font-size: 12px; }
-textarea.src.live { color: var(--mute, #7a847e) }
-.meter { width: 46px; height: 6px; border-radius: 3px; background: var(--line, #d3deec); overflow: hidden; display: inline-block }
-.meter i { display: block; height: 100%; background: var(--acc, #b45f00); transition: width .08s }
-.engsel { height: 24px; font-size: 12px; border: 1px solid var(--line, #d3deec); border-radius: 6px; background: transparent; color: inherit }
+textarea.src.live { color: var(--mut) }
+.meter { width: 46px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; display: inline-block }
+.meter i { display: block; height: 100%; background: var(--acc); transition: width .08s }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
 .hint { color: var(--mut); }
 .err { color: var(--err); margin: 0; }
 .errbox { display: flex; flex-direction: column; gap: 6px; background: color-mix(in srgb, var(--err) 9%, transparent); border: 1px solid color-mix(in srgb, var(--err) 35%, transparent); border-radius: 10px; padding: 8px 10px; }
-.warn { color: #b4701a; }
+.warn { color: var(--cc-warn-text); }
 .ok { color: var(--ok); }
+.wi { width: 13px; height: 13px; vertical-align: -2px; margin-right: 4px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .res { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 .reshd { display: flex; align-items: center; gap: 8px; }
 .vers { display: flex; gap: 2px; }
@@ -993,7 +1000,6 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .issues b { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); border-radius: 4px; padding: 0 4px; }
 .auto { margin-left: auto; font-size: 12px; color: var(--mut); display: flex; gap: 4px; align-items: center; }
 .foot { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--mut); border-top: 1px solid var(--line); padding: 7px 14px; background: var(--bg); }
-.foot a { color: var(--accd); }
 .foot .sp { margin-left: auto; flex: none; }
 kbd { font: 11px/1 ui-monospace, Consolas, monospace; }
 .foot kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; background: var(--card); }
@@ -1019,7 +1025,7 @@ kbd { font: 11px/1 ui-monospace, Consolas, monospace; }
 .tabs { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 3px; flex: none; }
 .tab { flex: 1; border: 0; background: none; color: var(--mut); border-radius: 7px; height: 30px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .tab:hover { color: var(--fg); }
-.tab.on { background: var(--card); color: var(--pick); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
+.tab.on { background: var(--card); color: var(--pick); font-weight: 600; box-shadow: var(--cc-sh-1); }
 /* ---------- 帮我回 ---------- */
 .lbl { font-size: 12px; color: var(--mut); font-weight: 500; }
 .recv { padding: 9px 11px 8px; gap: 6px; }
@@ -1062,7 +1068,8 @@ kbd { font: 11px/1 ui-monospace, Consolas, monospace; }
 .tweaks { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--mut); }
 .vt.lab { width: auto; height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12px; background: var(--card); }
 .vt.lab.on { background: var(--soft); color: var(--pick); }
-.out.big { font-size: 13.5px; line-height: 1.7; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+
+.out.big { font-size: var(--cc-fs-md); line-height: 1.7; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 html.dark .shell .out.big { background: var(--bg); }
 .fine { font-size: 11.5px; }
 .favs .exm { justify-content: flex-end; }

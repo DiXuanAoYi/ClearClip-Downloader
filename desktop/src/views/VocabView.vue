@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import ExcerptsPanel from '../components/ExcerptsPanel.vue'
+import CcEmpty from '../components/ui/CcEmpty.vue'
+import CcButton from '../components/ui/CcButton.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { save } from '@tauri-apps/plugin-dialog'
@@ -238,7 +240,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <ExcerptsPanel v-if="part === 'excerpts'" class="expanel" />
     <template v-else>
 
-    <div class="stat-row">
+    <div v-if="stats.total" class="stat-row">
       <div class="stat"><b>{{ stats.total }}</b><span>全部生词</span></div>
       <div class="stat hot"><b>{{ stats.due }}</b><span>今天该复习</span></div>
       <div class="stat"><b>{{ stats.learned }}</b><span>已掌握</span></div>
@@ -257,8 +259,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </el-select>
           <el-input v-model="query" size="small" clearable placeholder="搜索单词或释义" class="search" />
         </div>
-        <div class="th"><span>单词</span><span>释义与原句</span><span>来源</span><span>熟练度</span></div>
-        <el-empty v-if="!loading && !rows.length" :description="stats.total ? '没有符合条件的词' : '还没有收藏的词。在浏览器里看视频，悬停字幕里的单词点“收藏”就会出现在这里。'" />
+        <div v-if="rows.length" class="th"><span>单词</span><span>释义与原句</span><span>来源</span><span>熟练度</span></div>
+        <CcEmpty v-if="!loading && !rows.length && stats.total" title="没有符合条件的词" desc="换个关键词，或放宽筛选条件试试。"><CcButton kind="secondary" size="s" @click="filter = 'all'; source = ''; query = ''">清除筛选</CcButton></CcEmpty>
+        <CcEmpty v-else-if="!loading && !rows.length" title="还没有生词" desc="在浏览器里看视频，悬停字幕里的单词点“收藏”，就会出现在这里，可以导出。" />
         <div class="rowsc">
           <div v-for="w in rows" :key="w.id" class="tr" :class="{ sel: w.id === sel }" @click="sel = w.id" @dblclick="openSource(w)">
             <div>
@@ -401,7 +404,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .g { border: 1px solid var(--cc-line); border-radius: 10px; padding: 8px 4px; text-align: center; cursor: pointer; display: flex; flex-direction: column; gap: 2px; font-weight: 600 }
 .g span { font-weight: 400; font-size: 11px; color: var(--cc-mute) }
 .g.p { background: var(--cc-amber); border-color: var(--cc-amber); color: var(--cc-on-acc) }
-.g.p span { color: #fff; opacity: .85 }
+.g.p span { color: var(--cc-on-acc); opacity: .85 }
 .exp { border: 1px solid var(--cc-line); background: var(--cc-card); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px }
 .btns { display: flex; gap: 6px; flex-wrap: wrap }
 .hint { color: var(--cc-mute); font-size: 12px; line-height: 1.5 }
