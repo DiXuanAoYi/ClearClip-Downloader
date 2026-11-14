@@ -164,7 +164,7 @@ fn first_face_of_a_collection_becomes_a_standalone_font() {
 fn background_is_the_median_of_the_pixels_around_the_box() {
     let (w, h) = (20usize, 20usize);
     let mut img = vec![0u8; w * h * 4];
-    for p in img.chunks_exact_mut(4) {
+    for p in img.as_chunks_mut::<4>().0 {
         p.copy_from_slice(&[250, 240, 200, 255]); // 米色底
     }
     // 框里全是黑字，不会影响框外一圈

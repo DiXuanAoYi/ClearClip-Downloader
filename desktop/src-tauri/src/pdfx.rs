@@ -702,7 +702,7 @@ pub fn extract_with(lib: &Path, pdf: &Path, mode: LineMode) -> AppResult<Vec<Pag
 /// `as_rgba_bytes()` 会按“有没有颠倒过”换算，不能再自己对调 R 和 B（之前对调了一次，页面里红蓝是反的）。
 fn rgba_of(bmp: &PdfBitmap) -> Vec<u8> {
     let mut v = bmp.as_rgba_bytes();
-    for px in v.chunks_exact_mut(4) {
+    for px in v.as_chunks_mut::<4>().0 {
         px[3] = 255;
     }
     v

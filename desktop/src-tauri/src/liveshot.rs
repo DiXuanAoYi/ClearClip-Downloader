@@ -35,9 +35,9 @@ pub fn png_to_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     let raw = &buf[..info.buffer_size()];
     let rgba: Vec<u8> = match info.color_type {
         png::ColorType::Rgba => raw.to_vec(),
-        png::ColorType::Rgb => raw.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::Rgb => raw.as_chunks::<3>().0.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
         png::ColorType::Grayscale => raw.iter().flat_map(|g| [*g, *g, *g, 255]).collect(),
-        png::ColorType::GrayscaleAlpha => raw.chunks_exact(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
+        png::ColorType::GrayscaleAlpha => raw.as_chunks::<2>().0.iter().flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
         png::ColorType::Indexed => return None,
     };
     Some((rgba, info.width, info.height))

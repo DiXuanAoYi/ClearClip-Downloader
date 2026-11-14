@@ -134,7 +134,7 @@ pub fn family_name(path: &Path) -> Option<String> {
         }
         let raw = b.get(strings + off..strings + off + len)?;
         let text = match platform {
-            3 | 0 => String::from_utf16_lossy(&raw.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect::<Vec<_>>()),
+            3 | 0 => String::from_utf16_lossy(&raw.as_chunks::<2>().0.iter().map(|c| u16::from_be_bytes([c[0], c[1]])).collect::<Vec<_>>()),
             1 => raw.iter().map(|&c| c as char).collect(),
             _ => continue,
         };
@@ -143,7 +143,7 @@ pub fn family_name(path: &Path) -> Option<String> {
         }
         // 16 号优先，其次英文
         let rank = (if id == 16 { 2 } else { 0 }) + u8::from(lang == 0x409 || platform == 1);
-        if best.as_ref().map_or(true, |(r, _)| rank > *r) {
+        if best.as_ref().is_none_or(|(r, _)| rank > *r) {
             best = Some((rank, text));
         }
     }

@@ -54,8 +54,8 @@ fn word_in(hay: &str, needle: &str) -> bool {
     while let Some(i) = h[from..].find(&n) {
         let s = from + i;
         let e = s + n.len();
-        let before = h[..s].chars().next_back().map_or(true, |c| !c.is_alphanumeric());
-        let after = h[e..].chars().next().map_or(true, |c| !c.is_alphanumeric());
+        let before = h[..s].chars().next_back().is_none_or(|c| !c.is_alphanumeric());
+        let after = h[e..].chars().next().is_none_or(|c| !c.is_alphanumeric());
         if before && after {
             return true;
         }

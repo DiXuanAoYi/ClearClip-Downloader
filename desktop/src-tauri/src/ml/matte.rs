@@ -81,7 +81,7 @@ pub fn preprocess(rgb: &[u8], w: usize, h: usize, norm: Norm) -> Vec<f32> {
     let mut out = vec![0f32; 3 * n];
     const MEAN: [f32; 3] = [0.485, 0.456, 0.406];
     const STD: [f32; 3] = [0.229, 0.224, 0.225];
-    for (i, px) in rgb.chunks_exact(3).take(n).enumerate() {
+    for (i, px) in rgb.as_chunks::<3>().0.iter().take(n).enumerate() {
         for c in 0..3 {
             let v = f32::from(px[c]) / 255.0;
             out[c * n + i] = match norm {

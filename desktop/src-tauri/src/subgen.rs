@@ -374,7 +374,7 @@ fn split_text(s: &str, o: SegOpts, out: &mut Vec<String>) {
         cur.push(c);
         let next = chars.get(i + 1).copied();
         // 英文句号后面必须是空格才算句末（避免 3.5、e.g.）
-        let end = is_sentence_end(c) && (c == '。' || c == '！' || c == '？' || c == '…' || next.map_or(true, |n| n == ' '));
+        let end = is_sentence_end(c) && (c == '。' || c == '！' || c == '？' || c == '…' || next.is_none_or(|n| n == ' '));
         if end && cur.chars().filter(|c| !c.is_whitespace()).count() >= 2 {
             sentences.push(std::mem::take(&mut cur));
         }

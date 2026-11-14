@@ -48,7 +48,7 @@ pub fn note_failure(app: &AppHandle, what: &str, err: &dyn std::fmt::Display) ->
     let now = Instant::now();
     *lock(&LAST_FAIL) = Some(now);
     let mut last = lock(&LAST_NOTE);
-    if last.map_or(true, |t| now.duration_since(t) >= QUIET) {
+    if last.is_none_or(|t| now.duration_since(t) >= QUIET) {
         *last = Some(now);
         log::warn!("窗口组件（WebView2）已断开，{what}打不开：{err}。需要重启清影才能恢复");
         // 主窗口开着：在主窗口里弹提示；主窗口收在托盘里（看不到）：用系统自己的对话框，不需要网页组件
@@ -94,7 +94,7 @@ pub fn should_try() -> bool {
     if !is_broken() {
         return true;
     }
-    lock(&LAST_FAIL).map_or(true, |t| t.elapsed() >= RETRY_AFTER)
+    lock(&LAST_FAIL).is_none_or(|t| t.elapsed() >= RETRY_AFTER)
 }
 
 #[cfg(test)]

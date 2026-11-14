@@ -227,7 +227,7 @@ pub const REMOTE_PLATFORMS: &[&str] = &["douyin", "kuaishou"];
 
 /// 远程 API 不支持的平台始终走本地解析；无法识别平台的链接交给远程接口判断。
 pub fn remote_allowed(provider: Option<&dyn Provider>) -> bool {
-    provider.map_or(true, |p| REMOTE_PLATFORMS.contains(&p.id()))
+    provider.is_none_or(|p| REMOTE_PLATFORMS.contains(&p.id()))
 }
 
 pub async fn resolve_url(ctx: &Ctx<'_>, url: &str) -> AppResult<MediaInfo> {

@@ -290,7 +290,7 @@ impl LiveGuard {
             let mut m = self.live.lock();
             let Some(l) = m.get_mut(&self.id) else { return };
             l.done = l.done.max(done);
-            let due = l.last_emit.map_or(true, |t| t.elapsed() >= EMIT_EVERY);
+            let due = l.last_emit.is_none_or(|t| t.elapsed() >= EMIT_EVERY);
             if due {
                 l.last_emit = Some(Instant::now());
             }
@@ -788,7 +788,7 @@ fn after_received(app: &AppHandle, id: i64, name: &str, kind: &str, path: &Path,
     let live = live(app);
     let notify = {
         let mut last = live.last_notify.lock().unwrap_or_else(|e| e.into_inner());
-        let due = last.map_or(true, |t| t.elapsed() >= NOTIFY_EVERY);
+        let due = last.is_none_or(|t| t.elapsed() >= NOTIFY_EVERY);
         if due {
             *last = Some(Instant::now());
         }

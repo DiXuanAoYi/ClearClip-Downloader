@@ -30,7 +30,7 @@ async fn count_red_white(ff: &Path, file: &Path, t: f64) -> (usize, usize) {
     ]);
     let o = run_ffmpeg_capture(ff, &a, Duration::from_secs(60)).await.unwrap().0;
     let (mut red, mut white) = (0, 0);
-    for px in o.chunks_exact(3) {
+    for px in o.as_chunks::<3>().0 {
         if px[0] > 200 && px[1] < 70 && px[2] < 70 {
             red += 1;
         }

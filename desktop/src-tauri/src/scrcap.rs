@@ -12,7 +12,7 @@ pub struct Grab {
 /// BGRA（自上而下）转 RGB，丢掉 alpha。
 pub fn bgra_to_rgb(bgra: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bgra.len() / 4 * 3);
-    for px in bgra.chunks_exact(4) {
+    for px in bgra.as_chunks::<4>().0 {
         out.extend_from_slice(&[px[2], px[1], px[0]]);
     }
     out

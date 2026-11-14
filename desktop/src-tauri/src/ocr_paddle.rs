@@ -323,7 +323,7 @@ pub fn recognize(data_dir: &Path, lang: &str, pack: &str, bgra: &[u8], w: usize,
         .ok_or_else(|| AppError::new(crate::error::ErrorKind::NeedUpdate, "还没有安装“增强识字组件”。到“屏幕翻译 → 识字”里下载或导入。"))?;
     let mut g = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
     // 换了语言包（识别模型不同）要重新装载
-    if g.as_ref().map_or(true, |(p, _)| *p != files.rec) {
+    if g.as_ref().is_none_or(|(p, _)| *p != files.rec) {
         *g = Some((files.rec.clone(), Engine::load(&files)?));
     }
     match g.as_mut() {

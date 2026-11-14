@@ -786,7 +786,7 @@ pub fn decode_bgra(bytes: &[u8]) -> AppResult<(Vec<u8>, usize, usize)> {
     let img = image::load_from_memory(bytes).map_err(|e| AppError::invalid(format!("这张图片读不出来：{e}")))?.to_rgba8();
     let (w, h) = (img.width() as usize, img.height() as usize);
     let mut px = img.into_raw();
-    for p in px.chunks_exact_mut(4) {
+    for p in px.as_chunks_mut::<4>().0 {
         p.swap(0, 2);
     }
     Ok((px, w, h))
@@ -840,7 +840,7 @@ fn pdf_pictures(path: &Path) -> AppResult<(Vec<Pic>, usize)> {
                 None
             };
             match pic {
-                Some(p) if best.as_ref().map_or(true, |(a, _)| im.width * im.height > *a) => best = Some((im.width * im.height, p)),
+                Some(p) if best.as_ref().is_none_or(|(a, _)| im.width * im.height > *a) => best = Some((im.width * im.height, p)),
                 Some(_) => {}
                 None => skipped += 1,
             }
@@ -1233,7 +1233,7 @@ async fn ocr_pages(
         } else {
             ctx.note(format!("扫描页：{}识字 第 {} / {} 页", if engine == "api" { "在线接口" } else { "本机增强" }, i + 1, total));
             let mut bgra = rgba.clone();
-            for p in bgra.chunks_exact_mut(4) {
+            for p in bgra.as_chunks_mut::<4>().0 {
                 p.swap(0, 2);
             }
             let lines = match recognize_lines(&ctx.st, engine, bgra, w, h).await {
@@ -2070,7 +2070,7 @@ pub async fn run(ctx: &JobCtx, input: &Path, opts: Opts) -> AppResult<PathBuf> {
     let sizes: Vec<usize> = sizes.into_iter().filter(|n| *n > 0).collect();
     // 每一页对应 PDF 的第几页，每个片段在第几页
     let page_no: Vec<Option<usize>> = (0..sizes.len()).map(|pi| if layout_pages.is_some() { part_pdf.get(pi).copied() } else { None }).collect();
-    let seg_page: Vec<usize> = sizes.iter().enumerate().flat_map(|(pi, n)| std::iter::repeat(pi).take(*n)).collect();
+    let seg_page: Vec<usize> = sizes.iter().enumerate().flat_map(|(pi, n)| std::iter::repeat_n(pi, *n)).collect();
     // 页范围、不翻译的内容（页眉页脚 / 公式代码 / 参考文献）
     let (selected, skip) = crate::filetr_ext::select_and_skip(&texts, &seg_page, &page_no, &opts, layout_pages.is_some(), kind == Kind::Sub);
     if !selected.iter().any(|s| *s) {

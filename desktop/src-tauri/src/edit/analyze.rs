@@ -190,7 +190,7 @@ pub fn pick_target(samples: &[(u64, Vec<Candidate2>)]) -> Option<(u64, NRect)> {
             let (cx, cy) = (c.rect.x + c.rect.w / 2.0, c.rect.y + c.rect.h / 2.0);
             let off = ((cx - 0.5).powi(2) + (cy - 0.5).powi(2)).sqrt();
             let score = c.score * (1.0 - 0.5 * off.min(1.0));
-            if score.is_finite() && best.as_ref().map_or(true, |b| score > b.0) {
+            if score.is_finite() && best.as_ref().is_none_or(|b| score > b.0) {
                 best = Some((score, *t, c.rect));
             }
         }

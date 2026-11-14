@@ -506,7 +506,7 @@ pub fn retry_after_login(app: &AppHandle, site: &str, automatic: bool) -> usize 
         if t.status == TaskStatus::Failed
             && matches!(t.error_kind, Some(ErrorKind::NeedLogin))
             && same_site(&t.site, site)
-            && t.finished_at.map_or(true, |f| f < settled)
+            && t.finished_at.is_none_or(|f| f < settled)
         {
             crate::download::resume(app, t.id);
             n += 1;

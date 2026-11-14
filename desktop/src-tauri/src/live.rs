@@ -837,7 +837,7 @@ async fn record_hls(
         };
         let mut wait = Duration::from_secs_f64((pl.target_duration / 2.0).clamp(1.0, 6.0));
         let after = last_seq;
-        for seg in pl.segments.iter().filter(|s| after.map_or(true, |l| s.seq > l)) {
+        for seg in pl.segments.iter().filter(|s| after.is_none_or(|l| s.seq > l)) {
             let data = match fetch(seg.url.clone()).await {
                 Ok(d) => d,
                 Err(e) => {

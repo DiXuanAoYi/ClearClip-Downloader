@@ -115,7 +115,7 @@ pub fn select_and_skip(
     is_sub: bool,
 ) -> (Vec<bool>, HashSet<usize>) {
     let ranges = parse_ranges(&opts.pages);
-    let selected: Vec<bool> = page_no.iter().enumerate().map(|(pi, p)| ranges.as_ref().map_or(true, |r| in_ranges(r, p.unwrap_or(pi) + 1))).collect();
+    let selected: Vec<bool> = page_no.iter().enumerate().map(|(pi, p)| ranges.as_ref().is_none_or(|r| in_ranges(r, p.unwrap_or(pi) + 1))).collect();
     let mut skip: HashSet<usize> = HashSet::new();
     if opts.skip_code {
         for (i, t) in texts.iter().enumerate() {
@@ -229,7 +229,7 @@ pub async fn plan(st: &crate::AppState, input: &Path, opts: &Opts) -> AppResult<
         }
     }
     let texts: Vec<String> = page_texts.iter().flatten().cloned().collect();
-    let seg_page: Vec<usize> = page_texts.iter().enumerate().flat_map(|(pi, p)| std::iter::repeat(pi).take(p.len())).collect();
+    let seg_page: Vec<usize> = page_texts.iter().enumerate().flat_map(|(pi, p)| std::iter::repeat_n(pi, p.len())).collect();
     let (selected, skip) = select_and_skip(&texts, &seg_page, &page_no, opts, info.layout, kind == Kind::Sub);
     info.selected_pages = selected.iter().filter(|s| **s).count();
     let cache = filetr::load_cache(&filetr::cache_path(&st.data_dir, input, &target));

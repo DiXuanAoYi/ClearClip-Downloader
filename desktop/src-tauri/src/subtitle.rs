@@ -209,7 +209,7 @@ pub fn bilibili_json_to_srt(text: &str) -> AppResult<String> {
 /// 只保留 `start..end`（毫秒）内的字幕，并把时间平移到从 0 开始（对应裁剪后的视频）。
 pub fn cut(cues: &[Cue], start: u64, end: Option<u64>) -> Vec<Cue> {
     cues.iter()
-        .filter(|c| c.end > start && end.map_or(true, |e| c.start < e))
+        .filter(|c| c.end > start && end.is_none_or(|e| c.start < e))
         .map(|c| Cue { start: c.start.saturating_sub(start), end: end.map_or(c.end, |e| c.end.min(e)).saturating_sub(start), lines: c.lines.clone() })
         .collect()
 }
@@ -317,7 +317,7 @@ pub fn danmaku_xml_to_ass_font(xml: &str, layout: DanmakuLayout, clip: Option<(u
     let mut list = parse_danmaku(xml);
     if let Some((start, end)) = clip {
         let (start, end) = (start as f64 / 1000.0, end.map(|e| e as f64 / 1000.0));
-        list.retain(|d| d.time >= start && end.map_or(true, |e| d.time < e));
+        list.retain(|d| d.time >= start && end.is_none_or(|e| d.time < e));
         for d in &mut list {
             d.time -= start;
         }
