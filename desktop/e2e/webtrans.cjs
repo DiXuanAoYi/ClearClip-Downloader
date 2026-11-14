@@ -5,7 +5,7 @@ const path = require('path')
 const { chromium } = require('playwright')
 
 const EXT = path.join(__dirname, '../extension')
-const FILES = ['content/ui.js', 'trans-logic.js', 'content/webtrans.js'].map((f) => path.join(EXT, f))
+const FILES = require('./ext-files.cjs').group('trans').map((f) => path.join(EXT, f))
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {

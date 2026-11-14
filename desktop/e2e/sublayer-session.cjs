@@ -257,7 +257,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
   ok('划词词卡加入生词本', added2?.word === 'resilient' && /resilient garden/.test(added2.sentence), JSON.stringify(added2))
 
   // 7. 划词工具条的“翻译”：打开网页翻译的同一张卡片（多服务、翻译窗、存为笔记），页面上不再有单独的“译”按钮
-  await inject(['trans-logic.js', 'content/webtrans.js'])
+  await inject(group('trans').filter((f) => f !== 'content/ui.js'))
   await page.evaluate(() => {
     const p = document.getElementById('txt')
     const tn = p.firstChild
