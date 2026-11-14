@@ -6,7 +6,7 @@
 // 以前这些是 4–5 个各自定位的小按钮，左上角、右下角两两叠在一起。
 ;(() => {
   if (globalThis.ccVDock) return
-  const { mount, h, api, send } = globalThis.ccUI
+  const { mount, h, api, send, life } = globalThis.ccUI
 
   const MIN_W = 240
   const MIN_H = 135
@@ -213,6 +213,7 @@
 
   /** 鼠标在哪个视频上：在就显示胶囊（有功能挂在这个视频上的话）；离开视频、胶囊、菜单 1.5 秒后隐藏。 */
   function show(v) {
+    if (!life.alive) return false
     if (!v || !big(v) || !sorted().some((s) => applies(s, v) && !passive(s))) return false
     ensureUi()
     if (video !== v) {
@@ -226,7 +227,8 @@
     return true
   }
 
-  document.addEventListener(
+  life.on(
+    document,
     'mousemove',
     (e) => {
       globalThis.__ccPtr = { x: e.clientX, y: e.clientY, t: Date.now() }
@@ -240,16 +242,25 @@
     },
     { capture: true, passive: true },
   )
-  setInterval(() => {
+  life.interval(() => {
+    if (!life.check()) return // 扩展已更新 / 卸载：本页的脚本统一清理
     if (!cap || !video) return
     if (sticky()) seen = Date.now()
     if (Date.now() - seen > 1500) setVisible(false)
     place()
   }, 400)
-  addEventListener('scroll', () => video && place(), { capture: true, passive: true })
-  addEventListener('resize', () => video && place())
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && menu && toggleMenu(false), true)
-  document.addEventListener('mousedown', (e) => menu && ui && !e.composedPath().includes(ui.host) && toggleMenu(false), true)
+  life.on(window, 'scroll', () => video && place(), { capture: true, passive: true })
+  life.on(window, 'resize', () => video && place())
+  life.on(document, 'keydown', (e) => e.key === 'Escape' && menu && toggleMenu(false), true)
+  life.on(document, 'mousedown', (e) => menu && ui && !e.composedPath().includes(ui.host) && toggleMenu(false), true)
+  life.add(() => {
+    ui?.remove()
+    ui = null
+    cap = null
+    menu = null
+    video = null
+    delete globalThis.ccVDock
+  })
 
   // 给各功能用的小控件（样式在胶囊里）
   const parts = {

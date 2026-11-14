@@ -286,17 +286,23 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     p.style.cssText = 'background:#111;color:#fff'
     p.textContent = 'White words on a dark page should stay readable.'
     document.body.append(p)
-    const tn = p.firstChild
-    const rng = document.createRange()
-    rng.setStart(tn, 0)
-    rng.setEnd(tn, 11)
-    getSelection().removeAllRanges()
-    getSelection().addRange(rng)
-    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 100, clientY: 420 }))
   })
-  await page.waitForFunction(() => (window.__roots || []).some((r) => r.querySelector('.bar .sw')), null, { timeout: 4000 }).catch(() => {})
-  await page.evaluate(() => window.__roots.map((r) => r.querySelector('.bar .sw')).find(Boolean)?.click())
-  await page.waitForFunction(() => document.querySelector('#dark span[data-cc-hl]'), null, { timeout: 4000 }).catch(() => {})
+  // 划词工具条出现有时序，整个“选中 → 点色块”动作按条件重试，直到高亮出现
+  for (let i = 0; i < 6; i++) {
+    await page.evaluate(() => {
+      const tn = document.querySelector('#dark').firstChild
+      const rng = document.createRange()
+      rng.setStart(tn, 0)
+      rng.setEnd(tn, 11)
+      getSelection().removeAllRanges()
+      getSelection().addRange(rng)
+      document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 100, clientY: 420 }))
+    })
+    await page.waitForFunction(() => (window.__roots || []).some((r) => r.querySelector('.bar .sw')), null, { timeout: 2000 }).catch(() => {})
+    await page.evaluate(() => window.__roots.map((r) => r.querySelector('.bar .sw')).find(Boolean)?.click())
+    const done = await page.waitForFunction(() => document.querySelector('#dark span[data-cc-hl]'), null, { timeout: 1500 }).then(() => true).catch(() => false)
+    if (done) break
+  }
   const hlc = await page.evaluate(() => {
     const sp = document.querySelector('#dark span[data-cc-hl]')
     return sp ? { text: sp.textContent, color: getComputedStyle(sp).color, bg: getComputedStyle(sp).backgroundColor } : null

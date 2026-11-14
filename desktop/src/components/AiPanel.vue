@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import CcButton from './ui/CcButton.vue'
+import CcField from './ui/CcField.vue'
+import CcSelect from './ui/CcSelect.vue'
+import CcSegmented from './ui/CcSegmented.vue'
+import CcLink from './ui/CcLink.vue'
 import { TARGET_LANGS } from '../utils/langs'
 import SttLocal from './SttLocal.vue'
 import { onMounted, ref } from 'vue'
@@ -73,6 +78,11 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
     refresh()
   }
 }
+const STT_PH = 'https://api.groq.com/openai/v1'
+const FILLER_OPTS = [{ value: 'off', label: '不去' }, { value: 'conservative', label: '保守（推荐）' }, { value: 'standard', label: '标准' }, { value: 'aggressive', label: '激进' }]
+const STT_ENGINE_OPTS = [{ value: 'api', label: '在线接口' }, { value: 'local', label: '本机识别（离线）' }, { value: 'volc', label: '火山引擎（豆包）' }, { value: 'xfyun', label: '讯飞' }]
+const CUE_OPTS = [{ value: 'short', label: '短（视频字幕层）' }, { value: 'standard', label: '标准（推荐）' }, { value: 'long', label: '长（只看文稿）' }]
+const PUNCT_OPTS = [{ value: 'conservative', label: '保守' }, { value: 'aggressive', label: '积极' }, { value: 'rules', label: '只用规则' }]
 </script>
 
 <template>
@@ -82,112 +92,104 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
     <ExpertsPanel v-model="ai" />
     <section class="group card">
       <h3>翻译</h3>
-      <div class="kv">
-        <span>翻译成</span>
-        <el-select v-model="ai.targetLang" size="small" filterable allow-create default-first-option class="sel"><el-option v-for="l in LANGS" :key="l" :value="l" :label="l" /></el-select>
-      </div>
-      <div class="kv"><span>保留原文<small class="mute block">原文在上、译文在下，做成双语字幕</small></span><el-switch v-model="ai.bilingual" /></div>
-      <div class="kv">
-        <span>每次翻译的条数<small class="mute block">越大越省请求，但模型更容易漏条；漏条时会自动拆小重试</small></span>
-        <el-input-number v-model="ai.batchSize" size="small" :min="5" :max="100" :step="5" controls-position="right" />
-      </div>
-      <div class="kv">
-        <span>送给 AI 前去掉非语音说明<small class="mute block">[Music]、♪、(laughs)、&gt;&gt; 换人标记、说话人前缀。只影响送给模型的文字（摘要、导图、翻译等），文稿的显示和导出不变</small></span>
-        <el-switch v-model="ai.subCleanHearing" />
-      </div>
-      <div class="kv">
-        <span>送给 AI 前去掉口水词<small class="mute block">保守：嗯、呃、um、uh、结巴和叠词；标准：再加成串的口头禅（you know、那个那个）；激进：再加被逗号隔开的单个口头禅（like、就是）。只影响送给模型的文字，文稿的显示和导出不变</small></span>
-        <el-select v-model="ai.subCleanFiller" size="small" class="sel" data-testid="sub-clean-filler">
-          <el-option value="off" label="不去" />
-          <el-option value="conservative" label="保守（推荐）" />
-          <el-option value="standard" label="标准" />
-          <el-option value="aggressive" label="激进" />
-        </el-select>
-      </div>
-      <div class="kv">
-        <span>预处理后自动补标点<small class="mute block">自动识别出来的字幕通常没有标点：读到文稿、做完上面的清理后，如果大部分句子没有标点，就自动用 AI 补标点并改同音错字（多一次模型调用，结果缓存）。可以在文稿栏点“还原顺句前”撤销</small></span>
-        <el-switch v-model="ai.subCleanPunct" />
-      </div>
-      <div class="kv">
-        <span>语音转文字的结果也做预处理<small class="mute block">本机 / 在线 / 火山引擎 / 讯飞识别出来的字幕，同样去掉非语音说明和口水词再保存；清理前的原文另存为 .raw.srt</small></span>
-        <el-switch v-model="ai.subCleanOutput" />
-      </div>
-      <div class="kv">
-        <span>下载到外语字幕时自动翻译<small class="mute block">作品里已经有目标语言的字幕就不再翻译；弹幕不翻译</small></span>
-        <el-switch v-model="ai.autoTranslate" />
-      </div>
+      <CcField label="翻译成"><el-select v-model="ai.targetLang" size="small" filterable allow-create default-first-option class="sel"><el-option v-for="l in LANGS" :key="l" :value="l" :label="l" /></el-select></CcField>
+      <CcField label="保留原文" desc="原文在上、译文在下，做成双语字幕">
+        <template #default="{ id }"><el-switch :id="id" v-model="ai.bilingual" /></template>
+      </CcField>
+      <CcField label="每次翻译的条数" desc="越大越省请求，但模型更容易漏条；漏条时会自动拆小重试">
+        <template #default="{ id }"><el-input-number :id="id" v-model="ai.batchSize" size="small" :min="5" :max="100" :step="5" controls-position="right" /></template>
+      </CcField>
+      <CcField label="送给 AI 前去掉非语音说明" desc="[Music]、♪、(laughs)、&gt;&gt; 换人标记、说话人前缀。只影响送给模型的文字（摘要、导图、翻译等），文稿的显示和导出不变">
+        <template #default="{ id }"><el-switch :id="id" v-model="ai.subCleanHearing" /></template>
+      </CcField>
+      <CcField label="送给 AI 前去掉口水词" desc="保守：嗯、呃、um、uh、结巴和叠词；标准：再加成串的口头禅（you know、那个那个）；激进：再加被逗号隔开的单个口头禅（like、就是）。只影响送给模型的文字，文稿的显示和导出不变">
+        <template #default="{ id }"><CcSelect :id="id" v-model="ai.subCleanFiller" :options="FILLER_OPTS" width="m" data-testid="sub-clean-filler" /></template>
+      </CcField>
+      <CcField label="预处理后自动补标点" desc="自动识别出来的字幕通常没有标点：读到文稿、做完上面的清理后，如果大部分句子没有标点，就自动用 AI 补标点并改同音错字（多一次模型调用，结果缓存）。可以在文稿栏点“还原顺句前”撤销">
+        <template #default="{ id }"><el-switch :id="id" v-model="ai.subCleanPunct" /></template>
+      </CcField>
+      <CcField label="语音转文字的结果也做预处理" desc="本机 / 在线 / 火山引擎 / 讯飞识别出来的字幕，同样去掉非语音说明和口水词再保存；清理前的原文另存为 .raw.srt">
+        <template #default="{ id }"><el-switch :id="id" v-model="ai.subCleanOutput" /></template>
+      </CcField>
+      <CcField label="下载到外语字幕时自动翻译" desc="作品里已经有目标语言的字幕就不再翻译；弹幕不翻译">
+        <template #default="{ id }"><el-switch :id="id" v-model="ai.autoTranslate" /></template>
+      </CcField>
     </section>
 
     <section class="group card">
       <h3>语音转文字（给没有字幕的视频生成字幕）</h3>
-      <div class="kv">
-        <span>方式</span>
-        <el-radio-group v-model="ai.sttEngine" size="small">
-          <el-radio-button value="api">在线接口</el-radio-button>
-          <el-radio-button value="local">本机识别（离线）</el-radio-button>
-          <el-radio-button value="volc">火山引擎（豆包）</el-radio-button>
-          <el-radio-button value="xfyun">讯飞</el-radio-button>
-        </el-radio-group>
-      </div>
+      <CcField label="方式"><CcSegmented v-model="ai.sttEngine" :options="STT_ENGINE_OPTS" size="s" /></CcField>
       <template v-if="ai.sttEngine === 'volc'">
         <small class="mute">豆包语音“大模型录音文件极速版识别”：整段上传、接近说话速度出结果，中文很准。音频会先在本机转成 16 kHz 单声道 WAV，每 10 分钟一段上传到火山引擎。需要在火山引擎控制台开通该资源。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先拿一小段音频试。</small>
-        <div class="field"><label>AppId（用新版控制台的 API Key 时留空）</label><el-input v-model="ai.sttVolcAppId" size="small" class="mono" placeholder="旧版控制台的 AppId，没有就留空" /></div>
+        <CcField label="AppId（用新版控制台的 API Key 时留空）" layout="col">
+          <template #default="{ id }"><el-input :id="id" v-model="ai.sttVolcAppId" size="small" class="mono" placeholder="旧版控制台的 AppId，没有就留空" /></template>
+        </CcField>
         <div class="field">
-          <label>密钥（Access Token / API Key） <span v-if="has.volc" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://console.volcengine.com/speech/app')">打开火山引擎控制台</a></label>
+          <label>密钥（Access Token / API Key） <span v-if="has.volc" class="ok">已保存</span> · <CcLink href="https://console.volcengine.com/speech/app" external>打开火山引擎控制台</CcLink></label>
           <div class="keyrow">
             <el-input v-model="volcKey" size="small" type="password" show-password placeholder="Access Token 或 API Key" />
-            <el-button size="small" :disabled="!volcKey.trim()" @click="saveKey('stt.volc_key', volcKey)">保存</el-button>
-            <el-button size="small" @click="saveKey('stt.volc_key', '')">清除</el-button>
+            <CcButton kind="secondary" size="s" :disabled="!volcKey.trim()" @click="saveKey('stt.volc_key', volcKey)">保存</CcButton>
+            <CcButton kind="secondary" size="s" @click="saveKey('stt.volc_key', '')">清除</CcButton>
           </div>
         </div>
-        <div class="kv"><span>用火山自带的“语义顺滑”去口水词<small class="mute block">默认关：口水词统一交给“字幕预处理”，几种引擎行为一致。打开后由火山在识别时就去掉</small></span><el-switch v-model="ai.sttCloudSmooth" /></div>
+        <CcField label="用火山自带的“语义顺滑”去口水词" desc="默认关：口水词统一交给“字幕预处理”，几种引擎行为一致。打开后由火山在识别时就去掉">
+          <template #default="{ id }"><el-switch :id="id" v-model="ai.sttCloudSmooth" /></template>
+        </CcField>
         <div class="keyrow">
-          <el-button size="small" :loading="testing === 'volc'" :disabled="!has.volc" @click="testCloud('volc')">测试连接</el-button>
+          <CcButton kind="secondary" size="s" :loading="testing === 'volc'" :disabled="!has.volc" @click="testCloud('volc')">测试连接</CcButton>
           <span v-if="testMsg.volc" :class="testMsg.volc.ok ? 'ok' : 'bad'" class="mute">{{ testMsg.volc.text }}</span>
         </div>
       </template>
       <template v-else-if="ai.sttEngine === 'xfyun'">
         <small class="mute">讯飞开放平台“录音文件转写”：整个文件上传到讯飞，转写完成后取回带时间的句子。需要在讯飞控制台开通该服务并拿到 AppID 和 SecretKey。<b>接口细节还没有用真实密钥验证过</b>，第一次用请先拿一小段音频试。</small>
-        <div class="field"><label>AppID</label><el-input v-model="ai.sttXfyunAppId" size="small" class="mono" placeholder="例如 595f23df" /></div>
+        <CcField label="AppID" layout="col">
+          <template #default="{ id }"><el-input :id="id" v-model="ai.sttXfyunAppId" size="small" class="mono" placeholder="例如 595f23df" /></template>
+        </CcField>
         <div class="field">
-          <label>SecretKey <span v-if="has.xfyun" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://console.xfyun.cn/services/lfasr')">打开讯飞控制台</a></label>
+          <label>SecretKey <span v-if="has.xfyun" class="ok">已保存</span> · <CcLink href="https://console.xfyun.cn/services/lfasr" external>打开讯飞控制台</CcLink></label>
           <div class="keyrow">
             <el-input v-model="xfKey" size="small" type="password" show-password placeholder="录音文件转写的 SecretKey" />
-            <el-button size="small" :disabled="!xfKey.trim()" @click="saveKey('stt.xfyun_secret', xfKey)">保存</el-button>
-            <el-button size="small" @click="saveKey('stt.xfyun_secret', '')">清除</el-button>
+            <CcButton kind="secondary" size="s" :disabled="!xfKey.trim()" @click="saveKey('stt.xfyun_secret', xfKey)">保存</CcButton>
+            <CcButton kind="secondary" size="s" @click="saveKey('stt.xfyun_secret', '')">清除</CcButton>
           </div>
         </div>
         <div class="keyrow">
-          <el-button size="small" :loading="testing === 'xfyun'" :disabled="!has.xfyun || !ai.sttXfyunAppId" @click="testCloud('xfyun')">测试连接</el-button>
+          <CcButton kind="secondary" size="s" :loading="testing === 'xfyun'" :disabled="!has.xfyun || !ai.sttXfyunAppId" @click="testCloud('xfyun')">测试连接</CcButton>
           <span v-if="testMsg.xfyun" :class="testMsg.xfyun.ok ? 'ok' : 'bad'" class="mute">{{ testMsg.xfyun.text }}</span>
         </div>
         <div class="field">
-          <label>实时转写 APIKey（“屏幕翻译 → 语音翻译”用讯飞时需要，和上面的 SecretKey 不是同一个） <span v-if="has.xfyunRt" class="ok">已保存</span> · <a href="#" @click.prevent="api.openUrl('https://console.xfyun.cn/services/rta')">打开讯飞控制台</a></label>
+          <label>实时转写 APIKey（“屏幕翻译 → 语音翻译”用讯飞时需要，和上面的 SecretKey 不是同一个） <span v-if="has.xfyunRt" class="ok">已保存</span> · <CcLink href="https://console.xfyun.cn/services/rta" external>打开讯飞控制台</CcLink></label>
           <div class="keyrow">
             <el-input v-model="xfRtKey" size="small" type="password" show-password placeholder="实时语音转写的 APIKey" />
-            <el-button size="small" :disabled="!xfRtKey.trim()" @click="saveKey('stt.xfyun_rt_key', xfRtKey)">保存</el-button>
-            <el-button size="small" @click="saveKey('stt.xfyun_rt_key', '')">清除</el-button>
+            <CcButton kind="secondary" size="s" :disabled="!xfRtKey.trim()" @click="saveKey('stt.xfyun_rt_key', xfRtKey)">保存</CcButton>
+            <CcButton kind="secondary" size="s" @click="saveKey('stt.xfyun_rt_key', '')">清除</CcButton>
           </div>
         </div>
         <div class="keyrow">
-          <el-button size="small" :loading="testing === 'xfyun_rt'" :disabled="!has.xfyunRt || !ai.sttXfyunAppId" @click="testCloud('xfyun_rt')">测试实时转写连接</el-button>
+          <CcButton kind="secondary" size="s" :loading="testing === 'xfyun_rt'" :disabled="!has.xfyunRt || !ai.sttXfyunAppId" @click="testCloud('xfyun_rt')">测试实时转写连接</CcButton>
           <span v-if="testMsg.xfyun_rt" :class="testMsg.xfyun_rt.ok ? 'ok' : 'bad'" class="mute">{{ testMsg.xfyun_rt.text }}</span>
         </div>
-        <div class="kv"><span>用讯飞的“顺滑词”标记去口水词<small class="mute block">默认关：口水词统一交给“字幕预处理”。打开后识别结果里讯飞标成顺滑词的字直接不要</small></span><el-switch v-model="ai.sttCloudSmooth" /></div>
+        <CcField label="用讯飞的“顺滑词”标记去口水词" desc="默认关：口水词统一交给“字幕预处理”。打开后识别结果里讯飞标成顺滑词的字直接不要">
+          <template #default="{ id }"><el-switch :id="id" v-model="ai.sttCloudSmooth" /></template>
+        </CcField>
       </template>
       <template v-else-if="ai.sttEngine === 'api'">
         <small class="mute">使用兼容 OpenAI 的 <span class="mono">/audio/transcriptions</span> 接口。音频会先在本机转成小体积的单声道再分段上传。</small>
         <div class="presets">
-          <el-button v-for="p in STT_PRESETS" :key="p.name" size="small" link type="primary" @click="ai.sttBaseUrl = p.url; ai.sttModel = p.model">{{ p.name }}</el-button>
+          <CcButton kind="text" v-for="p in STT_PRESETS" :key="p.name" size="s" @click="ai.sttBaseUrl = p.url; ai.sttModel = p.model">{{ p.name }}</CcButton>
         </div>
-        <div class="field"><label>接口地址</label><el-input v-model="ai.sttBaseUrl" size="small" class="mono" placeholder="https://api.groq.com/openai/v1" /></div>
-        <div class="field"><label>模型</label><el-input v-model="ai.sttModel" size="small" class="mono" placeholder="whisper-1" /></div>
+        <CcField label="接口地址" layout="col">
+          <template #default="{ id }"><el-input :id="id" v-model="ai.sttBaseUrl" size="small" class="mono" :placeholder="STT_PH" /></template>
+        </CcField>
+        <CcField label="模型" layout="col">
+          <template #default="{ id }"><el-input :id="id" v-model="ai.sttModel" size="small" class="mono" placeholder="whisper-1" /></template>
+        </CcField>
         <div class="field">
           <label>API 密钥 <span v-if="status?.sttKey" class="ok">已保存</span></label>
           <div class="keyrow">
             <el-input v-model="sttKey" size="small" type="password" show-password placeholder="单独的语音接口密钥" />
-            <el-button size="small" :disabled="!sttKey.trim()" @click="saveKey('stt.api_key', sttKey)">保存</el-button>
-            <el-button size="small" @click="saveKey('stt.api_key', '')">清除</el-button>
+            <CcButton kind="secondary" size="s" :disabled="!sttKey.trim()" @click="saveKey('stt.api_key', sttKey)">保存</CcButton>
+            <CcButton kind="secondary" size="s" @click="saveKey('stt.api_key', '')">清除</CcButton>
           </div>
         </div>
       </template>
@@ -196,11 +198,7 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <SttLocal v-model="ai.sttLocalModel" />
         <div class="field">
           <label>字幕句长（SenseVoice 一段声音一条字幕，太长时按标点和长度拆开）</label>
-          <el-radio-group v-model="ai.cueLength" size="small">
-            <el-radio-button value="short">短（视频字幕层）</el-radio-button>
-            <el-radio-button value="standard">标准（推荐）</el-radio-button>
-            <el-radio-button value="long">长（只看文稿）</el-radio-button>
-          </el-radio-group>
+          <CcSegmented v-model="ai.cueLength" :options="CUE_OPTS" size="s" />
           <small class="mute">短：中文 16 字 / 英文 36 字符以内；标准：22 / 48；长：32 / 72。已经转写好的视频不会自动改，在视频摘要的文稿页点“重新断句”即可。</small>
           <el-switch v-model="ai.cueSemantic" size="small" active-text="AI 语义断句（高质量）：只处理仍然超长的句子，多一次模型调用" />
         </div>
@@ -209,39 +207,35 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
         <div class="field">
           <label>whisper-cli 位置 <span :class="status?.whisperFound ? 'ok' : 'bad'">{{ status?.whisperFound ? '已找到' : '未找到' }}</span></label>
           <small v-if="status?.whisperPath && status.whisperPath !== ai.whisperBin" class="mute">自动检测到：<span class="mono">{{ status.whisperPath }}</span></small>
-          <div class="keyrow"><el-input v-model="ai.whisperBin" size="small" class="mono" placeholder="留空则自动查找（清影安装的、系统 PATH 里的 whisper-cli）" @change="refresh" /><el-button size="small" @click="pickFile('whisperBin')">选择…</el-button></div>
+          <div class="keyrow"><el-input v-model="ai.whisperBin" size="small" class="mono" placeholder="留空则自动查找（清影安装的、系统 PATH 里的 whisper-cli）" @change="refresh" /><CcButton kind="secondary" size="s" @click="pickFile('whisperBin')">选择…</CcButton></div>
         </div>
         <div class="field">
           <label>模型文件 <span :class="status?.whisperModelPath ? 'ok' : 'bad'">{{ status?.whisperModelPath ? '已找到' : '未找到' }}</span></label>
           <small v-if="status?.whisperModelPath && status.whisperModelPath !== ai.whisperModel" class="mute">自动检测到：<span class="mono">{{ status.whisperModelPath }}</span></small>
-          <div class="keyrow"><el-input v-model="ai.whisperModel" size="small" class="mono" placeholder="留空则自动使用“设置 → 组件”里下载的模型" @change="refresh" /><el-button size="small" @click="pickFile('whisperModel')">选择…</el-button></div>
+          <div class="keyrow"><el-input v-model="ai.whisperModel" size="small" class="mono" placeholder="留空则自动使用“设置 → 组件”里下载的模型" @change="refresh" /><CcButton kind="secondary" size="s" @click="pickFile('whisperModel')">选择…</CcButton></div>
         </div>
           </el-collapse-item>
         </el-collapse>
       </template>
-      <div class="field"><label>音频语言</label><el-input v-model="ai.sttLanguage" size="small" class="short mono" placeholder="留空自动识别，或 zh / en / ja" /></div>
+      <CcField label="音频语言" layout="col">
+        <template #default="{ id }"><el-input :id="id" v-model="ai.sttLanguage" size="small" class="short mono" placeholder="留空自动识别，或 zh / en / ja" /></template>
+      </CcField>
       <div v-if="ai.sttEngine === 'local'" class="field">
         <label>VAD 模型（可选，ggml-silero-*.bin）</label>
-        <div class="keyrow"><el-input v-model="ai.whisperVadModel" size="small" class="mono" placeholder="填了且 whisper-cli 支持时，只识别有人声的部分，减少静音处的胡乱识别" /><el-button size="small" @click="pickFile('whisperVadModel')">选择…</el-button></div>
+        <div class="keyrow"><el-input v-model="ai.whisperVadModel" size="small" class="mono" placeholder="填了且 whisper-cli 支持时，只识别有人声的部分，减少静音处的胡乱识别" /><CcButton kind="secondary" size="s" @click="pickFile('whisperVadModel')">选择…</CcButton></div>
       </div>
-      <div class="field">
-        <label>AI 纠错力度（补标点、改同音错字）</label>
-        <el-radio-group v-model="ai.correctMode" size="small">
-          <el-radio-button value="conservative">保守</el-radio-button>
-          <el-radio-button value="aggressive">积极</el-radio-button>
-          <el-radio-button value="rules">只用规则</el-radio-button>
-        </el-radio-group>
-      </div>
-      <div class="kv">
-        <span>自动转写的字幕几乎没有标点时，自动 AI 纠错<small class="mute block">会多用一次对话模型；改动过大的行会被拒绝，原文保留</small></span>
-        <el-switch v-model="ai.correctAuto" />
-      </div>
-      <div class="kv">
-        <span>下载的视频没有字幕时自动转写<small class="mute block">在线接口会按音频时长计费，请确认额度；导入的文件不会自动转写</small></span>
-        <el-switch v-model="ai.autoTranscribe" />
-      </div>
+      <CcField label="AI 纠错力度（补标点、改同音错字）" layout="col">
+        <CcSegmented v-model="ai.correctMode" :options="PUNCT_OPTS" size="s" />
+      </CcField>
+      <CcField label="自动转写的字幕几乎没有标点时，自动 AI 纠错" desc="会多用一次对话模型；改动过大的行会被拒绝，原文保留">
+        <template #default="{ id }"><el-switch :id="id" v-model="ai.correctAuto" /></template>
+      </CcField>
+      <CcField label="下载的视频没有字幕时自动转写" desc="在线接口会按音频时长计费，请确认额度；导入的文件不会自动转写">
+        <template #default="{ id }"><el-switch :id="id" v-model="ai.autoTranscribe" /></template>
+      </CcField>
     </section>
   </div>
+
 </template>
 
 <style scoped>
@@ -260,8 +254,9 @@ async function pickFile(field: 'whisperBin' | 'whisperModel' | 'whisperVadModel'
 }
 h3 {
   margin: 0;
-  font-size: 12px;
-  color: var(--cc-mute);
+  font-size: var(--cc-fs-lg);
+  color: var(--cc-fg);
+  font-weight: 700;
 }
 .field {
   display: flex;
@@ -269,7 +264,7 @@ h3 {
   gap: 4px;
 }
 .field label {
-  font-size: 12px;
+  font-size: var(--cc-fs-sm);
   color: var(--cc-mute);
 }
 .kv {
@@ -294,11 +289,11 @@ h3 {
   gap: 8px;
 }
 .ok {
-  color: var(--cc-ok);
+  color: var(--cc-ok-text);
   margin-left: 6px;
 }
 .bad {
-  color: var(--cc-err);
+  color: var(--cc-err-text);
   margin-left: 6px;
 }
 .sel {
