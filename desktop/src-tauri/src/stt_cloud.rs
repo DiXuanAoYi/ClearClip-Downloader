@@ -82,7 +82,7 @@ pub async fn volc_recognize(client: &reqwest::Client, app_id: &str, key: &str, a
     for (k, v) in volc_headers(app_id, key, &rid) {
         req = req.header(k, v);
     }
-    let resp = req.send().await.map_err(|e| AppError::msg(format!("火山引擎语音识别请求失败：{e}")))?;
+    let resp = req.send().await.map_err(|e| AppError::msg(net_hint("火山引擎语音识别", &e)))?;
     let code = resp.headers().get("X-Api-Status-Code").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
     let msg = resp.headers().get("X-Api-Message").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
     let status = resp.status();
@@ -90,7 +90,7 @@ pub async fn volc_recognize(client: &reqwest::Client, app_id: &str, key: &str, a
     match code.as_str() {
         "" | "20000000" => {
             if !status.is_success() {
-                return Err(AppError::msg(format!("火山引擎语音识别失败（HTTP {status}）{msg}")));
+                return Err(AppError::msg(http_hint("火山引擎语音识别", VOLC_CONSOLE, status, &msg)));
             }
         }
         // 静音：没有识别出内容，不算失败
@@ -100,12 +100,41 @@ pub async fn volc_recognize(client: &reqwest::Client, app_id: &str, key: &str, a
     Ok(parse_volc(&body, duration_ms))
 }
 
+/// 请求没发出去（连不上、超时、证书）：和“服务端拒绝”分开说，提示先查网络 / 代理。
+fn net_hint(who: &str, e: &reqwest::Error) -> String {
+    let kind = if e.is_timeout() {
+        "超时"
+    } else if e.is_connect() {
+        "连不上服务器"
+    } else {
+        "请求没有发出去"
+    };
+    format!("{who}网络不通（{kind}）：请检查网络、代理设置，以及防火墙是否放行该服务的域名。（{e}）")
+}
+
+/// 服务端按 HTTP 状态码拒绝（还没有业务错误码）：区分鉴权、额度 / 限流、服务端故障。
+fn http_hint(who: &str, console: &str, status: reqwest::StatusCode, msg: &str) -> String {
+    let why = match status.as_u16() {
+        401 | 403 => format!("鉴权失败：检查 AppId / 密钥是否填对、有没有多余空格；并确认在{console}里已开通对应服务"),
+        402 | 429 => format!("额度不足或请求太快：到{console}查看该服务的余额 / 免费额度 / 并发限制"),
+        400 | 422 => "请求参数有误或音频格式不支持".to_string(),
+        s if s >= 500 => "服务端故障，稍后重试".to_string(),
+        _ => String::new(),
+    };
+    format!("{who}失败（HTTP {status}）{msg}{}", if why.is_empty() { String::new() } else { format!("：{why}") })
+}
+
+const VOLC_CONSOLE: &str = "火山引擎控制台（语音技术 → 应用管理 / 服务接口）";
+const XFYUN_CONSOLE: &str = "讯飞开放平台控制台（我的应用 → 对应服务）";
+
 fn volc_hint(code: &str, msg: &str) -> String {
     let why = match code {
         "45000001" | "45000002" => "请求参数有误或音频格式不支持（支持 WAV / MP3 / OGG OPUS）",
         "45000151" => "音频格式不正确",
         "55000031" | "45000292" => "服务器繁忙或请求过快，稍后重试",
-        c if c.starts_with("4500") => "鉴权失败或没有开通“大模型录音文件极速版识别”：请检查 AppId / 密钥，并在火山引擎控制台开通该资源",
+        c if c.starts_with("4500") => {
+            "鉴权失败、资源未开通或额度用完：请检查 AppId / 密钥，并在火山引擎控制台（语音技术 → 应用管理）确认已开通“大模型录音文件极速版识别”且有可用额度"
+        }
         _ => "",
     };
     format!("火山引擎语音识别失败（{code}）{msg}{}", if why.is_empty() { String::new() } else { format!("：{why}") })
@@ -199,7 +228,7 @@ pub async fn xfyun_recognize(
         .body(audio)
         .send()
         .await
-        .map_err(|e| AppError::msg(format!("讯飞上传失败：{e}")))?
+        .map_err(|e| AppError::msg(net_hint("讯飞", &e)))?
         .json()
         .await
         .map_err(|e| AppError::msg(format!("讯飞返回的不是预期的格式：{e}")))?;
@@ -220,7 +249,7 @@ pub async fn xfyun_recognize(
             .timeout(Duration::from_secs(60))
             .send()
             .await
-            .map_err(|e| AppError::msg(format!("讯飞查询失败：{e}")))?
+            .map_err(|e| AppError::msg(net_hint("讯飞", &e)))?
             .json()
             .await
             .map_err(|e| AppError::msg(format!("讯飞返回的不是预期的格式：{e}")))?;
@@ -348,7 +377,11 @@ pub async fn xfyun_rt_text_at(url: &str, connector: Option<tokio_tungstenite::Co
     let (mut ws, _) = tokio::time::timeout(Duration::from_secs(10), tokio_tungstenite::connect_async_tls_with_config(url, None, false, connector))
         .await
         .map_err(|_| AppError::msg("连接讯飞实时转写超时"))?
-        .map_err(|e| AppError::msg(format!("连接讯飞实时转写失败：{e}")))?;
+        .map_err(|e| match e {
+            // 握手被拒（签名错、AppID / APIKey 不对、没开通）：服务端给了 HTTP 状态
+            tokio_tungstenite::tungstenite::Error::Http(r) => AppError::msg(http_hint("讯飞实时转写", XFYUN_CONSOLE, r.status(), "")),
+            e => AppError::msg(format!("讯飞实时转写网络不通：请检查网络、代理设置，以及防火墙是否放行 rtasr.xfyun.cn。（{e}）")),
+        })?;
     // 1) 等握手成功
     loop {
         let m = tokio::time::timeout(Duration::from_secs(10), ws.next()).await.map_err(|_| AppError::msg("讯飞实时转写没有回应"))?;
@@ -452,7 +485,7 @@ pub async fn test_xfyun(client: &reqwest::Client, app_id: &str, secret: &str) ->
         .body(wav)
         .send()
         .await
-        .map_err(|e| AppError::msg(format!("讯飞上传失败：{e}")))?
+        .map_err(|e| AppError::msg(net_hint("讯飞", &e)))?
         .json()
         .await
         .map_err(|e| AppError::msg(format!("讯飞返回的不是预期的格式：{e}")))?;
@@ -471,6 +504,22 @@ pub async fn test_xfyun_rt(app_id: &str, api_key: &str) -> AppResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn http_hint_separates_auth_quota_and_server() {
+        use reqwest::StatusCode as S;
+        assert!(http_hint("X", "控制台", S::UNAUTHORIZED, "").contains("鉴权失败"));
+        assert!(http_hint("X", "控制台", S::FORBIDDEN, "m").contains("鉴权失败"));
+        assert!(http_hint("X", "控制台", S::TOO_MANY_REQUESTS, "").contains("额度"));
+        assert!(http_hint("X", "控制台", S::BAD_GATEWAY, "").contains("服务端故障"));
+        assert!(http_hint("X", "控制台", S::BAD_REQUEST, "").contains("参数"));
+    }
+
+    #[test]
+    fn volc_auth_code_mentions_resource_and_quota() {
+        let h = volc_hint("45000010", "bad");
+        assert!(h.contains("鉴权") && h.contains("额度") && h.contains("开通"));
+    }
 
     #[test]
     fn hmac_sha1_matches_rfc2202() {

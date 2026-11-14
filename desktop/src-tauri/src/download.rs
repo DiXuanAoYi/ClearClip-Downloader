@@ -855,6 +855,81 @@ fn run_task_inner(app: AppHandle, id: i64, retry_ok: bool) -> std::pin::Pin<Box<
     Box::pin(async move { run_task_body(app, id, retry_ok).await })
 }
 
+/// 一次下载任务后半段（合并 / 后处理 / 校验）共用的上下文。
+struct TaskRun<'a> {
+    app: &'a AppHandle,
+    st: &'a Arc<AppState>,
+    settings: &'a Settings,
+    id: i64,
+    media: &'a MediaInfo,
+    spec: &'a JobSpec,
+    /// 各输入的临时下载文件
+    parts: &'a [PathBuf],
+    /// 后处理操作的工作文件（单输入时就是 `parts[0]`，多输入时是合并结果）
+    final_part: &'a Path,
+    retry_ok: bool,
+}
+
+/// 后处理阶段的去向：继续往下走，或者清理后整个任务重新下载。
+enum Flow {
+    Continue,
+    Redownload,
+}
+
+/// 合并 / 转封装使用源格式的容器；需要提取音频时最终文件才是音频格式。
+fn container_path(spec: &JobSpec, final_path: &Path) -> PathBuf {
+    match &spec.post.extract_audio {
+        Some(_) => final_path.with_extension(if spec.primary().ext.is_empty() { "mp4" } else { spec.primary().ext.as_str() }),
+        None => final_path.to_path_buf(),
+    }
+}
+
+/// 下载完成后、后处理之前的收尾方式。
+#[derive(Debug, PartialEq)]
+enum JoinKind {
+    /// 多个输入（音视频分开）合并
+    Merge,
+    /// Pixiv 动图：帧压缩包合成为视频
+    Ugoira,
+    /// m3u8 拼接出的 TS 流
+    Hls,
+    /// 单个文件，原样使用
+    Plain,
+}
+
+fn join_kind(spec: &JobSpec) -> JoinKind {
+    if spec.inputs.len() > 1 {
+        JoinKind::Merge
+    } else if providers::pixiv::ugoira_frames(spec.primary()).is_some() {
+        JoinKind::Ugoira
+    } else if spec.primary().protocol == Protocol::Hls {
+        JoinKind::Hls
+    } else {
+        JoinKind::Plain
+    }
+}
+
+/// 文件时长明显短于网站标注时给出的提示（只提示，不判失败）。
+fn duration_warning(actual_ms: u64, expect_ms: u64, ads_skipped: bool) -> Option<String> {
+    (expect_ms >= 10_000 && actual_ms + 3_000 < expect_ms * 9 / 10 && !ads_skipped)
+        .then(|| format!("文件时长 {} 秒，网站标注为 {} 秒，可能不完整", actual_ms / 1000, expect_ms / 1000))
+}
+
+/// 按章节拆分的输出文件夹：与最终文件同目录的“<文件名> 章节”。
+fn chapters_dir(final_path: &Path) -> PathBuf {
+    let stem = final_path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    final_path.parent().map(|p| p.join(format!("{stem} 章节"))).unwrap_or_else(|| PathBuf::from(format!("{stem} 章节")))
+}
+
+/// 章节拆分结果对应的提示；全部成功时没有提示。
+fn chapter_split_warning(result: Result<usize, AppError>, total: usize) -> Option<String> {
+    match result {
+        Ok(n) if n == total => None,
+        Ok(n) => Some(format!("章节只拆分出 {n}/{total} 个")),
+        Err(e) => Some(format!("章节拆分失败：{}", e.message)),
+    }
+}
+
 async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
     let st = state(&app);
     with_entry(&st, id, |e| e.snap.warning = None);
@@ -876,26 +951,68 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
     let count = spec.inputs.len();
     meta.inputs.resize(count, ResumeMeta::default());
     let parts: Vec<PathBuf> = (0..count).map(|i| input_part_path(&settings, id, &final_path, i, count)).collect();
+
+    let mut fmp4 = false;
+    let cx = InputsCtx { app: &app, st: &st, settings: &settings, id, media: &media, parts: &parts };
+    let (outcome, section) = download_all_inputs(&cx, &mut spec, &mut meta, &mut rx, &mut fmp4).await;
+
+    let final_part = if count > 1 { part_path(&final_path) } else { parts[0].clone() };
+    let r = TaskRun { app: &app, st: &st, settings: &settings, id, media: &media, spec: &spec, parts: &parts, final_part: &final_part, retry_ok };
+    let mut outcome = stage_join(&r, outcome, fmp4, &mut final_path).await;
+    stage_extract_audio(&r, &mut outcome, &mut final_path).await;
+    stage_clip(&r, &mut outcome, &final_path, section.is_none()).await;
+    stage_embed_subs(&r, &mut outcome, &final_path).await;
+    stage_embed_metadata(&r, &mut outcome, &final_path).await;
+    if let Flow::Redownload = stage_verify_playable(&r, &mut outcome).await {
+        return run_task_inner(app, id, false).await;
+    }
+    if let Flow::Redownload = stage_verify_checksum(&r, &mut outcome).await {
+        return run_task_inner(app, id, false).await;
+    }
+    stage_split_chapters(&r, &outcome, &final_path).await;
+    stage_fix_extension(&r, &outcome, &mut final_path);
+    finish(&app, &st, id, outcome, &final_part, &final_path, &parts, &settings);
+}
+
+/// 依次下载各输入时用到的只读上下文。
+struct InputsCtx<'a> {
+    app: &'a AppHandle,
+    st: &'a Arc<AppState>,
+    settings: &'a Settings,
+    id: i64,
+    media: &'a MediaInfo,
+    parts: &'a [PathBuf],
+}
+
+/// 依次下载每个输入。返回最后的结果和“只下载这一段”的计划（`section_plan`）。
+async fn download_all_inputs(
+    cx: &InputsCtx<'_>,
+    spec: &mut JobSpec,
+    meta: &mut JobMeta,
+    rx: &mut watch::Receiver<u8>,
+    fmp4: &mut bool,
+) -> (Result<u64, DlError>, Option<Clip>) {
+    let InputsCtx { app, st, settings, id, media, parts } = *cx;
+    let count = spec.inputs.len();
     let opts = HttpOptions {
         segments: settings.segments,
         min_segment_size: settings.segment_min_mb * 1024 * 1024,
         speed_limit_kbps: settings.speed_limit_kbps,
         disk_reserve: settings.disk_reserve_mb * 1024 * 1024,
         net: Some(st.net.clone()),
-        batch_limit: spec.batch.as_ref().and_then(|b| st.batches.limiter_for(&b.id, &settings)),
+        batch_limit: spec.batch.as_ref().and_then(|b| st.batches.limiter_for(&b.id, settings)),
     };
     let start_len: u64 = (0..count).map(|i| input_received(&parts[i], &meta.inputs[i])).sum();
     if start_len > 0 {
-        set_note(&app, id, Some(&format!("从 {} 处继续下载", human_bytes(start_len))));
+        set_note(app, id, Some(&format!("从 {} 处继续下载", human_bytes(start_len))));
     }
 
     let mut outcome: Result<u64, DlError> = Ok(0);
-    let mut fmp4 = false;
     // YouTube 等走 yt-dlp 的：直接只下载所选的那一段；别的下载完整视频后在本地剪
-    let mut section = section_plan(&spec, &meta);
+    let mut section = section_plan(spec, meta);
     if let Some(c) = &section {
         let (a, b) = (fmt_clock(c.start_ms), c.end_ms.map_or_else(|| "结尾".to_string(), fmt_clock));
-        task_log(&st, id, format!("只下载 {a} – {b} 这一段（yt-dlp 直接取这一段，不下载完整视频）"));
+        task_log(st, id, format!("只下载 {a} – {b} 这一段（yt-dlp 直接取这一段，不下载完整视频）"));
     }
     for i in 0..count {
         // 已完成的输入（合并前中断）直接跳过
@@ -904,48 +1021,47 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
                 continue;
             }
         }
-        set_step(&st, id, "download");
+        set_step(st, id, "download");
         let done_before: u64 = (0..i).map(|k| meta.inputs[k].total.unwrap_or_else(|| file_len(&parts[k]))).sum();
-        outcome =
-            download_input(&app, &st, &settings, id, &media, &mut spec, i, &parts[i], &mut meta, &mut rx, &opts, done_before, &mut fmp4, &mut section).await;
+        outcome = download_input(app, st, settings, id, media, spec, i, &parts[i], meta, rx, &opts, done_before, fmp4, &mut section).await;
         if outcome.is_err() {
             break;
         }
     }
+    (outcome, section)
+}
 
-    let final_part = if count > 1 { part_path(&final_path) } else { parts[0].clone() };
-    // 合并 / 转封装使用源格式的容器；需要提取音频时最终文件才是音频格式
-    let container = match &spec.post.extract_audio {
-        Some(_) => final_path.with_extension(if spec.primary().ext.is_empty() { "mp4" } else { spec.primary().ext.as_str() }),
-        None => final_path.clone(),
-    };
-    let mut outcome = match outcome {
-        Ok(_) if count > 1 => {
-            set_step(&st, id, "merge");
-            set_note(&app, id, Some("正在合并音视频…"));
+/// 合并多个输入 / 动图合成 / m3u8 转封装。
+async fn stage_join(r: &TaskRun<'_>, outcome: Result<u64, DlError>, fmp4: bool, final_path: &mut PathBuf) -> Result<u64, DlError> {
+    let (app, st, spec, id, parts, final_part) = (r.app, r.st, r.spec, r.id, r.parts, r.final_part);
+    let container = container_path(spec, final_path);
+    match outcome {
+        Ok(_) if join_kind(spec) == JoinKind::Merge => {
+            set_step(st, id, "merge");
+            set_note(app, id, Some("正在合并音视频…"));
             let aac_fix = spec.inputs.iter().any(|a| a.protocol == Protocol::Hls) && !fmp4;
-            match postprocess::merge(&st, &parts, &final_part, &container, aac_fix).await {
+            match postprocess::merge(st, parts, final_part, &container, aac_fix).await {
                 Ok(()) => {
-                    for p in &parts {
+                    for p in parts {
                         remove_part(p);
                     }
-                    Ok(file_len(&final_part))
+                    Ok(file_len(final_part))
                 }
                 Err(e) => Err(DlError::Other(e.message)),
             }
         }
         // Pixiv 动图：帧压缩包合成为视频
-        Ok(_) if providers::pixiv::ugoira_frames(spec.primary()).is_some() => {
-            set_step(&st, id, "post");
-            set_note(&app, id, Some("正在把动图合成为视频…"));
+        Ok(_) if join_kind(spec) == JoinKind::Ugoira => {
+            set_step(st, id, "post");
+            set_note(app, id, Some("正在把动图合成为视频…"));
             let frames = providers::pixiv::ugoira_frames(spec.primary()).unwrap_or_default();
-            let out = suffixed(&final_part, ".remux");
-            match postprocess::ugoira(&st, &final_part, &frames, &out).await {
+            let out = suffixed(final_part, ".remux");
+            match postprocess::ugoira(st, final_part, &frames, &out).await {
                 Ok(ext) => {
-                    let _ = std::fs::remove_file(&final_part);
-                    let _ = std::fs::rename(&out, &final_part);
-                    final_path = final_path.with_extension(ext);
-                    Ok(file_len(&final_part))
+                    let _ = std::fs::remove_file(final_part);
+                    let _ = std::fs::rename(&out, final_part);
+                    *final_path = final_path.with_extension(ext);
+                    Ok(file_len(final_part))
                 }
                 Err(e) => {
                     remove_part(&out);
@@ -954,15 +1070,15 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
             }
         }
         // m3u8 拼接出的是 TS 流：有 ffmpeg 时无损转封装为 MP4，否则保存为 .ts
-        Ok(size) if spec.primary().protocol == Protocol::Hls => {
-            if postprocess::find_ffmpeg(&st).is_some() {
-                set_step(&st, id, "post");
-                set_note(&app, id, Some("正在转换为 MP4…"));
-                let out = suffixed(&final_part, ".remux");
-                match postprocess::remux(&st, &final_part, &out, &container, !fmp4).await {
+        Ok(size) if join_kind(spec) == JoinKind::Hls => {
+            if postprocess::find_ffmpeg(st).is_some() {
+                set_step(st, id, "post");
+                set_note(app, id, Some("正在转换为 MP4…"));
+                let out = suffixed(final_part, ".remux");
+                match postprocess::remux(st, final_part, &out, &container, !fmp4).await {
                     Ok(()) => {
-                        let _ = std::fs::rename(&out, &final_part);
-                        Ok(file_len(&final_part))
+                        let _ = std::fs::rename(&out, final_part);
+                        Ok(file_len(final_part))
                     }
                     Err(e) => {
                         remove_part(&out);
@@ -971,26 +1087,29 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
                 }
             } else {
                 if !fmp4 && spec.post.extract_audio.is_none() {
-                    final_path = final_path.with_extension("ts");
+                    *final_path = final_path.with_extension("ts");
                 }
                 Ok(size)
             }
         }
         other => other,
-    };
+    }
+}
 
-    // 提取音频
-    if let (Ok(_), Some(fmt)) = (&outcome, spec.post.extract_audio.clone()) {
+/// 提取音频。
+async fn stage_extract_audio(r: &TaskRun<'_>, outcome: &mut Result<u64, DlError>, final_path: &mut PathBuf) {
+    let (app, st, spec, id, final_part) = (r.app, r.st, r.spec, r.id, r.final_part);
+    if let (Ok(_), Some(fmt)) = (&*outcome, spec.post.extract_audio.clone()) {
         if spec.primary().ext != fmt {
-            set_step(&st, id, "post");
-            set_note(&app, id, Some(&format!("正在提取音频（{}）…", fmt.to_uppercase())));
-            let out = suffixed(&final_part, ".audio");
-            outcome = match postprocess::extract_audio(&st, &final_part, &out, &fmt).await {
+            set_step(st, id, "post");
+            set_note(app, id, Some(&format!("正在提取音频（{}）…", fmt.to_uppercase())));
+            let out = suffixed(final_part, ".audio");
+            *outcome = match postprocess::extract_audio(st, final_part, &out, &fmt).await {
                 Ok(()) => {
-                    let _ = std::fs::remove_file(&final_part);
-                    let _ = std::fs::rename(&out, &final_part);
-                    final_path = final_path.with_extension(&fmt);
-                    Ok(file_len(&final_part))
+                    let _ = std::fs::remove_file(final_part);
+                    let _ = std::fs::rename(&out, final_part);
+                    *final_path = final_path.with_extension(&fmt);
+                    Ok(file_len(final_part))
                 }
                 Err(e) => {
                     remove_part(&out);
@@ -999,20 +1118,24 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
             };
         }
     }
-    // 裁剪所选时间段（yt-dlp 已经只下载了这一段的不用再剪）
-    if outcome.is_ok() && section.is_none() && matches!(spec.primary().kind, AssetKind::Video | AssetKind::Audio) {
+}
+
+/// 裁剪所选时间段（yt-dlp 已经只下载了这一段的不用再剪：`need_local_clip` 为 false）。
+async fn stage_clip(r: &TaskRun<'_>, outcome: &mut Result<u64, DlError>, final_path: &Path, need_local_clip: bool) {
+    let (app, st, spec, id, final_part) = (r.app, r.st, r.spec, r.id, r.final_part);
+    if outcome.is_ok() && need_local_clip && matches!(spec.primary().kind, AssetKind::Video | AssetKind::Audio) {
         if let Some(c) = spec.post.clip.clone() {
-            match postprocess::find_ffmpeg(&st) {
-                None => outcome = Err(DlError::Other(postprocess::ffmpeg_missing().message)),
+            match postprocess::find_ffmpeg(st) {
+                None => *outcome = Err(DlError::Other(postprocess::ffmpeg_missing().message)),
                 Some(ff) => {
-                    set_step(&st, id, "post");
-                    set_note(&app, id, Some(if c.precise { "正在精确裁剪（重新编码）…" } else { "正在裁剪所选时间段…" }));
-                    let out = suffixed(&final_part, ".clip");
-                    outcome = match postprocess::clip(&ff, &final_part, &out, &final_path, c.start_ms, c.end_ms, c.precise).await {
+                    set_step(st, id, "post");
+                    set_note(app, id, Some(if c.precise { "正在精确裁剪（重新编码）…" } else { "正在裁剪所选时间段…" }));
+                    let out = suffixed(final_part, ".clip");
+                    *outcome = match postprocess::clip(&ff, final_part, &out, final_path, c.start_ms, c.end_ms, c.precise).await {
                         Ok(()) => {
-                            let _ = std::fs::remove_file(&final_part);
-                            let _ = std::fs::rename(&out, &final_part);
-                            Ok(file_len(&final_part))
+                            let _ = std::fs::remove_file(final_part);
+                            let _ = std::fs::rename(&out, final_part);
+                            Ok(file_len(final_part))
                         }
                         Err(e) => {
                             remove_part(&out);
@@ -1023,25 +1146,29 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
             }
         }
     }
-    // 内嵌 / 烧录字幕（失败不影响视频本身，原因显示在任务的提示里）
+}
+
+/// 内嵌 / 烧录字幕（失败不影响视频本身，原因显示在任务的提示里）。
+async fn stage_embed_subs(r: &TaskRun<'_>, outcome: &mut Result<u64, DlError>, final_path: &Path) {
+    let (app, st, spec, id, final_part) = (r.app, r.st, r.spec, r.id, r.final_part);
     if outcome.is_ok() && spec.primary().kind == AssetKind::Video && !spec.post.embed_subs.is_empty() && spec.post.extract_audio.is_none() {
         let mode = spec.post.sub_mode.clone().unwrap_or_else(|| "soft".into());
-        let warning = match postprocess::find_ffmpeg(&st) {
+        let warning = match postprocess::find_ffmpeg(st) {
             None => Some(format!("字幕未处理：{}", postprocess::ffmpeg_missing().message)),
             Some(ff) => {
-                set_step(&st, id, "post");
-                set_note(&app, id, Some(if mode == "burn" { "正在把字幕烧录进画面（需要重新编码，较慢）…" } else { "正在内嵌字幕…" }));
-                let work = suffixed(&final_part, ".subs");
+                set_step(st, id, "post");
+                set_note(app, id, Some(if mode == "burn" { "正在把字幕烧录进画面（需要重新编码，较慢）…" } else { "正在内嵌字幕…" }));
+                let work = suffixed(final_part, ".subs");
                 crate::subtitle_io::VideoSubs {
-                    st: &st,
-                    settings: &settings,
-                    media: &media,
+                    st,
+                    settings: r.settings,
+                    media: r.media,
                     embed: &spec.post.embed_subs,
                     mode: &mode,
                     clip: spec.post.clip.as_ref(),
                     ffmpeg: &ff,
-                    input: &final_part,
-                    final_path: &final_path,
+                    input: final_part,
+                    final_path,
                     work: &work,
                 }
                 .apply()
@@ -1050,28 +1177,32 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
         };
         if let Some(w) = warning {
             log::warn!("job {id}: {w}");
-            with_entry(&st, id, |e| e.snap.warning = Some(w));
+            with_entry(st, id, |e| e.snap.warning = Some(w));
         }
-        outcome = Ok(file_len(&final_part));
+        *outcome = Ok(file_len(final_part));
     }
-    // 写入标题、作者、封面
+}
+
+/// 写入标题、作者、封面（失败不影响下载结果）。
+async fn stage_embed_metadata(r: &TaskRun<'_>, outcome: &mut Result<u64, DlError>, final_path: &Path) {
+    let (app, st, spec, id, settings, final_part) = (r.app, r.st, r.spec, r.id, r.settings, r.final_part);
     let primary = spec.primary();
     let out_ext = final_path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     if outcome.is_ok()
         && settings.embed_metadata
         && matches!(primary.kind, AssetKind::Video | AssetKind::Audio)
         && crate::organize::supports_metadata(&out_ext)
-        && postprocess::find_ffmpeg(&st).is_some()
+        && postprocess::find_ffmpeg(st).is_some()
     {
-        set_step(&st, id, "post");
-        set_note(&app, id, Some("正在写入标题和封面…"));
-        let cover = crate::organize::fetch_cover(&st, &settings, &media, &final_part).await;
-        let out = suffixed(&final_part, ".meta");
-        match crate::organize::embed(&st, &media, &final_part, &out, &final_path, cover.as_deref()).await {
+        set_step(st, id, "post");
+        set_note(app, id, Some("正在写入标题和封面…"));
+        let cover = crate::organize::fetch_cover(st, settings, r.media, final_part).await;
+        let out = suffixed(final_part, ".meta");
+        match crate::organize::embed(st, r.media, final_part, &out, final_path, cover.as_deref()).await {
             Ok(()) => {
-                let _ = std::fs::remove_file(&final_part);
-                let _ = std::fs::rename(&out, &final_part);
-                outcome = Ok(file_len(&final_part));
+                let _ = std::fs::remove_file(final_part);
+                let _ = std::fs::rename(&out, final_part);
+                *outcome = Ok(file_len(final_part));
             }
             // 写入元数据失败不影响下载结果
             Err(e) => {
@@ -1083,105 +1214,111 @@ async fn run_task_body(app: AppHandle, id: i64, retry_ok: bool) {
             let _ = std::fs::remove_file(c);
         }
     }
-    // 下载后检查文件能否正常读取；损坏时清理后从头重新下载一次
+}
+
+/// 清理已下载的文件、重置进度，准备整个任务从头再下载一次。
+fn reset_for_redownload(r: &TaskRun<'_>) {
+    let (st, id, spec) = (r.st, r.id, r.spec);
+    for part in r.parts.iter().map(PathBuf::as_path).chain(std::iter::once(r.final_part)) {
+        remove_part(part);
+    }
+    let n = spec.inputs.len();
+    let st2 = st.clone();
+    with_entry(st, id, |e| {
+        e.meta = JobMeta { inputs: vec![ResumeMeta::default(); n], ..Default::default() };
+        e.snap.received = 0;
+        e.snap.total = None;
+        persist(&st2, e);
+    });
+}
+
+/// 下载后检查文件能否正常读取；损坏时清理后从头重新下载一次。
+async fn stage_verify_playable(r: &TaskRun<'_>, outcome: &mut Result<u64, DlError>) -> Flow {
+    let (app, st, spec, id, settings, final_part) = (r.app, r.st, r.spec, r.id, r.settings, r.final_part);
     if outcome.is_ok() && settings.verify_downloads && matches!(spec.primary().kind, AssetKind::Video | AssetKind::Audio) {
-        if let Some(ff) = postprocess::find_ffmpeg(&st) {
-            set_step(&st, id, "post");
-            set_note(&app, id, Some("正在检查文件…"));
-            let p = postprocess::probe(&ff, &final_part).await;
+        if let Some(ff) = postprocess::find_ffmpeg(st) {
+            set_step(st, id, "post");
+            set_note(app, id, Some("正在检查文件…"));
+            let p = postprocess::probe(&ff, final_part).await;
             if !p.readable() {
                 let why = p.error.clone().unwrap_or_else(|| "没有检测到音频或视频".into());
-                if retry_ok {
+                if r.retry_ok {
                     log::warn!("job {id}: verification failed ({why}), downloading again");
-                    for part in parts.iter().chain(std::iter::once(&final_part)) {
-                        remove_part(part);
-                    }
-                    let n = spec.inputs.len();
-                    let st2 = st.clone();
-                    with_entry(&st, id, |e| {
-                        e.meta = JobMeta { inputs: vec![ResumeMeta::default(); n], ..Default::default() };
-                        e.snap.received = 0;
-                        e.snap.total = None;
-                        persist(&st2, e);
-                    });
-                    set_note(&app, id, Some("下载的文件没通过检查，正在重新下载…"));
-                    return run_task_inner(app, id, false).await;
+                    reset_for_redownload(r);
+                    set_note(app, id, Some("下载的文件没通过检查，正在重新下载…"));
+                    return Flow::Redownload;
                 }
-                outcome = Err(DlError::Other(format!("下载的文件无法播放（{why}）。请重试；如果反复出现，可能是网站限制了这个资源。")));
-            } else if let (Some(actual), Some(expect), None) = (p.duration_ms, media.duration_ms, spec.post.clip.as_ref()) {
+                *outcome = Err(DlError::Other(format!("下载的文件无法播放（{why}）。请重试；如果反复出现，可能是网站限制了这个资源。")));
+            } else if let (Some(actual), Some(expect), None) = (p.duration_ms, r.media.duration_ms, spec.post.clip.as_ref()) {
                 // 只提示，不判失败：跳过广告的 m3u8、网站标注的时长不准都会造成差异
                 let ads_skipped = settings.hls_skip_ads && spec.inputs.iter().any(|a| a.protocol == Protocol::Hls);
-                if expect >= 10_000 && actual + 3_000 < expect * 9 / 10 && !ads_skipped {
-                    let w = format!("文件时长 {} 秒，网站标注为 {} 秒，可能不完整", actual / 1000, expect / 1000);
-                    with_entry(&st, id, |e| e.snap.warning = Some(w));
+                if let Some(w) = duration_warning(actual, expect, ads_skipped) {
+                    with_entry(st, id, |e| e.snap.warning = Some(w));
                 }
             }
         }
     }
-    // 期望的文件哈希：不一致说明下载内容被改动或损坏，清理后从头重新下载一次
+    Flow::Continue
+}
+
+/// 期望的文件哈希：不一致说明下载内容被改动或损坏，清理后从头重新下载一次。
+async fn stage_verify_checksum(r: &TaskRun<'_>, outcome: &mut Result<u64, DlError>) -> Flow {
+    let (app, spec, id, final_part) = (r.app, r.spec, r.id, r.final_part);
     if outcome.is_ok() && spec.inputs.len() == 1 {
         if let Some(expect) = spec.inputs[0].checksum.as_deref().and_then(crate::checksum::parse) {
-            set_step(&st, id, "post");
-            set_note(&app, id, Some("正在校验文件…"));
-            match crate::checksum::verify(&final_part, &expect).await {
+            set_step(r.st, id, "post");
+            set_note(app, id, Some("正在校验文件…"));
+            match crate::checksum::verify(final_part, &expect).await {
                 Ok(Ok(())) => {}
-                Ok(Err(actual)) if retry_ok => {
+                Ok(Err(actual)) if r.retry_ok => {
                     log::warn!("job {id}: {} mismatch (got {actual}), downloading again", expect.algo.name());
-                    for part in parts.iter().chain(std::iter::once(&final_part)) {
-                        remove_part(part);
-                    }
-                    let n = spec.inputs.len();
-                    let st2 = st.clone();
-                    with_entry(&st, id, |e| {
-                        e.meta = JobMeta { inputs: vec![ResumeMeta::default(); n], ..Default::default() };
-                        e.snap.received = 0;
-                        e.snap.total = None;
-                        persist(&st2, e);
-                    });
-                    set_note(&app, id, Some("文件校验没通过，正在重新下载…"));
-                    return run_task_inner(app, id, false).await;
+                    reset_for_redownload(r);
+                    set_note(app, id, Some("文件校验没通过，正在重新下载…"));
+                    return Flow::Redownload;
                 }
                 Ok(Err(actual)) => {
-                    outcome = Err(DlError::Other(format!(
+                    *outcome = Err(DlError::Other(format!(
                         "文件校验失败：{} 应为 {}，实际是 {actual}。文件可能被改动或下载不完整，请重试或换一个下载源。",
                         expect.algo.name().to_uppercase(),
                         expect.hex
                     )));
                 }
-                Err(e) => outcome = Err(DlError::Other(format!("无法校验文件：{e}"))),
+                Err(e) => *outcome = Err(DlError::Other(format!("无法校验文件：{e}"))),
             }
-            set_note(&app, id, None);
+            set_note(app, id, None);
         }
     }
-    // 按章节另外拆分（保留完整文件）
+    Flow::Continue
+}
+
+/// 按章节另外拆分（保留完整文件）。
+async fn stage_split_chapters(r: &TaskRun<'_>, outcome: &Result<u64, DlError>, final_path: &Path) {
+    let (app, st, spec, id, final_part) = (r.app, r.st, r.spec, r.id, r.final_part);
     if outcome.is_ok() && !spec.post.split_chapters.is_empty() && matches!(spec.primary().kind, AssetKind::Video | AssetKind::Audio) {
-        if let Some(ff) = postprocess::find_ffmpeg(&st) {
-            set_step(&st, id, "post");
-            set_note(&app, id, Some("正在按章节拆分…"));
+        if let Some(ff) = postprocess::find_ffmpeg(st) {
+            set_step(st, id, "post");
+            set_note(app, id, Some("正在按章节拆分…"));
             let chapters = clip_chapters(&spec.post.split_chapters, spec.post.clip.as_ref());
-            let stem = final_path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            let dir = final_path.parent().map(|p| p.join(format!("{stem} 章节"))).unwrap_or_else(|| PathBuf::from(format!("{stem} 章节")));
+            let dir = chapters_dir(final_path);
             let ext = final_path.extension().and_then(|e| e.to_str()).unwrap_or("mp4").to_string();
             let total = chapters.len();
-            let w = match postprocess::split_chapters(&ff, &final_part, &dir, &ext, &chapters).await {
-                Ok(n) if n == total => None,
-                Ok(n) => Some(format!("章节只拆分出 {n}/{total} 个")),
-                Err(e) => Some(format!("章节拆分失败：{}", e.message)),
-            };
-            if let Some(w) = w {
-                with_entry(&st, id, |e| e.snap.warning = Some(w));
+            let result = postprocess::split_chapters(&ff, final_part, &dir, &ext, &chapters).await;
+            if let Some(w) = chapter_split_warning(result, total) {
+                with_entry(st, id, |e| e.snap.warning = Some(w));
             }
         } else {
-            with_entry(&st, id, |e| e.snap.warning = Some("章节没有拆分：需要安装 ffmpeg".into()));
+            with_entry(st, id, |e| e.snap.warning = Some("章节没有拆分：需要安装 ffmpeg".into()));
         }
     }
-    // 地址没有后缀、服务器又没说类型时会落成 .bin：按文件内容认出真实格式再命名
-    if outcome.is_ok() && matches!(spec.primary().kind, AssetKind::File | AssetKind::Image | AssetKind::Cover) {
-        if let Some(fixed) = crate::grab::corrected_path(&final_part, &final_path) {
-            final_path = fixed;
+}
+
+/// 地址没有后缀、服务器又没说类型时会落成 .bin：按文件内容认出真实格式再命名。
+fn stage_fix_extension(r: &TaskRun<'_>, outcome: &Result<u64, DlError>, final_path: &mut PathBuf) {
+    if outcome.is_ok() && matches!(r.spec.primary().kind, AssetKind::File | AssetKind::Image | AssetKind::Cover) {
+        if let Some(fixed) = crate::grab::corrected_path(r.final_part, final_path) {
+            *final_path = fixed;
         }
     }
-    finish(&app, &st, id, outcome, &final_part, &final_path, &parts, &settings);
 }
 
 /// 裁剪后章节的时间需要平移：只保留落在区间内的部分，时间从 0 开始。
@@ -2276,6 +2413,61 @@ pub fn batch_sources(st: &AppState, batch_id: &str) -> Vec<(String, String, Task
 
 #[cfg(test)]
 mod tests {
+    // ---- run_task_body 拆分后的纯决策函数（特征化测试：记录拆分前的分支行为） ----
+
+    fn spec_of(inputs: Vec<Asset>) -> JobSpec {
+        JobSpec { inputs, post: PostOptions::default(), priority: 0, start_at: None, origin: None, sub_item: None, tried: vec![], batch: None, list: None }
+    }
+
+    fn video(url: &str, ext: &str) -> Asset {
+        Asset::base("video", AssetKind::Video, url.into(), "视频", ext)
+    }
+
+    #[test]
+    fn container_follows_the_source_format_only_when_extracting_audio() {
+        let fin = Path::new("/d/a.mp3");
+        let mut spec = spec_of(vec![video("https://x/v", "webm")]);
+        assert_eq!(container_path(&spec, fin), PathBuf::from("/d/a.mp3"));
+        spec.post.extract_audio = Some("mp3".into());
+        assert_eq!(container_path(&spec, fin), PathBuf::from("/d/a.webm"));
+        spec.inputs[0].ext = String::new();
+        assert_eq!(container_path(&spec, fin), PathBuf::from("/d/a.mp4"), "没有扩展名时用 mp4");
+    }
+
+    #[test]
+    fn join_kind_picks_the_post_download_branch() {
+        let mut hls = video("https://x/a.m3u8", "mp4");
+        hls.protocol = Protocol::Hls;
+        let plain = video("https://x/a.mp4", "mp4");
+        assert_eq!(join_kind(&spec_of(vec![plain.clone()])), JoinKind::Plain);
+        assert_eq!(join_kind(&spec_of(vec![hls.clone()])), JoinKind::Hls);
+        assert_eq!(join_kind(&spec_of(vec![hls.clone(), plain.clone()])), JoinKind::Merge, "多个输入优先合并");
+        let mut ugoira = plain;
+        ugoira.extra = Some(serde_json::json!({"ugoira": [{"file": "000.jpg", "delay": 80}]}));
+        assert_eq!(join_kind(&spec_of(vec![ugoira.clone()])), JoinKind::Ugoira);
+        ugoira.protocol = Protocol::Hls;
+        assert_eq!(join_kind(&spec_of(vec![ugoira])), JoinKind::Ugoira, "动图优先于 m3u8");
+    }
+
+    #[test]
+    fn short_files_get_a_duration_warning_unless_ads_were_skipped() {
+        // 低于标注的 90% 再减 3 秒才提示
+        assert_eq!(duration_warning(50_000, 100_000, false).as_deref(), Some("文件时长 50 秒，网站标注为 100 秒，可能不完整"));
+        assert_eq!(duration_warning(50_000, 100_000, true), None);
+        assert_eq!(duration_warning(87_000, 100_000, false), None, "刚好在阈值上不提示");
+        assert!(duration_warning(86_999, 100_000, false).is_some());
+        assert_eq!(duration_warning(1_000, 9_999, false), None, "标注不足 10 秒不提示");
+    }
+
+    #[test]
+    fn chapter_split_goes_to_a_sibling_folder_and_reports_partial_results() {
+        assert_eq!(chapters_dir(Path::new("/d/视频.mp4")), PathBuf::from("/d/视频 章节"));
+        assert_eq!(chapters_dir(Path::new("视频.mp4")), PathBuf::from("视频 章节"));
+        assert_eq!(chapter_split_warning(Ok(3), 3), None);
+        assert_eq!(chapter_split_warning(Ok(2), 3).as_deref(), Some("章节只拆分出 2/3 个"));
+        assert_eq!(chapter_split_warning(Err(AppError::msg("boom")), 3).as_deref(), Some("章节拆分失败：boom"));
+    }
+
     #[test]
     fn priority_preempts_the_lowest_priority_running_task() {
         use super::pick_victim;
