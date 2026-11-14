@@ -2,6 +2,7 @@
 const fs = require('fs')
 const path = require('path')
 const { chromium } = require('playwright')
+const { soon } = require('./lib.cjs')
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -195,8 +196,8 @@ const contrast = (a, b) => {
   await page.evaluate(() => document.activeElement?.blur())
   ok('卡片角标常态不显示', (await corner()) === '0', await corner())
   await page.locator('[data-gallery="CcEmpty"] .cc-btn').first().focus()
-  await page.waitForTimeout(200)
-  ok('卡内聚焦时显示角标', (await corner()) === '1', await corner())
+  const r = await soon(async () => (await corner()) === '1', async () => await corner())
+  ok('卡内聚焦时显示角标', r.pass, r.extra)
   await page.evaluate(() => document.activeElement?.blur())
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
