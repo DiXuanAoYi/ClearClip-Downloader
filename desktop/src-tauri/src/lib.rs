@@ -189,6 +189,11 @@ impl AppState {
         self.settings_raw().metered_view()
     }
 
+    /// 只读访问设置里的几个字段，不克隆整份（手机请求这类热路径用；省流量模式不影响的字段才能用它）。
+    pub fn read_settings<R>(&self, f: impl FnOnce(&Settings) -> R) -> R {
+        f(&self.settings.read().unwrap_or_else(|e| e.into_inner()))
+    }
+
     /// 保存的设置原样（不含省流量模式的临时调整）。
     pub fn settings_raw(&self) -> Settings {
         self.settings.read().unwrap_or_else(|e| e.into_inner()).clone()
@@ -387,7 +392,7 @@ pub fn run() {
                         log::info!("migrated {n} legacy cookie entries into the encrypted store");
                         settings.cookies.clear();
                         settings.cookie_updated_at.clear();
-                        let _ = settings.save(&settings_path);
+                        crate::error::log_err("保存迁移后的设置", settings.save(&settings_path));
                     }
                     Err(e) => log::warn!("legacy cookie migration failed: {e}"),
                 }

@@ -259,3 +259,35 @@ mod tests {
         assert_eq!(e.message, "B站：Cookie 失效");
     }
 }
+
+/// 持久化 / 入库这类“失败了不该打断流程、但也不该悄悄吞掉”的写入：失败时记一条警告，带上下文。
+pub fn log_err<T, E: std::fmt::Display>(ctx: &str, r: Result<T, E>) {
+    if let Err(e) = r {
+        log::warn!("{ctx}失败：{e}");
+    }
+}
+
+#[cfg(test)]
+mod log_err_tests {
+    use super::*;
+
+    #[test]
+    fn log_err_accepts_ok_and_err_without_panicking() {
+        log_err("写入", Ok::<_, String>(1));
+        log_err("写入", Err::<(), _>("磁盘已满"));
+    }
+}
+
+#[cfg(test)]
+mod msrv_tests {
+    /// Cargo.toml 的 rust-version 要和 CI 里 MSRV job 用的版本一致（否则声明的最低版本只是摆设）。
+    #[test]
+    fn rust_version_matches_ci_msrv() {
+        let cargo = include_str!("../Cargo.toml");
+        let declared = cargo.lines().find_map(|l| l.strip_prefix("rust-version = ")).expect("rust-version").trim().trim_matches('"').to_string();
+        let ci = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.github/workflows/desktop-ci.yml"));
+        let Ok(ci) = ci else { return }; // 打包后的源码里没有 CI 配置
+        let msrv = ci.lines().find_map(|l| l.trim().strip_prefix("MSRV: ")).expect("MSRV").trim().trim_matches('\'').to_string();
+        assert_eq!(msrv.split('.').take(2).collect::<Vec<_>>().join("."), declared);
+    }
+}

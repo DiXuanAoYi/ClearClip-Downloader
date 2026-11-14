@@ -531,7 +531,7 @@ pub async fn check(app: &AppHandle, id: i64) -> AppResult<usize> {
         let retry = next_check_time(now(), interval.min(2), jitter());
         if let Ok(fails) = state.db.sub_failed(id, retry, &e.message) {
             if fails >= MAX_FAILS {
-                let _ = state.db.sub_set_status(id, "error");
+                crate::error::log_err("订阅状态入库", state.db.sub_set_status(id, "error"));
                 notify(app, "订阅已暂停", &format!("“{}”连续 {fails} 次检查失败，已自动暂停：{}", sub.map(|s| s.title).unwrap_or_default(), e.message));
             }
         }
@@ -594,7 +594,7 @@ async fn check_inner(app: &AppHandle, state: &Arc<AppState>, id: i64) -> AppResu
         state.db.sub_update(id, &sub.title, &settings)?;
     }
     if list.avatar.is_some() && sub.avatar.is_none() {
-        let _ = state.db.conn().execute("UPDATE subscriptions SET avatar=?2 WHERE id=?1", params![id, list.avatar]);
+        crate::error::log_err("订阅头像入库", state.db.conn().execute("UPDATE subscriptions SET avatar=?2 WHERE id=?1", params![id, list.avatar]));
     }
     emit(app);
     {

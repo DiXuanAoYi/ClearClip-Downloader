@@ -23,7 +23,7 @@
 
 ## 办法二：在自己电脑上开发模式运行（改动立刻生效）
 
-适合要反复试的情况。需要先装：[Node.js 22](https://nodejs.org/)、[Rust](https://rustup.rs/)（1.80 以上）、Visual Studio 生成工具里的“使用 C++ 的桌面开发”，Windows 11 自带 WebView2。
+适合要反复试的情况。需要先装：[Node.js 22](https://nodejs.org/)、[Rust](https://rustup.rs/)（1.96 以上）、Visual Studio 生成工具里的“使用 C++ 的桌面开发”，Windows 11 自带 WebView2。
 
 ```powershell
 git clone https://github.com/DiXuanAoYi/ClearClip-Downloader.git

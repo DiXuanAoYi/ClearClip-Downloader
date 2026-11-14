@@ -1191,10 +1191,22 @@ mod tests {
 
     #[cfg(unix)]
     fn fake_ytdlp(dir: &Path, script: &str) -> PathBuf {
+        use std::io::Write;
         use std::os::unix::fs::PermissionsExt;
-        let bin = dir.join("yt-dlp");
-        std::fs::write(&bin, format!("#!/bin/sh\n{script}\n")).unwrap();
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // 每次用新文件名：同一路径再写时，上一个假脚本的进程可能还在运行（取消后被杀但未回收），
+        // 写正在执行的文件会得到 ETXTBSY（Text file busy）。
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let bin = dir.join(format!("yt-dlp-{n}"));
+        let tmp = dir.join(format!(".yt-dlp-{n}.tmp"));
+        {
+            // 写完、同步并关闭句柄后再改名，避免执行时仍有写句柄
+            let mut f = std::fs::File::create(&tmp).unwrap();
+            f.write_all(format!("#!/bin/sh\n{script}\n").as_bytes()).unwrap();
+            f.sync_all().unwrap();
+        }
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::rename(&tmp, &bin).unwrap();
         bin
     }
 

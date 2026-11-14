@@ -237,9 +237,9 @@ pub async fn resolve_link(app: AppHandle, state: St<'_>, text: String) -> AppRes
         }
     };
     if !settings.security.privacy_mode {
-        let _ = state.db.upsert_history(&info);
+        crate::error::log_err("解析结果写入历史", state.db.upsert_history(&info));
     }
-    let _ = state.db.inbox_mark_parsed(&text, &info);
+    crate::error::log_err("收件箱标记已解析", state.db.inbox_mark_parsed(&text, &info));
     Ok(info)
 }
 
@@ -503,20 +503,23 @@ pub async fn make_slideshow(state: St<'_>, media: MediaInfo, image_ids: Vec<Stri
     let out = result?;
     let path = out.to_string_lossy().into_owned();
     let size = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
-    let _ = state.db.record_download(&crate::db::NewDownload {
-        platform: &media.platform,
-        media_id: &media.id,
-        asset_id: "slideshow",
-        title: &media.title,
-        author: &media.author,
-        cover: media.cover.as_deref(),
-        path: &path,
-        size: size as i64,
-        kind: "video",
-        source: "manual",
-        source_url: &media.source_url,
-        platform_name: &media.platform_name,
-    });
+    crate::error::log_err(
+        "幻灯片视频写入下载记录",
+        state.db.record_download(&crate::db::NewDownload {
+            platform: &media.platform,
+            media_id: &media.id,
+            asset_id: "slideshow",
+            title: &media.title,
+            author: &media.author,
+            cover: media.cover.as_deref(),
+            path: &path,
+            size: size as i64,
+            kind: "video",
+            source: "manual",
+            source_url: &media.source_url,
+            platform_name: &media.platform_name,
+        }),
+    );
     Ok(path)
 }
 

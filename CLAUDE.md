@@ -42,7 +42,7 @@ cargo test
 
 ## 容易踩的坑
 
-- 最低 Rust 版本是 1.80（`Cargo.toml` 的 `rust-version`）：不要用之后才稳定的 API，比如 `Option::is_none_or`。
+- 最低 Rust 版本是 1.96（`Cargo.toml` 的 `rust-version`）：不要用之后才稳定的 API，比如 `Option::is_none_or`。
 - `cfg(windows)` 的代码在 Linux 上不编译。CI 的 cross-check 只编译 Windows ARM64，x64 要到发版时才第一次编译；Windows 专有的测试 CI 不跑。改这类代码时在 PR 和汇报里写明没有编译或运行验证。
 - 单元测试用 `node --experimental-strip-types` 跑，测试里相对导入 `.ts` 文件要写扩展名。
 - 新的界面测试脚本要加进 `e2e/run.mjs` 的默认列表，否则 CI 不跑；自己启动浏览器的要写 `chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined })`。

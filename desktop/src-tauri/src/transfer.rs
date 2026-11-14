@@ -755,13 +755,16 @@ pub async fn handle_upload(app: &AppHandle, sock: &mut TcpStream, req: &Request,
             match finished {
                 Ok(final_path) => {
                     let final_name = final_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| name.clone());
-                    let _ = state.db.transfer_finish(id, "done", Some(&final_path.to_string_lossy()), written as i64, None);
+                    crate::error::log_err(
+                        "手机文件入库（完成状态）",
+                        state.db.transfer_finish(id, "done", Some(&final_path.to_string_lossy()), written as i64, None),
+                    );
                     json(sock, "200 OK", serde_json::json!({"id": id, "name": final_name, "size": written})).await;
                     after_received(app, id, &final_name, kind, &final_path, settings.phone.auto_extract);
                 }
                 Err(e) => {
                     let _ = std::fs::remove_file(&part);
-                    let _ = state.db.transfer_finish(id, "failed", None, 0, Some(&format!("保存失败：{e}")));
+                    crate::error::log_err("手机文件入库（失败状态）", state.db.transfer_finish(id, "failed", None, 0, Some(&format!("保存失败：{e}"))));
                     json(sock, "500 Internal Server Error", serde_json::json!({"error": format!("保存失败：{e}")})).await;
                 }
             }
@@ -771,7 +774,7 @@ pub async fn handle_upload(app: &AppHandle, sock: &mut TcpStream, req: &Request,
             if live.is_canceled(id) {
                 let _ = state.db.transfer_remove(id);
             } else {
-                let _ = state.db.transfer_finish(id, "failed", None, 0, Some(&msg));
+                crate::error::log_err("手机文件入库（失败状态）", state.db.transfer_finish(id, "failed", None, 0, Some(&msg)));
             }
             json(sock, "400 Bad Request", serde_json::json!({"error": msg})).await;
         }
@@ -804,13 +807,13 @@ fn after_received(app: &AppHandle, id: i64, name: &str, kind: &str, path: &Path,
             let db = &st(&app2).db;
             match res {
                 Ok(Ok((dir, n))) => {
-                    let _ = db.transfer_set_extra(id, Some(&dir.to_string_lossy()), Some(&format!("已解压 {n} 个文件")));
+                    crate::error::log_err("手机文件解压结果入库", db.transfer_set_extra(id, Some(&dir.to_string_lossy()), Some(&format!("已解压 {n} 个文件"))));
                 }
                 Ok(Err(e)) => {
-                    let _ = db.transfer_set_extra(id, None, Some(&format!("解压失败：{e}")));
+                    crate::error::log_err("手机文件解压结果入库", db.transfer_set_extra(id, None, Some(&format!("解压失败：{e}"))));
                 }
                 Err(e) => {
-                    let _ = db.transfer_set_extra(id, None, Some(&format!("解压失败：{e}")));
+                    crate::error::log_err("手机文件解压结果入库", db.transfer_set_extra(id, None, Some(&format!("解压失败：{e}"))));
                 }
             }
             let _ = app2.emit(EVT_CHANGED, ());
@@ -1179,7 +1182,7 @@ pub async fn handle_download(app: &AppHandle, sock: &mut TcpStream, req: &Reques
     })
     .await;
     if res.is_ok() && end + 1 == total {
-        let _ = state.db.transfer_count_download(item.id);
+        crate::error::log_err("手机文件下载计数入库", state.db.transfer_count_download(item.id));
     }
     drop(guard);
 }

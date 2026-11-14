@@ -414,7 +414,7 @@ pub fn wipe(app: &AppHandle, o: &WipeOptions) -> WipeReport {
     let _ = app.emit(crate::subs::EVT_SUBS, ());
     let _ = app.emit(crate::live::EVT_LIVE, ());
     let _ = app.emit("accounts://updated", ());
-    let _ = st.db.checkpoint();
+    crate::error::log_err("数据库 checkpoint", st.db.checkpoint());
     if o.quit {
         let h = app.clone();
         tauri::async_runtime::spawn(async move {

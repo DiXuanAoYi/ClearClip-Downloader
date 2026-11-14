@@ -813,7 +813,7 @@ pub fn action(app: &AppHandle, id: &str, what: &str) -> AppResult<()> {
                 download::remove(app, t);
             }
             lock(&st.batches.recs).retain(|r| r.id != id);
-            let _ = st.db.delete_batch(id);
+            crate::error::log_err("删除批量任务记录", st.db.delete_batch(id));
         }
         "top" => {
             for t in task_ids(&st, id, |s| matches!(s, TaskStatus::Queued | TaskStatus::Paused | TaskStatus::Failed)).into_iter().rev() {
