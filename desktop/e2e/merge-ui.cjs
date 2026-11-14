@@ -257,6 +257,7 @@ const INIT = `
     await page.locator('.tt .trow').nth(6).locator('.grip').dragTo(page.locator('.tt .trow').nth(5), { targetPosition: { x: 300, y: 19 } })
     await okSoon('拖动：D 放进 C 下面成为下级', async () => JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a', '1:B', '2:B1', '1:C', '2:D']), async () => JSON.stringify(await rowsOf()))
     // 搜索：命中的连同上级一起显示
+    await settle(page) // 拖放后新行的输入框会晚一轮渲染才抢到焦点；不等的话 fill 的文字会被打进 D 的输入框里（曾偶发）
     await page.locator('.tt .q input').fill('a1a')
     await okSoon('搜索：命中的 A1a 连同上级 A、A1 一起显示，上级变灰', async () => JSON.stringify(await rowsOf()) === JSON.stringify(['1:A', '2:A1', '3:A1a']) && (await page.locator('.tt .trow.dim').count()) === 2, async () => JSON.stringify(await rowsOf()))
     await page.locator('.tt .q input').fill('')

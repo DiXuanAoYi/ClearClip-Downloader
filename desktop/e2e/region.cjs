@@ -89,14 +89,20 @@ function redBox(buf) {
     const r = await page.locator('.ruler').boundingBox()
     return r.x + (ms / 1000) * (await pps())
   }
-  const settle = async () => {
-    await page.waitForFunction(() => [...document.querySelectorAll('.stage .lay:not(.off) video')].some((v) => !v.seeking && v.readyState >= 2))
+  const settle = async (timeout = 30000) => {
+    await page.waitForFunction(() => [...document.querySelectorAll('.stage .lay:not(.off) video')].some((v) => !v.seeking && v.readyState >= 2), undefined, { timeout })
     await page.waitForTimeout(220) // 必要：seek 完成后还要等一帧画到屏上，截图 / 取像素才是新画面（没有可查询的“已绘制”标记）
   }
   const seekTo = async (ms) => {
     const r = await page.locator('.ruler').boundingBox()
     await page.mouse.click(await rulerX(ms), r.y + 10)
-    await settle()
+    // 机器很忙时偶尔点击落在刚重排的标尺上没生效（曾在满载的机器上超时一次）：等不到就再点一次
+    try {
+      await settle(8000)
+    } catch {
+      await page.mouse.click(await rulerX(ms), r.y + 10)
+      await settle()
+    }
   }
   const stageBox = () => page.locator('.stage').boundingBox()
   const shot = async () => page.screenshot({ clip: await stageBox() })
