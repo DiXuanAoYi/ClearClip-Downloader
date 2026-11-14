@@ -3,7 +3,7 @@
 /**
  * 合集 / 播放列表里的一个条目。
  */
-export type PlaylistEntry = { id: string, title: string, url: string, durationMs: number | null, thumbnail: string | null, 
+export type PlaylistEntry = { id: string, title: string, url: string, durationMs: bigint | null, thumbnail: string | null, 
 /**
  * 在列表中的序号（从 1 开始）
  */

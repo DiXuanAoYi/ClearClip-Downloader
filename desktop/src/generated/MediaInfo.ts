@@ -20,11 +20,11 @@ id: string,
 /**
  * 用户粘贴的原始链接，用于直链过期后重新解析。
  */
-sourceUrl: string, title: string, author: string, cover: string | null, durationMs: number | null, kind: MediaKind, width: number | null, height: number | null, 
+sourceUrl: string, title: string, author: string, cover: string | null, durationMs: bigint | null, kind: MediaKind, width: number | null, height: number | null, 
 /**
  * 发布时间，Unix 秒。
  */
-publishedAt: number | null, assets: Array<Asset>, 
+publishedAt: bigint | null, assets: Array<Asset>, 
 /**
  * 合集 / 播放列表的条目（kind = playlist 时）
  */

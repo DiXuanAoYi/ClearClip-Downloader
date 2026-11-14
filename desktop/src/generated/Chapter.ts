@@ -3,4 +3,4 @@
 /**
  * 视频章节（时间单位毫秒）。
  */
-export type Chapter = { title: string, startMs: number, endMs: number, };
+export type Chapter = { title: string, startMs: bigint, endMs: bigint, };

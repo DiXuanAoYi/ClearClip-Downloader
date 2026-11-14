@@ -22,11 +22,11 @@ quality: string | null, vcodec: string | null, acodec: string | null,
 /**
  * 码率（kbps）
  */
-bitrate: number | null, 
+bitrate: bigint | null, 
 /**
  * 预估大小（字节）
  */
-filesize: number | null, fps: number | null, 
+filesize: bigint | null, fps: number | null, 
 /**
  * 视频轨是否带声音；None 表示未知（按带声音处理）
  */
