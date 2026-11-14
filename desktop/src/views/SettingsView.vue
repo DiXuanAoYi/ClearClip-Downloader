@@ -236,7 +236,7 @@ function insertVar(v: string) {
           <span>{{ c.label }}</span>
         </button>
       </aside>
-      <section class="setmain" :aria-label="catLabel + '设置'">
+      <section class="setmain" :aria-label="`${catLabel}设置`">
         <div class="dtoolbar sethead">
           <h2>{{ catLabel }}</h2>
           <span class="dspacer" />

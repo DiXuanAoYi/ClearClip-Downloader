@@ -13,30 +13,49 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# 下面两个任务的 if：本仓库分支开的 PR，推送时已经检查过同一个提交（PR 页面会显示那次的结果），
+# 下面各任务的 if：本仓库分支开的 PR，推送时已经检查过同一个提交（PR 页面会显示那次的结果），
 # PR 事件就不再重复跑一遍（显示为“已跳过”）；只有从别人 fork 来的 PR 才在 PR 事件里检查。
+# 拆成并行的几个任务：lint 最快出结果（几分钟），rust-test / e2e / msrv / deny 同时跑，总时间约等于最慢的那个。
+permissions:
+  contents: read
+
+env:
+  LINUX_DEPS: libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libdbus-1-dev patchelf
+
 jobs:
-  check:
+  # 快速检查：格式、clippy、类型检查、前端构建、单元测试
+  lint:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: desktop
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read pinned Rust version
+        id: rust
+        run: echo "version=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' src-tauri/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust.outputs.version }}
+          components: rustfmt, clippy
+
+      - name: Rust fmt
+        working-directory: desktop/src-tauri
+        run: cargo fmt --check
+
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libdbus-1-dev patchelf
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+          sudo apt-get install -y $LINUX_DEPS
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
+          shared-key: lint
 
       - uses: actions/setup-node@v4
         with:
@@ -50,46 +69,203 @@ jobs:
       - name: Version numbers are consistent
         run: npm run release:check
 
+      # vue-tsc 类型检查 + vite 构建（clippy 编译 tauri::generate_context! 需要前端产物）
       - name: Frontend typecheck and build
         run: npm run build
+
+      - name: Frontend unit tests
+        run: npm run test:unit
 
       # 列出源码里还没有英文译文的中文（只提示，不会让检查失败；要强制可加 -- --strict）
       - name: Translation coverage
         run: npm run i18n
 
-      # 剪辑界面的测试：工具函数单元测试 + Chromium 里用模拟后端跑界面（desktop/e2e，说明见 e2e/README.md）
-      - name: Editor UI tests
-        run: |
-          sudo apt-get install -y ffmpeg
-          npx playwright install --with-deps chromium
-          npm test
-
-      - name: Rust fmt
-        working-directory: desktop/src-tauri
-        run: cargo fmt --check
-
       - name: Rust clippy
         working-directory: desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings
+
+  rust-test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read pinned Rust version
+        id: rust
+        run: echo "version=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' src-tauri/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust.outputs.version }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $LINUX_DEPS fonts-dejavu-core
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+          shared-key: test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      # tauri::generate_context! 需要前端产物存在
+      - run: npm run build
 
       - name: Rust tests
         working-directory: desktop/src-tauri
         run: cargo test
 
       - name: Generated TypeScript types are up to date
-        working-directory: desktop
         run: node scripts/gen-types.mjs --check
 
-      # PDF 原处排版要加载 PDFium 动态库：下载官方预编译包，跑那条平时被忽略的集成测试（读块 → 写回译文 → 再读出来核对）
+      # PDF 原处排版要加载 PDFium 动态库：下载官方预编译包（固定版本并校验 SHA-256），跑那条平时被忽略的集成测试
+      # （读块 → 写回译文 → 再读出来核对）。升级 PDFium：改下面两个变量，哈希用
+      # `curl -sSL <url> | sha256sum` 在本机算出（bblanchon/pdfium-binaries 的 Release 页面里的资源）。
       - name: PDF layout integration test (PDFium)
         working-directory: desktop/src-tauri
+        env:
+          PDFIUM_TAG: chromium/8152
+          PDFIUM_SHA256: 384ab5c51882408a143a21f9c14dcd2caf1f75280ae41c554d0489b46c3dba9f
         run: |
-          sudo apt-get install -y fonts-dejavu-core
           mkdir -p "$RUNNER_TEMP/pdfium"
-          curl -sSL --retry 3 -o "$RUNNER_TEMP/pdfium/p.tgz" https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz
+          curl -sSL --retry 3 -o "$RUNNER_TEMP/pdfium/p.tgz" "https://github.com/bblanchon/pdfium-binaries/releases/download/${PDFIUM_TAG}/pdfium-linux-x64.tgz"
+          echo "$PDFIUM_SHA256  $RUNNER_TEMP/pdfium/p.tgz" | sha256sum -c -
           tar xzf "$RUNNER_TEMP/pdfium/p.tgz" -C "$RUNNER_TEMP/pdfium"
           CC_PDFIUM_LIB="$RUNNER_TEMP/pdfium/lib/libpdfium.so" CC_TEST_FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
             cargo test --lib pdfx::tests::pdfium_roundtrip -- --ignored --nocapture
+
+  # 剪辑界面等的浏览器测试：Chromium 里用模拟后端跑界面（desktop/e2e，说明见 e2e/README.md）
+  e2e:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('desktop/package-lock.json') }}
+
+      - name: Install ffmpeg and Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          npx playwright install --with-deps chromium
+
+      # 日志同时存到文件，失败时作为产物上传（脚本没有 trace / 截图输出，日志是唯一的现场）
+      - name: Editor UI tests
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/e2e-out"
+          npm run test:e2e 2>&1 | tee "$RUNNER_TEMP/e2e-out/e2e.log"
+
+      - name: Upload e2e log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-log
+          path: |
+            ${{ runner.temp }}/e2e-out/
+            /tmp/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # 最低支持的 Rust 版本：依赖里要求最高的是 1.96（见 Cargo.lock 里各包的 rust-version），所以按 1.96 检查，
+  # 保证代码没有用到比这更新的语言 / 标准库特性。
+  msrv:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      MSRV: '1.96.0'
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.MSRV }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $LINUX_DEPS
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+          shared-key: msrv
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      # RUSTUP_TOOLCHAIN 优先于 rust-toolchain.toml，这里强制用 MSRV
+      - name: Cargo check (MSRV)
+        working-directory: desktop/src-tauri
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.MSRV }}
+        run: cargo check --locked --all-targets
+
+  # 依赖的许可证 / 来源 / 已公开的安全通告（配置见 desktop/src-tauri/deny.toml）
+  deny:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: desktop/src-tauri/Cargo.toml
+          command: check
+
+  # npm 依赖审计：只报告，不阻断（每周的 desktop-audit 另有一份会变红的审计）
+  npm-audit:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm audit (informational)
+        working-directory: desktop
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
   # 另外两个发布目标：macOS 通用二进制（两个架构）和 Windows ARM64。只做编译检查（不链接、不打包），
   # 提前发现这两个目标上才会出现的编译问题，免得打标签发布时才失败。
@@ -112,8 +288,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Read pinned Rust version
+        id: rust
+        shell: bash
+        run: echo "version=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' src-tauri/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.rust.outputs.version }}
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
