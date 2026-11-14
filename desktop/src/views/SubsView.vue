@@ -9,6 +9,8 @@ import type { ListResult, SubItem, SubSettings, Subscription } from '../types'
 import { SUB_DEFAULTS } from '../utils/subs'
 import { formatDateTime, formatDuration } from '../utils/format'
 import ErrorAlert from '../components/ErrorAlert.vue'
+import CcEmpty from '../components/ui/CcEmpty.vue'
+import CcButton from '../components/ui/CcButton.vue'
 import { errorKind } from '../api'
 import type { ErrorKind } from '../types'
 import { useTauriEvents } from '../composables/useTauriEvent'
@@ -246,7 +248,7 @@ const ITEM_STATUS: Record<string, string> = { seen: '订阅前已发布', pendin
     <div class="dtop">
       <h1>订阅</h1>
       <span class="dspacer" />
-      <span v-if="app.settings?.subscriptionsEnabled" class="chip cyan"><i class="ddot" />开启订阅 · 托盘运行</span>
+      <span v-if="app.settings?.subscriptionsEnabled" class="chip cyan"><i class="ddot" />订阅已开启 · 托盘运行</span>
     </div>
 
     <section v-if="!app.settings?.subscriptionsEnabled" class="dpanel intro">
@@ -270,7 +272,7 @@ const ITEM_STATUS: Record<string, string> = { seen: '订阅前已发布', pendin
       <div class="dsplit">
         <section class="dpanel">
           <div class="dpanel-h"><h2>订阅与追更</h2><span class="eyebrow">{{ subs.length }} 个订阅</span></div>
-          <div v-if="!subs.length" class="empty mute">还没有订阅。点“添加订阅”，粘贴频道、UP 主空间或播放列表的链接。</div>
+          <CcEmpty v-if="!subs.length" title="还没有订阅" desc="粘贴频道、UP 主空间或播放列表的链接，有新内容时自动下载。"><CcButton kind="primary" @click="openAdd">＋ 添加订阅</CcButton></CcEmpty>
           <div class="list dlist">
             <div v-for="s in subs" :key="s.id" class="sub ditem" :class="[s.status, { sel: selected?.id === s.id }]" @click="selId = s.id">
               <img v-if="s.avatar" :src="s.avatar" class="avatar" referrerpolicy="no-referrer" alt="" />
@@ -403,7 +405,7 @@ const ITEM_STATUS: Record<string, string> = { seen: '订阅前已发布', pendin
         <el-button size="small" type="primary" :disabled="!picked.size" @click="downloadPicked">下载所选</el-button>
         <el-button v-if="tab !== 'ignored'" size="small" :disabled="!picked.size" @click="ignorePicked">忽略所选</el-button>
       </div>
-      <div v-if="!items.length" class="empty mute">没有内容</div>
+      <CcEmpty v-if="!items.length" compact title="这里还没有内容" desc="有新条目时会出现在这里。" />
       <label v-for="i in items" :key="i.itemId" class="item">
         <el-checkbox :model-value="picked.has(i.itemId)" @change="toggle(i.itemId)" />
         <div class="iinfo">

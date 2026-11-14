@@ -8,6 +8,8 @@ import { useAppStore } from '../stores/app'
 import type { ErrorKind, LiveRoom, LiveSettings, LiveStatus, NormPreset, Recording } from '../types'
 import { formatBytes, formatDateTime } from '../utils/format'
 import ErrorAlert from '../components/ErrorAlert.vue'
+import CcEmpty from '../components/ui/CcEmpty.vue'
+import CcButton from '../components/ui/CcButton.vue'
 import { useTauriEvents } from '../composables/useTauriEvent'
 const ev = useTauriEvents()
 
@@ -168,9 +170,7 @@ const REC_STATUS: Record<string, string> = { recording: '录制中', done: '已�
     <div class="dsplit">
       <section class="dpanel">
         <div class="dpanel-h"><h2>直播间</h2><span class="eyebrow">{{ rooms.length }} 个 · 录制中 {{ recordingCount }}</span></div>
-        <div v-if="!rooms.length" class="empty mute">
-          还没有直播间。点“添加直播间”，粘贴直播间链接（B站、抖音、快手、虎牙原生支持；斗鱼、YouTube、Twitch 等通过 yt-dlp；也可以直接填 .flv / .m3u8 直播流地址）。
-        </div>
+        <CcEmpty v-if="!rooms.length" title="没有正在录制的直播" desc="添加直播间链接即可开始录制（B站、抖音、快手、虎牙，或 .flv / .m3u8 直播流地址）。"><CcButton kind="primary" @click="openAdd">＋ 添加直播间</CcButton></CcEmpty>
         <div class="dlist">
           <div v-for="r in rooms" :key="r.id" class="room ditem" :class="r.state">
             <div class="cover dthumb">
@@ -289,7 +289,7 @@ const REC_STATUS: Record<string, string> = { recording: '录制中', done: '已�
     </el-dialog>
 
     <el-drawer :model-value="!!recsFor" :title="`${recsFor?.streamer ?? ''} 的录像`" size="520px" append-to-body @close="recsFor = null">
-      <div v-if="!recs.length" class="empty mute">还没有录像</div>
+      <CcEmpty v-if="!recs.length" compact title="还没有录像" desc="录制结束后文件会列在这里。" />
       <div v-for="rc in recs" :key="rc.id" class="rec">
         <div class="ellipsis"><b>{{ rc.title || '直播' }}</b></div>
         <small class="mute">{{ formatDateTime(rc.startedAt) }}<template v-if="rc.endedAt"> – {{ formatDateTime(rc.endedAt) }}</template> · {{ formatBytes(rc.size) }} · {{ REC_STATUS[rc.status] ?? rc.status }}</small>
