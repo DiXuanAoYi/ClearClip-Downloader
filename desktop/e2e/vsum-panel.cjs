@@ -342,7 +342,7 @@ const json3 = { events: [{ tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'Welco
     await page.evaluate(() => history.pushState({}, '', '/watch?v=second12345'))
     await page.waitForFunction(() => true)
     await okSoon('切换视频后自动去读新视频的字幕', async () => seen.some((u) => u.includes('v=second12345')), async () => seen.join('|'))
-    ok('切换后面板重新显示文稿', /段/.test(await text(page, '.meta')))
+    await okSoon('切换后面板重新显示文稿', async () => /段/.test(await text(page, '.meta')), async () => await text(page, '.meta'))
     ok('切换视频流程无页面错误', errors.length === 0, errors.join('|'))
     await page.close()
   }
