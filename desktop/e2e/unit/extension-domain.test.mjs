@@ -22,6 +22,8 @@ const ctx = vm.createContext({
 })
 ctx.globalThis = ctx
 vm.runInContext(fs.readFileSync(path.join(dir, 'trans-logic.js'), 'utf8'), ctx)
+vm.runInContext('const sessionStore = api.storage.local', ctx)
+for (const f of ['sniff.js', 'bg-defer.js']) vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }) // makeSerial、ccDefer
 vm.runInContext(fs.readFileSync(path.join(dir, 'bg-trans.js'), 'utf8') + '\nglobalThis.__t = translateTexts', ctx)
 const tr = ctx.__t
 const page = { host: 'dev.example', title: 'Fix a bug', sample: 'git commit merge' }

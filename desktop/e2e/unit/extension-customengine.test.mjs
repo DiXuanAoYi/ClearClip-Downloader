@@ -27,6 +27,8 @@ function load(store = {}, fetchImpl = async () => ({ ok: false, status: 500, tex
   vm.runInContext(read('trans-logic.js'), ctx, { filename: 'trans-logic.js' })
   ctx.call = async () => ({})
   ctx.sleep = async () => {}
+  vm.runInContext('const sessionStore = api.storage.local', ctx)
+  for (const f of ['sniff.js', 'bg-defer.js']) vm.runInContext(read(f), ctx, { filename: f }) // makeSerial、ccDefer
   vm.runInContext(read('bg-trans.js'), ctx, { filename: 'bg-trans.js' })
   return { ctx, calls, store, T: vm.runInContext('ccTrans', ctx) }
 }

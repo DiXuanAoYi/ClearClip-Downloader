@@ -797,7 +797,50 @@
   function addNote(list, note) {
     if (!note) return list
     if (list.some((n) => n.key === note.key && n.t === note.t && n.text === note.text)) return list
-    return [...list, note].slice(-MAX_NOTES)
+    return trimNotes([...list, note])
+  }
+
+  const MAX_NOTES_BYTES = 3_000_000
+
+  /** 笔记太多或太大时丢最早的（保留最新的）：条数上限 + 总字数上限，免得把扩展的 10MB 存储空间占满。 */
+  function trimNotes(list, maxCount = MAX_NOTES, maxBytes = MAX_NOTES_BYTES) {
+    const src = Array.isArray(list) ? list : []
+    const out = []
+    let bytes = 0
+    for (let i = src.length - 1; i >= 0 && out.length < maxCount; i--) {
+      const n = src[i]
+      bytes += JSON.stringify(n ?? '').length
+      if (bytes > maxBytes && out.length) break
+      out.push(n)
+    }
+    return out.reverse()
+  }
+
+  /**
+   * 按“最近用过”的顺序淘汰：对象的键顺序就是新旧顺序（最新的在最后），超过条数或总字数就从最前面删。
+   * 写入时要先 delete 再放回去，才算“用过”。返回新对象。
+   */
+  function lruTrim(all, keep, maxBytes = Infinity) {
+    const keys = Object.keys(all || {})
+    const out = {}
+    let bytes = 0
+    let n = 0
+    for (let i = keys.length - 1; i >= 0; i--) {
+      const size = JSON.stringify(all[keys[i]]).length
+      if (n >= keep || (n > 0 && bytes + size > maxBytes)) continue
+      out[keys[i]] = all[keys[i]]
+      bytes += size
+      n++
+    }
+    return Object.fromEntries(Object.entries(out).reverse())
+  }
+
+  /** 一个视频里手动改字幕的记录（{ 键: 改后文字 }）最多留这么多条，超出丢最早的。 */
+  const MAX_EDITS_PER_VIDEO = 2000
+  function trimEdits(m, max = MAX_EDITS_PER_VIDEO) {
+    const keys = Object.keys(m || {})
+    if (keys.length <= max) return m
+    return Object.fromEntries(keys.slice(keys.length - max).map((k) => [k, m[k]]))
   }
 
   /** 同一视频的按时间排，所有视频的按视频分组、组内按时间。 */
@@ -1164,6 +1207,6 @@
     fmtClock, parseClock, parseJson3, parseBilibili, parseSubtitleText, cleanCueText, fromTextTrackCues, normalizeLines, parseDescriptionChapters,
     parseCount, commentTime, findComment, commentLink, cmKey, parseYtComments, parseBiliComments, cleanComments, commentsToMarkdown,
     videoIdOf, videoKey, parseTimedTextXml, timeLink, sliceJson, parseYouTubePage, pickTrack, scriptOf, splitLong, resegmentLines, outlineToTree, wrapText, layoutMindmap, mindmapSvg, normalizeFlow, layoutFlow, flowSvg, FLOW_KINDS,
-    searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, splitSummary, parsePoint, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
+    searchLines, splitMarks, citations, lineAt, chapterAt, makeNote, addNote, trimNotes, lruTrim, trimEdits, sortNotes, searchNotes, baseKey, partOf, notesToMarkdown, studyDoc, contextAround, viewLine, toMarkdown, splitSummary, parsePoint, toSrt, toTxt, cardsToCsv, fileName, hashText, cacheKey, pruneCache, STYLES, REWRITES, SUGGESTIONS,
   }
 })()

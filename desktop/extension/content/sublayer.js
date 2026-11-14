@@ -17,16 +17,14 @@
     async get(k, d) {
       try {
         return (await api.storage.local.get(k))[k] ?? d
-      } catch {
+      } catch (e) {
+        globalThis.ccUI.log(`store.get ${k}`, e)
         return d
       }
     },
+    // 写失败（多半是存储配额满了）：先清可再生成的缓存重试，还不行就提示用户，不再静默
     async set(k, v) {
-      try {
-        await api.storage.local.set({ [k]: v })
-      } catch {
-        // 存不了就算了
-      }
+      return globalThis.ccUI.storeSet(ui, { [k]: v })
     },
   }
 

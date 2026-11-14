@@ -1,7 +1,10 @@
 try {
-  importScripts('shared.js', 'features.js', 'clean-link.js', 'progress.js', 'takeover.js', 'sniff.js', 'media-sniff.js', 'naming.js', 'engines.js', 'later.js', 'capture-plan.js', 'trans-logic.js', 'bg-trans.js', 'bg-link.js', 'bg-capture.js', 'bg-vcache.js', 'bg-actions.js')
-} catch {
-  // Firefox 以 background.scripts 加载，脚本需在 manifest 中先加载
+  // 文件清单的唯一来源是 files-manifest.js（manifest.json 的 background.scripts 由单元测试保证与它一致）
+  importScripts('files-manifest.js')
+  importScripts(...ccFiles.BG_SCRIPTS.filter((f) => f !== 'files-manifest.js'))
+} catch (e) {
+  // Firefox 以 background.scripts 加载（没有 importScripts），脚本已在 manifest 中先加载；Chrome 里加载失败不能吞掉
+  if (typeof importScripts === 'function') throw e
 }
 
 function notify(title, message) {
@@ -9,7 +12,8 @@ function notify(title, message) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const sessionStore = api.storage.session || api.storage.local
+
+ccDefer.on('badge', (tabId) => paintBadge(Number(tabId)))
 
 // ---------- 右键菜单 ----------
 
@@ -20,17 +24,21 @@ async function grabUrl(item, extra = {}) {
   let cookie = ''
   try {
     cookie = cookieHeader(await api.cookies.getAll({ url: item.finalUrl || item.url }))
-  } catch {
-    // 没有 Cookie 权限或地址无效：不带 Cookie
+  } catch (e) {
+    logErr('grabUrl cookies', e) // 没有 Cookie 权限或地址无效：不带 Cookie
   }
   return call('/api/grab', { ...grabPayload(item, cookie, navigator.userAgent, browserName()), ...extra })
 }
 
-async function rememberGrab(entry) {
-  const { recentGrabs = [] } = await api.storage.local.get('recentGrabs')
-  recentGrabs.unshift({ at: Date.now(), ...entry })
-  recentGrabs.length = Math.min(recentGrabs.length, 20)
-  await api.storage.local.set({ recentGrabs })
+// 读—改—写要排队：同时有几个下载被接管时，后到的不能覆盖先到的
+const grabQueue = makeSerial()
+function rememberGrab(entry) {
+  return grabQueue(async () => {
+    const { recentGrabs = [] } = await api.storage.local.get('recentGrabs')
+    recentGrabs.unshift({ at: Date.now(), ...entry })
+    recentGrabs.length = Math.min(recentGrabs.length, 20)
+    await api.storage.local.set({ recentGrabs })
+  })
 }
 
 /** 在扩展图标上短暂显示结果（✓ 已发送 / ! 失败）：系统通知可能被关掉或被专注模式拦住，图标上的标记总是看得到。 */
@@ -40,9 +48,9 @@ async function flashBadge(tabId, ok) {
   try {
     await action.setBadgeText({ tabId, text: ok ? '✓' : '!' })
     await action.setBadgeBackgroundColor({ tabId, color: ok ? '#2e9e5b' : '#d64545' })
-    setTimeout(() => paintBadge(tabId), 4000)
-  } catch {
-    // 标签页可能已关闭
+    ccDefer.schedule(`badge:${tabId}`, 4000).catch(() => {})
+  } catch (e) {
+    logErr('flashBadge', e) // 标签页可能已关闭
   }
 }
 
@@ -114,28 +122,26 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // ---------- 自动同步 Cookie：勾选的网站登录状态变化时（Cookie 变化后安静 10 秒）同步给清影。默认关闭。----------
 
-const pending = new Map()
 const MIN_INTERVAL = 5 * 60 * 1000
+const COOKIE_QUIET_MS = 10000
 
 api.cookies.onChanged.addListener(async ({ cookie }) => {
   const c = await getConfig()
   if (!c.autoSync || !c.syncSites.length) return
   const site = registrable(cookie.domain.replace(/^\./, ''))
   if (!c.syncSites.includes(site)) return
-  clearTimeout(pending.get(site))
-  pending.set(
-    site,
-    setTimeout(async () => {
-      pending.delete(site)
-      const now = await getConfig()
-      if (Date.now() - (now.lastSync[site] || 0) < MIN_INTERVAL) return
-      try {
-        await syncCookies(`https://${site}/`, '', true)
-      } catch {
-        // 清影没有运行或网站已退出登录：下次变化时再试
-      }
-    }, 10000),
-  )
+  // 去抖：Cookie 安静 10 秒后同步。待办存进存储并设了 alarm，后台被回收也不会丢
+  ccDefer.schedule(`cookie-sync:${site}`, COOKIE_QUIET_MS).catch((e) => console.warn('schedule cookie sync failed', e))
+})
+
+ccDefer.on('cookie-sync', async (site) => {
+  const now = await getConfig()
+  if (!site || Date.now() - (now.lastSync[site] || 0) < MIN_INTERVAL) return
+  try {
+    await syncCookies(`https://${site}/`, '', true)
+  } catch {
+    // 清影没有运行或网站已退出登录：下次变化时再试
+  }
 })
 
 // ---------- 接管浏览器下载 ----------
@@ -148,8 +154,8 @@ async function takeoverBypassed() {
 }
 
 // 内容脚本报告：按住 Alt 点击了页面，接下来几秒内的下载留给浏览器
-api.runtime.onMessage.addListener((msg) => {
-  if (msg && msg.type === 'cc-bypass') sessionStore.set({ bypassUntil: Date.now() + 6000 })
+api.runtime.onMessage.addListener((msg, sender) => {
+  if (msg && msg.type === 'cc-bypass' && ccGuard.fromSelf(sender, api.runtime.id)) sessionStore.set({ bypassUntil: Date.now() + 6000 })
 })
 
 /** 浏览器刚开始下载时，文件名往往还没确定：等一会儿，最多约 0.7 秒。 */
@@ -171,12 +177,15 @@ async function wasHandled(url) {
   const t = handledDl[url]
   return !!t && Date.now() - t < HANDLED_MS
 }
-async function markHandled(url) {
-  const { handledDl = {} } = await sessionStore.get('handledDl')
-  const now = Date.now()
-  for (const k of Object.keys(handledDl)) if (now - handledDl[k] > HANDLED_MS) delete handledDl[k]
-  handledDl[url] = now
-  await sessionStore.set({ handledDl })
+const handledQueue = makeSerial()
+function markHandled(url) {
+  return handledQueue(async () => {
+    const { handledDl = {} } = await sessionStore.get('handledDl')
+    const now = Date.now()
+    for (const k of Object.keys(handledDl)) if (now - handledDl[k] > HANDLED_MS) delete handledDl[k]
+    handledDl[url] = now
+    await sessionStore.set({ handledDl })
+  })
 }
 
 async function takeOver(item) {
@@ -213,8 +222,8 @@ async function takeOver(item) {
   try {
     await api.downloads.erase({ id: item.id })
     if (after.state !== 'complete') await api.downloads.removeFile?.(item.id)
-  } catch {
-    // 部分浏览器取消后没有文件可删
+  } catch (e) {
+    logErr('takeOver erase', e) // 部分浏览器取消后没有文件可删
   }
   await markHandled(url)
   const name = String(cur.filename || '').split(/[\\/]/).pop()
@@ -262,8 +271,8 @@ async function enrich(tabId, item) {
   try {
     const detail = await describeManifest(item.kind, item.url, fetchText)
     if (detail) await setSniffDetail(tabId, item.url, detail)
-  } catch {
-    // 清单需要特殊的请求头或已失效
+  } catch (e) {
+    logErr('enrich', e) // 清单需要特殊的请求头或已失效
   } finally {
     enriching.delete(key)
   }
@@ -288,11 +297,13 @@ api.webRequest.onResponseStarted.addListener(
 // 换了页面：清空这个标签页之前的记录
 api.tabs.onUpdated.addListener(async (tabId, change) => {
   if (change.status === 'loading' && change.url) {
-    await sniffStore.remove(sniffKey(tabId))
+    await clearSniffed(tabId)
     await paintBadge(tabId)
   }
 })
-api.tabs.onRemoved.addListener((tabId) => sniffStore.remove(sniffKey(tabId)))
+api.tabs.onRemoved.addListener((tabId) => clearSniffed(tabId))
 
 ensureAlarm()
 pollOnce().catch(() => {})
+// 后台刚被唤醒：补做被回收时丢掉的延迟任务
+ccDefer.flush().catch((e) => console.warn('defer flush failed', e))

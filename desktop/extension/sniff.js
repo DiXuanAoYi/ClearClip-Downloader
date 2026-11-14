@@ -42,13 +42,30 @@ function sniffId(url) {
   }
 }
 
+/**
+ * 串行队列：返回一个函数，传进去的异步任务按调用顺序一个接一个执行（前一个失败不影响后一个）。
+ * 嗅探记录是“读出整个数组 → 改 → 写回”，webRequest 在一个页面加载中会并发触发很多次，不排队的话后写的会覆盖先写的、丢记录。
+ */
+function makeSerial() {
+  let tail = Promise.resolve()
+  return (task) => {
+    const run = tail.then(task)
+    tail = run.catch(() => {})
+    return run
+  }
+}
+const sniffQueue = makeSerial()
+
 async function getSniffed(tabId) {
   const r = await sniffStore.get(sniffKey(tabId))
   return r[sniffKey(tabId)] || []
 }
 
 /** 加入一条记录（同一地址去重，新的覆盖旧的但保留已解析出的详情）。媒体和图片各自限制数量。返回媒体条数（徽标上显示）。 */
-async function addSniffed(tabId, item) {
+function addSniffed(tabId, item) {
+  return sniffQueue(() => addSniffedNow(tabId, item))
+}
+async function addSniffedNow(tabId, item) {
   const all = await getSniffed(tabId)
   const old = all.find((x) => sniffId(x.url) === sniffId(item.url))
   const merged = old ? { ...old, ...item, detail: old.detail } : item
@@ -60,12 +77,19 @@ async function addSniffed(tabId, item) {
   return media.length
 }
 
-async function setSniffDetail(tabId, url, detail) {
-  const all = await getSniffed(tabId)
-  const it = all.find((x) => sniffId(x.url) === sniffId(url))
-  if (!it) return
-  it.detail = detail
-  await sniffStore.set({ [sniffKey(tabId)]: all })
+function setSniffDetail(tabId, url, detail) {
+  return sniffQueue(async () => {
+    const all = await getSniffed(tabId)
+    const it = all.find((x) => sniffId(x.url) === sniffId(url))
+    if (!it) return
+    it.detail = detail
+    await sniffStore.set({ [sniffKey(tabId)]: all })
+  })
+}
+
+/** 清掉一个标签页的记录（换了页面 / 关了标签页）。也走队列：不然排在前面的写入会把刚清掉的又写回来。 */
+function clearSniffed(tabId) {
+  return sniffQueue(() => sniffStore.remove(sniffKey(tabId)))
 }
 
 /** 发送嗅探到的地址：带上所在网页（作为 Referer）和标题。 */

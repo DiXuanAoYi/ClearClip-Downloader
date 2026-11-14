@@ -18,9 +18,11 @@ async function getTransCfg() {
 }
 
 // ---------- 缓存（{ key: [译文, 时间] }，内存里一份，改动后隔两秒存盘）----------
+// 后台被回收时内存里的缓存会丢：新译出来的条目（dirty）同时记进会话存储，存盘任务也走 ccDefer（有 alarm 兜底），
+// 后台重新起来后由存盘任务把它们并进缓存再落盘。
 
 let trCache = null
-let trFlushTimer = 0
+const TR_DIRTY_KEY = 'trDirty'
 async function trCacheMap() {
   if (!trCache) {
     try {
@@ -32,17 +34,34 @@ async function trCacheMap() {
   }
   return trCache
 }
-function trFlushSoon() {
-  clearTimeout(trFlushTimer)
-  trFlushTimer = setTimeout(async () => {
+const trDirtyQueue = makeSerial()
+/** 记下新译出来的条目并安排存盘。entries：{ key: [译文, 时间] } */
+function trRemember(entries) {
+  return trDirtyQueue(async () => {
     try {
-      trCache = ccTrans.pruneCache(trCache || {})
+      const { [TR_DIRTY_KEY]: old } = await sessionStore.get(TR_DIRTY_KEY)
+      await sessionStore.set({ [TR_DIRTY_KEY]: { ...(old && typeof old === 'object' ? old : {}), ...entries } })
+    } catch {
+      // 会话存储写不了：只剩内存里这一份
+    }
+    await ccDefer.schedule('tr-flush', 2000)
+  })
+}
+async function trFlush() {
+  await trDirtyQueue(async () => {
+    try {
+      const cache = await trCacheMap()
+      const { [TR_DIRTY_KEY]: dirty } = await sessionStore.get(TR_DIRTY_KEY)
+      if (dirty && typeof dirty === 'object') Object.assign(cache, dirty)
+      trCache = ccTrans.pruneCache(cache)
       await api.storage.local.set({ transCache: trCache })
+      await sessionStore.remove(TR_DIRTY_KEY)
     } catch {
       // 存不了就算了
     }
-  }, 2000)
+  })
 }
+ccDefer.on('tr-flush', trFlush)
 
 // ---------- 两个引擎 ----------
 
@@ -278,24 +297,26 @@ async function translateTexts(texts, { target, engine, page = null, domain = fal
         trFree()
       }
     }
+    const fresh = {}
     todo.forEach((i, k) => {
       out[i] = res[k]
       // 原样返回（没翻译）的不进缓存，免得以后换了模型也一直是原文
-      if (!fallback && res[k] && res[k].trim() !== src[k].trim()) cache[ccTrans.cacheKey(keyEngine, target, texts[i])] = [res[k], Date.now()]
+      if (!fallback && res[k] && res[k].trim() !== src[k].trim()) fresh[ccTrans.cacheKey(keyEngine, target, texts[i])] = [res[k], Date.now()]
     })
-    trFlushSoon()
+    Object.assign(cache, fresh)
+    if (Object.keys(fresh).length) await trRemember(fresh)
   }
   return { texts: out, cached: texts.length - todo.length, domain: dom?.domain || '', fallback }
 }
 
 async function clearTransCache() {
   trCache = {}
+  await ccDefer.cancel('tr-flush')
+  await sessionStore.remove(TR_DIRTY_KEY).catch(() => {})
   await api.storage.local.remove('transCache')
 }
 
 // ---------- 打开 / 关闭页面翻译 ----------
-
-const TR_FILES = ['content/ui.js', 'trans-logic.js', 'content/webtrans.js']
 
 /** 让标签页里的网页翻译做一件事：toggle / page-on / page-off / hover / selection（带 text）。还没注入就先注入。 */
 async function webTransDo(tab, action, extra = {}) {
@@ -310,7 +331,7 @@ async function webTransDo(tab, action, extra = {}) {
   } catch {
     // 还没注入
   }
-  await injectFiles(tab.id, TR_FILES)
+  await injectFiles(tab.id, ccFiles.GROUPS.trans)
   await sleep(60)
   const r = await send()
   if (!ready(r)) throw new Error('页面翻译没有启动（这个页面可能不允许扩展运行脚本）')

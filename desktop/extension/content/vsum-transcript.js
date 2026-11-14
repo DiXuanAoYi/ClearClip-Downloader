@@ -275,16 +275,16 @@
       try {
         const all = (await editStore().get(EDITS_KEY))[EDITS_KEY] || {}
         const k = editVk()
-        const m = { ...(all[k] || {}) }
-        if (to === from) delete m[`${t}|${from}`]
-        else m[`${t}|${from}`] = to
+        let m = { ...(all[k] || {}) }
+        delete m[`${t}|${from}`] // 先删再放：最近改的排在最后，超限时丢最早的
+        if (to !== from) m[`${t}|${from}`] = to
+        m = V.trimEdits(m)
         delete all[k]
         if (Object.keys(m).length) all[k] = m
-        const keys = Object.keys(all)
-        for (const x of keys.slice(0, Math.max(0, keys.length - 40))) delete all[x]
-        await editStore().set({ [EDITS_KEY]: all })
-      } catch {
-        // 存不了就只在这次有效
+        // 最多记 40 个视频，用得最少的先丢；写失败会提示用户
+        await globalThis.ccUI.storeSet(ui, { [EDITS_KEY]: V.lruTrim(all, 40, 1_500_000) })
+      } catch (e) {
+        globalThis.ccUI.log('rememberEdit', e) // 存不了就只在这次有效
       }
     }
     /** 读到文稿后把以前改过的带回来（在预处理之后调用，用显示的文字对应） */
