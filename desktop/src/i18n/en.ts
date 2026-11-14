@@ -3640,7 +3640,6 @@ export const en: Record<string, string> = {
   "{0} 页": "{0} pages",
   "{0}想要向清影发送链接。{1}允许后这台设备以后可以直接发送，配对前发来的链接也会继续处理。可在“设置 → 手机与浏览器扩展”中撤销。": "{0} wants to send links to ClearClip. {1}Once allowed, this device can send directly from now on, and links sent before pairing will still be processed. You can revoke this under “Settings → Phone & browser extension”.",
   "{0}设置": "{0} settings",
-  "● 监听": "● Watching",
   "● 隐私": "● Private",
   "下载中 {0}": "Downloading {0}",
   "主导航": "Main navigation",
