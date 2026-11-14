@@ -25,12 +25,11 @@ describe('CcSelect', () => {
     expect(forced.findComponent({ name: 'ElSelect' }).props('filterable')).toBe(true)
   })
 
-  // 已知问题（未改产品行为）：组件注释写“超过 8 项自动开启搜索”，但 filterable 是 Boolean 属性，
-  // 不传时 Vue 会把 undefined 转成 false，`props.filterable ?? options.length > 8` 的右边永远不会生效。
-  // it.fails：现在“失败”才算通过；修好以后这条会报错，提醒把它改成普通 it。
-  it.fails('选项超过 8 项自动可搜索（文档约定，目前未生效）', () => {
+  it('选项超过 8 项自动可搜索；显式 false 时仍关闭', () => {
     const many = mount(CcSelect, { props: { modelValue: 'v0', options: opts(9) }, global })
+    const off = mount(CcSelect, { props: { modelValue: 'v0', options: opts(9), filterable: false }, global })
     expect(many.findComponent({ name: 'ElSelect' }).props('filterable')).toBe(true)
+    expect(off.findComponent({ name: 'ElSelect' }).props('filterable')).toBe(false)
   })
 
   it('el-select 变更时同时发出 update:modelValue 与 change', async () => {

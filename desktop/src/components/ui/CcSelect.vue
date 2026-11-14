@@ -22,7 +22,8 @@ const props = withDefaults(
     ariaLabel?: string
     id?: string
   }>(),
-  { size: 'm', width: 'm', placeholder: '请选择' },
+  // filterable 是 Boolean 属性，不写默认会被 Vue 转成 false；显式默认 undefined，才能走“超过 8 项自动搜索”。
+  { size: 'm', width: 'm', placeholder: '请选择', filterable: undefined },
 )
 const emit = defineEmits<{ 'update:modelValue': [v: T]; change: [v: T] }>()
 const canFilter = computed(() => props.filterable ?? props.options.length > 8)

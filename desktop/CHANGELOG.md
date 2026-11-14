@@ -4,6 +4,7 @@
 
 ## 1.16.0（开发中，未发版）
 
+- 内部：依赖升级——GitHub Actions（checkout/setup-node/upload-artifact 4→7、cache 4→6）、npm 小版本（tauri api/cli、vue 3.5.45、element-plus 2.14.8、playwright 1.65.0 等；vue-tsc 暂留 3.3.13，3.3.14 对模板里的常量/store 误报类型错误）、cargo 小版本/补丁（tauri 2.12.2、updater 2.14.1、librqbit 9.1.0 等 30 个包，Cargo.lock 保持 v3 格式）。修复：`CcSelect` 的 `filterable` 不传时被 Vue 当成 false，“选项超过 8 项自动可搜索”此前并未生效。
 - 内部：前端组件级测试体系——vitest + @vue/test-utils + jsdom（`npm run test:component`，覆盖率摘要 `npm run test:coverage`），先覆盖 pinia stores、api 层（mock invoke）、Cc* 基础组件的渲染 / 事件 / 无障碍属性、useTauriEvent、progressBatch；新增“命令契约检查”（`npm run check:commands`：前端 api 里 invoke 的命令名都必须在 Rust `generate_handler!` 列表里）。CI 新增并行任务 `frontend-component`（暂未加入必需检查）。不改产品行为。
 - 火山引擎语音识别：对照官方文档（docs.volcengine.com/docs/6561/1631584 等）核对，接口地址、请求头、资源 ID、请求体、状态码均一致；修正错误码文案（45000002 是空音频而非参数 / 格式，补 550xxxx 内部错误，去掉文档里没有的 45000292），设置页去掉未核实的控制台路径。控制台获取凭据的页面、错误码查询页未读到；仍未用真实密钥验证。
 - 修复·云端语音识别（讯飞）：对照官方文档修正——录音文件转写查询结果最多 100 次（原来最多 400 次，超限报 26604），改成前 30 次每 3 秒、之后每 10 秒；订单 failType 6（静音）按“无内容”处理，其余失败给出原因；错误码提示改成官方含义（26601/26602/26604/26606/26631/26632/26633 等）；实时转写的结束标记改发二进制消息（原为文本），10105 提示加上 IP 白名单，37005 改为“超过 15 秒没有音频”。**未核对**：火山引擎部分（文档站 docs.volcengine.com 读不到，接口仍是此前的写法）；讯飞“大模型版”接口（另一套鉴权）没有接入；以上都没有用真实密钥跑通。
