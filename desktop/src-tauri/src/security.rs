@@ -103,6 +103,43 @@ pub fn lock_enabled(st: &AppState) -> bool {
     st.vault.has(APPLOCK)
 }
 
+// ---------- 命令层锁定检查 ----------
+
+/// 应用锁定时仍允许的命令：解锁 / 查锁状态 / 立即锁定、显示与隐藏窗口、重启、
+/// 以及锁屏界面和各窗口启动时读取外观与版本所必需的只读命令。其余命令一律拒绝。
+pub const LOCKED_ALLOWED: &[&str] =
+    &["lock_status", "lock_unlock", "lock_now", "show_main", "hide_mini", "mini_ready", "restart_app", "get_app_info", "get_settings", "is_portable"];
+
+/// 命令名在锁定时是否放行（Tauri 插件命令 `plugin:` 不经过应用命令表，不受这里管）。
+pub fn command_allowed_when_locked(cmd: &str) -> bool {
+    cmd.starts_with("plugin:") || LOCKED_ALLOWED.contains(&cmd)
+}
+
+/// 纯判断：`locked` 为真时只放行白名单命令。
+pub fn lock_verdict(locked: bool, cmd: &str) -> AppResult<()> {
+    if !locked || command_allowed_when_locked(cmd) {
+        return Ok(());
+    }
+    Err(AppError::invalid("应用已锁定，请先解锁。"))
+}
+
+/// 包住 `generate_handler!` 生成的处理函数：每个应用命令先过 `lock_verdict`，被拒就直接返回错误，不进入命令本身。
+pub fn lock_gate<F>(inner: F) -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static
+where
+    F: Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static,
+{
+    move |invoke| {
+        let denied = invoke.message.webview_ref().try_state::<Arc<AppState>>().and_then(|st| lock_verdict(status(&st).locked, invoke.message.command()).err());
+        match denied {
+            Some(e) => {
+                invoke.resolver.reject(e);
+                true
+            }
+            None => inner(invoke),
+        }
+    }
+}
+
 // ---------- 锁定 / 解锁 ----------
 
 #[derive(Debug, Clone, Serialize)]
@@ -398,6 +435,29 @@ pub fn purge_private(db: &crate::db::Db) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn locked_rejects_commands_outside_whitelist() {
+        for cmd in ["save_settings", "list_library", "safebox_list", "get_diagnostics", "ai_translate", "enqueue", "backup_export", "wipe_traces"] {
+            let e = lock_verdict(true, cmd).unwrap_err();
+            assert!(e.message.contains("已锁定"), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn unlocked_allows_everything() {
+        for cmd in ["save_settings", "list_library", "safebox_list", "lock_unlock"] {
+            assert!(lock_verdict(false, cmd).is_ok());
+        }
+    }
+
+    #[test]
+    fn whitelist_works_while_locked() {
+        for cmd in LOCKED_ALLOWED {
+            assert!(lock_verdict(true, cmd).is_ok(), "{cmd}");
+        }
+        assert!(lock_verdict(true, "plugin:event|listen").is_ok());
+    }
 
     #[test]
     fn password_hash_roundtrip() {

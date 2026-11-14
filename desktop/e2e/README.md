@@ -13,7 +13,7 @@ node e2e/run.mjs parse-ui.cjs      # 只跑一个或几个脚本
 
 - 本机有 `ffmpeg` 和 `ffprobe`
 - Chromium：`npx playwright install chromium`；已有浏览器时用环境变量 `CHROMIUM_PATH` 指向它（所有脚本都认）
-- 端口 5199（vite）和 5301（素材服务）空闲
+- 单独运行脚本时端口 5199（vite）和 5301（素材服务）空闲；经 `run.mjs` 运行时端口随机分配，通过环境变量 `E2E_PORT`、`E2E_MEDIA_PORT` 传给脚本，可以并行起多个 run
 
 ## 默认套件
 

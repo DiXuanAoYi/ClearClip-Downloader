@@ -2,7 +2,7 @@
 const fs = require('fs')
 const { execFileSync } = require('child_process')
 const path = require('path')
-const { launch, openHarness, m, OUT, addMenu } = require('./lib.cjs')
+const { launch, openHarness, m, OUT, addMenu, soon, settle: flush } = require('./lib.cjs')
 
 let pass = 0
 let fail = 0
@@ -10,6 +10,10 @@ const ok = (name, cond, extra = '') => {
   if (cond) pass++
   else fail++
   console.log(`${cond ? '  ok ' : 'FAIL '} ${name}${cond ? '' : '  ← ' + extra}`)
+}
+const okSoon = async (name, cond, extra) => {
+  const r = await soon(cond, extra)
+  ok(name, r.pass, r.extra)
 }
 const close = (a, b, tol) => Math.abs(a - b) <= tol
 
@@ -85,20 +89,26 @@ function redBox(buf) {
     const r = await page.locator('.ruler').boundingBox()
     return r.x + (ms / 1000) * (await pps())
   }
-  const settle = async () => {
-    await page.waitForFunction(() => [...document.querySelectorAll('.stage .lay:not(.off) video')].some((v) => !v.seeking && v.readyState >= 2))
-    await page.waitForTimeout(220)
+  const settle = async (timeout = 30000) => {
+    await page.waitForFunction(() => [...document.querySelectorAll('.stage .lay:not(.off) video')].some((v) => !v.seeking && v.readyState >= 2), undefined, { timeout })
+    await page.waitForTimeout(220) // 必要：seek 完成后还要等一帧画到屏上，截图 / 取像素才是新画面（没有可查询的“已绘制”标记）
   }
   const seekTo = async (ms) => {
     const r = await page.locator('.ruler').boundingBox()
     await page.mouse.click(await rulerX(ms), r.y + 10)
-    await settle()
+    // 机器很忙时偶尔点击落在刚重排的标尺上没生效（曾在满载的机器上超时一次）：等不到就再点一次
+    try {
+      await settle(8000)
+    } catch {
+      await page.mouse.click(await rulerX(ms), r.y + 10)
+      await settle()
+    }
   }
   const stageBox = () => page.locator('.stage').boundingBox()
   const shot = async () => page.screenshot({ clip: await stageBox() })
   const tab = (name) => page.locator('.insp .seg').getByText(name, { exact: true }).click()
   const proj = async () => {
-    await page.waitForTimeout(950)
+    await page.waitForTimeout(950) // 必要：草稿是防抖（约 0.9 秒）写进 localStorage 的，读之前要等它落盘
     return JSON.parse(await page.evaluate(() => localStorage.getItem('clearclip.edit.draft'))).project
   }
   const reg = async () => (await proj()).clips.map((c) => c.regions)
@@ -133,7 +143,7 @@ function redBox(buf) {
   async function scenario(name, tol = 6) {
     console.log('# ' + name)
     await tab('属性')
-    await page.waitForTimeout(100)
+    await flush(page)
     const base = await baseline()
     const sbb = await stageBox()
     // 被画面边缘切掉一部分的时刻不比较
@@ -171,7 +181,7 @@ function redBox(buf) {
   }
   async function removeRegion() {
     await page.locator('.reg .item.on').getByText('删除', { exact: true }).click()
-    await page.waitForTimeout(100)
+    await flush(page)
   }
 
   await scenario('默认摆法')
@@ -222,7 +232,7 @@ function redBox(buf) {
       await field('画面适配').locator('.el-select').click()
       await page.locator('.el-select-dropdown__item:visible', { hasText: fitLabel }).first().click()
     }
-    await page.waitForTimeout(200)
+    await flush(page)
   }
   await removeRegion()
   await tab('属性')
@@ -274,12 +284,10 @@ function redBox(buf) {
   ok('追踪出了很多点', n1 > 30, String(n1))
   // 撤销一次追踪
   await page.keyboard.press('Control+z')
-  await page.waitForTimeout(150)
-  rr = (await reg())[0][0]
+  rr = (await reg())[0][0] // reg() 内部要等草稿落盘，已经够久
   ok('Ctrl+Z 一次就撤销了整个追踪', rr.track.length === 1, String(rr.track.length))
   await page.keyboard.press('Control+Shift+z')
-  await page.waitForTimeout(150)
-  ok('重做后轨迹回来了', (await reg())[0][0].track.length === n1)
+  await okSoon('重做后轨迹回来了', async () => (await reg())[0][0].track.length === n1)
   // 手动校正 + 重新追踪
   await seekTo(2000)
   const bb = await rectOf('.rbox.sel')
@@ -291,7 +299,6 @@ function redBox(buf) {
   const dragged = await rectOf('.rbox.sel')
   await page.getByRole('button', { name: '从这一帧重新追踪', exact: true }).click()
   await page.waitForFunction(() => window.__followReqs.length >= 2)
-  await page.waitForTimeout(300)
   const req2 = await page.evaluate(() => window.__followReqs.at(-1))
   const sb3 = await stageBox()
   ok('重新追踪从当前的框出发（2.0 秒）', close(req2.refMs, 2000, 60) && close(req2.rect.x, (dragged.x - sb3.x) / sb3.width, 0.01), JSON.stringify(req2))
@@ -299,22 +306,19 @@ function redBox(buf) {
   const pins = rr.track.filter((p) => p.pin).map((p) => p.tMs)
   ok('旧的手动点（拖出框的 1.0 秒）和新的参照点（2.0 秒）都在', pins.length >= 2 && pins.some((t) => close(t, 1000, 60)) === false || pins.some((t) => close(t, 2000, 60)), JSON.stringify(pins))
   await page.getByRole('button', { name: '去掉这个手动点' }).click()
-  await page.waitForTimeout(100)
   rr = (await reg())[0][0]
   ok('去掉手动点后 2.0 秒的手动点没了', !rr.track.some((p) => p.pin && close(p.tMs, 2000, 60)))
   // 丢失的部分
   globalThis.__lost = [2200, 2800]
   await page.getByRole('button', { name: '从这一帧重新追踪', exact: true }).click()
   await page.waitForFunction(() => window.__followReqs.length >= 3)
-  await page.waitForTimeout(400)
-  ok('丢失的部分用红色虚线画出来', (await page.locator('.rpath .lost').count()) >= 1)
+  await okSoon('丢失的部分用红色虚线画出来', async () => (await page.locator('.rpath .lost').count()) >= 1)
   ok('说明里写了追踪不到的比例', (await page.locator('.reg .trk').textContent()).includes('追踪不到'))
   ok('提示条出现', (await page.locator('.reg .note.warn').count()) === 1)
   await seekTo(500)
   await page.getByRole('button', { name: '到下一处追踪不到的地方' }).click()
-  await page.waitForTimeout(250)
-  const ph = parseT((await page.locator('.time').textContent()).split('/')[0])
-  ok('跳到了丢失开始的地方（约 2.1–2.2 秒）', ph > 2000 && ph < 2300, String(ph))
+  let ph = 0
+  await okSoon('跳到了丢失开始的地方（约 2.1–2.2 秒）', async () => { ph = parseT((await page.locator('.time').textContent()).split('/')[0]); return ph > 2000 && ph < 2300 }, async () => String(ph))
   globalThis.__lost = null
   // 取消
   await page.evaluate(() => (window.__hold = true))
@@ -332,8 +336,7 @@ function redBox(buf) {
   console.log('# 效果与参数')
   ok('马赛克/模糊在监视器里有示意层', (await page.locator('.fxl .fx').count()) === 1)
   await field('效果').getByText('局部调色', { exact: true }).click()
-  await page.waitForTimeout(100)
-  ok('局部调色出现亮度滑块', (await field('亮度').count()) === 1)
+  await okSoon('局部调色出现亮度滑块', async () => (await field('亮度').count()) === 1)
   rr = (await reg())[0][0]
   ok('效果写进了工程', rr.effect === 'tone')
   const fxStyle = await page.locator('.fxl .fx').first().getAttribute('style')
@@ -342,21 +345,18 @@ function redBox(buf) {
   ok('椭圆：框里出现椭圆示意', (await page.locator('.rbox.sel .ell').count()) === 1)
   ok('椭圆：示意层是圆角的', /border-radius:\s*50%/.test((await page.locator('.fxl .fx').first().getAttribute('style')) || ''))
   await page.getByText('作用于区域以外（保留区域里的，处理其余部分）', { exact: true }).click()
-  await page.waitForTimeout(100)
-  ok('勾选“作用于区域以外”后示意层隐藏', (await page.locator('.fxl .fx').count()) === 0)
+  await okSoon('勾选“作用于区域以外”后示意层隐藏', async () => (await page.locator('.fxl .fx').count()) === 0)
   rr = (await reg())[0][0]
   ok('invert 和椭圆都写进了工程', rr.invert === true && rr.shape === 'ellipse')
   await page.getByText('作用于区域以外（保留区域里的，处理其余部分）', { exact: true }).click()
   // 生效时间
   await page.getByText('只在一段时间里生效', { exact: true }).click()
-  await page.waitForTimeout(100)
   rr = (await reg())[0][0]
   ok('限定时间：默认是整个片段', rr.startMs === 0 && rr.endMs >= 3900, `${rr.startMs} ${rr.endMs}`)
   await seekTo(1500)
   await field('从').getByText('取播放位置').click()
   await field('到').locator('input').first().fill('3')
   await field('到').locator('input').first().press('Enter')
-  await page.waitForTimeout(100)
   rr = (await reg())[0][0]
   ok('限定时间：从 ≈1.5 秒到 3 秒', close(rr.startMs, 1500, 80) && rr.endMs === 3000, `${rr.startMs} ${rr.endMs}`)
   await seekTo(3500)
@@ -365,8 +365,7 @@ function redBox(buf) {
   ok('生效时间内示意层显示', (await page.locator('.fxl .fx').count()) === 1)
   // 跟随聚焦
   await field('效果').getByText('跟随聚焦', { exact: true }).click()
-  await page.waitForTimeout(100)
-  ok('聚焦：出现放大和镜头平滑', (await field('放大').count()) === 1 && (await field('镜头平滑').count()) === 1)
+  await okSoon('聚焦：出现放大和镜头平滑', async () => (await field('放大').count()) === 1 && (await field('镜头平滑').count()) === 1)
   ok('聚焦：监视器里画出取景窗口', (await page.locator('.rov .fwin').count()) === 1)
   const cb = await rectOf('.rov .rcont')
   const fw = await rectOf('.rov .fwin')
@@ -374,17 +373,19 @@ function redBox(buf) {
   ok('聚焦：不再显示“生效时间”', (await field('生效时间').count()) === 0)
   // 不在“区域”标签里编辑时，实时画面把取景窗口放大到铺满（2 倍）
   await tab('输出')
-  await page.waitForTimeout(250)
-  const zoomK = await page.evaluate(() => {
+  // 放大是 CSS 过渡，轮询到稳定值
+  const readZoom = () => page.evaluate(() => {
     const z = document.querySelector('.stage .lay:not(.off) .zoom')
     if (!z) return -1
     const mt = /matrix\(([^)]+)\)/.exec(getComputedStyle(z).transform)
     return mt ? parseFloat(mt[1].split(',')[0]) : 1
   })
+  await soon(async () => close(await readZoom(), 2, 0.05), null, 5000)
+  const zoomK = await readZoom()
   ok('聚焦：离开“区域”标签后实时画面放大 2 倍', close(zoomK, 2, 0.05), String(zoomK))
   await page.screenshot({ path: OUT + '/r-focus-zoom.png' })
   await tab('区域')
-  await page.waitForTimeout(250)
+  await soon(async () => close(await readZoom(), 1, 0.01), null, 5000)
   const zoomBack = await page.evaluate(() => {
     const z = document.querySelector('.stage .lay:not(.off) .zoom')
     const mt = z && /matrix\(([^)]+)\)/.exec(getComputedStyle(z).transform)
@@ -400,7 +401,7 @@ function redBox(buf) {
   await seekTo(2000)
   await tab('区域')
   await page.keyboard.press('s')
-  await page.waitForTimeout(200)
+  await flush(page)
   console.log('   toast:', await page.locator('.el-message').allTextContents(), 'active:', await page.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 120)))
   ok('分割后有两个片段', (await page.locator('.blk.clip').count()) === 2)
   const pr = await proj()
@@ -414,20 +415,17 @@ function redBox(buf) {
   // 点前半：播放位置不在这个片段里
   const blks = await page.$$eval('.blk.clip', (els) => els.map((e) => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 } }))
   await page.mouse.click(blks[0].x - 10, blks[0].y)
-  await page.waitForTimeout(150)
   ok('选前半片段后，播放位置跟着进了前半（点片段会定位）', true)
   await seekTo(3500)
   await page.mouse.click(blks[0].x, blks[0].y - 0)
-  await page.waitForTimeout(200)
+  await flush(page)
   await page.evaluate(() => 0)
   // 在区域页选中区域，按删除键：删区域，不删片段
   await page.locator('.reg .item').first().click()
   await page.keyboard.press('Delete')
-  await page.waitForTimeout(150)
-  ok('区域页选中区域时删除键只删区域', (await page.locator('.blk.clip').count()) === 2)
+  await okSoon('区域页选中区域时删除键只删区域', async () => (await page.locator('.blk.clip').count()) === 2)
   await page.keyboard.press('Control+z')
-  await page.waitForTimeout(150)
-  ok('Ctrl+Z 把区域找回来', (await page.locator('.reg .item').count()) === 1)
+  await okSoon('Ctrl+Z 把区域找回来', async () => (await page.locator('.reg .item').count()) === 1)
   // 导出：区域跟着任务一起交给后端
   await page.getByRole('button', { name: '导出视频' }).click()
   await page.waitForFunction(() => !!window.__exported)

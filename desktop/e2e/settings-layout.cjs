@@ -36,7 +36,7 @@ const init = `
   const page = await browser.newPage({ viewport: { width: 1180, height: 900 }, deviceScaleFactor: 1 })
   page.on('pageerror', (e) => errors.push(e.message + ' @ ' + String(e.stack || '').split('\n').slice(1, 3).join(' | ')))
   await page.addInitScript(init)
-  await page.goto('http://127.0.0.1:5199/merge-harness.html#settings')
+  await page.goto(`http://127.0.0.1:${process.env.E2E_PORT || 5199}/merge-harness.html#settings`)
   await page.waitForSelector('.bgrid .card')
   await page.waitForTimeout(600)
   // 当前页签里卡片占满的比例：卡片面积之和 / 容器面积

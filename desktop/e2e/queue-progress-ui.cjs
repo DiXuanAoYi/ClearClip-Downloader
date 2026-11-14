@@ -3,7 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 const { chromium } = require('playwright')
-const PORT = 5199
+const PORT = process.env.E2E_PORT || 5199
 let pass = 0
 let fail = 0
 const ok = (name, cond, extra = '') => {

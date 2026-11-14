@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findStale, longestFragment } from '../../scripts/i18n.mjs'
+import { extract, findStale, isExcluded, longestFragment } from '../../scripts/i18n.mjs'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const run = (...args) => spawnSync(process.execPath, ['scripts/i18n.mjs', ...args], { cwd: root, encoding: 'utf8' })
@@ -36,5 +36,15 @@ assert.equal(longestFragment('{0}'), '')
   assert.match(out, /翻译表里多余 0 个/)
   // 不带 --strict 永远不影响退出码
   assert.equal(run().status, 0)
+}
+// 陈列页（开发用）不扫描；组件库里的真实组件仍然扫描；英文表补齐
+{
+  assert.ok(isExcluded('/x/src/ui-gallery.ts'))
+  assert.ok(isExcluded('C:\\x\\src\\components\\ui\\UiGallery.vue'))
+  assert.ok(!isExcluded('/x/src/components/ui/CcField.vue'))
+  const all = extract()
+  assert.ok(!all.includes('清影组件库'), '陈列页文案不应被扫描')
+  assert.ok(all.includes('了解更多'), 'CcField 的文案要被扫描')
+  assert.equal(run('--strict', '--max-missing=0').status, 0)
 }
 console.log('i18n-script ok')
