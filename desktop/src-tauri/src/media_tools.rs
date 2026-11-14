@@ -419,414 +419,550 @@ pub fn plan(job: &ToolJob, inputs: &[Input], enc: &Encoders) -> AppResult<Plan> 
     plan_with(job, inputs, enc, "boxblur=25:5")
 }
 
-/// 把任务翻译成 ffmpeg 参数。纯函数（只有拼接会写一个临时清单文件）。
+/// 规划时各操作共用的输入：第一个文件、输出目录、编码器等。
+struct PlanCx<'a> {
+    inputs: &'a [Input],
+    first: &'a Input,
+    enc: &'a Encoders,
+    blur: &'a str,
+    /// 输出文件夹；None 表示放在第一个输入旁边
+    dir: Option<&'a Path>,
+    /// 第一个输入的路径（作为 `-i` 参数）
+    inp: String,
+    dur: Option<u64>,
+    /// 第一个输入的小写扩展名
+    in_ext: String,
+}
+
+/// 把任务翻译成 ffmpeg 参数。纯函数（只有拼接 / 章节会写一个临时清单文件）。
 /// `blur` 是“模糊背景”用的模糊滤镜（`Caps::background_blur`）：精简版 ffmpeg 没有 `boxblur`，要换成 `gblur`。
 pub fn plan_with(job: &ToolJob, inputs: &[Input], enc: &Encoders, blur: &str) -> AppResult<Plan> {
     let first = inputs.first().ok_or_else(|| AppError::invalid("请先选择文件。"))?;
     let dir = job.output_dir.as_deref().filter(|d| !d.trim().is_empty()).map(Path::new);
-    let inp = path_arg(&first.path);
     let dur = first.probe.duration_ms;
-    let mut p = Plan { args: vec![], output: PathBuf::new(), is_dir: false, kind: "video", out_ms: dur, note: None, fallback: None, temp_files: vec![] };
     let in_ext = first.path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let cx = PlanCx { inputs, first, enc, blur, dir, inp: path_arg(&first.path), dur, in_ext };
+    let mut p = Plan { args: vec![], output: PathBuf::new(), is_dir: false, kind: "video", out_ms: dur, note: None, fallback: None, temp_files: vec![] };
 
     match &job.op {
-        ToolOp::Compress { quality, max_height } => {
-            require_video(first)?;
-            let vc = video_codec(enc, quality, "mp4");
-            p.output = out_path(&first.path, dir, "压缩", vc.ext);
-            p.args = s(&["-i", &inp, "-map", "0:v:0", "-map", "0:a:0?"]);
-            if let Some(h) = max_height.filter(|h| *h >= 144) {
-                p.args.extend(["-vf".into(), format!("scale=-2:'min(ih,{h})'")]);
-            }
-            p.args.extend(vc.args);
-            p.args.extend(vc.audio);
-            p.args.extend(muxer_args(vc.ext, &p.output));
-            p.note = vc.note;
-        }
-        ToolOp::Gif { start_ms, duration_ms, width, fps } => {
-            require_video(first)?;
-            let (w, f) = ((*width).clamp(120, 1280), (*fps).clamp(5, 30));
-            let d = (*duration_ms).clamp(500, 60_000);
-            p.output = out_path(&first.path, dir, "动图", "gif");
-            p.kind = "image";
-            p.out_ms = Some(d);
-            p.args = s(&["-ss", &format!("{:.3}", *start_ms as f64 / 1000.0), "-t", &format!("{:.3}", d as f64 / 1000.0), "-i", &inp, "-an", "-vf"]);
-            p.args.push(format!("fps={f},scale={w}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4"));
-            p.args.extend(s(&["-loop", "0"]));
-            p.args.push(path_arg(&p.output));
-        }
-        ToolOp::Landscape { width, height, mode } => {
-            require_video(first)?;
-            let (w, h) = ((*width).clamp(320, 3840) & !1, (*height).clamp(240, 2160) & !1);
-            let vc = video_codec(enc, "high", "mp4");
-            p.output = out_path(&first.path, dir, "横屏", vc.ext);
-            let graph = landscape_graph(w, h, mode, blur);
-            p.args = s(&["-i", &inp, "-filter_complex", &graph, "-map", "[v]", "-map", "0:a:0?"]);
-            p.args.extend(vc.args);
-            p.args.extend(s(&["-c:a", "copy"]));
-            p.args.extend(muxer_args(vc.ext, &p.output));
-            p.note = vc.note;
-        }
-        ToolOp::Speed { factor } => {
-            let f = factor.clamp(0.25, 4.0);
-            let video = first.probe.has_video;
-            if !video && !first.probe.has_audio {
-                return Err(AppError::invalid("文件里没有音频或视频。"));
-            }
-            p.out_ms = dur.map(|d| (d as f64 / f) as u64);
-            if video {
-                let vc = video_codec(enc, "high", "mp4");
-                p.output = out_path(&first.path, dir, &format!("{}倍速", trim_float(f)), vc.ext);
-                p.args = s(&["-i", &inp, "-filter_complex"]);
-                if first.probe.has_audio {
-                    p.args.push(format!("[0:v]setpts=PTS/{f:.4}[v];[0:a]{}[a]", atempo_chain(f)));
-                    p.args.extend(s(&["-map", "[v]", "-map", "[a]"]));
-                } else {
-                    p.args.push(format!("[0:v]setpts=PTS/{f:.4}[v]"));
-                    p.args.extend(s(&["-map", "[v]"]));
-                }
-                p.args.extend(vc.args);
-                if first.probe.has_audio {
-                    p.args.extend(vc.audio);
-                }
-                p.args.extend(muxer_args(vc.ext, &p.output));
-                p.note = vc.note;
-            } else {
-                let fmt = audio_ext(&in_ext);
-                p.kind = "audio";
-                p.output = out_path(&first.path, dir, &format!("{}倍速", trim_float(f)), fmt);
-                p.args = s(&["-i", &inp, "-vn", "-af", &atempo_chain(f)]);
-                p.args.extend(audio_codec(enc, fmt)?);
-                p.args.push(path_arg(&p.output));
-            }
-        }
-        ToolOp::Loudness { target, tp, lra } => {
-            let af = crate::audiofx::loudnorm_filter(*target, *tp, *lra);
-            if first.probe.has_video {
-                let ext = if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov") { in_ext.as_str() } else { "mp4" };
-                p.output = out_path(&first.path, dir, "响度", ext);
-                p.args = s(&["-i", &inp, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy", "-af", &af, "-c:a", "aac", "-b:a", "192k"]);
-                p.args.extend(muxer_args(ext, &p.output));
-            } else if first.probe.has_audio {
-                let fmt = audio_ext(&in_ext);
-                p.kind = "audio";
-                p.output = out_path(&first.path, dir, "响度", fmt);
-                p.args = s(&["-i", &inp, "-vn", "-af", &af]);
-                p.args.extend(audio_codec(enc, fmt)?);
-                p.args.push(path_arg(&p.output));
-            } else {
-                return Err(AppError::invalid("文件里没有音频。"));
-            }
-        }
-        ToolOp::Rotate { mode } => {
-            require_video(first)?;
-            let vf = rotate_filter(mode).ok_or_else(|| AppError::invalid("不支持的旋转方式。"))?;
-            let vc = video_codec(enc, "high", "mp4");
-            p.output = out_path(&first.path, dir, "旋转", vc.ext);
-            p.args = s(&["-i", &inp, "-map", "0:v:0", "-map", "0:a:0?", "-vf", vf]);
-            p.args.extend(vc.args);
-            p.args.extend(s(&["-c:a", "copy"]));
-            p.args.extend(muxer_args(vc.ext, &p.output));
-            p.note = vc.note;
-        }
-        ToolOp::Convert { format, reencode } => {
-            let fmt = format.to_ascii_lowercase();
-            if matches!(fmt.as_str(), "mp3" | "m4a" | "flac" | "opus" | "wav") {
-                if !first.probe.has_audio {
-                    return Err(AppError::invalid("文件里没有音频。"));
-                }
-                p.kind = "audio";
-                p.output = out_path(&first.path, dir, "音频", &fmt);
-                p.args = s(&["-i", &inp, "-vn", "-map", "0:a:0"]);
-                p.args.extend(audio_codec(enc, &fmt)?);
-                p.args.push(path_arg(&p.output));
-            } else if matches!(fmt.as_str(), "mp4" | "mkv" | "mov" | "webm") {
-                require_video(first)?;
-                if *reencode || fmt == "webm" {
-                    if fmt == "webm" {
-                        if !enc.vp9 {
-                            return Err(AppError::invalid("当前的 ffmpeg 没有 VP9 编码器，无法输出 WebM。"));
-                        }
-                        p.output = out_path(&first.path, dir, "转换", "webm");
-                        p.args = s(&[
-                            "-i",
-                            &inp,
-                            "-map",
-                            "0:v:0",
-                            "-map",
-                            "0:a:0?",
-                            "-c:v",
-                            "libvpx-vp9",
-                            "-b:v",
-                            "0",
-                            "-crf",
-                            "32",
-                            "-row-mt",
-                            "1",
-                            "-deadline",
-                            "good",
-                            "-cpu-used",
-                            "4",
-                            "-c:a",
-                        ]);
-                        p.args.push(if enc.opus {
-                            "libopus".into()
-                        } else {
-                            return Err(AppError::invalid("当前的 ffmpeg 没有 Opus 编码器，无法输出 WebM。"));
-                        });
-                        p.args.push(path_arg(&p.output));
-                    } else {
-                        let vc = video_codec(enc, "high", &fmt);
-                        p.output = out_path(&first.path, dir, "转换", vc.ext);
-                        p.args = s(&["-i", &inp, "-map", "0:v:0", "-map", "0:a:0?"]);
-                        p.args.extend(vc.args);
-                        p.args.extend(vc.audio);
-                        p.args.extend(muxer_args(vc.ext, &p.output));
-                        p.note = vc.note;
-                    }
-                } else {
-                    p.output = out_path(&first.path, dir, "转换", &fmt);
-                    p.args = s(&["-i", &inp, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy"]);
-                    p.args.extend(muxer_args(&fmt, &p.output));
-                }
-            } else {
-                return Err(AppError::invalid("不支持的输出格式。"));
-            }
-        }
-        ToolOp::Frame { at_ms, format } => {
-            require_video(first)?;
-            let ext = if format == "png" { "png" } else { "jpg" };
-            p.kind = "image";
-            p.out_ms = None;
-            p.output = out_path(&first.path, dir, &format!("截图{}", crate::subtitle::fmt_srt_time(*at_ms).replace([':', ','], "-")), ext);
-            p.args = s(&["-ss", &format!("{:.3}", *at_ms as f64 / 1000.0), "-i", &inp, "-frames:v", "1", "-an"]);
-            if ext == "jpg" {
-                p.args.extend(s(&["-q:v", "2"]));
-            }
-            p.args.push(path_arg(&p.output));
-        }
-        ToolOp::Frames { every_secs, format } => {
-            require_video(first)?;
-            let ext = if format == "png" { "png" } else { "jpg" };
-            let every = every_secs.clamp(0.2, 3600.0);
-            let folder = dir.map(Path::to_path_buf).or_else(|| first.path.parent().map(Path::to_path_buf)).unwrap_or_default();
-            let folder = crate::naming::unique_path(folder.join(format!("{} 截图", stem_of(&first.path))), &|p: &Path| p.exists());
-            std::fs::create_dir_all(&folder)?;
-            p.is_dir = true;
-            p.kind = "image";
-            p.args = s(&["-i", &inp, "-an", "-vf", &format!("fps=1/{every}")]);
-            if ext == "jpg" {
-                p.args.extend(s(&["-q:v", "2"]));
-            }
-            p.args.push(path_arg(&folder.join(format!("%04d.{ext}"))));
-            p.output = folder;
-        }
-        ToolOp::Concat { reencode } => {
-            if inputs.len() < 2 {
-                return Err(AppError::invalid("拼接至少需要两个文件。"));
-            }
-            let video = inputs.iter().all(|i| i.probe.has_video);
-            let audio_only = inputs.iter().all(|i| !i.probe.has_video && i.probe.has_audio);
-            if !video && !audio_only {
-                return Err(AppError::invalid("请只选择视频文件，或只选择音频文件，不要混在一起。"));
-            }
-            let total: u64 = inputs.iter().filter_map(|i| i.probe.duration_ms).sum();
-            p.out_ms = (total > 0).then_some(total);
-            let ext = if audio_only {
-                audio_ext(&in_ext)
-            } else if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov") {
-                in_ext.as_str()
-            } else {
-                "mp4"
-            };
-            p.kind = if audio_only { "audio" } else { "video" };
-            p.output = out_path(&first.path, dir, "拼接", ext);
-            // 清单文件放在系统临时目录
-            let list = std::env::temp_dir().join(format!("clearclip-concat-{}-{}.txt", std::process::id(), crate::db::now()));
-            let paths: Vec<PathBuf> = inputs.iter().map(|i| i.path.clone()).collect();
-            std::fs::write(&list, concat_list(&paths))?;
-            p.temp_files.push(list.clone());
-            let mut copy = s(&["-f", "concat", "-safe", "0", "-i", &path_arg(&list), "-c", "copy"]);
-            copy.extend(muxer_args(ext, &p.output));
-            // 重新编码：统一成第一个文件的尺寸
-            let n = inputs.len();
-            let (w, h) = (first.probe.width.unwrap_or(1280) & !1, first.probe.height.unwrap_or(720) & !1);
-            let all_audio = inputs.iter().all(|i| i.probe.has_audio);
-            let mut re: Vec<String> = vec![];
-            for i in inputs {
-                re.extend(["-i".into(), path_arg(&i.path)]);
-            }
-            let mut graph = String::new();
-            let mut labels = String::new();
-            for k in 0..n {
-                if video {
-                    graph.push_str(&format!(
-                        "[{k}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v{k}];"
-                    ));
-                    labels.push_str(&format!("[v{k}]"));
-                }
-                if all_audio {
-                    graph.push_str(&format!("[{k}:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[a{k}];"));
-                    labels.push_str(&format!("[a{k}]"));
-                }
-            }
-            graph.push_str(&format!(
-                "{labels}concat=n={n}:v={}:a={}[ov]{}",
-                u8::from(video),
-                u8::from(all_audio),
-                if video && all_audio { "[oa]" } else { "" }
-            ));
-            // 输出标签：视频+音频 [ov][oa]；只有视频 [ov]；只有音频 [ov] 当作音频
-            re.extend(["-filter_complex".into(), graph]);
-            let vc = video_codec(enc, "high", ext);
-            if video {
-                re.extend(s(&["-map", "[ov]"]));
-                if all_audio {
-                    re.extend(s(&["-map", "[oa]"]));
-                }
-                re.extend(vc.args);
-                if all_audio {
-                    re.extend(vc.audio);
-                }
-            } else {
-                re.extend(s(&["-map", "[ov]"]));
-                re.extend(audio_codec(enc, ext)?);
-            }
-            re.extend(muxer_args(ext, &p.output));
-            let dims_differ = video && inputs.iter().any(|i| (i.probe.width, i.probe.height) != (first.probe.width, first.probe.height));
-            if *reencode || dims_differ {
-                p.args = re;
-                p.note = if dims_differ && !*reencode {
-                    Some("这些视频的画面尺寸不一样，不能直接拼接，已改为重新编码（统一成第一个视频的尺寸）。".into())
-                } else {
-                    vc.note
-                };
-            } else {
-                p.args = copy;
-                p.fallback = Some(re);
-            }
-        }
-        ToolOp::Trim { start_ms, end_ms, precise } => {
-            if !first.probe.has_video && !first.probe.has_audio {
-                return Err(AppError::invalid("文件里没有音频或视频。"));
-            }
-            if let Some(e) = end_ms {
-                if e <= start_ms {
-                    return Err(AppError::invalid("结束时间必须晚于开始时间。"));
-                }
-            }
-            let ext = if first.probe.has_video {
-                if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov" | "webm") {
-                    in_ext.clone()
-                } else {
-                    "mp4".into()
-                }
-            } else {
-                audio_ext(&in_ext).to_string()
-            };
-            p.kind = if first.probe.has_video { "video" } else { "audio" };
-            p.output = out_path(&first.path, dir, "裁剪", &ext);
-            let len = end_ms.map(|e| e - start_ms).or_else(|| dur.map(|d| d.saturating_sub(*start_ms)));
-            p.out_ms = len;
-            // 不重新编码时开始点要留一点余量，避免多带一个 GOP（见 postprocess::COPY_SEEK_SLACK_MS）
-            let ss = if *precise { *start_ms } else { *start_ms + crate::postprocess::COPY_SEEK_SLACK_MS };
-            p.args = s(&["-ss", &format!("{:.3}", ss as f64 / 1000.0), "-i", &inp]);
-            if let Some(l) = len {
-                p.args.extend(["-t".into(), format!("{:.3}", l as f64 / 1000.0)]);
-            }
-            p.args.extend(s(&["-map", "0:v:0?", "-map", "0:a:0?"]));
-            if *precise && first.probe.has_video {
-                let vc = video_codec(enc, "high", &ext);
-                p.args.extend(vc.args);
-                p.args.extend(vc.audio);
-                p.note = vc.note;
-            } else {
-                p.args.extend(s(&["-c", "copy", "-avoid_negative_ts", "make_zero"]));
-            }
-            p.args.extend(muxer_args(&ext, &p.output));
-        }
-        ToolOp::Mute => {
-            require_video(first)?;
-            let ext = if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov" | "webm") { in_ext.as_str() } else { "mp4" };
-            p.output = out_path(&first.path, dir, "无声", ext);
-            p.args = s(&["-i", &inp, "-map", "0:v:0", "-c:v", "copy", "-an"]);
-            p.args.extend(muxer_args(ext, &p.output));
-        }
-        ToolOp::Chapters { chapters } => {
-            require_video(first).or_else(|e| if first.probe.has_audio { Ok(()) } else { Err(e) })?;
-            if chapters.is_empty() {
-                return Err(AppError::invalid("没有章节。"));
-            }
-            let ext = if first.probe.has_video {
-                if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov") {
-                    in_ext.as_str()
-                } else {
-                    "mp4"
-                }
-            } else if matches!(in_ext.as_str(), "m4a" | "mp3") {
-                in_ext.as_str()
-            } else {
-                "m4a"
-            };
-            p.kind = if first.probe.has_video { "video" } else { "audio" };
-            p.output = out_path(&first.path, dir, "章节", ext);
-            let meta = std::env::temp_dir().join(format!("clearclip-chapters-{}-{}.txt", std::process::id(), crate::db::now()));
-            std::fs::write(&meta, ffmetadata(chapters, dur))?;
-            p.temp_files.push(meta.clone());
-            p.args = s(&["-i", &inp, "-i", &path_arg(&meta), "-map", "0", "-map_metadata", "0", "-map_chapters", "1", "-c", "copy"]);
-            p.args.extend(muxer_args(ext, &p.output));
-        }
+        ToolOp::Compress { quality, max_height } => plan_compress(&cx, &mut p, quality, max_height)?,
+        ToolOp::Gif { start_ms, duration_ms, width, fps } => plan_gif(&cx, &mut p, start_ms, duration_ms, width, fps)?,
+        ToolOp::Landscape { width, height, mode } => plan_landscape(&cx, &mut p, width, height, mode)?,
+        ToolOp::Speed { factor } => plan_speed(&cx, &mut p, factor)?,
+        ToolOp::Loudness { target, tp, lra } => plan_loudness(&cx, &mut p, target, tp, lra)?,
+        ToolOp::Rotate { mode } => plan_rotate(&cx, &mut p, mode)?,
+        ToolOp::Convert { format, reencode } => plan_convert(&cx, &mut p, format, reencode)?,
+        ToolOp::Frame { at_ms, format } => plan_frame(&cx, &mut p, at_ms, format)?,
+        ToolOp::Frames { every_secs, format } => plan_frames(&cx, &mut p, every_secs, format)?,
+        ToolOp::Concat { reencode } => plan_concat(&cx, &mut p, reencode)?,
+        ToolOp::Trim { start_ms, end_ms, precise } => plan_trim(&cx, &mut p, start_ms, end_ms, precise)?,
+        ToolOp::Mute => plan_mute(&cx, &mut p)?,
+        ToolOp::Chapters { chapters } => plan_chapters(&cx, &mut p, chapters)?,
         ToolOp::Normalize { .. } | ToolOp::Stabilize { .. } | ToolOp::Edit { .. } | ToolOp::AudioFx { .. } => {
             return Err(AppError::msg("视频规整、防抖、剪辑和音效由专用流程处理。"))
         }
         ToolOp::Tags { title, artist, album, year, genre, comment, cover } => {
-            if !first.probe.has_audio {
-                return Err(AppError::invalid("文件里没有音频。"));
-            }
-            let ext = if first.probe.has_video {
-                if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov") {
-                    in_ext.as_str()
-                } else {
-                    "mp4"
-                }
-            } else {
-                audio_ext(&in_ext)
-            };
-            p.kind = if first.probe.has_video { "video" } else { "audio" };
-            p.output = out_path(&first.path, dir, "标签", ext);
-            p.args = s(&["-i", &inp]);
-            let cover_ok = cover.as_deref().filter(|c| !c.is_empty() && matches!(ext, "mp3" | "m4a" | "flac" | "mp4"));
-            if let Some(c) = cover_ok {
-                p.args.extend(["-i".into(), c.to_string()]);
-            }
-            p.args.extend(s(&["-map", "0:a", "-map_metadata", "0"]));
-            if first.probe.has_video {
-                p.args.extend(s(&["-map", "0:v?"]));
-            }
-            if cover_ok.is_some() {
-                p.args.extend(s(&["-map", "1:v", "-c:v:0", "copy", "-disposition:v:0", "attached_pic"]));
-                // 封面是 PNG / WebP 时转成 JPEG，兼容性最好
-                let ci = if first.probe.has_video { 1 } else { 0 };
-                p.args.extend(s(&[&format!("-c:v:{ci}"), "mjpeg"]));
-            }
-            p.args.extend(s(&["-c:a", "copy"]));
-            if first.probe.has_video && cover_ok.is_none() {
-                p.args.extend(s(&["-c:v", "copy"]));
-            }
-            for (k, v) in [("title", title), ("artist", artist), ("album", album), ("date", year), ("genre", genre), ("comment", comment)] {
-                if let Some(v) = v {
-                    p.args.push("-metadata".into());
-                    p.args.push(format!("{k}={v}"));
-                }
-            }
-            if ext == "mp3" {
-                p.args.extend(s(&["-id3v2_version", "3"]));
-            }
-            p.args.push(path_arg(&p.output));
-            p.out_ms = None;
+            plan_tags(&cx, &mut p, &TagFields { title, artist, album, year, genre, comment, cover })?
         }
     }
     Ok(p)
+}
+
+fn plan_compress(cx: &PlanCx, p: &mut Plan, quality: &str, max_height: &Option<u32>) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let enc = cx.enc;
+    require_video(first)?;
+    let vc = video_codec(enc, quality, "mp4");
+    p.output = out_path(&first.path, dir, "压缩", vc.ext);
+    p.args = s(&["-i", inp, "-map", "0:v:0", "-map", "0:a:0?"]);
+    if let Some(h) = max_height.filter(|h| *h >= 144) {
+        p.args.extend(["-vf".into(), format!("scale=-2:'min(ih,{h})'")]);
+    }
+    p.args.extend(vc.args);
+    p.args.extend(vc.audio);
+    p.args.extend(muxer_args(vc.ext, &p.output));
+    p.note = vc.note;
+    Ok(())
+}
+
+fn plan_gif(cx: &PlanCx, p: &mut Plan, start_ms: &u64, duration_ms: &u64, width: &u32, fps: &u32) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    require_video(first)?;
+    let (w, f) = ((*width).clamp(120, 1280), (*fps).clamp(5, 30));
+    let d = (*duration_ms).clamp(500, 60_000);
+    p.output = out_path(&first.path, dir, "动图", "gif");
+    p.kind = "image";
+    p.out_ms = Some(d);
+    p.args = s(&["-ss", &format!("{:.3}", *start_ms as f64 / 1000.0), "-t", &format!("{:.3}", d as f64 / 1000.0), "-i", inp, "-an", "-vf"]);
+    p.args.push(format!("fps={f},scale={w}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4"));
+    p.args.extend(s(&["-loop", "0"]));
+    p.args.push(path_arg(&p.output));
+    Ok(())
+}
+
+fn plan_landscape(cx: &PlanCx, p: &mut Plan, width: &u32, height: &u32, mode: &str) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let enc = cx.enc;
+    let blur = cx.blur;
+    require_video(first)?;
+    let (w, h) = ((*width).clamp(320, 3840) & !1, (*height).clamp(240, 2160) & !1);
+    let vc = video_codec(enc, "high", "mp4");
+    p.output = out_path(&first.path, dir, "横屏", vc.ext);
+    let graph = landscape_graph(w, h, mode, blur);
+    p.args = s(&["-i", inp, "-filter_complex", &graph, "-map", "[v]", "-map", "0:a:0?"]);
+    p.args.extend(vc.args);
+    p.args.extend(s(&["-c:a", "copy"]));
+    p.args.extend(muxer_args(vc.ext, &p.output));
+    p.note = vc.note;
+    Ok(())
+}
+
+fn plan_speed(cx: &PlanCx, p: &mut Plan, factor: &f64) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let dur = cx.dur;
+    let in_ext = &cx.in_ext;
+    let enc = cx.enc;
+    let f = factor.clamp(0.25, 4.0);
+    let video = first.probe.has_video;
+    if !video && !first.probe.has_audio {
+        return Err(AppError::invalid("文件里没有音频或视频。"));
+    }
+    p.out_ms = dur.map(|d| (d as f64 / f) as u64);
+    if video {
+        let vc = video_codec(enc, "high", "mp4");
+        p.output = out_path(&first.path, dir, &format!("{}倍速", trim_float(f)), vc.ext);
+        p.args = s(&["-i", inp, "-filter_complex"]);
+        if first.probe.has_audio {
+            p.args.push(format!("[0:v]setpts=PTS/{f:.4}[v];[0:a]{}[a]", atempo_chain(f)));
+            p.args.extend(s(&["-map", "[v]", "-map", "[a]"]));
+        } else {
+            p.args.push(format!("[0:v]setpts=PTS/{f:.4}[v]"));
+            p.args.extend(s(&["-map", "[v]"]));
+        }
+        p.args.extend(vc.args);
+        if first.probe.has_audio {
+            p.args.extend(vc.audio);
+        }
+        p.args.extend(muxer_args(vc.ext, &p.output));
+        p.note = vc.note;
+    } else {
+        let fmt = audio_ext(in_ext);
+        p.kind = "audio";
+        p.output = out_path(&first.path, dir, &format!("{}倍速", trim_float(f)), fmt);
+        p.args = s(&["-i", inp, "-vn", "-af", &atempo_chain(f)]);
+        p.args.extend(audio_codec(enc, fmt)?);
+        p.args.push(path_arg(&p.output));
+    }
+    Ok(())
+}
+
+fn plan_loudness(cx: &PlanCx, p: &mut Plan, target: &f64, tp: &Option<f64>, lra: &Option<f64>) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let in_ext = &cx.in_ext;
+    let enc = cx.enc;
+    let af = crate::audiofx::loudnorm_filter(*target, *tp, *lra);
+    if first.probe.has_video {
+        let ext = if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov") { in_ext.as_str() } else { "mp4" };
+        p.output = out_path(&first.path, dir, "响度", ext);
+        p.args = s(&["-i", inp, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy", "-af", &af, "-c:a", "aac", "-b:a", "192k"]);
+        p.args.extend(muxer_args(ext, &p.output));
+    } else if first.probe.has_audio {
+        let fmt = audio_ext(in_ext);
+        p.kind = "audio";
+        p.output = out_path(&first.path, dir, "响度", fmt);
+        p.args = s(&["-i", inp, "-vn", "-af", &af]);
+        p.args.extend(audio_codec(enc, fmt)?);
+        p.args.push(path_arg(&p.output));
+    } else {
+        return Err(AppError::invalid("文件里没有音频。"));
+    }
+    Ok(())
+}
+
+fn plan_rotate(cx: &PlanCx, p: &mut Plan, mode: &str) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let enc = cx.enc;
+    require_video(first)?;
+    let vf = rotate_filter(mode).ok_or_else(|| AppError::invalid("不支持的旋转方式。"))?;
+    let vc = video_codec(enc, "high", "mp4");
+    p.output = out_path(&first.path, dir, "旋转", vc.ext);
+    p.args = s(&["-i", inp, "-map", "0:v:0", "-map", "0:a:0?", "-vf", vf]);
+    p.args.extend(vc.args);
+    p.args.extend(s(&["-c:a", "copy"]));
+    p.args.extend(muxer_args(vc.ext, &p.output));
+    p.note = vc.note;
+    Ok(())
+}
+
+fn plan_convert(cx: &PlanCx, p: &mut Plan, format: &str, reencode: &bool) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let enc = cx.enc;
+    let fmt = format.to_ascii_lowercase();
+    if matches!(fmt.as_str(), "mp3" | "m4a" | "flac" | "opus" | "wav") {
+        if !first.probe.has_audio {
+            return Err(AppError::invalid("文件里没有音频。"));
+        }
+        p.kind = "audio";
+        p.output = out_path(&first.path, dir, "音频", &fmt);
+        p.args = s(&["-i", inp, "-vn", "-map", "0:a:0"]);
+        p.args.extend(audio_codec(enc, &fmt)?);
+        p.args.push(path_arg(&p.output));
+    } else if matches!(fmt.as_str(), "mp4" | "mkv" | "mov" | "webm") {
+        require_video(first)?;
+        if *reencode || fmt == "webm" {
+            if fmt == "webm" {
+                if !enc.vp9 {
+                    return Err(AppError::invalid("当前的 ffmpeg 没有 VP9 编码器，无法输出 WebM。"));
+                }
+                p.output = out_path(&first.path, dir, "转换", "webm");
+                p.args = s(&[
+                    "-i",
+                    inp,
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0?",
+                    "-c:v",
+                    "libvpx-vp9",
+                    "-b:v",
+                    "0",
+                    "-crf",
+                    "32",
+                    "-row-mt",
+                    "1",
+                    "-deadline",
+                    "good",
+                    "-cpu-used",
+                    "4",
+                    "-c:a",
+                ]);
+                p.args.push(if enc.opus {
+                    "libopus".into()
+                } else {
+                    return Err(AppError::invalid("当前的 ffmpeg 没有 Opus 编码器，无法输出 WebM。"));
+                });
+                p.args.push(path_arg(&p.output));
+            } else {
+                let vc = video_codec(enc, "high", &fmt);
+                p.output = out_path(&first.path, dir, "转换", vc.ext);
+                p.args = s(&["-i", inp, "-map", "0:v:0", "-map", "0:a:0?"]);
+                p.args.extend(vc.args);
+                p.args.extend(vc.audio);
+                p.args.extend(muxer_args(vc.ext, &p.output));
+                p.note = vc.note;
+            }
+        } else {
+            p.output = out_path(&first.path, dir, "转换", &fmt);
+            p.args = s(&["-i", inp, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy"]);
+            p.args.extend(muxer_args(&fmt, &p.output));
+        }
+    } else {
+        return Err(AppError::invalid("不支持的输出格式。"));
+    }
+    Ok(())
+}
+
+fn plan_frame(cx: &PlanCx, p: &mut Plan, at_ms: &u64, format: &str) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    require_video(first)?;
+    let ext = if format == "png" { "png" } else { "jpg" };
+    p.kind = "image";
+    p.out_ms = None;
+    p.output = out_path(&first.path, dir, &format!("截图{}", crate::subtitle::fmt_srt_time(*at_ms).replace([':', ','], "-")), ext);
+    p.args = s(&["-ss", &format!("{:.3}", *at_ms as f64 / 1000.0), "-i", inp, "-frames:v", "1", "-an"]);
+    if ext == "jpg" {
+        p.args.extend(s(&["-q:v", "2"]));
+    }
+    p.args.push(path_arg(&p.output));
+    Ok(())
+}
+
+fn plan_frames(cx: &PlanCx, p: &mut Plan, every_secs: &f64, format: &str) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    require_video(first)?;
+    let ext = if format == "png" { "png" } else { "jpg" };
+    let every = every_secs.clamp(0.2, 3600.0);
+    let folder = dir.map(Path::to_path_buf).or_else(|| first.path.parent().map(Path::to_path_buf)).unwrap_or_default();
+    let folder = crate::naming::unique_path(folder.join(format!("{} 截图", stem_of(&first.path))), &|p: &Path| p.exists());
+    std::fs::create_dir_all(&folder)?;
+    p.is_dir = true;
+    p.kind = "image";
+    p.args = s(&["-i", inp, "-an", "-vf", &format!("fps=1/{every}")]);
+    if ext == "jpg" {
+        p.args.extend(s(&["-q:v", "2"]));
+    }
+    p.args.push(path_arg(&folder.join(format!("%04d.{ext}"))));
+    p.output = folder;
+    Ok(())
+}
+
+fn plan_concat(cx: &PlanCx, p: &mut Plan, reencode: &bool) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let in_ext = &cx.in_ext;
+    let inputs = cx.inputs;
+    if inputs.len() < 2 {
+        return Err(AppError::invalid("拼接至少需要两个文件。"));
+    }
+    let video = inputs.iter().all(|i| i.probe.has_video);
+    let audio_only = inputs.iter().all(|i| !i.probe.has_video && i.probe.has_audio);
+    if !video && !audio_only {
+        return Err(AppError::invalid("请只选择视频文件，或只选择音频文件，不要混在一起。"));
+    }
+    let total: u64 = inputs.iter().filter_map(|i| i.probe.duration_ms).sum();
+    p.out_ms = (total > 0).then_some(total);
+    let ext = if audio_only {
+        audio_ext(in_ext)
+    } else if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov") {
+        in_ext.as_str()
+    } else {
+        "mp4"
+    };
+    p.kind = if audio_only { "audio" } else { "video" };
+    p.output = out_path(&first.path, dir, "拼接", ext);
+    // 清单文件放在系统临时目录
+    let list = std::env::temp_dir().join(format!("clearclip-concat-{}-{}.txt", std::process::id(), crate::db::now()));
+    let paths: Vec<PathBuf> = inputs.iter().map(|i| i.path.clone()).collect();
+    std::fs::write(&list, concat_list(&paths))?;
+    p.temp_files.push(list.clone());
+    let mut copy = s(&["-f", "concat", "-safe", "0", "-i", &path_arg(&list), "-c", "copy"]);
+    copy.extend(muxer_args(ext, &p.output));
+    // 重新编码：统一成第一个文件的尺寸
+    let all_audio = inputs.iter().all(|i| i.probe.has_audio);
+    let (re, re_note) = concat_reencode_args(cx, &p.output, ext, video, all_audio)?;
+    let dims_differ = video && inputs.iter().any(|i| (i.probe.width, i.probe.height) != (first.probe.width, first.probe.height));
+    if *reencode || dims_differ {
+        p.args = re;
+        p.note = if dims_differ && !*reencode {
+            Some("这些视频的画面尺寸不一样，不能直接拼接，已改为重新编码（统一成第一个视频的尺寸）。".into())
+        } else {
+            re_note
+        };
+    } else {
+        p.args = copy;
+        p.fallback = Some(re);
+    }
+    Ok(())
+}
+
+/// 拼接重新编码用的滤镜图：每个输入统一成 `w`x`h`、30 帧（音频 44.1kHz 立体声）后串联。
+fn concat_graph(n: usize, w: u32, h: u32, video: bool, all_audio: bool) -> String {
+    let mut graph = String::new();
+    let mut labels = String::new();
+    for k in 0..n {
+        if video {
+            graph.push_str(&format!(
+                "[{k}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v{k}];"
+            ));
+            labels.push_str(&format!("[v{k}]"));
+        }
+        if all_audio {
+            graph.push_str(&format!("[{k}:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[a{k}];"));
+            labels.push_str(&format!("[a{k}]"));
+        }
+    }
+    graph.push_str(&format!("{labels}concat=n={n}:v={}:a={}[ov]{}", u8::from(video), u8::from(all_audio), if video && all_audio { "[oa]" } else { "" }));
+    graph
+}
+
+/// 拼接“重新编码”的参数，以及编码器回退时的提示。
+fn concat_reencode_args(cx: &PlanCx, output: &Path, ext: &str, video: bool, all_audio: bool) -> AppResult<(Vec<String>, Option<String>)> {
+    let (first, inputs, enc) = (cx.first, cx.inputs, cx.enc);
+    let (w, h) = (first.probe.width.unwrap_or(1280) & !1, first.probe.height.unwrap_or(720) & !1);
+    let mut re: Vec<String> = vec![];
+    for i in inputs {
+        re.extend(["-i".into(), path_arg(&i.path)]);
+    }
+    // 输出标签：视频+音频 [ov][oa]；只有视频 [ov]；只有音频 [ov] 当作音频
+    re.extend(["-filter_complex".into(), concat_graph(inputs.len(), w, h, video, all_audio)]);
+    let vc = video_codec(enc, "high", ext);
+    if video {
+        re.extend(s(&["-map", "[ov]"]));
+        if all_audio {
+            re.extend(s(&["-map", "[oa]"]));
+        }
+        re.extend(vc.args);
+        if all_audio {
+            re.extend(vc.audio);
+        }
+    } else {
+        re.extend(s(&["-map", "[ov]"]));
+        re.extend(audio_codec(enc, ext)?);
+    }
+    re.extend(muxer_args(ext, output));
+    Ok((re, vc.note))
+}
+
+fn plan_trim(cx: &PlanCx, p: &mut Plan, start_ms: &u64, end_ms: &Option<u64>, precise: &bool) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let dur = cx.dur;
+    let in_ext = &cx.in_ext;
+    let enc = cx.enc;
+    if !first.probe.has_video && !first.probe.has_audio {
+        return Err(AppError::invalid("文件里没有音频或视频。"));
+    }
+    if let Some(e) = end_ms {
+        if e <= start_ms {
+            return Err(AppError::invalid("结束时间必须晚于开始时间。"));
+        }
+    }
+    let ext = if first.probe.has_video {
+        if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov" | "webm") {
+            in_ext.clone()
+        } else {
+            "mp4".into()
+        }
+    } else {
+        audio_ext(in_ext).to_string()
+    };
+    p.kind = if first.probe.has_video { "video" } else { "audio" };
+    p.output = out_path(&first.path, dir, "裁剪", &ext);
+    let len = end_ms.map(|e| e - start_ms).or_else(|| dur.map(|d| d.saturating_sub(*start_ms)));
+    p.out_ms = len;
+    // 不重新编码时开始点要留一点余量，避免多带一个 GOP（见 postprocess::COPY_SEEK_SLACK_MS）
+    let ss = if *precise { *start_ms } else { *start_ms + crate::postprocess::COPY_SEEK_SLACK_MS };
+    p.args = s(&["-ss", &format!("{:.3}", ss as f64 / 1000.0), "-i", inp]);
+    if let Some(l) = len {
+        p.args.extend(["-t".into(), format!("{:.3}", l as f64 / 1000.0)]);
+    }
+    p.args.extend(s(&["-map", "0:v:0?", "-map", "0:a:0?"]));
+    if *precise && first.probe.has_video {
+        let vc = video_codec(enc, "high", &ext);
+        p.args.extend(vc.args);
+        p.args.extend(vc.audio);
+        p.note = vc.note;
+    } else {
+        p.args.extend(s(&["-c", "copy", "-avoid_negative_ts", "make_zero"]));
+    }
+    p.args.extend(muxer_args(&ext, &p.output));
+    Ok(())
+}
+
+fn plan_mute(cx: &PlanCx, p: &mut Plan) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let in_ext = &cx.in_ext;
+    require_video(first)?;
+    let ext = if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov" | "webm") { in_ext.as_str() } else { "mp4" };
+    p.output = out_path(&first.path, dir, "无声", ext);
+    p.args = s(&["-i", inp, "-map", "0:v:0", "-c:v", "copy", "-an"]);
+    p.args.extend(muxer_args(ext, &p.output));
+    Ok(())
+}
+
+fn plan_chapters(cx: &PlanCx, p: &mut Plan, chapters: &[crate::model::Chapter]) -> AppResult<()> {
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let dur = cx.dur;
+    let in_ext = &cx.in_ext;
+    require_video(first).or_else(|e| if first.probe.has_audio { Ok(()) } else { Err(e) })?;
+    if chapters.is_empty() {
+        return Err(AppError::invalid("没有章节。"));
+    }
+    let ext = if first.probe.has_video {
+        if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov") {
+            in_ext.as_str()
+        } else {
+            "mp4"
+        }
+    } else if matches!(in_ext.as_str(), "m4a" | "mp3") {
+        in_ext.as_str()
+    } else {
+        "m4a"
+    };
+    p.kind = if first.probe.has_video { "video" } else { "audio" };
+    p.output = out_path(&first.path, dir, "章节", ext);
+    let meta = std::env::temp_dir().join(format!("clearclip-chapters-{}-{}.txt", std::process::id(), crate::db::now()));
+    std::fs::write(&meta, ffmetadata(chapters, dur))?;
+    p.temp_files.push(meta.clone());
+    p.args = s(&["-i", inp, "-i", &path_arg(&meta), "-map", "0", "-map_metadata", "0", "-map_chapters", "1", "-c", "copy"]);
+    p.args.extend(muxer_args(ext, &p.output));
+    Ok(())
+}
+
+struct TagFields<'a> {
+    title: &'a Option<String>,
+    artist: &'a Option<String>,
+    album: &'a Option<String>,
+    year: &'a Option<String>,
+    genre: &'a Option<String>,
+    comment: &'a Option<String>,
+    cover: &'a Option<String>,
+}
+
+fn plan_tags(cx: &PlanCx, p: &mut Plan, tags: &TagFields) -> AppResult<()> {
+    let TagFields { title, artist, album, year, genre, comment, cover } = tags;
+    let first = cx.first;
+    let dir = cx.dir;
+    let inp = &cx.inp;
+    let in_ext = &cx.in_ext;
+    if !first.probe.has_audio {
+        return Err(AppError::invalid("文件里没有音频。"));
+    }
+    let ext = if first.probe.has_video {
+        if matches!(in_ext.as_str(), "mp4" | "mkv" | "mov") {
+            in_ext.as_str()
+        } else {
+            "mp4"
+        }
+    } else {
+        audio_ext(in_ext)
+    };
+    p.kind = if first.probe.has_video { "video" } else { "audio" };
+    p.output = out_path(&first.path, dir, "标签", ext);
+    p.args = s(&["-i", inp]);
+    let cover_ok = cover.as_deref().filter(|c| !c.is_empty() && matches!(ext, "mp3" | "m4a" | "flac" | "mp4"));
+    if let Some(c) = cover_ok {
+        p.args.extend(["-i".into(), c.to_string()]);
+    }
+    p.args.extend(s(&["-map", "0:a", "-map_metadata", "0"]));
+    if first.probe.has_video {
+        p.args.extend(s(&["-map", "0:v?"]));
+    }
+    if cover_ok.is_some() {
+        p.args.extend(s(&["-map", "1:v", "-c:v:0", "copy", "-disposition:v:0", "attached_pic"]));
+        // 封面是 PNG / WebP 时转成 JPEG，兼容性最好
+        let ci = if first.probe.has_video { 1 } else { 0 };
+        p.args.extend(s(&[&format!("-c:v:{ci}"), "mjpeg"]));
+    }
+    p.args.extend(s(&["-c:a", "copy"]));
+    if first.probe.has_video && cover_ok.is_none() {
+        p.args.extend(s(&["-c:v", "copy"]));
+    }
+    for (k, v) in [("title", title), ("artist", artist), ("album", album), ("date", year), ("genre", genre), ("comment", comment)] {
+        if let Some(v) = v {
+            p.args.push("-metadata".into());
+            p.args.push(format!("{k}={v}"));
+        }
+    }
+    if ext == "mp3" {
+        p.args.extend(s(&["-id3v2_version", "3"]));
+    }
+    p.args.push(path_arg(&p.output));
+    p.out_ms = None;
+    Ok(())
 }
 
 fn meta_escape(s: &str) -> String {
@@ -1520,6 +1656,187 @@ mod tests {
         );
         assert!(plan(&job(&["/m/a.mp3"], ToolOp::Mute), &[audio], &e).is_err());
         assert!(plan(&job(&[], ToolOp::Mute), &[], &e).is_err());
+    }
+
+    /// 把 Plan 和错误规整成可比较的文本（临时文件名里的进程号 / 时间戳去掉）。
+    fn snap(r: AppResult<Plan>, dir: Option<&Path>) -> String {
+        let mut t = match r {
+            Err(e) => format!("ERR {}", e.message),
+            Ok(p) => format!(
+                "args={:?} | out={} | dir={} | kind={} | ms={:?} | note={:?} | fb={:?} | tmp={}",
+                p.args,
+                p.output.display(),
+                p.is_dir,
+                p.kind,
+                p.out_ms,
+                p.note,
+                p.fallback,
+                p.temp_files.len()
+            ),
+        };
+        if let Some(d) = dir {
+            t = t.replace(&d.to_string_lossy().into_owned(), "<D>");
+        }
+        let tmp = std::env::temp_dir().to_string_lossy().into_owned();
+        t = t.replace(&tmp, "<T>");
+        for tag in ["clearclip-concat-", "clearclip-chapters-"] {
+            let mut from = 0;
+            while let Some(k) = t[from..].find(tag) {
+                let i = from + k;
+                let j = t[i..].find(".txt").map(|k| i + k + 4).unwrap_or(t.len());
+                let rep = format!("{tag}X.txt");
+                t.replace_range(i..j, &rep);
+                from = i + rep.len();
+            }
+        }
+        t
+    }
+
+    /// 特征化测试：记录 plan_with 各操作、各分支的完整输出（参数、输出、提示、回退），重构时必须逐字不变。
+    #[test]
+    fn plan_with_characterization() {
+        let e = all_enc();
+        let none = Encoders::default();
+        let v = || fake("/m/a.mp4", true, true, 10_000);
+        let vmute = || fake("/m/a.mp4", true, false, 10_000);
+        let au = || fake("/m/a.mp3", false, true, 5000);
+        let tmpdir = temp_dir("plan-char");
+        let out_dir = tmpdir.to_string_lossy().into_owned();
+        let tag = |t: &str, o: &str| ToolOp::Tags {
+            title: Some(t.into()),
+            artist: None,
+            album: Some("专辑".into()),
+            year: None,
+            genre: None,
+            comment: None,
+            cover: Some(o.into()),
+        };
+        let ch = || vec![crate::model::Chapter { title: "一".into(), start_ms: 0, end_ms: 2000 }];
+        type Case = (&'static str, ToolOp, Vec<Input>, Encoders, bool);
+        let cases: Vec<Case> = vec![
+            ("compress_mp4", ToolOp::Compress { quality: "balanced".into(), max_height: Some(720) }, vec![v()], e.clone(), false),
+            ("compress_small_low_h", ToolOp::Compress { quality: "small".into(), max_height: Some(100) }, vec![v()], e.clone(), false),
+            ("compress_no_enc", ToolOp::Compress { quality: "high".into(), max_height: None }, vec![v()], none.clone(), false),
+            ("compress_audio_err", ToolOp::Compress { quality: "high".into(), max_height: None }, vec![au()], e.clone(), false),
+            ("gif", ToolOp::Gif { start_ms: 1500, duration_ms: 90_000, width: 50, fps: 99 }, vec![v()], e.clone(), false),
+            ("landscape_black", ToolOp::Landscape { width: 1921, height: 1081, mode: "black".into() }, vec![v()], e.clone(), false),
+            ("landscape_blur", ToolOp::Landscape { width: 10, height: 10, mode: "blur".into() }, vec![v()], none.clone(), false),
+            ("speed_video_audio", ToolOp::Speed { factor: 1.5 }, vec![v()], e.clone(), false),
+            ("speed_video_silent", ToolOp::Speed { factor: 8.0 }, vec![vmute()], e.clone(), false),
+            ("speed_audio", ToolOp::Speed { factor: 0.1 }, vec![au()], e.clone(), false),
+            ("speed_audio_no_mp3", ToolOp::Speed { factor: 2.0 }, vec![au()], Encoders { mp3: false, ..e.clone() }, false),
+            ("speed_nothing", ToolOp::Speed { factor: 2.0 }, vec![fake("/m/x.bin", false, false, 1)], e.clone(), false),
+            ("loudness_video_mp4", ToolOp::Loudness { target: -16.0, tp: Some(-1.5), lra: Some(11.0) }, vec![v()], e.clone(), false),
+            (
+                "loudness_video_mkv",
+                ToolOp::Loudness { target: -14.0, tp: Some(-1.0), lra: Some(7.0) },
+                vec![fake("/m/a.mkv", true, true, 1000)],
+                e.clone(),
+                false,
+            ),
+            (
+                "loudness_video_avi",
+                ToolOp::Loudness { target: -16.0, tp: Some(-1.5), lra: Some(11.0) },
+                vec![fake("/m/a.avi", true, true, 1000)],
+                e.clone(),
+                false,
+            ),
+            ("loudness_audio", ToolOp::Loudness { target: -16.0, tp: Some(-1.5), lra: Some(11.0) }, vec![au()], e.clone(), false),
+            ("loudness_none", ToolOp::Loudness { target: -16.0, tp: Some(-1.5), lra: Some(11.0) }, vec![fake("/m/x.bin", false, false, 1)], e.clone(), false),
+            ("rotate_cw", ToolOp::Rotate { mode: "cw".into() }, vec![v()], e.clone(), false),
+            ("rotate_bad", ToolOp::Rotate { mode: "x".into() }, vec![v()], e.clone(), false),
+            ("convert_mp3", ToolOp::Convert { format: "MP3".into(), reencode: false }, vec![v()], e.clone(), false),
+            ("convert_audio_from_silent", ToolOp::Convert { format: "flac".into(), reencode: false }, vec![vmute()], e.clone(), false),
+            ("convert_mkv_copy", ToolOp::Convert { format: "mkv".into(), reencode: false }, vec![v()], e.clone(), false),
+            ("convert_mov_reencode", ToolOp::Convert { format: "mov".into(), reencode: true }, vec![v()], none.clone(), false),
+            ("convert_webm", ToolOp::Convert { format: "webm".into(), reencode: false }, vec![v()], e.clone(), false),
+            ("convert_webm_no_vp9", ToolOp::Convert { format: "webm".into(), reencode: false }, vec![v()], Encoders { vp9: false, ..e.clone() }, false),
+            ("convert_webm_no_opus", ToolOp::Convert { format: "webm".into(), reencode: true }, vec![v()], Encoders { opus: false, ..e.clone() }, false),
+            ("convert_bad", ToolOp::Convert { format: "exe".into(), reencode: false }, vec![v()], e.clone(), false),
+            ("frame_png", ToolOp::Frame { at_ms: 3_725_500, format: "png".into() }, vec![v()], e.clone(), false),
+            ("frame_jpg", ToolOp::Frame { at_ms: 1000, format: "whatever".into() }, vec![v()], e.clone(), false),
+            ("frames_png", ToolOp::Frames { every_secs: 0.01, format: "png".into() }, vec![v()], e.clone(), true),
+            ("frames_jpg", ToolOp::Frames { every_secs: 5.0, format: "jpg".into() }, vec![v()], e.clone(), true),
+            ("concat_copy", ToolOp::Concat { reencode: false }, vec![v(), v()], e.clone(), false),
+            ("concat_reencode", ToolOp::Concat { reencode: true }, vec![v(), vmute()], e.clone(), false),
+            (
+                "concat_dims_differ",
+                ToolOp::Concat { reencode: false },
+                vec![
+                    v(),
+                    Input {
+                        path: "/m/b.mp4".into(),
+                        probe: Probe { width: Some(640), height: Some(360), has_video: true, has_audio: true, ..Default::default() },
+                    },
+                ],
+                e.clone(),
+                false,
+            ),
+            ("concat_audio", ToolOp::Concat { reencode: false }, vec![au(), fake("/m/b.mp3", false, true, 100)], e.clone(), false),
+            (
+                "concat_audio_reencode",
+                ToolOp::Concat { reencode: true },
+                vec![au(), fake("/m/b.mp3", false, true, 100)],
+                Encoders { mp3: false, ..e.clone() },
+                false,
+            ),
+            ("concat_mixed_err", ToolOp::Concat { reencode: false }, vec![v(), au()], e.clone(), false),
+            ("concat_one_err", ToolOp::Concat { reencode: false }, vec![v()], e.clone(), false),
+            ("trim_copy", ToolOp::Trim { start_ms: 1000, end_ms: Some(4000), precise: false }, vec![v()], e.clone(), false),
+            ("trim_precise", ToolOp::Trim { start_ms: 1000, end_ms: None, precise: true }, vec![fake("/m/a.avi", true, true, 9000)], e.clone(), false),
+            ("trim_audio", ToolOp::Trim { start_ms: 0, end_ms: None, precise: true }, vec![au()], e.clone(), false),
+            ("trim_bad", ToolOp::Trim { start_ms: 2000, end_ms: Some(2000), precise: false }, vec![v()], e.clone(), false),
+            ("trim_nothing", ToolOp::Trim { start_ms: 0, end_ms: None, precise: false }, vec![fake("/m/x.bin", false, false, 1)], e.clone(), false),
+            ("mute_mp4", ToolOp::Mute, vec![v()], e.clone(), false),
+            ("mute_flv", ToolOp::Mute, vec![fake("/m/a.flv", true, true, 1)], e.clone(), false),
+            ("chapters_video", ToolOp::Chapters { chapters: ch() }, vec![v()], e.clone(), false),
+            ("chapters_audio", ToolOp::Chapters { chapters: ch() }, vec![au()], e.clone(), false),
+            ("chapters_audio_m4a", ToolOp::Chapters { chapters: ch() }, vec![fake("/m/a.m4a", false, true, 1)], e.clone(), false),
+            ("chapters_empty", ToolOp::Chapters { chapters: vec![] }, vec![v()], e.clone(), false),
+            ("chapters_nothing", ToolOp::Chapters { chapters: ch() }, vec![fake("/m/x.bin", false, false, 1)], e.clone(), false),
+            ("tags_audio_cover", tag("歌", "/m/c.png"), vec![au()], e.clone(), false),
+            ("tags_video_cover", tag("片", "/m/c.png"), vec![v()], e.clone(), false),
+            (
+                "tags_video_nocover",
+                ToolOp::Tags {
+                    title: None,
+                    artist: Some("A".into()),
+                    album: None,
+                    year: Some("2020".into()),
+                    genre: Some("G".into()),
+                    comment: Some("C".into()),
+                    cover: Some(String::new()),
+                },
+                vec![v()],
+                e.clone(),
+                false,
+            ),
+            ("tags_ogg", tag("t", "/m/c.png"), vec![fake("/m/a.ogg", false, true, 1)], e.clone(), false),
+            (
+                "tags_no_audio",
+                ToolOp::Tags { title: None, artist: None, album: None, year: None, genre: None, comment: None, cover: None },
+                vec![vmute()],
+                e.clone(),
+                false,
+            ),
+            ("stabilize_err", ToolOp::Stabilize { strength: "normal".into() }, vec![v()], e.clone(), false),
+            ("no_input_err", ToolOp::Mute, vec![], e.clone(), false),
+        ];
+        let mut got = String::new();
+        for (name, op, inputs, enc, use_dir) in cases {
+            let mut j = job(&["/m/a.mp4"], op);
+            if use_dir {
+                j.output_dir = Some(out_dir.clone());
+            }
+            let d = use_dir.then_some(tmpdir.as_path());
+            got.push_str(&format!("{name}: {}\n", snap(plan_with(&j, &inputs, &enc, "boxblur=25:5"), d)));
+        }
+        let _ = std::fs::remove_dir_all(&tmpdir);
+        let want = include_str!("media_tools_plan_golden.txt");
+        if got != want {
+            let _ = std::fs::write(std::env::temp_dir().join("plan_golden_actual.txt"), &got);
+        }
+        assert_eq!(got, want, "plan_with 输出与记录不一致（实际输出已写到临时目录的 plan_golden_actual.txt）");
     }
 
     #[test]
