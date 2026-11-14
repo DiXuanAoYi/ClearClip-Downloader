@@ -14,6 +14,7 @@ const ccFiles = (() => {
   const BG_SCRIPTS = [
     'files-manifest.js',
     'shared.js',
+    'perms.js',
     'features.js',
     'clean-link.js',
     'progress.js',
@@ -45,6 +46,8 @@ const ccFiles = (() => {
     selbar: [UI, 'selbar-logic.js', 'content/wordcard.js', 'content/selbar.js'],
     write: [UI, 'writing-logic.js', 'content/writing.js'],
     unlock: ['content/unlock.js'],
+    bypass: ['bypass.js'],
+    stub: ['content/stub.js'],
     vsum: [UI, VDOCK, 'vsum-logic.js', 'trans-logic.js', 'learn-logic.js', 'content/wordcard.js', 'content/vsum-source.js', 'content/vsession.js', 'content/vsum-style.js', 'content/vsum-transcript.js', 'content/vsum-notes.js', 'content/vsum-comments.js', 'content/vsum-vocab.js', 'content/vsum-mindmap.js', 'content/vsum-more.js', 'content/vsum-dock.js', 'content/vsum.js'],
     subLayer: [UI, VDOCK, 'vsum-logic.js', 'sublayer-logic.js', 'learn-logic.js', 'content/vsum-source.js', 'content/vsession.js', 'content/wordcard.js', 'content/sublayer.js'],
     shot: [UI, 'trans-logic.js', 'content/shot.js'],
