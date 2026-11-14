@@ -1460,7 +1460,7 @@ mod tests {
         assert!(out_range(6000, 0, 5000, "audio").is_err());
         assert_eq!(out_range(9000, 0, 5000, "frame").unwrap().0, 4950, "一帧图片不超过最后一帧");
     }
-    use super::super::spec::{TextItem, TrackMeta, Transition};
+    use super::super::spec::{OutputSpec, TextItem, TextWord, TrackMeta, Transition};
     use super::*;
     use crate::media_tools::Encoders;
 
@@ -2225,5 +2225,122 @@ mod tests {
         assert!(g.find("rotate=").unwrap() > key, "{g}");
         o.chroma.despill = false;
         assert!(!graph(&o).contains("despill"));
+    }
+
+    // ---- 特征化：整条 `build` 的输出快照（拆分函数前先固定住行为；用 BUILD_GOLDEN=update 重新生成） ----
+
+    fn snapshot(name: &str, r: AppResult<EditPlan>, tmp: &Path) -> String {
+        let t = tmp.to_string_lossy().to_string();
+        let mut out = format!("=== {name}\n");
+        match r {
+            Err(e) => out.push_str(&format!("ERR {e}\n")),
+            Ok(pl) => {
+                out.push_str(&format!("ext={} out_ms={} size={}x{} fps={:.3}\n", pl.ext, pl.out_ms, pl.width, pl.height, pl.fps));
+                for a in &pl.args {
+                    out.push_str(&format!("arg {}\n", a.replace(&t, "<TMP>").replace(';', ";\n    ")));
+                }
+                for n in &pl.notes {
+                    out.push_str(&format!("note {n}\n"));
+                }
+                for w in &pl.warnings {
+                    out.push_str(&format!("warn {w}\n"));
+                }
+                out.push_str(&format!("masks={} mattes={} stabs={}\n", pl.masks.len(), pl.mattes.len(), pl.stabs.len()));
+                for st in &pl.stabs {
+                    out.push_str(&format!("stab {}\n", st.join(" ").replace(&t, "<TMP>")));
+                }
+            }
+        }
+        out
+    }
+
+    fn rich_project() -> Project {
+        let mut p = Project {
+            clips: vec![with_t(clip("/m/a.mp4", 1000, 7000), "fade", 800), clip("/m/b.mp4", 0, 4000), clip("/m/silent.mp4", 0, 2000)],
+            overlays: vec![
+                Overlay { kind: ClipKind::Image, ..ov("/o/p.png", 1, 1000, 0, 2000) },
+                ov("/o/v.mp4", 2, 500, 0, 3000),
+                ov("/o/late.mp4", 2, 99_000, 0, 1000),
+                Overlay { id: 9, adjust: true, track: 3, start_ms: 1000, out_ms: 3000, brightness: 0.2, ..Default::default() },
+            ],
+            texts: vec![TextItem { text: "标题".into(), start_ms: 500, end_ms: 3000, y: 0.8, ..Default::default() }],
+            ..Default::default()
+        };
+        p.audio = vec![
+            AudioTrack { path: "/m/bgm.mp3".into(), volume: 0.5, duck: true, ..Default::default() },
+            AudioTrack { path: "/m/loop.mp3".into(), looped: true, start_ms: 1000, ..Default::default() },
+            AudioTrack { path: "/m/late.mp3".into(), start_ms: 90_000, ..Default::default() },
+        ];
+        p
+    }
+
+    const ALL_SRC: [&str; 11] = ["/m/a.mp4", "/m/b.mp4", "/m/silent.mp4", "/m/bgm.mp3", "/m/loop.mp3", "/m/late.mp3", "/o/p.png", "/o/v.mp4", "/o/late.mp4", "/o/x", "/o/y"];
+
+    fn caps_plus(extra: &[&str]) -> Caps {
+        let mut c = caps();
+        c.filters.extend(extra.iter().map(|n| n.to_string()));
+        c
+    }
+
+    fn golden_cases() -> String {
+        let tmp = tmp();
+        let font = Some(Path::new("/fonts/msyh.ttc"));
+        let mut out = String::new();
+        let mut case = |name: &str, p: Project, caps: &Caps, mode: Mode, font: Option<&Path>| {
+            let p = p.checked().unwrap();
+            out.push_str(&snapshot(name, build(&p, &sources(&ALL_SRC), caps, &tmp, mode, font), &tmp));
+        };
+        let with_out = |f: &dyn Fn(&mut Project)| {
+            let mut p = rich_project();
+            f(&mut p);
+            p
+        };
+        case("rich-export", rich_project(), &caps(), Mode::Export, font);
+        case("rich-preview", rich_project(), &caps(), Mode::Preview, font);
+        case("rich-range-loudness", with_out(&|p| { p.out.from_ms = 1000; p.out.to_ms = 9000; p.out.loudness = -14.0; }), &caps_plus(&["loudnorm"]), Mode::Export, font);
+        case("rich-audio", with_out(&|p| p.out.kind = "audio".into()), &caps(), Mode::Export, font);
+        case("rich-gif", with_out(&|p| { p.out.kind = "gif".into(); p.out.to_ms = 5000; }), &caps_plus(&["palettegen", "paletteuse"]), Mode::Export, font);
+        case("rich-frame", with_out(&|p| { p.out.kind = "frame".into(); p.out.from_ms = 2000; }), &caps(), Mode::Export, font);
+        case("rich-hevc-mkv-high", with_out(&|p| { p.out.codec = "hevc".into(); p.out.format = "mkv".into(); p.out.quality = "high".into(); }), &caps(), Mode::Export, font);
+        let mut no_hevc = caps();
+        no_hevc.hevc = None;
+        case("rich-hevc-missing", with_out(&|p| { p.out.codec = "hevc".into(); p.out.quality = "small".into(); }), &no_hevc, Mode::Export, None);
+        let mut no_x264 = caps();
+        no_x264.encoders.h264 = None;
+        case("rich-no-x264-preview", rich_project(), &no_x264, Mode::Preview, font);
+        case("rich-gif-too-long", with_out(&|p| { p.out.kind = "gif".into(); p.clips = vec![clip("/m/a.mp4", 0, 59_000), clip("/m/b.mp4", 0, 59_000)]; }), &caps_plus(&["palettegen", "paletteuse"]), Mode::Export, font);
+        case("silent-audio-only", Project { clips: vec![clip("/m/silent.mp4", 0, 2000)], out: OutputSpec { kind: "audio".into(), ..Default::default() }, ..Default::default() }, &caps(), Mode::Export, None);
+        case("range-too-short", with_out(&|p| { p.out.from_ms = 1000; p.out.to_ms = 1050; }), &caps(), Mode::Export, font);
+        case("loudness-without-filter", with_out(&|p| p.out.loudness = -16.0), &caps(), Mode::Export, font);
+        let mut kara = rich_project();
+        kara.texts.push(TextItem {
+            text: "你好 世界".into(),
+            start_ms: 1000,
+            end_ms: 4000,
+            highlight: "#FFD400".into(),
+            words: vec![TextWord { t: "你好 ".into(), a: 0, b: 1000 }, TextWord { t: "世界".into(), a: 1000, b: 2500 }],
+            ..Default::default()
+        });
+        case("karaoke-with-ass", kara.clone(), &caps_plus(&["ass"]), Mode::Export, font);
+        case("karaoke-without-ass", kara, &caps(), Mode::Export, font);
+        let mut stab = rich_project();
+        stab.clips[0].stabilize = "normal".into();
+        case("stab-vidstab", stab.clone(), &caps_plus(&["vidstabdetect", "vidstabtransform"]), Mode::Export, font);
+        case("stab-deshake", stab.clone(), &caps_plus(&["deshake"]), Mode::Export, font);
+        case("stab-none", stab.clone(), &caps(), Mode::Export, font);
+        case("stab-preview", stab, &caps(), Mode::Preview, font);
+        let _ = std::fs::remove_dir_all(tmp);
+        out
+    }
+
+    #[test]
+    fn build_output_matches_the_recorded_snapshots() {
+        let got = golden_cases();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/edit/build_golden.txt");
+        if std::env::var("BUILD_GOLDEN").as_deref() == Ok("update") {
+            std::fs::write(path, &got).unwrap();
+        }
+        let want = include_str!("build_golden.txt");
+        assert_eq!(got, want, "build 的输出变了：确认是有意的改动后，用 BUILD_GOLDEN=update 重新生成");
     }
 }
