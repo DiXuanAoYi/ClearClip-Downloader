@@ -88,7 +88,7 @@ pub async fn decode_envelope(ffmpeg: &Path, path: &str, from_ms: u64, to_ms: u64
     ]);
     a.extend(["-vn".into(), "-ac".into(), "1".into(), "-ar".into(), ENV_RATE.to_string(), "-f".into(), "s16le".into(), "-".into()]);
     let (raw, _) = run_ffmpeg_capture(ffmpeg, &a, Duration::from_secs(900)).await.map_err(|e| AppError::msg(format!("读取声音失败：{e}")))?;
-    let pcm: Vec<i16> = raw.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+    let pcm: Vec<i16> = raw.as_chunks::<2>().0.iter().map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
     Ok(envelope(&pcm))
 }
 

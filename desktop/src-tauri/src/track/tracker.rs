@@ -370,7 +370,7 @@ pub fn follow(
             done_ms += (f.t_ms - prev_t).abs();
             prev_t = f.t_ms;
             n += 1;
-            if n % 8 == 0 {
+            if n.is_multiple_of(8) {
                 progress((done_ms / total).min(1.0));
             }
         }

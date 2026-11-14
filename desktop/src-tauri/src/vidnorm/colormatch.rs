@@ -132,7 +132,9 @@ struct Sample {
 
 /// 把 ffmpeg 输出的连续 yuv444p 小图和时间戳配成样本。
 fn parse_samples(raw: &[u8], times: &[f64]) -> Vec<Sample> {
-    raw.chunks_exact(FRAME_BYTES)
+    raw.as_chunks::<FRAME_BYTES>()
+        .0
+        .iter()
         .zip(times)
         .map(|(f, t)| {
             let (y, rest) = f.split_at(W * H);
@@ -433,12 +435,12 @@ pub const MAX_SKIPS: usize = 50;
 
 /// 排序、合并重叠或相接的段，去掉空的和反的；最多保留 `MAX_SKIPS` 段。
 pub fn normalize_skips(list: &[SkipSpan]) -> Vec<SkipSpan> {
-    let mut v: Vec<SkipSpan> = list.iter().copied().filter(|s| s.end_ms.map_or(true, |e| e > s.start_ms)).collect();
+    let mut v: Vec<SkipSpan> = list.iter().copied().filter(|s| s.end_ms.is_none_or(|e| e > s.start_ms)).collect();
     v.sort_by_key(|s| s.start_ms);
     let mut out: Vec<SkipSpan> = vec![];
     for s in v {
         match out.last_mut() {
-            Some(l) if l.end_ms.map_or(true, |e| s.start_ms <= e) => {
+            Some(l) if l.end_ms.is_none_or(|e| s.start_ms <= e) => {
                 l.end_ms = match (l.end_ms, s.end_ms) {
                     (Some(a), Some(b)) => Some(a.max(b)),
                     _ => None,
@@ -458,10 +460,7 @@ fn skip_windows(skip: &[SkipSpan]) -> Vec<(Option<i64>, Option<i64>)> {
 
 /// 排除的段里和 `[start, end)` 有交集的那些（滤镜窗口）。
 fn skip_windows_in(skip: &[SkipSpan], start: Option<i64>, end: Option<i64>) -> Vec<(Option<i64>, Option<i64>)> {
-    skip_windows(skip)
-        .into_iter()
-        .filter(|(a, b)| a.map_or(true, |a| end.map_or(true, |e| a < e)) && b.map_or(true, |b| start.map_or(true, |s| b > s)))
-        .collect()
+    skip_windows(skip).into_iter().filter(|(a, b)| a.is_none_or(|a| end.is_none_or(|e| a < e)) && b.is_none_or(|b| start.is_none_or(|s| b > s))).collect()
 }
 
 /// `[start, end)` 里有多少毫秒落在排除的段里。
@@ -550,7 +549,7 @@ impl ColorPlan {
     /// 预览用：视频从 `offset_ms` 处开始读，滤镜看到的时间都要减去它。预览只会看到开头 `PREVIEW_SPAN_MS` 毫秒，
     /// 和这段时间没有交集的校正（别的镜头）直接去掉，滤镜图不用跟着镜头数一起变长。
     pub fn shifted(&self, offset_ms: i64) -> ColorPlan {
-        let hits = |a: Option<i64>, b: Option<i64>| a.map_or(true, |a| a < PREVIEW_SPAN_MS) && b.map_or(true, |b| b > 0);
+        let hits = |a: Option<i64>, b: Option<i64>| a.is_none_or(|a| a < PREVIEW_SPAN_MS) && b.is_none_or(|b| b > 0);
         let shift = |v: Option<i64>| v.map(|v| v - offset_ms);
         ColorPlan {
             auto_shots: self.auto_shots,
@@ -852,7 +851,7 @@ async fn refine_cut(ffmpeg: &Path, file: &Path, from_ms: u64, to_ms: u64) -> Opt
             t = rest.split_whitespace().next().and_then(|v| v.parse::<f64>().ok());
         } else if let Some(v) = line.strip_prefix("lavfi.scene_score=") {
             if let (Some(t), Ok(score)) = (t, v.trim().parse::<f64>()) {
-                if best.map_or(true, |b| score > b.0) {
+                if best.is_none_or(|b| score > b.0) {
                     best = Some((score, t));
                 }
             }

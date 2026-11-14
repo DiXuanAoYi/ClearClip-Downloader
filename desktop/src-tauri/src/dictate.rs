@@ -79,7 +79,7 @@ pub fn pcm_from_b64(b64: &str) -> AppResult<Vec<f32>> {
     if bytes.len() % 2 != 0 {
         return Err(AppError::invalid("声音数据长度不对。"));
     }
-    Ok(bytes.chunks_exact(2).map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / 32768.0).collect())
+    Ok(bytes.as_chunks::<2>().0.iter().map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / 32768.0).collect())
 }
 
 /// 要不要现在做一次“临时识别”。

@@ -55,7 +55,7 @@ impl std::ops::DerefMut for Guard {
 
 fn conn(data_dir: &Path) -> AppResult<Guard> {
     let mut g = CONN.lock().unwrap_or_else(|e| e.into_inner());
-    if g.as_ref().map_or(true, |(p, _)| p != data_dir) {
+    if g.as_ref().is_none_or(|(p, _)| p != data_dir) {
         let c = Connection::open(data_dir.join("tm.db")).map_err(|e| AppError::msg(format!("打开翻译记忆失败：{e}")))?;
         c.execute_batch(
             "PRAGMA journal_mode=WAL;

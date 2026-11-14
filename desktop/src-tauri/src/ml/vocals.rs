@@ -313,7 +313,7 @@ async fn run_vocals(
     let (raw, _) = run_ffmpeg_capture(ff, &dec, Duration::from_secs(900)).await?;
     emit(5.0);
     let (mut l, mut r) = (Vec::with_capacity(raw.len() / 8), Vec::with_capacity(raw.len() / 8));
-    for fr in raw.chunks_exact(8) {
+    for fr in raw.as_chunks::<8>().0 {
         l.push(f32::from_le_bytes([fr[0], fr[1], fr[2], fr[3]]));
         r.push(f32::from_le_bytes([fr[4], fr[5], fr[6], fr[7]]));
     }
@@ -452,7 +452,7 @@ mod tests {
         let args: Vec<String> =
             ["-hide_banner", "-loglevel", "error", "-i", wav, "-ac", "1", "-ar", "44100", "-f", "f32le", "-"].iter().map(|s| s.to_string()).collect();
         let (raw, _) = run_ffmpeg_capture(ff, &args, Duration::from_secs(60)).await.unwrap();
-        let v: Vec<f64> = raw.chunks_exact(4).map(|b| f64::from(f32::from_le_bytes([b[0], b[1], b[2], b[3]]))).collect();
+        let v: Vec<f64> = raw.as_chunks::<4>().0.iter().map(|b| f64::from(f32::from_le_bytes([b[0], b[1], b[2], b[3]]))).collect();
         (v.iter().map(|x| x * x).sum::<f64>() / v.len().max(1) as f64).sqrt()
     }
 

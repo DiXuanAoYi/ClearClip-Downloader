@@ -280,7 +280,7 @@ impl CookieStore {
         let a = data.accounts.iter().find(|a| a.id == id)?;
         let names = login_cookie_names(&a.site)?;
         let now = crate::db::now();
-        Some(a.cookies.iter().any(|c| names.contains(&c.name.as_str()) && !c.value.is_empty() && c.expires.map_or(true, |t| t <= 0 || t > now)))
+        Some(a.cookies.iter().any(|c| names.contains(&c.name.as_str()) && !c.value.is_empty() && c.expires.is_none_or(|t| t <= 0 || t > now)))
     }
 
     pub fn rename(&self, id: &str, label: &str) -> AppResult<()> {

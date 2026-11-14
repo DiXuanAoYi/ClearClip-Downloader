@@ -865,7 +865,7 @@ mod tests {
         // 深色底上一行浅色字：字在 (40,30)–(160,46)，检测框被扩成 (20,10)–(180,66)
         let (w, h) = (220usize, 90usize);
         let mut img = vec![0u8; w * h * 4];
-        for p in img.chunks_exact_mut(4) {
+        for p in img.as_chunks_mut::<4>().0 {
             p.copy_from_slice(&[30, 30, 30, 255]);
         }
         for y in 30..46 {
@@ -1104,7 +1104,7 @@ mod tests {
     }
 
     fn solid(w: usize, h: usize, bgra: [u8; 4]) -> Vec<u8> {
-        std::iter::repeat(bgra).take(w * h).flatten().collect()
+        std::iter::repeat_n(bgra, w * h).flatten().collect()
     }
 
     #[test]
@@ -1155,7 +1155,7 @@ mod tests {
         let img = solid(10, 8, [7, 99, 200, 255]);
         let r = resize_bgra(&img, 10, 8, 5, 4);
         assert_eq!(r.len(), 5 * 4 * 4);
-        assert!(r.chunks_exact(4).all(|p| p == [7, 99, 200, 255]));
+        assert!(r.as_chunks::<4>().0.iter().all(|p| *p == [7, 99, 200, 255]));
         assert_eq!(resize_bgra(&img, 10, 8, 10, 8), img);
     }
 

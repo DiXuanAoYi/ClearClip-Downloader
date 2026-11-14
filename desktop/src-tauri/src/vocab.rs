@@ -69,7 +69,7 @@ pub fn unfamiliar(words: &[String], min_rank: usize) -> Vec<String> {
     if min_rank == 0 {
         return vec![];
     }
-    words.iter().filter(|w| w.chars().count() >= 3 && rank(w).map_or(true, |r| r > min_rank)).cloned().collect()
+    words.iter().filter(|w| w.chars().count() >= 3 && rank(w).is_none_or(|r| r > min_rank)).cloned().collect()
 }
 
 // ---------- 存储 ----------

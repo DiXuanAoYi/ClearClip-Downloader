@@ -5,7 +5,7 @@ description = "清影 ClearClip：抖音 / 快手短视频解析与下载桌面�
 authors = ["ClearClip contributors"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.96"
 
 [lib]
 name = "clearclip_lib"

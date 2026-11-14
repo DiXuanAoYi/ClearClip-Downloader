@@ -757,7 +757,7 @@ pub fn prioritize(app: &AppHandle, id: i64) {
             } else {
                 push_log(e, "已设为优先".into());
             }
-            let _ = st.db.update_job_asset(e.snap.id, &serde_json::to_string(&e.spec).unwrap_or_default());
+            crate::error::log_err("任务素材入库", st.db.update_job_asset(e.snap.id, &serde_json::to_string(&e.spec).unwrap_or_default()));
             persist(&st, e);
         }
         let running: Vec<(i64, i64, String)> =
@@ -788,7 +788,7 @@ pub fn move_task(app: &AppHandle, id: i64, to: &str) {
             if list[i].spec.priority != p {
                 list[i].spec.priority = p;
                 list[i].snap.priority = p;
-                let _ = st.db.update_job_asset(list[i].snap.id, &serde_json::to_string(&list[i].spec).unwrap_or_default());
+                crate::error::log_err("任务素材入库", st.db.update_job_asset(list[i].snap.id, &serde_json::to_string(&list[i].spec).unwrap_or_default()));
             }
         }
     }
@@ -818,7 +818,7 @@ pub fn schedule_task(app: &AppHandle, id: i64, start_at: Option<i64>) {
             e.snap.error = None;
             e.snap.error_kind = None;
         }
-        let _ = st.db.update_job_asset(e.snap.id, &serde_json::to_string(&e.spec).unwrap_or_default());
+        crate::error::log_err("任务素材入库", st.db.update_job_asset(e.snap.id, &serde_json::to_string(&e.spec).unwrap_or_default()));
         persist(&st, e);
     });
     schedule(app);
@@ -1460,7 +1460,7 @@ async fn download_input(
                     "已获取新地址，文件已变化，从头下载".to_string()
                 };
                 let spec_json = serde_json::to_string(&*spec).unwrap_or_default();
-                let _ = st.db.update_job_asset(id, &spec_json);
+                crate::error::log_err("任务素材入库", st.db.update_job_asset(id, &spec_json));
                 let (s2, m2) = (spec.clone(), meta.clone());
                 with_entry(st, id, |e| {
                     e.spec = s2;
@@ -1678,20 +1678,23 @@ fn finish(app: &AppHandle, st: &AppState, id: i64, outcome: Result<u64, DlError>
                         e.snap.finished_at = Some(db::now());
                         // 隐私模式：不进媒体库、不写 nfo / info.json，也不触发后续的自动规则
                         if !private {
-                            let _ = st.db.record_download(&NewDownload {
-                                platform: &e.snap.platform,
-                                media_id: &e.snap.media_id,
-                                asset_id: &e.snap.asset_id,
-                                title: &e.snap.title,
-                                author: &e.snap.author,
-                                cover: e.snap.cover.as_deref(),
-                                path: &e.snap.file_path,
-                                size: size as i64,
-                                kind: kind_str(e.snap.asset_kind),
-                                source: e.spec.origin.as_deref().unwrap_or("manual"),
-                                source_url: &e.media.source_url,
-                                platform_name: &e.media.platform_name,
-                            });
+                            crate::error::log_err(
+                                "下载记录入库",
+                                st.db.record_download(&NewDownload {
+                                    platform: &e.snap.platform,
+                                    media_id: &e.snap.media_id,
+                                    asset_id: &e.snap.asset_id,
+                                    title: &e.snap.title,
+                                    author: &e.snap.author,
+                                    cover: e.snap.cover.as_deref(),
+                                    path: &e.snap.file_path,
+                                    size: size as i64,
+                                    kind: kind_str(e.snap.asset_kind),
+                                    source: e.spec.origin.as_deref().unwrap_or("manual"),
+                                    source_url: &e.media.source_url,
+                                    platform_name: &e.media.platform_name,
+                                }),
+                            );
                         }
                         notify = Some((naming::display_name(&e.snap.file_path), e.snap.asset_label.clone()));
                         if !private && matches!(e.snap.asset_kind, AssetKind::Video | AssetKind::Audio) {
@@ -1866,7 +1869,7 @@ fn spawn_cover_cache(app: &AppHandle, media: Arc<MediaInfo>) {
         use sha2::Digest;
         let key = hex::encode(&sha2::Sha256::digest(format!("{}:{}", media.platform, media.id).as_bytes())[..12]);
         if let Some(existing) = ["jpg", "png"].iter().map(|e| dir.join(format!("{key}.{e}"))).find(|p| p.exists()) {
-            let _ = st.db.set_cover_path(&media.platform, &media.id, &existing.to_string_lossy());
+            crate::error::log_err("封面路径入库", st.db.set_cover_path(&media.platform, &media.id, &existing.to_string_lossy()));
             return;
         }
         let near = dir.join(&key);
@@ -1874,7 +1877,7 @@ fn spawn_cover_cache(app: &AppHandle, media: Arc<MediaInfo>) {
             let ext = tmp.extension().and_then(|e| e.to_str()).unwrap_or("jpg").to_string();
             let dest = dir.join(format!("{key}.{ext}"));
             if std::fs::rename(&tmp, &dest).is_ok() {
-                let _ = st.db.set_cover_path(&media.platform, &media.id, &dest.to_string_lossy());
+                crate::error::log_err("封面路径入库", st.db.set_cover_path(&media.platform, &media.id, &dest.to_string_lossy()));
             }
         }
     });

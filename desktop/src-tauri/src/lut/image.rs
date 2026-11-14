@@ -131,7 +131,7 @@ pub async fn load_cached(which: Which, ffmpeg: &Path, path: &Path, at_ms: u64, m
 impl Sample {
     pub fn rgba(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.width * self.height * 4);
-        for p in self.rgb.chunks_exact(3) {
+        for p in self.rgb.as_chunks::<3>().0 {
             out.extend_from_slice(&[p[0], p[1], p[2], 255]);
         }
         out
@@ -139,7 +139,7 @@ impl Sample {
 
     /// 取出像素（0–1），最多 `max` 个。
     pub fn pixels(&self, max: usize) -> Vec<Rgb> {
-        let all: Vec<Rgb> = self.rgb.chunks_exact(3).map(|p| [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0]).collect();
+        let all: Vec<Rgb> = self.rgb.as_chunks::<3>().0.iter().map(|p| [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0]).collect();
         super::matching::thin(&all, max)
     }
 
@@ -152,7 +152,7 @@ impl Sample {
             for (ti, chunk) in out.chunks_mut(rows_per * self.width * 4).enumerate() {
                 let src = &self.rgb[ti * rows_per * self.width * 3..];
                 s.spawn(move || {
-                    for (i, px) in chunk.chunks_exact_mut(4).enumerate() {
+                    for (i, px) in chunk.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                         let c = [src[i * 3] as f32 / 255.0, src[i * 3 + 1] as f32 / 255.0, src[i * 3 + 2] as f32 / 255.0];
                         let o = lut.sample(c);
                         for k in 0..3 {
@@ -337,7 +337,8 @@ mod tests {
 
         let matched = Prepared::new("match", vec![], Adjust::default(), Some(MatchInput { sample: &sp, reference: &rp, tone: 1.0, color: 1.0 }));
         let lut = matched.bake(33);
-        let out: Vec<Rgb> = sample.render_rgba(&lut).chunks_exact(4).map(|p| [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0]).collect();
+        let out: Vec<Rgb> =
+            sample.render_rgba(&lut).as_chunks::<4>().0.iter().map(|p| [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0]).collect();
         let (m_in, m_out, m_ref) = (mean(&sp), mean(&out), mean(&rp));
         assert!(dist(m_out, m_ref) < dist(m_in, m_ref) * 0.5, "平均颜色应该明显靠近参考图：原 {m_in:?} → {m_out:?}，参考 {m_ref:?}");
         assert!(m_out[0] > m_out[2], "参考图偏暖，结果也应偏暖：{m_out:?}");
@@ -392,7 +393,7 @@ mod tests {
         assert_eq!((theirs.width, theirs.height), (sample.width, sample.height));
         let ours = sample.render_rgba(&lut);
         let (mut sum, mut worst, mut n) = (0u64, 0i32, 0u64);
-        for (i, p) in theirs.rgb.chunks_exact(3).enumerate() {
+        for (i, p) in theirs.rgb.as_chunks::<3>().0.iter().enumerate() {
             for k in 0..3 {
                 let d = (p[k] as i32 - ours[i * 4 + k] as i32).abs();
                 sum += d as u64;

@@ -1394,7 +1394,10 @@ async fn register_output(app: &tauri::AppHandle, st: &Arc<crate::AppState>, job:
         })
         .is_ok();
     if ok {
-        let _ = st.db.set_item_tags_by_key("local", &media_id, "file", &["工具箱".to_string(), job.op.label().to_string()]);
+        crate::error::log_err(
+            "工具箱产物标签入库",
+            st.db.set_item_tags_by_key("local", &media_id, "file", &["工具箱".to_string(), job.op.label().to_string()]),
+        );
         let _ = app.emit("library://changed", ());
         crate::library_cmds::after_download(app.clone(), "local".into(), media_id, "file".into()).await;
     }

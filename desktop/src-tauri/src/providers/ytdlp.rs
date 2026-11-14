@@ -1191,11 +1191,7 @@ mod tests {
 
     #[cfg(unix)]
     fn fake_ytdlp(dir: &Path, script: &str) -> PathBuf {
-        use std::os::unix::fs::PermissionsExt;
-        let bin = dir.join("yt-dlp");
-        std::fs::write(&bin, format!("#!/bin/sh\n{script}\n")).unwrap();
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        bin
+        crate::test_util::write_fake_exe(dir, "yt-dlp", script)
     }
 
     #[cfg(unix)]

@@ -363,13 +363,16 @@ pub fn remember_applied(state: &AppState, app: &str, text: &str) {
         return;
     }
     let (app, t) = (app.trim().to_lowercase(), t.to_string());
-    let _ = state.update_settings(|s| {
-        if s.writing.memory {
-            s.writing.memory_samples.retain(|x| x.text != t);
-            s.writing.memory_samples.push(crate::settings::MemSample { app, text: t });
-            s.writing.sanitize();
-        }
-    });
+    crate::error::log_err(
+        "保存写作记忆样本",
+        state.update_settings(|s| {
+            if s.writing.memory {
+                s.writing.memory_samples.retain(|x| x.text != t);
+                s.writing.memory_samples.push(crate::settings::MemSample { app, text: t });
+                s.writing.sanitize();
+            }
+        }),
+    );
 }
 
 /// 写作记忆：开关和笔记。

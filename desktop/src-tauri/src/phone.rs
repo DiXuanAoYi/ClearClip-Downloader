@@ -347,11 +347,14 @@ pub fn ensure_paired(app: &AppHandle, device: &str, name: &str, peer: &SocketAdd
     if let Some(d) = settings.phone.devices.iter().find(|d| d.id == device) {
         let now = db::now();
         if now - d.last_seen >= SEEN_EVERY {
-            let _ = update_phone_settings(app, |p| {
-                if let Some(d) = p.devices.iter_mut().find(|d| d.id == device) {
-                    d.last_seen = now;
-                }
-            });
+            crate::error::log_err(
+                "保存手机设备最近在线时间",
+                update_phone_settings(app, |p| {
+                    if let Some(d) = p.devices.iter_mut().find(|d| d.id == device) {
+                        d.last_seen = now;
+                    }
+                }),
+            );
         }
         return true;
     }
@@ -433,7 +436,7 @@ pub fn respond_pair(app: &AppHandle, device_id: &str, accept: bool) -> AppResult
 pub async fn start(app: &AppHandle) -> AppResult<()> {
     stop(app);
     let state = st(app);
-    let port = state.settings().phone.port;
+    let port = state.read_settings(|s| s.phone.port);
     // 优先使用上次的端口，让快捷指令里的地址不变
     let listener = match TcpListener::bind(("0.0.0.0", port)).await {
         Ok(l) => l,
@@ -479,7 +482,7 @@ pub fn stop(app: &AppHandle) {
 
 /// 启动时按设置恢复服务，并恢复一天内还在等待配对的请求。
 pub fn restore(app: &AppHandle) {
-    if !st(app).settings().phone.enabled {
+    if !st(app).read_settings(|s| s.phone.enabled) {
         return;
     }
     restore_pending(app);
@@ -664,7 +667,7 @@ pub fn clean_device_id(id: &str) -> String {
 async fn handle(app: AppHandle, mut sock: TcpStream, peer: SocketAddr) {
     let state = st(&app);
     let Ok(Some((mut req, len, leftover))) = tokio::time::timeout(SMALL_TIMEOUT, read_head(&mut sock)).await else { return };
-    let token = state.settings().phone.token;
+    let token = state.read_settings(|s| s.phone.token.clone());
     let given = req.headers.get("x-token").or_else(|| req.query.get("t")).cloned().unwrap_or_default();
     let authorized = !token.is_empty() && ct_eq(&given, &token);
 
@@ -686,7 +689,7 @@ async fn handle(app: AppHandle, mut sock: TcpStream, peer: SocketAddr) {
         json(&mut sock, "403 Forbidden", serde_json::json!({"error": "访问令牌无效，请重新扫码"})).await;
         return;
     }
-    let max_body = body_limit(authorized, &req.path, crate::datareg::ext_limit_bytes(state.settings().ext_data_mb));
+    let max_body = body_limit(authorized, &req.path, crate::datareg::ext_limit_bytes(state.read_settings(|s| s.ext_data_mb)));
     let Ok(Some(body)) = tokio::time::timeout(SMALL_TIMEOUT, read_body(&mut sock, len.unwrap_or(0), leftover, max_body)).await else {
         json(&mut sock, "413 Payload Too Large", serde_json::json!({"error": "内容太大。较大的内容请作为文件发送。"})).await;
         return;
@@ -844,9 +847,9 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
         // 手机互聊：开关在电脑端“手机互传”里，关闭时这两个接口都不可用
         ("GET", "/api/chat") => {
             let device = clean_device(req.query.get("device").map(String::as_str).unwrap_or(""));
-            if !state.settings().phone.devices.iter().any(|d| d.id == device) {
+            if !state.read_settings(|s| s.phone.devices.iter().any(|d| d.id == device)) {
                 json(sock, "403 Forbidden", serde_json::json!({"error": "这台设备还没有配对"})).await;
-            } else if !state.settings().phone.peer_chat {
+            } else if !state.read_settings(|s| s.phone.peer_chat) {
                 json(sock, "200 OK", serde_json::json!({"enabled": false, "messages": []})).await;
             } else {
                 let since = req.query.get("since").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
@@ -905,7 +908,7 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
         // 图片缩略图：?key=（电脑发给手机的项目）或 ?id=（这台手机上传的文件），带令牌和设备编号
         ("GET", "/api/thumb") => {
             let device = clean_device(req.query.get("device").map(String::as_str).unwrap_or(""));
-            if !state.settings().phone.devices.iter().any(|d| d.id == device) {
+            if !state.read_settings(|s| s.phone.devices.iter().any(|d| d.id == device)) {
                 json(sock, "403 Forbidden", serde_json::json!({"error": "这台设备还没有配对"})).await;
                 return;
             }
@@ -936,7 +939,7 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                 return;
             }
             let device = clean_device(req.headers.get("x-device").map(String::as_str).unwrap_or(""));
-            if !state.settings().phone.devices.iter().any(|d| d.id == device) {
+            if !state.read_settings(|s| s.phone.devices.iter().any(|d| d.id == device)) {
                 json(sock, "403 Forbidden", serde_json::json!({"error": "请先从扩展发送一次链接，在电脑上确认配对后再同步 Cookie"})).await;
                 return;
             }
@@ -997,7 +1000,7 @@ async fn route(app: &AppHandle, state: &Arc<AppState>, sock: &mut TcpStream, pee
                 return;
             }
             let device = clean_device(req.headers.get("x-device").map(String::as_str).unwrap_or(""));
-            if !state.settings().phone.devices.iter().any(|d| d.id == device) {
+            if !state.read_settings(|s| s.phone.devices.iter().any(|d| d.id == device)) {
                 json(sock, "403 Forbidden", serde_json::json!({"error": "请先从扩展发送一次链接，在电脑上确认配对后再使用"})).await;
                 return;
             }
@@ -1029,7 +1032,7 @@ pub fn receive_trusted(app: &AppHandle, source: &str, device: &str, name: &str, 
 /// 收到一条链接：记录到收件箱；已配对的设备直接处理，新设备先请求配对。返回编号和状态。
 fn receive(app: &AppHandle, device: &str, name: &str, peer: &SocketAddr, text: String) -> Result<(i64, String), String> {
     let state = st(app);
-    let paired = state.settings().phone.devices.iter().any(|d| d.id == device);
+    let paired = state.read_settings(|s| s.phone.devices.iter().any(|d| d.id == device));
     if !paired {
         let pending = state.phone.pending.lock().unwrap_or_else(|e| e.into_inner());
         if pending.len() >= MAX_PENDING && !pending.iter().any(|p| p.device_id == device) {
@@ -1041,11 +1044,14 @@ fn receive(app: &AppHandle, device: &str, name: &str, peer: &SocketAddr, text: S
     let id = inbox::record(app, source, device, name, &text, initial).ok_or_else(|| "电脑上保存记录失败，请稍后再试".to_string())?;
     if paired {
         let now = db::now();
-        let _ = update_phone_settings(app, |p| {
-            if let Some(d) = p.devices.iter_mut().find(|d| d.id == device) {
-                d.last_seen = now;
-            }
-        });
+        crate::error::log_err(
+            "保存手机设备最近在线时间",
+            update_phone_settings(app, |p| {
+                if let Some(d) = p.devices.iter_mut().find(|d| d.id == device) {
+                    d.last_seen = now;
+                }
+            }),
+        );
         process(app.clone(), id);
     } else {
         let req = PairRequest { device_id: device.to_string(), name: name.to_string(), ip: peer.ip().to_string(), code: pair_code() };

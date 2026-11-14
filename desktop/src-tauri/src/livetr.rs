@@ -181,7 +181,7 @@ impl Gate {
             self.first_change = None;
             return Act::Idle;
         }
-        let stable = prev <= thr && self.changed_at.map_or(true, |t| now.saturating_sub(t) >= stable_ms);
+        let stable = prev <= thr && self.changed_at.is_none_or(|t| now.saturating_sub(t) >= stable_ms);
         let forced = self.first_change.is_some_and(|t| now.saturating_sub(t) >= force_ms);
         if stable || forced {
             self.first_change = None;
@@ -481,7 +481,7 @@ trait BestSim {
 
 impl BestSim for Option<(usize, f32)> {
     fn is_none_or_lt(&self, v: f32) -> bool {
-        self.map_or(true, |(_, s)| v > s)
+        self.is_none_or(|(_, s)| v > s)
     }
 }
 
@@ -583,7 +583,7 @@ impl Runner {
     fn finish(&mut self) {
         let mine = {
             let mut g = lock(&SESSION);
-            let mine = g.as_ref().map_or(true, |s| Arc::ptr_eq(&s.stop, &self.stop));
+            let mine = g.as_ref().is_none_or(|s| Arc::ptr_eq(&s.stop, &self.stop));
             if mine {
                 *g = None;
             }
@@ -935,7 +935,7 @@ fn vision_png(f: &Frame) -> AppResult<(Vec<u8>, usize, usize)> {
     let k = (1600.0 / f.w.max(f.h) as f32).min(1.0);
     let (nw, nh) = (((f.w as f32 * k).round() as usize).max(1), ((f.h as f32 * k).round() as usize).max(1));
     let small = if nw == f.w { f.bgra.clone() } else { livecore::resize_bgra(&f.bgra, f.w, f.h, nw, nh) };
-    let gray = small.chunks_exact(4).step_by(7).all(|p| p[0].abs_diff(p[1]) < 10 && p[1].abs_diff(p[2]) < 10);
+    let gray = small.as_chunks::<4>().0.iter().step_by(7).all(|p| p[0].abs_diff(p[1]) < 10 && p[1].abs_diff(p[2]) < 10);
     let mut out = Vec::new();
     {
         let mut enc = png::Encoder::new(&mut out, nw as u32, nh as u32);
@@ -943,7 +943,7 @@ fn vision_png(f: &Frame) -> AppResult<(Vec<u8>, usize, usize)> {
         enc.set_compression(png::Compression::Fast);
         let data: Vec<u8> = if gray {
             enc.set_color(png::ColorType::Grayscale);
-            small.chunks_exact(4).map(|p| p[1]).collect()
+            small.as_chunks::<4>().0.iter().map(|p| p[1]).collect()
         } else {
             enc.set_color(png::ColorType::Rgb);
             crate::scrcap::bgra_to_rgb(&small)
@@ -1556,7 +1556,7 @@ mod tests {
     fn blocks_follow_groups_and_scale() {
         let (w, h) = (100usize, 40usize);
         let mut bgra = vec![0u8; w * h * 4];
-        for px in bgra.chunks_exact_mut(4) {
+        for px in bgra.as_chunks_mut::<4>().0 {
             px.copy_from_slice(&[30, 30, 30, 255]);
         }
         let f = Frame { bgra, w, h };

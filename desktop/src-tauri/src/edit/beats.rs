@@ -195,7 +195,7 @@ pub async fn analyze(ffmpeg: &Path, path: &str, from_ms: u64, to_ms: u64) -> App
     ]);
     a.extend(["-vn".into(), "-ac".into(), "1".into(), "-ar".into(), RATE.to_string(), "-f".into(), "f32le".into(), "-".into()]);
     let (raw, _) = run_ffmpeg_capture(ffmpeg, &a, Duration::from_secs(600)).await.map_err(|e| AppError::msg(format!("读取声音失败：{e}")))?;
-    let pcm: Vec<f32> = raw.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+    let pcm: Vec<f32> = raw.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
     detect(&pcm, from_ms).ok_or_else(|| AppError::msg("没有找到节拍：声音太短、太安静，或者没有明显的节奏。"))
 }
 

@@ -93,7 +93,7 @@
 
 ## 开发
 
-需要 Node.js 20+、Rust 1.80+，以及 [Tauri 的系统依赖](https://tauri.app/start/prerequisites/)（Linux 需要 `libwebkit2gtk-4.1-dev` 等）。
+需要 Node.js 20+、Rust 1.96+，以及 [Tauri 的系统依赖](https://tauri.app/start/prerequisites/)（Linux 需要 `libwebkit2gtk-4.1-dev` 等）。
 
 ```bash
 cd desktop

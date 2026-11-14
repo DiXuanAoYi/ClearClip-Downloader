@@ -36,7 +36,7 @@ impl Region {
     }
 
     pub fn active_at(&self, t_ms: f64) -> bool {
-        self.start_ms.map_or(true, |s| t_ms >= s as f64) && self.end_ms.map_or(true, |e| t_ms < e as f64)
+        self.start_ms.is_none_or(|s| t_ms >= s as f64) && self.end_ms.is_none_or(|e| t_ms < e as f64)
     }
 }
 
@@ -464,7 +464,7 @@ mod tests {
         // 宽的成片比例从竖屏素材里取：宽取满
         assert_eq!(focus_window(1.0, (1080, 1920), Some(16.0 / 9.0)), (1080, 606));
         // 偶数；不会比画面还大
-        assert!(focus_window(3.3, (1001, 777), None).0 % 2 == 0);
+        assert!(focus_window(3.3, (1001, 777), None).0.is_multiple_of(2));
         assert_eq!(focus_window(1.0, (100, 100), Some(100.0)), (100, 2));
     }
 

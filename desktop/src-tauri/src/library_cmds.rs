@@ -195,7 +195,7 @@ async fn enrich_one(st: &AppState, ff: &Path, covers: &Path, item: &LibraryItem)
         None => {
             let d = library_media::duration_ms(ff, file).await;
             if let Some(d) = d {
-                let _ = st.db.set_duration(item.id, d);
+                crate::error::log_err("媒体库时长入库", st.db.set_duration(item.id, d));
             }
             d
         }
@@ -204,7 +204,7 @@ async fn enrich_one(st: &AppState, ff: &Path, covers: &Path, item: &LibraryItem)
         let out = covers.join(format!("lib-{}.jpg", item.id));
         let at = dur.map(|d| (d as u64) / 10).unwrap_or(1000);
         if library_media::extract_frame(ff, file, at, &out, 360).await.is_ok() {
-            let _ = st.db.set_cover_path(&item.platform, &item.media_id, &out.to_string_lossy());
+            crate::error::log_err("媒体库封面路径入库", st.db.set_cover_path(&item.platform, &item.media_id, &out.to_string_lossy()));
         }
     }
 }
@@ -314,14 +314,14 @@ pub async fn duplicates_similar(app: AppHandle, state: St<'_>) -> AppResult<Vec<
                     None => library_media::duration_ms(&ff, Path::new(&v.path)).await,
                 };
                 if let Some(d) = dur {
-                    let _ = state.db.set_duration(v.id, d);
+                    crate::error::log_err("媒体库时长入库", state.db.set_duration(v.id, d));
                 }
                 match dur {
                     Some(d) if d > 0 => library_media::compute_phash(&ff, Path::new(&v.path), d as u64).await,
                     _ => None,
                 }
                 .inspect(|h| {
-                    let _ = state.db.set_phash(v.id, h);
+                    crate::error::log_err("媒体库指纹入库", state.db.set_phash(v.id, h));
                 })
             }
         };
@@ -367,7 +367,7 @@ pub async fn library_preview(state: St<'_>, id: i64) -> AppResult<String> {
         Some(d) => d,
         None => library_media::duration_ms(&ff, Path::new(&item.path)).await.ok_or_else(|| AppError::msg("读不出视频时长。"))?,
     };
-    let _ = state.db.set_duration(id, dur);
+    crate::error::log_err("媒体库时长入库", state.db.set_duration(id, dur));
     library_media::contact_sheet(&ff, Path::new(&item.path), dur.max(1) as u64, &out, 4, 3).await?;
     Ok(out.to_string_lossy().into_owned())
 }
