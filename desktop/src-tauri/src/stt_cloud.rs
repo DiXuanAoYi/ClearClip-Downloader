@@ -3,15 +3,15 @@
 //!
 //! **核对状态（2026-11-14）**：
 //! - 讯飞部分已对照官方文档（www.xfyun.cn/doc）：「录音文件转写（标准版）」`/doc/asr/ifasr_new/API.html`、
-//!   「实时语音转写(标准版)」`/doc/asr/rtasr/API.html`。两页都没有标更新日期。仍**没有用真实密钥跑通过**。
-//! - 火山引擎部分**没有核对**：文档站 www.volcengine.com/docs 会 301 到 docs.volcengine.com，该域名当时读不到，
-//!   所以 URL、请求头、资源 ID、请求体、状态码都还是此前凭公开资料写的。
+//!   「实时语音转写(标准版)」`/doc/asr/rtasr/API.html`。两页都没有标更新日期。
+//! - 火山部分已对照官方文档（docs.volcengine.com/docs/6561/1631584 等，见 `volc_hint` 上方注释）。
+//! - 两家都**没有用真实密钥跑通过**。
 //! - 讯飞另有“录音文件转写大模型”（`/doc/spark/asr_llm/Ifasr_llm.html`，域名 office-api-ist-dx.iflyaisol.com）和
 //!   “实时语音转写大模型”（`/doc/spark/asr_llm/rtasr_llm.html`，wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1）：
 //!   鉴权是 appId + accessKeyId + accessKeySecret 的参数排序签名，和这里用的标准版（appid + secretkey/apiKey）不是一套，
 //!   本模块没有实现。
 //!
-//! 第一次用请先在“设置 → AI → 语音转文字”里点“测试连接”。
+//! 解析函数对返回格式做了尽量宽松的处理，并有单元测试；第一次用请先在“设置 → AI → 语音转文字”里点“测试连接”。
 
 use std::time::Duration;
 
@@ -29,6 +29,16 @@ pub const KEY_XFYUN: &str = "stt.xfyun_secret";
 pub const KEY_XFYUN_RT: &str = "stt.xfyun_rt_key";
 
 // ---------- 火山引擎（豆包语音） ----------
+
+// 依据（2026-11-14 读取，www.volcengine.com/docs/6561/* 301 到 docs.volcengine.com/docs/6561/*；内容经摘要，未逐字核对）：
+// - 1631584「录音文件极速版识别」：POST openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash，同步返回；
+//   X-Api-Resource-Id=volc.bigasr.auc_turbo；旧版控制台 X-Api-App-Key+X-Api-Access-Key，新版 X-Api-Key；X-Api-Sequence=-1；
+//   audio.url 与 audio.data(Base64) 二选一；WAV/MP3/OGG OPUS，≤2 小时、≤100 MB（二进制上传建议 ≈20 MB）。
+//   状态码在响应头 X-Api-Status-Code：20000000 成功、20000003 静音、45000001 参数、45000002 空音频、45000151 格式、55000031 繁忙、550xxxx 内部错误。
+// - 1354868「录音文件识别标准版」（submit/query，异步，资源 ID volc.bigasr.auc / volc.seedasr.auc，≤512 MB）、
+//   1354869「大模型流式语音识别」（wss://…/api/v3/sauc/bigmodel*，二进制帧，本项目未接）：只记录，未使用。
+// - 这些页面没有列出鉴权失败的错误码；`4500xxxx` 归为鉴权 / 未开通只是兜底推断。
+// - 未读到：控制台 FAQ / 快速入门（App ID、Access Token、API Key 获取步骤）、错误码查询页、任务提交 / 结果查询子页。
 
 /// 请求头：填了 AppId 用旧版控制台的 `X-Api-App-Key` + `X-Api-Access-Key`，没填用新版控制台的 `X-Api-Key`。
 pub fn volc_headers(app_id: &str, key: &str, request_id: &str) -> Vec<(&'static str, String)> {
@@ -129,11 +139,13 @@ const XFYUN_CONSOLE: &str = "讯飞开放平台控制台（我的应用 → 对�
 
 fn volc_hint(code: &str, msg: &str) -> String {
     let why = match code {
-        "45000001" | "45000002" => "请求参数有误或音频格式不支持（支持 WAV / MP3 / OGG OPUS）",
-        "45000151" => "音频格式不正确",
-        "55000031" | "45000292" => "服务器繁忙或请求过快，稍后重试",
+        "45000001" => "请求参数有误（缺必填字段或请求重复）",
+        "45000002" => "音频是空的：没有取到有效音频数据",
+        "45000151" => "音频格式不正确（支持 WAV / MP3 / OGG OPUS，≤2 小时、≤100 MB）",
+        "55000031" => "服务器繁忙，稍后重试",
+        c if c.starts_with("550") => "火山引擎服务端内部错误，稍后重试",
         c if c.starts_with("4500") => {
-            "鉴权失败、资源未开通或额度用完：请检查 AppId / 密钥，并在火山引擎控制台（语音技术 → 应用管理）确认已开通“大模型录音文件极速版识别”且有可用额度"
+            "多半是鉴权失败、资源未开通或额度用完：请检查 AppId / 密钥，并在火山引擎控制台确认已开通“大模型录音文件极速版识别”（资源 ID volc.bigasr.auc_turbo）且有可用额度"
         }
         _ => "",
     };
@@ -519,6 +531,16 @@ mod tests {
     fn volc_auth_code_mentions_resource_and_quota() {
         let h = volc_hint("45000010", "bad");
         assert!(h.contains("鉴权") && h.contains("额度") && h.contains("开通"));
+    }
+
+    #[test]
+    fn volc_documented_codes_have_specific_hints() {
+        assert!(volc_hint("45000002", "").contains("空"));
+        assert!(volc_hint("45000001", "").contains("参数"));
+        assert!(volc_hint("45000151", "").contains("OGG"));
+        assert!(volc_hint("55000031", "").contains("繁忙"));
+        assert!(volc_hint("55030001", "").contains("内部错误"));
+        assert!(!volc_hint("45000002", "").contains("鉴权"));
     }
 
     #[test]
