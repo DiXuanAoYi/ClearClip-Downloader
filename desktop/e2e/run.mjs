@@ -62,18 +62,32 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { stop(
 process.on('uncaughtException', (e) => { console.error(e); stop(); process.exit(1) })
 process.on('unhandledRejection', (e) => { console.error(e); stop(); process.exit(1) })
 
-// 就绪探测：每个测试页面都能取到（会触发 vite 的首次编译）才算就绪；vite 退出则立刻报错
+// 就绪探测：取到两个测试页面后，顺着它们的 import 把整张模块图都取一遍，让 vite 先把首屏要用的模块转换（并预构建依赖）好。
+// 只取页面会让第一个脚本在满载的机器上等 vite 现编译几十秒；vite 退出则立刻报错。
+async function get(url) {
+  for (let i = 0; ; i++) {
+    if (viteExited) throw new Error('vite 启动失败：\n' + viteLog)
+    try {
+      const r = await fetch(`http://127.0.0.1:${PORT}${url}`)
+      if (r.ok) return await r.text()
+      if (r.status === 404 && i > 3) return ''
+    } catch {}
+    if (i >= 240) throw new Error(`vite 没有在 60 秒内就绪（${url}）`)
+    await new Promise((r) => setTimeout(r, 250))
+  }
+}
 async function ready() {
-  // 连入口脚本一起取一遍，让 vite 先把首屏模块转换好
-  for (const page of ['ui-harness.html', 'merge-harness.html', 'src/ui-harness.ts', 'src/merge-harness.ts']) {
-    for (let i = 0; ; i++) {
-      if (viteExited) throw new Error('vite 启动失败：\n' + viteLog)
-      try {
-        const r = await fetch(`http://127.0.0.1:${PORT}/${page}`)
-        if (r.ok) break
-      } catch {}
-      if (i >= 240) throw new Error('vite 没有在 60 秒内就绪')
-      await new Promise((r) => setTimeout(r, 250))
+  const seen = new Set()
+  let queue = ['/ui-harness.html', '/merge-harness.html']
+  while (queue.length && seen.size < 3000) {
+    const batch = queue.splice(0, 16).filter((u) => !seen.has(u))
+    const bodies = await Promise.all(batch.map(async (u) => (seen.add(u), [u, await get(u)])))
+    for (const [u, body] of bodies) {
+      const re = /(?:from\s*|import\s*\(?\s*|src=)["'](\/[^"']+|\.{1,2}\/[^"']+)["']/g
+      for (let m; (m = re.exec(body)); ) {
+        const t = new URL(m[1], 'http://x' + u).pathname + new URL(m[1], 'http://x' + u).search
+        if (!seen.has(t) && !queue.includes(t) && !/\.(png|jpe?g|svg|gif|webm|ogg|woff2?)(\?|$)/.test(t)) queue.push(t)
+      }
     }
   }
 }
