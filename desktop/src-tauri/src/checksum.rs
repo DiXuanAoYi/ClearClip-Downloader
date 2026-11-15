@@ -110,27 +110,43 @@ pub fn from_url(url: &Url) -> Option<Checksum> {
     None
 }
 
-fn digest_file<D: Digest>(path: &Path) -> std::io::Result<String> {
+/// 流式读文件，分块交给 `update`。md5/sha1 与 sha2 目前在不同大版本的 `digest` 上，
+/// 所以不再用统一的 `Digest` 泛型，各算法各自调用自己 crate 的 trait。
+fn feed_file(path: &Path, mut update: impl FnMut(&[u8])) -> std::io::Result<()> {
     let mut f = std::fs::File::open(path)?;
-    let mut d = D::new();
     let mut buf = vec![0u8; 256 * 1024];
     loop {
         let n = f.read(&mut buf)?;
         if n == 0 {
-            break;
+            return Ok(());
         }
-        d.update(&buf[..n]);
+        update(&buf[..n]);
     }
-    Ok(hex::encode(d.finalize()))
 }
 
 /// 计算文件的哈希（小写十六进制）。
 pub fn compute(path: &Path, algo: Algo) -> std::io::Result<String> {
     match algo {
-        Algo::Md5 => digest_file::<Md5>(path),
-        Algo::Sha1 => digest_file::<Sha1>(path),
-        Algo::Sha256 => digest_file::<Sha256>(path),
-        Algo::Sha512 => digest_file::<Sha512>(path),
+        Algo::Md5 => {
+            let mut d = <Md5 as md5::Digest>::new();
+            feed_file(path, |b| md5::Digest::update(&mut d, b))?;
+            Ok(hex::encode(md5::Digest::finalize(d)))
+        }
+        Algo::Sha1 => {
+            let mut d = <Sha1 as sha1::Digest>::new();
+            feed_file(path, |b| sha1::Digest::update(&mut d, b))?;
+            Ok(hex::encode(sha1::Digest::finalize(d)))
+        }
+        Algo::Sha256 => {
+            let mut d = Sha256::new();
+            feed_file(path, |b| d.update(b))?;
+            Ok(hex::encode(d.finalize()))
+        }
+        Algo::Sha512 => {
+            let mut d = Sha512::new();
+            feed_file(path, |b| d.update(b))?;
+            Ok(hex::encode(d.finalize()))
+        }
     }
 }
 

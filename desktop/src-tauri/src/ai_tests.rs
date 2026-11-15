@@ -676,8 +676,8 @@ async fn chinese_machine_translation_providers_sign_and_parse_correctly() {
     assert_eq!(out, ["译:Hello", "译:It's fine"]);
     assert_eq!(calls.lock().unwrap().len(), 2);
     let long = "abcdefghijklmnopqrstuvwxyz";
-    assert_eq!(youdao_sign("A", long, "S", "T", "K"), hex::encode(sha2::Sha256::digest("Aabcdefghij26qrstuvwxyzSTK".as_bytes())));
-    assert_eq!(youdao_sign("A", "short", "S", "T", "K"), hex::encode(sha2::Sha256::digest("AshortSTK".as_bytes())));
+    assert_eq!(youdao_sign("A", long, "S", "T", "K"), hex::encode(<sha2::Sha256 as sha2::Digest>::digest("Aabcdefghij26qrstuvwxyzSTK".as_bytes())));
+    assert_eq!(youdao_sign("A", "short", "S", "T", "K"), hex::encode(<sha2::Sha256 as sha2::Digest>::digest("AshortSTK".as_bytes())));
     let yerr = mock(Arc::new(|_, _, _| (200, r#"{"errorCode":"202"}"#.into()))).await;
     assert!(translate(&client, Kind::Youdao, &yerr, Some("a:b"), "", "简体中文", &texts).await.unwrap_err().message.contains("签名"));
 
