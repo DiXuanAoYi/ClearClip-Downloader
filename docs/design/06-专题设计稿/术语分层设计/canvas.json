@@ -1,0 +1,18 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-08T09:00:00Z" },
+  "title": "清影术语分层设计",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 900, "title": "编辑术语库 · 分层术语（亮色）" },
+    "Dark.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 900, "title": "编辑术语库 · 分层术语（暗色）" },
+    "States.dc.html": { "x": 0, "y": 1020, "w": 1280, "h": 900, "title": "操作：搜索、右键菜单、拖动、删除" },
+    "Spec.dc.html": { "x": 1360, "y": 1020, "w": 1280, "h": 900, "title": "现状与规则" }
+  },
+  "order": ["Main.dc.html", "Dark.dc.html", "States.dc.html", "Spec.dc.html"],
+  "notes": {
+    "t1": { "x": 0, "y": -300, "text": "AI 术语库 · 术语分层", "kind": "title1", "maxW": 2640 }
+  },
+  "designSystems": []
+}

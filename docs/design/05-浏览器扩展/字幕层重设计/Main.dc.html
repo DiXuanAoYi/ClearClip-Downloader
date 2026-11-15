@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>视频字幕层</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{width:1320px;height:900px;box-sizing:border-box;padding:40px;display:flex;gap:40px;background:#f4f5f4;color:#1d2420;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.cap{font-size:13px;color:#5d6862;margin:0 0 10px}
+.h{font-size:20px;font-weight:700;margin:0 0 4px}
+.video{position:relative;width:800px;height:450px;border-radius:10px;overflow:hidden;background:linear-gradient(160deg,#2a3a44 0%,#16202a 60%,#0f1418 100%)}
+.sub{position:absolute;left:0;right:0;bottom:78px;text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center}
+.sub span{background:rgba(0,0,0,.62);color:#fff;padding:2px 10px;border-radius:4px;line-height:1.45}
+.bar{position:absolute;left:0;right:0;bottom:0;height:56px;padding:0 14px;display:flex;align-items:center;gap:12px;background:linear-gradient(transparent,rgba(0,0,0,.75))}
+.prog{position:absolute;left:14px;right:14px;bottom:50px;height:3px;background:rgba(255,255,255,.3);border-radius:2px}
+.prog i{display:block;width:34%;height:3px;background:#f08a3c;border-radius:2px}
+.ic{width:22px;height:22px;display:block;stroke:#fff;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sp{flex:1}
+.pill{display:flex;align-items:center;gap:7px;height:30px;padding:0 4px 0 9px;border-radius:15px;background:rgba(255,255,255,.16);color:#fff;font-size:13px;font-weight:600}
+.pill.off{color:#e7ecea}
+.mark{width:16px;height:16px;border-radius:5px;background:#f08a3c;color:#14181a;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.sw{width:30px;height:18px;border-radius:9px;background:rgba(255,255,255,.35);position:relative}
+.sw.on{background:#f08a3c}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.sw.on::after{left:14px}
+.vd{width:1px;height:16px;background:rgba(255,255,255,.3)}
+.dots{width:26px;height:26px;border-radius:13px;display:flex;align-items:center;justify-content:center}
+.dots.act{background:rgba(255,255,255,.22)}
+.dots svg{width:16px;height:16px;fill:#fff}
+.menu{width:288px;box-sizing:border-box;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);box-shadow:0 10px 30px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:12px;font-size:13px}
+.row{display:flex;flex-direction:column;gap:6px}
+.lab{display:flex;justify-content:space-between;color:var(--mute);font-size:12px}
+.lab b{color:var(--fg);font-weight:600}
+.sel{height:30px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:var(--bg)}
+.seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px}
+.seg span{flex:1;text-align:center;padding:5px 0;border-radius:6px;color:var(--mute)}
+.seg span.on{background:var(--acc);color:#fff;font-weight:600}
+.trk{position:relative;height:4px;border-radius:2px;background:var(--line);margin:6px 0}
+.trk i{position:absolute;left:0;top:0;height:4px;border-radius:2px;background:var(--acc)}
+.trk u{position:absolute;top:-5px;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--acc);box-sizing:border-box;margin-left:-7px}
+.sep{height:1px;background:var(--line)}
+.foot{display:flex;gap:8px}
+.btn{flex:1;height:30px;border-radius:8px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:var(--bg)}
+.btn.p{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.reset{color:var(--mute);text-align:center;font-size:12px}
+.light{--bg:#f4f5f4;--card:#fff;--line:#d9dedb;--fg:#1d2420;--mute:#5d6862;--acc:#b4561a}
+.dark{--bg:#14181a;--card:#22292c;--line:#2f383c;--fg:#e7ecea;--mute:#9aa6a2;--acc:#f08a3c}
+.dark .seg span.on,.dark .btn.p{color:#14181a}
+.col{display:flex;flex-direction:column;gap:18px}
+.card{background:#fff;border:1px solid #d9dedb;border-radius:12px;padding:16px;box-sizing:border-box}
+.vbg{background:#16202a;border-radius:8px;padding:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tag{font-size:12px;color:#5d6862}
+.pop{position:absolute;right:140px;bottom:62px}
+</style>
+</helmet>
+<div class="root">
+  <div class="col" style="width:800px">
+    <div>
+      <p class="h">视频字幕层 · 播放器内嵌</p>
+      <p class="cap" style="margin:0">胶囊嵌进播放器控制栏，常驻只露「图标 + 双语 + 开关 + ⋮」；细项全部收进 ⋮ 菜单</p>
+    </div>
+    <div class="video">
+      <div class="sub">
+        <span style="font-size:20px">Memory is stored as weights, not as a database.</span>
+        <span style="font-size:17px;color:#ffd9b8">记忆是以权重的形式存储的，而不是数据库。</span>
+      </div>
+      <div class="prog"><i></i></div>
+      <div class="bar">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg>
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6L8 10zM16 9a4 4 0 010 6"/></svg>
+        <span style="color:#fff;font-size:13px">3:12 / 9:40</span>
+        <div class="sp"></div>
+        <div class="pill">
+          <span class="mark">清</span><span>双语</span><span class="sw on"></span><span class="vd"></span>
+          <span class="dots act"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg></span>
+        </div>
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 11h3M13 11h4M7 14h6"/></svg>
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      </div>
+      <div class="pop">
+        <div class="menu dark">
+          <div class="row"><div class="lab"><span>翻译成</span></div><div class="sel"><span>简体中文</span><span style="color:var(--mute)">▾</span></div></div>
+          <div class="row"><div class="lab"><span>显示</span></div><div class="seg"><span class="on">双语</span><span>仅译文</span><span>仅原文</span></div></div>
+          <div class="sep"></div>
+          <div class="row"><div class="lab"><span>字号</span><b>120%</b></div><div class="trk"><i style="width:36%"></i><u style="left:36%"></u></div></div>
+          <div class="row"><div class="lab"><span>位置</span><b>距底 12%</b></div><div class="trk"><i style="width:20%"></i><u style="left:20%"></u></div></div>
+          <div class="row"><div class="lab"><span>字幕延迟</span><b>+0.0 秒</b></div><div class="trk"><i style="width:50%"></i><u style="left:50%"></u></div></div>
+          <div class="sep"></div>
+          <div class="foot"><div class="btn">导出 SRT</div><div class="btn p">用清影转写</div></div>
+          <div class="reset">恢复默认</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <p class="h" style="font-size:15px">交互说明</p>
+      <p class="cap" style="margin:0;line-height:1.7">· 点胶囊主体或开关：开/关双语字幕，状态记住（按站点）<br>· 点 ⋮：弹出设置菜单，点空白处或 Esc 关闭；拖滑块实时生效<br>· 字幕直接显示在视频上，可拖动换位置；找不到播放器控制栏时，胶囊退回视频左上角悬浮<br>· 没有字幕的视频：胶囊显示「转写」状态，一键调用清影转写</p>
+    </div>
+  </div>
+
+  <div class="col" style="width:400px">
+    <div class="card">
+      <p class="h" style="font-size:15px">胶囊状态</p>
+      <div class="vbg" style="margin-top:10px">
+        <div class="pill off"><span class="mark">清</span><span>双语</span><span class="sw"></span><span class="vd"></span><span class="dots"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg></span></div>
+        <span class="tag" style="color:#9aa6a2">关闭</span>
+      </div>
+      <div class="vbg" style="margin-top:8px">
+        <div class="pill"><span class="mark">清</span><span>双语</span><span class="sw on"></span><span class="vd"></span><span class="dots"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg></span></div>
+        <span class="tag" style="color:#9aa6a2">开启</span>
+      </div>
+      <div class="vbg" style="margin-top:8px">
+        <div class="pill"><span class="mark">清</span><span>转写中 42%</span><span class="vd"></span><span class="dots"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg></span></div>
+        <span class="tag" style="color:#9aa6a2">无字幕 · 转写</span>
+      </div>
+    </div>
+    <div class="card">
+      <p class="h" style="font-size:15px">菜单 · 浅色</p>
+      <div style="margin-top:10px;background:#e9ecea;border-radius:8px;padding:14px">
+        <div class="menu light" style="box-shadow:0 4px 14px rgba(0,0,0,.15);width:100%">
+          <div class="row"><div class="lab"><span>翻译成</span></div><div class="sel"><span>简体中文</span><span style="color:var(--mute)">▾</span></div></div>
+          <div class="row"><div class="lab"><span>显示</span></div><div class="seg"><span>双语</span><span class="on">仅译文</span><span>仅原文</span></div></div>
+          <div class="row"><div class="lab"><span>字号</span><b>100%</b></div><div class="trk"><i style="width:25%"></i><u style="left:25%"></u></div></div>
+          <div class="foot"><div class="btn">导出 SRT</div><div class="btn p">用清影转写</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1320,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

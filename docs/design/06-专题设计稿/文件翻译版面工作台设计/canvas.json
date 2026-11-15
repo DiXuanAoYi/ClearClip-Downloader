@@ -1,0 +1,19 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-10T07:30:00Z" },
+  "title": "文件翻译版面工作台设计",
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1600, "h": 900, "title": "1 版面工作台：选中一块（对比模式）" },
+    "Multi.dc.html": { "x": 1680, "y": 0, "w": 1600, "h": 900, "title": "2 多选与批量" },
+    "Picker.dc.html": { "x": 3360, "y": 0, "w": 1360, "h": 860, "title": "3 取色器（对照 weld_app 的取色对话框）" },
+    "Extract.dc.html": { "x": 4800, "y": 0, "w": 1360, "h": 780, "title": "4 从原页取色、提取一组颜色和渐变" },
+    "Harmony.dc.html": { "x": 6240, "y": 0, "w": 1360, "h": 780, "title": "5 配色色轮、对比度与色盲" },
+    "Fix.dc.html": { "x": 0, "y": 1020, "w": 1360, "h": 680, "title": "6 裁切、背景露边、换行、字号" },
+    "Collapse.dc.html": { "x": 1440, "y": 1020, "w": 1360, "h": 680, "title": "7 左栏收起：三种状态" },
+    "Notes.dc.html": { "x": 2880, "y": 1020, "w": 1360, "h": 1000, "title": "8 原因判断、weld_app 对照、需要你确认的事" },
+    "Page.dc.html": { "x": 4320, "y": 1020, "w": 520, "h": 640, "title": "页面示意组件" }
+  },
+  "order": ["Main.dc.html", "Multi.dc.html", "Picker.dc.html", "Extract.dc.html", "Harmony.dc.html", "Fix.dc.html", "Collapse.dc.html", "Notes.dc.html", "Page.dc.html"],
+  "notes": {},
+  "designSystems": []
+}

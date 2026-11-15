@@ -2,7 +2,7 @@
 
 把本仓库的短视频去水印解析做成的桌面程序：内置抖音、快手、小红书、B站、微博、Pixiv 解析，其他网站通过 yt-dlp（上千个视频网站）和网页嗅探支持。基于 Tauri 2 + Vue 3 + Rust，支持 Windows、macOS、Linux。
 
-规划与设计参考见 [`docs/desktop-plan.md`](../docs/desktop-plan.md)，全部页面的设计稿见 [`docs/design-reference.html`](../docs/design-reference.html)（源文件在 `docs/design/`）。
+规划与设计参考见 [`docs/desktop-plan.md`](../docs/desktop-plan.md)，全部页面的设计稿见 [`docs/design-reference.html`](../docs/design-reference.html)（源文件与分类索引见 [`docs/design/README.md`](../docs/design/README.md)）。
 
 | 解析 | 图集选择 |
 | --- | --- |

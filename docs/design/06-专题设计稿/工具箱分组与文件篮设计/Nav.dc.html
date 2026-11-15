@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>工具箱 返回与图标条</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 620px; box-sizing: border-box; padding: 28px 36px; display: flex; gap: 40px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<section style="flex: none; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 16px">主导航：收起与展开</h2>
+<div style="display: flex; gap: 28px">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="height: 470px; overflow: hidden; border: 1px solid #e4e7ec; border-radius: 8px"><dc-import name="Rail" dark="{{no}}" hint-size="56px,860px"></dc-import></div>
+<strong>默认：图标条</strong>
+<span style="color: #6b7385; width: 120px; line-height: 1.5">鼠标移上去显示名字</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="height: 470px; overflow: hidden; border: 1px solid #e4e7ec; border-radius: 8px"><dc-import name="Rail" open="{{yes}}" dark="{{no}}" hint-size="148px,860px"></dc-import></div>
+<strong>展开：图标 + 名字</strong>
+<span style="color: #6b7385; width: 148px; line-height: 1.5">点最上面的「≡」展开</span>
+</div>
+</div>
+</section>
+<section style="flex: none; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 16px">侧栏顶部：返回 + 搜索</h2>
+<div style="width: 232px; height: 150px; overflow: hidden; border: 1px solid #e4e7ec; border-radius: 8px"><dc-import name="Sidebar" active="压缩视频" dark="{{no}}" hint-size="232px,860px"></dc-import></div>
+<span style="color: #6b7385; width: 232px; line-height: 1.55">「‹」在搜索框左边，回到进工具箱之前的那一页。</span>
+</section>
+<section style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 16px">规则</h2>
+<sc-for list="{{rules}}" as="u" hint-placeholder-count="5">
+<div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 8px">
+<div style="width: 22px; height: 22px; flex: none; border-radius: 11px; background: #2457e6; color: #ffffff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{u.n}}</div>
+<div style="flex: 1; min-width: 0; line-height: 1.55">{{u.text}}</div>
+</div>
+</sc-for>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":620}}'>
+class Component extends DCLogic {
+renderVals() {
+const rules = [
+  { n: 1, text: '只在工具箱页面把主导航收成图标条；其他页面保持现在的样子。剪辑时间线本来就需要更宽，这样正好多出地方。' },
+  { n: 2, text: '点「≡」展开，再点收回；展开还是收起会被记住。' },
+  { n: 3, text: '「‹」回到进工具箱之前的页面：从媒体库右键送进来的回媒体库，从下载队列进来的回下载队列；直接点导航进来的回「解析」。' },
+  { n: 4, text: '返回时文件篮里的文件不会丢，再进工具箱还在。' },
+  { n: 5, text: '图标条需要给 11 个导航项配图标，图里是示意，实现时再统一风格。' },
+];
+return { rules, no: false, yes: true };
+}
+}
+</script>
+</body>
+</html>

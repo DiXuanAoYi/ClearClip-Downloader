@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>剪辑 多轨时间线</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1600px; height: 900px; box-sizing: border-box; display: flex; flex-direction: column; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: #ffffff; border-bottom: 1px solid #e4e7ec">
+<strong style="font-size: 15px">剪辑</strong><span style="color: #6b7385">旅行 vlog</span>
+<span style="font: 600 13px ui-monospace, Menlo, Consolas, monospace; background: #1d2433; color: #fff; padding: 2px 10px; border-radius: 6px">00:00:31:12</span>
+<span style="flex: 1"></span>
+<sc-for list="{{tools}}" as="t" hint-placeholder-count="6"><span style="{{t.style}}" title="{{t.tip}}">{{t.t}}</span></sc-for>
+<span style="width: 1px; height: 22px; background: #dde1e8; margin: 0 4px"></span>
+<span style="color: #6b7385">磁吸</span><span style="padding: 2px 10px; border-radius: 10px; background: #eaf0ff; color: #2457e6; font-weight: 600; border: 1px solid #c3d3fb">开</span>
+<span style="color: #6b7385">联动</span><span style="padding: 2px 10px; border-radius: 10px; background: #eaf0ff; color: #2457e6; font-weight: 600; border: 1px solid #c3d3fb">开</span>
+<span style="color: #6b7385">缩放</span><span style="width: 110px; height: 4px; background: #cfd5e0; border-radius: 2px; position: relative"><i style="position: absolute; left: 45%; top: -5px; width: 14px; height: 14px; border-radius: 7px; background: #2457e6; border: 2px solid #fff; box-sizing: border-box"></i></span>
+<span style="padding: 2px 8px; border: 1px solid #cfd5e0; border-radius: 6px; background: #fff">适应</span>
+</div>
+
+<div style="display: flex; flex: 1; min-height: 0">
+<div style="width: 340px; flex: none; background: #ffffff; border-right: 1px solid #e4e7ec; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+<strong>预览</strong>
+<div style="height: 190px; border-radius: 10px; background: linear-gradient(160deg, #2b4a73, #1d2433); position: relative; overflow: hidden">
+<div style="position: absolute; left: 12px; top: 12px; width: 96px; height: 60px; border-radius: 6px; background: #d9762b; border: 2px solid #fff; box-sizing: border-box; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700">V3 画中画</div>
+<div style="position: absolute; right: 12px; bottom: 34px; width: 120px; height: 72px; border-radius: 6px; background: #2f8a57; border: 2px solid #fff; box-sizing: border-box; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700">V2 画中画</div>
+<div style="position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; color: #fff; font-weight: 700; text-shadow: 0 1px 3px #000">第一天 · 东京</div>
+</div>
+<div style="display: flex; gap: 6px"><span style="padding: 2px 10px; border: 1px solid #cfd5e0; border-radius: 6px">▶ 播放</span><span style="padding: 2px 10px; border: 1px solid #cfd5e0; border-radius: 6px">循环入出点</span><span style="padding: 2px 10px; border: 1px solid #cfd5e0; border-radius: 6px">1/2 画质</span></div>
+<div style="color: #4a5367; line-height: 1.7; font-size: 12.5px">
+<b style="color: #1d2433">这一版新增</b>（标成 ★ 的是这次加进来的，对标达芬奇 / Premiere / 剪映）<br>
+工具栏：选择 / 刀片 / 修剪 / 滑移 / 标记；轨道类型；入点出点；音频波形与音量线；时间线小地图；联动（视频和它的音频一起动）。
+</div>
+</div>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-bottom: 1px solid #e4e7ec; background: #ffffff">
+<button style="height: 28px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #fff; font: inherit">＋ 视频轨</button>
+<button style="height: 28px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #fff; font: inherit">＋ 音频轨</button>
+<button style="height: 28px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #fff; font: inherit">＋ 文字轨</button>
+<span style="flex: 1"></span>
+<span style="color: #6b7385">轨道高度</span><span style="display: flex; border: 1px solid #cfd5e0; border-radius: 8px; overflow: hidden"><span style="padding: 3px 10px; background: #fff; border-right: 1px solid #cfd5e0">小</span><span style="padding: 3px 10px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">中</span><span style="padding: 3px 10px; background: #fff">大</span></span>
+<span style="color: #6b7385">显示</span><span style="padding: 3px 10px; border: 1px solid #cfd5e0; border-radius: 6px; background: #fff">波形 ✓　缩略图 ✓　音量线 ✓</span>
+</div>
+
+<div style="flex: 1; min-height: 0; overflow: hidden; background: #eef0f4; position: relative">
+<div style="display: flex; height: 32px; border-bottom: 1px solid #cfd5e0; background: #ffffff; position: relative">
+<div style="width: 176px; flex: none; border-right: 1px solid #cfd5e0; display: flex; align-items: center; padding: 0 10px; color: #6b7385; font-size: 11.5px">★ 标记 3 个　入 0:06 出 0:30</div>
+<div style="flex: 1; position: relative; color: #6b7385; font-size: 11px">
+<div style="position: absolute; left: 90px; width: 360px; top: 0; height: 6px; background: #2457e6; opacity: .75"></div>
+<sc-for list="{{ticks}}" as="t" hint-placeholder-count="9"><span style="{{t.style}}">{{t.label}}</span></sc-for>
+<sc-for list="{{marks}}" as="m" hint-placeholder-count="3"><span style="{{m.style}}" title="{{m.t}}">{{m.t}}</span></sc-for>
+</div>
+</div>
+
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+<div style="{{r.rowStyle}}">
+<div style="{{r.headStyle}}">
+<span style="{{r.chip}}">{{r.code}}</span>
+<span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600">{{r.name}}</span>
+<span style="{{r.badge}}">{{r.flag}}</span>
+<span style="{{r.mini}}">{{r.btns}}</span>
+</div>
+<div style="flex: 1; position: relative; border-bottom: 1px solid #dde1e8">
+<sc-for list="{{r.clips}}" as="c" hint-placeholder-count="3"><div style="{{c.style}}">{{c.label}}</div></sc-for>
+</div>
+</div>
+</sc-for>
+
+<div style="position: absolute; left: 176px; top: 0; bottom: 0; width: 2px; margin-left: 468px; background: #e5484d"></div>
+<div style="position: absolute; left: 176px; margin-left: 459px; top: 0; width: 20px; height: 14px; background: #e5484d; border-radius: 3px 3px 10px 10px"></div>
+
+<div style="position: absolute; left: 188px; margin-left: 0; top: 160px; width: 230px; background: #ffffff; border: 1px solid #cfd5e0; border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); overflow: hidden; z-index: 5">
+<div style="padding: 7px 12px; background: #eef0f4; font-weight: 700; font-size: 12px; color: #4a5367">V2 轨道类型（点轨道名弹出）</div>
+<sc-for list="{{kinds}}" as="k" hint-placeholder-count="4"><div style="{{k.style}}"><b>{{k.name}}</b><span style="color: #6b7385; font-size: 11.5px">{{k.desc}}</span></div></sc-for>
+</div>
+</div>
+
+<div style="height: 46px; flex: none; background: #ffffff; border-top: 1px solid #e4e7ec; display: flex; align-items: center; gap: 10px; padding: 0 14px">
+<span style="color: #6b7385; font-size: 12px; width: 150px; flex: none">★ 时间线小地图</span>
+<div style="flex: 1; height: 26px; position: relative; background: #eef0f4; border-radius: 4px; overflow: hidden">
+<sc-for list="{{minis}}" as="m" hint-placeholder-count="12"><i style="{{m}}"></i></sc-for>
+<div style="position: absolute; left: 12%; width: 38%; top: 0; bottom: 0; border: 2px solid #2457e6; border-radius: 4px; background: rgba(36, 87, 230, 0.1); box-sizing: border-box"></div>
+</div>
+<span style="color: #6b7385; font-size: 12px">共 9 条轨道 · 上限 视频 12 / 音频 12 / 文字 8</span>
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1600,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+const PX = 14;
+const W = (s) => Math.round(s * PX);
+const ticks = [];
+for (let s = 0; s <= 48; s += 6) ticks.push({ label: '0:' + String(s).padStart(2, '0'), style: 'position:absolute;top:12px;left:' + (W(s) + 4) + 'px' });
+const marks = [[6, '入'], [18, '转场点'], [30, '出']].map(([s, t]) => ({ t, style: 'position:absolute;top:14px;left:' + W(s) + 'px;font-size:10px;font-weight:700;color:#fff;background:#d9762b;padding:0 5px;border-radius:3px 3px 3px 0' }));
+const tb = 'padding:3px 10px;border:1px solid #cfd5e0;border-radius:6px;background:#fff;';
+const tools = [
+  { t: '选择 A', tip: '选择与移动', style: tb + 'background:#eaf0ff;color:#2457e6;font-weight:700;border-color:#c3d3fb' },
+  { t: '★ 刀片 B', tip: '点哪切哪', style: tb },
+  { t: '★ 修剪 T', tip: '波纹 / 滚动 / 滑移 / 滑动', style: tb },
+  { t: '★ 标记 M', tip: '在播放位置打标记，可带备注和颜色', style: tb },
+  { t: '★ 入点 I / 出点 O', tip: '只导出、只预览这一段', style: tb },
+];
+const kinds = [
+  { name: '画中画', desc: '缩成 40%，放在画面一角，可拖动位置（和原来“叠加”一致）', style: 'padding:8px 12px;border-bottom:1px solid #eef0f4;display:flex;flex-direction:column;gap:2px;background:#eaf0ff' },
+  { name: '全屏', desc: '铺满画面，盖住下面的轨道（B-roll、插入镜头）', style: 'padding:8px 12px;border-bottom:1px solid #eef0f4;display:flex;flex-direction:column;gap:2px' },
+  { name: '★ 调整图层', desc: '不放画面，只放效果：调色、滤镜、模糊，对下面所有轨道生效', style: 'padding:8px 12px;border-bottom:1px solid #eef0f4;display:flex;flex-direction:column;gap:2px' },
+  { name: '★ 绿幕', desc: '素材默认抠像（色键），叠在下面的轨道上', style: 'padding:8px 12px;display:flex;flex-direction:column;gap:2px' },
+];
+const C = {
+  V: { c: '#2457e6', bg: '#dbe6ff', bd: '#9db8f5' },
+  A: { c: '#2f8a57', bg: '#d9f1e3', bd: '#9fd3b4' },
+  T: { c: '#b4561a', bg: '#fbe6d4', bd: '#efc29d' },
+};
+const spec = [
+  ['T', 'T2', '字幕（译文）', '', '眼 锁', [[2, 12, '把译文放在这条'], [16, 14, '第二句'], [32, 12, '第三句']]],
+  ['T', 'T1', '标题', '', '眼 锁', [[0, 6, '第一天 · 东京'], [38, 8, '谢谢观看']]],
+  ['V', 'V3', '画中画', '画中画', '眼 锁', [[8, 9, '手机录屏'], [24, 7, '贴纸']]],
+  ['V', 'V2', '相机 B', '画中画', '眼 锁', [[4, 14, '相机 B 街景'], [20, 12, '相机 B 夜景']]],
+  ['V', 'V1', '主轨', '磁吸', '眼 锁', [[0, 10, '机场'], [10, 12, '地铁'], [22, 14, '浅草寺'], [36, 12, '夜景']]],
+  ['A', 'A1', '人声', '', 'M S 锁', [[1, 20, '旁白 01'], [24, 18, '旁白 02']]],
+  ['A', 'A2', '配乐', '自动避让', 'M S 锁', [[0, 44, '轻音乐 · city_pop.mp3']]],
+  ['A', 'A3', '音效', '静音', 'M S 锁', [[10, 2, '叮'], [22, 3, '快门'], [36, 2, '叮']]],
+  ['A', 'A4', '环境声', '', 'M S 锁', [[0, 48, '街道环境声']]],
+];
+const wave = 'repeating-linear-gradient(90deg, rgba(47,138,87,.55) 0 2px, transparent 2px 5px)';
+const rows = spec.map(([k, code, name, flag, btns, clips]) => {
+  const K = C[k];
+  const muted = flag === '静音';
+  const pip = flag === '画中画';
+  const grid = flag === '磁吸' || flag === '自动避让';
+  return {
+    code, name, flag, btns,
+    rowStyle: 'display:flex;height:' + (k === 'V' ? 54 : k === 'A' ? 44 : 38) + 'px',
+    headStyle: 'width:176px;flex:none;box-sizing:border-box;padding:0 8px;display:flex;align-items:center;gap:6px;background:#ffffff;border-right:1px solid #cfd5e0;border-bottom:1px solid #dde1e8',
+    chip: 'width:26px;height:20px;border-radius:5px;background:' + K.c + ';color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none',
+    badge: flag ? ('font-size:10.5px;padding:0 6px;border-radius:9px;white-space:nowrap;border:1px solid ' + (muted ? '#d9762b' : pip ? '#efc29d' : '#9db8f5') + ';color:' + (muted ? '#b4561a' : pip ? '#b4561a' : '#2457e6') + ';background:' + (muted ? '#fdf0e6' : pip ? '#fdf0e6' : '#eaf0ff')) : 'display:none',
+    mini: 'font-size:10px;color:#6b7385;white-space:nowrap',
+    clips: clips.map(([s, d, label]) => ({
+      label,
+      style: 'position:absolute;top:4px;bottom:4px;left:' + W(s) + 'px;width:' + (W(d) - 2) + 'px;box-sizing:border-box;border-radius:6px;padding:0 8px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;font-size:12px;font-weight:600;background:' + (k === 'A' ? wave + ',' : '') + K.bg + ';border:1px solid ' + K.bd + ';color:' + K.c + (muted ? ';opacity:.5' : ''),
+    })),
+  };
+});
+const minis = [];
+for (let i = 0; i < 40; i++) minis.push('position:absolute;left:' + (i * 2.4 + 0.5) + '%;width:2%;top:' + (3 + (i % 3) * 7) + 'px;height:5px;border-radius:2px;background:' + ['#9db8f5', '#9fd3b4', '#efc29d'][i % 3]);
+return { ticks, marks, tools, kinds, rows, minis };
+}
+}
+</script>
+</body>
+</html>

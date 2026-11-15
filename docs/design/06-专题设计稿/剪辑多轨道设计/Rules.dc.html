@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>剪辑 轨道规则</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1360px; height: 860px; box-sizing: border-box; padding: 24px 28px; display: flex; gap: 28px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<section style="flex: 1.2; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 16px">规则</h2>
+<sc-for list="{{rules}}" as="r" hint-placeholder-count="8">
+<div style="display: flex; gap: 12px; padding: 9px 12px; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 8px; line-height: 1.6">
+<div style="width: 96px; flex: none; font-weight: 600">{{r.k}}</div>
+<div style="flex: 1; min-width: 0; color: #4a5367">{{r.v}}</div>
+</div>
+</sc-for>
+</section>
+
+<section style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 16px">旧工程怎么变（自动，不丢东西）</h2>
+<div style="display: grid; grid-template-columns: 1fr 24px 1fr; gap: 6px 8px; align-items: center; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 8px; padding: 10px 12px">
+<sc-for list="{{migrate}}" as="m" hint-placeholder-count="5">
+<div style="color: #4a5367">{{m.a}}</div><div style="color: #6b7385; text-align: center">→</div><div style="font-weight: 600">{{m.b}}</div>
+</sc-for>
+</div>
+<div style="color: #6b7385; line-height: 1.6; font-size: 12px">工程文件里加一个 <span style="font-family: ui-monospace, Menlo, Consolas, monospace">tracks</span> 列表（编号、类型、名字、静音 / 锁定 / 隐藏、音量、高度），每个素材记自己所在轨道的编号。旧文件第一次打开时转换并保留一份 .bak；新文件旧版本打不开会提示“请升级”。</div>
+
+<h2 style="margin: 10px 0 0; font-size: 16px">已定下来的（你确认的）</h2>
+<ul style="margin: 0; padding-left: 18px; color: #4a5367; line-height: 1.75">
+<li>V1 主轨保留“磁吸”（首尾相接、转场照旧）；其他视频轨自由摆放，轨道头可以单独打开磁吸。</li>
+<li>点轨道名（V1、V2、V3…）弹出类型：<b style="color: #1d2433">画中画 / 全屏 / 调整图层 / 绿幕</b>。设成“画中画”的轨道，放进去的素材默认缩成 40%，和现在的“叠加”一致。</li>
+<li>轨道上限：视频 12、音频 12、文字 8。</li>
+<li>界面里不再单独叫“叠加”，叠加素材就是 V2 以上的视频轨。</li>
+</ul>
+<h2 style="margin: 10px 0 0; font-size: 16px">还想请你定的</h2>
+<ol style="margin: 0; padding-left: 18px; color: #4a5367; line-height: 1.75">
+<li><b style="color: #1d2433">功能分批</b>（图 4）：第一批和多轨一起做，第二批（混音器、自动避让、变速曲线、复合片段……）做完再做。可以吗？要提前或删掉哪几项，直接告诉我。</li>
+<li><b style="color: #1d2433">V1 的类型</b>：主轨固定是“全屏 + 磁吸”，不让改类型，免得主轨变成画中画。</li>
+<li><b style="color: #1d2433">旧工程的“叠加”素材</b>：转成 V2 起的“画中画”轨，保持原来的缩放和位置，不会变样。</li>
+</ol>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const rules = [
+  { k: '轨道类型', v: '视频（含图片、GIF）、音频、文字三类，每类可以有很多条；一条轨道只放自己类型的素材。' },
+  { k: '叠放顺序', v: '视频和文字：编号大的在上面，盖住下面的；时间线里也是从上到下排（和现在“叠加”轨的方向一致）。音频不分上下，同时播放、混在一起。' },
+  { k: '同轨不重叠', v: '一条轨道上的素材首尾不重叠；拖到有人的地方自动落到相邻的空轨道，没有就新建。主轨开着磁吸时是排队、插入。' },
+  { k: '转场', v: '只在同一条磁吸轨道内、相邻两个素材之间有；跨轨道的淡入淡出用素材自己的“淡入 / 淡出”。' },
+  { k: '静音 / 独奏', v: '静音：这条轨道不出声，预览和导出都生效。独奏：只听这一条，只影响预览，不影响导出。' },
+  { k: '隐藏', v: '视频和文字轨可以隐藏，预览和导出都不显示，素材还在，随时再打开。' },
+  { k: '锁定', v: '锁定的轨道不能拖动、裁剪、删除，也不会被框选、全选、“应用到全部”改到。' },
+  { k: '导出', v: '按轨道顺序生成滤镜图：每条视频轨先排成一条时间线，再从下到上叠；音频每条轨先按自己的音量混好，再总混。和现在的叠加、配乐做法一致，只是轨道变多。' },
+];
+const migrate = [
+  { a: '主轨上所有片段', b: 'V1 主轨（磁吸）' },
+  { a: '叠加轨 1、2、3…', b: 'V2、V3、V4…（轨号对应，素材位置不变）' },
+  { a: '文字（同一行或错开的多行）', b: 'T1、T2…（重叠的自动分到不同轨）' },
+  { a: '配乐 / 音频（重叠的错开成多行）', b: 'A1、A2…（重叠的自动分到不同轨）' },
+  { a: '每个素材的位置、特效、关键帧', b: '原样保留' },
+];
+return { rules, migrate };
+}
+}
+</script>
+</body>
+</html>

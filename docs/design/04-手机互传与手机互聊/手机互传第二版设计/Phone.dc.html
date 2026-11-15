@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>手机端互传</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.r.l{--bg:#f6f4f1;--bar:#fbfaf8;--sf:#ffffff;--ln:#e8e2d9;--fg:#2a2622;--mt:#766f66;--ac:#d9772f;--acfg:#ffffff;--ob:#fbe9d9;--obl:#f1d0b2;--obfg:#3a2a1c;--obmt:#85684c;--ok:#23703f;--okbg:#e3f3ea;--ch:#efe9e0;--er:#b53b30}
+.r.d{--bg:#141210;--bar:#1b1916;--sf:#24211e;--ln:#37322c;--fg:#f2eee8;--mt:#a89f94;--ac:#f08c3e;--acfg:#1b1207;--ob:#4a2f1b;--obl:#6a4426;--obfg:#fdf0e3;--obmt:#d7b793;--ok:#6fd49a;--okbg:#1d3a2a;--ch:#2e2a26;--er:#ff8a80}
+.r{width:390px;height:844px;display:flex;flex-direction:column;background:var(--bg);color:var(--fg);overflow:hidden}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mt{color:var(--mt)}
+.bub{align-self:flex-end;width:292px;box-sizing:border-box;border-radius:18px;border-top-right-radius:5px;padding:11px 12px;display:flex;flex-direction:column;gap:9px;background:var(--ob);border:1px solid var(--obl);color:var(--obfg)}
+.bub .s{font-size:12px;color:var(--obmt);display:flex;align-items:center;gap:6px}
+.okc{color:var(--ok);font-weight:700}
+.row{display:flex;gap:11px;align-items:center}
+.th{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.pic{border-radius:10px;overflow:hidden;flex:none}
+.bar{height:5px;border-radius:3px;background:#0002;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
+.card{background:var(--sf);border:1px solid var(--ln);border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.dl{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 16px;border-radius:12px;background:var(--ac);color:var(--acfg);font-size:14px;font-weight:800;flex:1}
+.gh{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 14px;border-radius:12px;border:1px solid var(--ln);background:var(--sf);color:var(--fg);font-size:14px;font-weight:600}
+.tab{flex:1;text-align:center;padding:10px 0 11px;font-size:14.5px;font-weight:600;color:var(--mt);border-bottom:2.5px solid transparent}
+.tab.on{color:var(--fg);font-weight:800;border-bottom-color:var(--ac)}
+</style>
+</helmet>
+<div class="r {{theme}}">
+
+<div style="padding:50px 18px 0;background:var(--bar);border-bottom:1px solid var(--ln);display:flex;flex-direction:column;gap:10px">
+<div class="row" style="gap:10px">
+<div style="width:34px;height:34px;border-radius:10px;background:var(--ac);color:var(--acfg);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px">清</div>
+<div style="flex-grow:1"><div style="font-size:16px;font-weight:800">隔空传送</div><div style="font-size:12px;color:var(--ok);display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--ok)"></span>已连接 · 办公室电脑</div></div>
+</div>
+<div style="display:flex">
+<div class="tab {{sendOn}}">发送到电脑</div>
+<div class="tab {{getOn}}">电脑发来的 <span style="display:inline-block;min-width:18px;line-height:18px;border-radius:9px;background:var(--er);color:#fff;font-size:11px;padding:0 5px;text-align:center;margin-left:2px">2</span></div>
+</div>
+</div>
+
+<sc-if value="{{isSend}}" hint-placeholder-val="{{true}}">
+<div style="flex-grow:1;min-height:0;overflow:hidden;padding:16px 16px 6px;display:flex;flex-direction:column;gap:12px;justify-content:flex-end">
+<div style="align-self:center;font-size:11.5px;color:var(--mt);background:var(--ch);border-radius:999px;padding:3px 12px">今天 14:02</div>
+
+<!-- 图片：缩略图 + 同一条里显示进度和结果 -->
+<div class="bub">
+<div style="display:flex;gap:6px">
+<div class="pic" style="width:86px;height:86px;background:linear-gradient(135deg,#88a9c9,#e9c79a 55%,#c9805f)"></div>
+<div class="pic" style="width:86px;height:86px;background:linear-gradient(160deg,#27425a,#5d8a93 60%,#d7b779)"></div>
+<div class="pic" style="width:86px;height:86px;background:linear-gradient(200deg,#c98a3b,#7a4a2a);position:relative"><span style="position:absolute;inset:0;background:#0007;color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800">+2</span></div>
+</div>
+<div class="s"><span class="okc">已保存到电脑</span> · 5 张照片 · 14.8 MB</div>
+</div>
+
+<!-- 视频：上传中 -->
+<div class="bub">
+<div class="row">
+<div class="pic" style="width:54px;height:54px;background:linear-gradient(135deg,#22384f,#4b7bb5);display:flex;align-items:center;justify-content:center;color:#fff"><svg class="ic" viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"></path></svg></div>
+<div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:700">IMG_4821.MOV</div><div class="s" style="margin-top:2px">186 MB · 62% · 18 MB/s</div></div>
+<div style="width:30px;height:30px;border-radius:50%;border:1px solid var(--obl);display:flex;align-items:center;justify-content:center;color:var(--ac)"><svg class="ic" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M6 6l12 12M18 6 6 18"></path></svg></div>
+</div>
+<div class="bar"><i style="width:62%"></i></div>
+</div>
+
+<!-- 文件：完成（和上传是同一条） -->
+<div class="bub">
+<div class="row">
+<div class="th" style="background:#d9772f"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg></div>
+<div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:700">合同扫描件.pdf</div><div class="s" style="margin-top:2px"><span class="okc">已保存到电脑</span> · 12.4 MB</div></div>
+</div>
+</div>
+
+<!-- 链接 -->
+<div class="bub">
+<div style="font-size:14px;line-height:1.45;word-break:break-all">https://www.bilibili.com/video/BV1xx411c7mD</div>
+<div class="s"><span class="okc">电脑已开始下载</span> · 【4K】东京夜景延时摄影</div>
+</div>
+
+<!-- 失败 -->
+<div class="bub">
+<div class="row">
+<div class="th" style="background:var(--er)"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16h.01"></path></svg></div>
+<div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:700">电影合集.mkv</div><div class="s" style="margin-top:2px;color:var(--er);font-weight:600">超过上限 2048 MB，可在电脑设置里调整</div></div>
+</div>
+</div>
+</div>
+
+<!-- 单行输入条 -->
+<div style="padding:10px 14px 28px;background:var(--bar);border-top:1px solid var(--ln);display:flex;align-items:center;gap:10px">
+<div style="width:44px;height:44px;border-radius:50%;background:var(--ch);color:var(--fg);display:flex;align-items:center;justify-content:center;flex:none"><svg class="ic" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M12 5v14M5 12h14"></path></svg></div>
+<div style="flex-grow:1;height:44px;border-radius:22px;background:var(--sf);border:1px solid var(--ln);display:flex;align-items:center;padding:0 16px;color:var(--mt);font-size:14.5px">粘贴链接，或写点文字…</div>
+<div style="width:44px;height:44px;border-radius:50%;background:var(--ac);color:var(--acfg);display:flex;align-items:center;justify-content:center;flex:none"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"></path></svg></div>
+</div>
+</sc-if>
+
+<sc-if value="{{isGet}}" hint-placeholder-val="{{false}}">
+<div style="flex-grow:1;min-height:0;overflow:hidden;padding:16px;display:flex;flex-direction:column;gap:12px">
+
+<div class="card" style="padding:8px 8px 12px">
+<div style="height:168px;border-radius:12px;background:linear-gradient(135deg,#88a9c9,#e9c79a 55%,#c9805f);position:relative">
+<span style="position:absolute;right:8px;bottom:8px;background:#000a;color:#fff;font-size:11.5px;padding:2px 8px;border-radius:999px">2.1 MB</span>
+</div>
+<div class="row" style="padding:0 4px"><div style="flex-grow:1;min-width:0"><div style="font-size:14.5px;font-weight:700">会议白板.jpg</div><div class="mt" style="font-size:12px">已下载 1 次 · 剩余 23 小时</div></div><span class="gh">保存到相册</span></div>
+</div>
+
+<div class="card">
+<div class="row">
+<div class="th" style="background:#d9772f"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg></div>
+<div style="flex-grow:1;min-width:0"><div style="font-size:14.5px;font-weight:700">合同扫描件.pdf</div><div class="mt" style="font-size:12px">12.4 MB · 剩余 23 小时</div></div>
+<span class="dl" style="flex:none"><svg class="ic" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M12 4v12M7 11l5 5 5-5"></path><path d="M4 20h16"></path></svg>下载</span>
+</div>
+</div>
+
+<div class="card">
+<div class="row">
+<div class="th" style="background:#4b7bb5"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m10 9 5 3-5 3z"></path></svg></div>
+<div style="flex-grow:1;min-width:0"><div style="font-size:14.5px;font-weight:700">东京夜景.mp4</div><div class="mt" style="font-size:12px">348 MB · <span style="color:var(--ac);font-weight:700">电脑正在准备 41%</span></div></div>
+</div>
+<div class="bar"><i style="width:41%"></i></div>
+<div style="display:flex;gap:8px"><span class="gh" style="flex:1">在线播放</span><span class="dl">下载</span></div>
+</div>
+
+<div class="card" style="background:var(--ob);border-color:var(--obl);color:var(--obfg)">
+<div style="font-size:11.5px;color:var(--obmt)">文字</div>
+<div style="font-size:15px;line-height:1.55">门禁密码 4096，到了前台报我的名字</div>
+<div style="display:flex"><span class="gh" style="height:34px;background:transparent;color:var(--obfg);border-color:var(--obl)">复制</span></div>
+</div>
+</div>
+<div style="padding:10px 18px 30px;text-align:center;font-size:12px;color:var(--mt);background:var(--bar);border-top:1px solid var(--ln)">只能下载电脑上“明确发给手机”的内容，无法浏览电脑里的其他文件</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"screen":{"editor":"enum","options":["send","get"],"default":"send"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+const get = this.props.screen === 'get';
+return { theme: this.props.dark ? 'd' : 'l', isSend: !get, isGet: get, sendOn: get ? '' : 'on', getOn: get ? 'on' : '' };
+}
+}
+</script>
+</body>
+</html>

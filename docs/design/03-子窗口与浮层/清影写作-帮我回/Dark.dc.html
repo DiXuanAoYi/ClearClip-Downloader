@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>帮我回 · 暗色</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+button{font:inherit;cursor:pointer}
+.chip{border:1px solid #2f383c;background:#22292c;color:#e7ecea;border-radius:999px;padding:0 12px;height:30px;font-size:12.5px;white-space:nowrap}
+.chip.on{border-color:#f08a3c;background:#3a2a1d;color:#f5a466;font-weight:600}
+.lbl{font-size:12px;color:#9aa6a2;font-weight:500}
+.tab{flex:1;border:0;background:none;color:#9aa6a2;border-radius:7px;height:30px;font-size:13px}
+.tab.on{background:#22292c;color:#f5a466;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.q{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:#e7ecea}
+.box{width:16px;height:16px;border-radius:4px;flex:none;margin-top:2px;display:grid;place-items:center}
+.ghost{border:1px solid #2f383c;background:#22292c;border-radius:8px;height:32px;padding:0 12px;font-size:13px;color:#e7ecea}
+</style>
+</helmet>
+<div style="width: 440px; height: 1000px; box-sizing: border-box; padding: 10px; background: #0f1416; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #e7ecea; font-size: 13px; line-height: 1.55">
+<div style="height: 100%; display: flex; flex-direction: column; background: #22292c; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.55), 0 0 0 1px #2f383c; overflow: hidden">
+
+  <header style="display: flex; align-items: center; gap: 8px; padding: 10px 10px 8px 14px; background: #1a2023; border-bottom: 1px solid #2f383c">
+    <span style="width: 24px; height: 24px; border-radius: 8px; background: #d9762b; color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 700">写</span>
+    <b style="font-size: 14px">清影写作</b>
+    <span style="font-size: 11px; line-height: 20px; padding: 0 9px; border-radius: 999px; background: #22292c; border: 1px solid #2f383c; color: #9aa6a2">飞书 · 张总</span>
+    <span style="flex: 1"></span>
+    <button aria-label="关闭" style="border: 0; background: none; width: 28px; height: 28px; border-radius: 8px; color: #9aa6a2; display: grid; place-items: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+  </header>
+
+  <div style="flex: 1; overflow: hidden; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 12px">
+    <nav style="display: flex; gap: 2px; background: #1a2023; border: 1px solid #2f383c; border-radius: 10px; padding: 3px">
+      <button class="tab on">帮我回</button>
+      <button class="tab">改写润色</button>
+      <button class="tab">检查</button>
+      <button class="tab">翻译 · 更多</button>
+    </nav>
+
+    <section style="border: 1px solid #2f383c; background: #1a2023; border-radius: 10px; padding: 9px 11px 8px; display: flex; flex-direction: column; gap: 6px">
+      <span class="lbl">收到的消息</span>
+      <p style="margin: 0">那个方案你明天之前能给我吗？</p>
+      <div style="border-top: 1px dashed #3a4448; padding-top: 7px; font-size: 12px; color: #b9c3bf">看懂了：<b style="color: #e7ecea; font-weight: 600">催你交方案</b>，但没说是哪一份、几点前、要多完整。</div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 7px">
+      <span class="lbl">对方是</span>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px">
+        <button class="chip on">上级</button><button class="chip">同事</button><button class="chip">客户</button><button class="chip">朋友</button><button class="chip">家人</button><button class="chip">不太熟</button>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 8px">
+      <span class="lbl">我的意思</span>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px">
+        <button class="chip">答应</button><button class="chip">有条件地答应</button><button class="chip">再想想</button><button class="chip on">问清楚</button><button class="chip">拒绝</button>
+      </div>
+      <div style="border: 1px solid #2f383c; border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 7px; background: #1a2023">
+        <span style="font-size: 12px; color: #9aa6a2">要问的（自动找出没说清的地方，可以勾掉或自己加）</span>
+        <label class="q"><span class="box" style="background: #f08a3c"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#1a2023" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></span><span>指的是哪一份方案</span></label>
+        <label class="q"><span class="box" style="background: #f08a3c"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#1a2023" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></span><span>“明天之前”最晚几点</span></label>
+        <label class="q"><span class="box" style="border: 1.5px solid #5d686c"></span><span style="color: #9aa6a2">要完整版，还是先看大纲</span></label>
+        <button style="align-self: flex-start; border: 0; background: none; color: #f5a466; font-size: 12px; padding: 0">＋ 自己加一个问题</button>
+      </div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 7px">
+      <span class="lbl">怎么说</span>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px">
+        <button class="chip on">正式得体</button><button class="chip">高情商</button><button class="chip">幽默接话</button><button class="chip">简短干脆</button><button class="chip">温暖真诚</button>
+      </div>
+    </section>
+
+    <button style="height: 40px; border: 0; border-radius: 10px; background: #f08a3c; color: #1a2023; font-size: 14px; font-weight: 600">生成回复</button>
+
+    <section style="border-top: 1px solid #2f383c; padding-top: 10px; display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; align-items: center; gap: 6px"><b>回复</b><span style="flex: 1"></span><span style="font-size: 12px; color: #9aa6a2">31 字</span></div>
+      <div style="border: 1px solid #2f383c; border-radius: 10px; padding: 10px 12px; background: #1a2023; font-size: 13.5px; line-height: 1.7">张总好，收到。想跟您确认一下：是指哪一份方案？明天几点前给您比较合适？</div>
+      <div style="display: flex; gap: 6px">
+        <button style="height: 32px; border: 0; border-radius: 8px; background: #f08a3c; color: #1a2023; padding: 0 16px; font-size: 13px; font-weight: 600">替换到飞书</button>
+        <button class="ghost">复制</button>
+        <button class="ghost">再来一版</button>
+      </div>
+    </section>
+
+    <section style="margin-top: auto; border: 1px solid #2f383c; border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; background: #1a2023">
+      <span class="lbl">选别的意思时，这里换成</span>
+      <div style="display: grid; grid-template-columns: 72px minmax(0, 1fr); row-gap: 4px; font-size: 12px">
+        <span style="color: #f5a466">答应</span><span style="color: #b9c3bf">还想说（可选）：时间、地点、要带的东西</span>
+        <span style="color: #f5a466">有条件</span><span style="color: #b9c3bf">条件（必填）：如“下周一调休一天”</span>
+        <span style="color: #f5a466">再想想</span><span style="color: #b9c3bf">什么时候答复：今晚 / 明天 / 这周内</span>
+        <span style="color: #f5a466">拒绝</span><span style="color: #b9c3bf">理由（可不说）· 给个替代：改天 / 推荐别人</span>
+      </div>
+    </section>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

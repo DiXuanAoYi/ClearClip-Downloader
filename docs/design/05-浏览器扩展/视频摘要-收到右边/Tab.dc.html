@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>小标签的状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+.strip{position:relative;width:270px;height:100px;border-radius:10px;overflow:hidden;background:#eceeed;border:1px solid #d9dedb}
+.dk .strip{background:#1b1f1d;border-color:#2a322d}
+.tab{position:absolute;right:0;top:8px;width:30px;height:84px;box-sizing:border-box;border:1px solid #cfd5d1;border-right:0;border-radius:12px 0 0 12px;background:#fbfaf8;box-shadow:-3px 2px 10px rgba(0,0,0,.14);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;opacity:.78}
+.dk .tab{background:#1d2420;border-color:#3a443e;box-shadow:-3px 2px 10px rgba(0,0,0,.5)}
+.tab.wide{width:136px;opacity:1;gap:4px;border-color:#d9762b}
+.logo{position:relative;width:20px;height:20px;border-radius:6px;background:#d9762b;color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center}
+.dk .logo{background:#f0a064;color:#1d2420}
+.chev{stroke:#5d6862}
+.dk .chev{stroke:#a9b3ad}
+.grip i{display:block;width:10px;height:2px;border-radius:1px;background:#b7beb9;margin-top:2px}
+.dk .grip i{background:#4a554e}
+.dot{position:absolute;right:-4px;top:-4px;width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 2px #fbfaf8}
+.dk .dot{box-shadow:0 0 0 2px #1d2420}
+.toast{position:absolute;right:38px;top:34px;display:flex;align-items:center;gap:7px;border-radius:999px;padding:0 12px;height:30px;font-size:12px;white-space:nowrap;background:#1d2420;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.dk .toast{background:#eef1ee;color:#1d2420}
+.row{display:grid;grid-template-columns:128px 270px 270px;gap:16px;align-items:center}
+.nm{font-size:13px;line-height:1.5}
+.nm small{display:block;color:#66716c;font-size:11.5px}
+</style>
+</helmet>
+<div style="width: 800px; height: 600px; box-sizing: border-box; padding: 24px; background: #f4f5f4; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420; display: flex; flex-direction: column; gap: 12px">
+  <div class="row" style="font-size: 12px; color: #66716c; font-weight: 600"><span></span><span>亮色</span><span>暗色</span></div>
+
+  <div class="row">
+    <div class="nm"><b>平时</b><small>半透明，不抢眼；下面两道线 = 可上下拖</small></div>
+    <div class="strip"><div class="tab"><span class="logo">摘</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg><span class="grip"><i></i><i></i></span></div></div>
+    <div class="dk"><div class="strip"><div class="tab"><span class="logo">摘</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg><span class="grip"><i></i><i></i></span></div></div></div>
+  </div>
+
+  <div class="row">
+    <div class="nm"><b>鼠标过去</b><small>变实、展开成带名字的条；停 0.35 秒进入预览</small></div>
+    <div class="strip"><div class="tab wide"><span style="display: flex; align-items: center; gap: 7px"><span class="logo">摘</span><b style="font-size: 13px">视频摘要</b><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></span><span style="font-size: 11px; color: #66716c">Alt+Shift+S</span><span class="grip" style="display: flex; gap: 4px; margin-top: 2px"><i style="width: 14px; margin: 0"></i></span></div></div>
+    <div class="dk"><div class="strip"><div class="tab wide"><span style="display: flex; align-items: center; gap: 7px"><span class="logo">摘</span><b style="font-size: 13px">视频摘要</b><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></span><span style="font-size: 11px; color: #a9b3ad">Alt+Shift+S</span><span class="grip" style="display: flex; gap: 4px; margin-top: 2px"><i style="width: 14px; margin: 0"></i></span></div></div></div>
+  </div>
+
+  <div class="row">
+    <div class="nm"><b>正在生成</b><small>图标外一圈转动；收起时也看得出在干活</small></div>
+    <div class="strip"><div class="tab" style="opacity: 1"><span class="logo"><svg width="30" height="30" viewBox="0 0 30 30" fill="none" style="position: absolute; left: -5px; top: -5px" aria-hidden="true"><circle cx="15" cy="15" r="13" stroke="#e8c9ad" stroke-width="2"></circle><path d="M15 2a13 13 0 0 1 13 13" stroke="#b4561a" stroke-width="2.4" stroke-linecap="round"></path></svg>摘</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg><span class="grip"><i></i><i></i></span></div></div>
+    <div class="dk"><div class="strip"><div class="tab" style="opacity: 1"><span class="logo"><svg width="30" height="30" viewBox="0 0 30 30" fill="none" style="position: absolute; left: -5px; top: -5px" aria-hidden="true"><circle cx="15" cy="15" r="13" stroke="#5a4330" stroke-width="2"></circle><path d="M15 2a13 13 0 0 1 13 13" stroke="#f0a064" stroke-width="2.4" stroke-linecap="round"></path></svg>摘</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg><span class="grip"><i></i><i></i></span></div></div></div>
+  </div>
+
+  <div class="row">
+    <div class="nm"><b>生成好了</b><small>绿点 + 旁边弹一句，6 秒后淡出；绿点留到你打开为止</small></div>
+    <div class="strip"><div class="toast"><i style="width: 8px; height: 8px; border-radius: 50%; background: #4fb87f"></i>摘要生成好了 · 点开看</div><div class="tab" style="opacity: 1"><span class="logo">摘<i class="dot" style="background: #2f8a57"></i></span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg><span class="grip"><i></i><i></i></span></div></div>
+    <div class="dk"><div class="strip"><div class="toast"><i style="width: 8px; height: 8px; border-radius: 50%; background: #2f8a57"></i>摘要生成好了 · 点开看</div><div class="tab" style="opacity: 1"><span class="logo">摘<i class="dot" style="background: #6cc08a"></i></span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg><span class="grip"><i></i><i></i></span></div></div></div>
+  </div>
+
+  <div class="row">
+    <div class="nm"><b>要处理</b><small>琥珀点：清影里没设置大模型，或读不到字幕</small></div>
+    <div class="strip"><div class="toast" style="background: #fff; color: #7a4a05; border: 1px solid #e3c27a"><i style="width: 8px; height: 8px; border-radius: 50%; background: #d99a1e"></i>清影里还没设置大模型</div><div class="tab" style="opacity: 1"><span class="logo">摘<i class="dot" style="background: #d99a1e"></i></span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg><span class="grip"><i></i><i></i></span></div></div>
+    <div class="dk"><div class="strip"><div class="toast" style="background: #2f2a1c; color: #f2d58e; border: 1px solid #6b5530"><i style="width: 8px; height: 8px; border-radius: 50%; background: #f0b73a"></i>清影里还没设置大模型</div><div class="tab" style="opacity: 1"><span class="logo">摘<i class="dot" style="background: #f0b73a"></i></span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="chev" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg><span class="grip"><i></i><i></i></span></div></div></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":800,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>工具箱 实时预览</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 860px; display: flex; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<dc-import name="Rail" dark="{{no}}" hint-size="56px,860px"></dc-import>
+<dc-import name="Sidebar" active="视频规整" dark="{{no}}" hint-size="232px,860px"></dc-import>
+<main style="flex: 1; min-width: 0; box-sizing: border-box; padding: 18px 28px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="margin: 0; font-size: 18px">视频规整</h2>
+<p style="margin: 0; color: #6b7385">统一多段素材的亮度、色调和清晰度。调整时右边的画面实时重画。</p>
+</div>
+
+<section aria-label="文件篮" style="background: #ffffff; border: 1px solid #e4e7ec; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px">
+<strong style="font-size: 14px">文件篮</strong>
+<span style="background: #3b6cf6; color: #ffffff; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px">1</span>
+<div style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #9db8ff; border-radius: 8px; background: #f3f6ff">
+<div style="width: 40px; height: 40px; flex: none; border-radius: 6px; background: #dfe4ee"></div>
+<div style="flex: 1; min-width: 0"><div style="font-weight: 600">婚礼现场 A 机位.mp4</div><div style="color: #6b7385; font-size: 12px">3840×2160 · 12:40 · 6.2 GB</div></div>
+</div>
+<button style="height: 28px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; color: #1d2433; font: inherit">添加文件…</button>
+</section>
+
+<div style="flex: 1; min-height: 0; display: flex; gap: 12px; align-items: stretch">
+<section aria-label="规整设置" style="width: 380px; flex: none; box-sizing: border-box; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="color: #6b7385">预设</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<span style="padding: 5px 12px; border-radius: 14px; border: 1px solid #cfd5e0">统一色调</span>
+<span style="padding: 5px 12px; border-radius: 14px; border: 1px solid #cfd5e0">手机夜景</span>
+<span style="padding: 5px 12px; border-radius: 14px; border: 1px solid #cfd5e0">灰片提亮</span>
+<span style="padding: 5px 12px; border-radius: 14px; border: 1px solid #9db8ff; background: #eaf0ff; color: #2457e6; font-weight: 600">自定义</span>
+</div>
+</div>
+<sc-for list="{{sliders}}" as="s" hint-placeholder-count="4">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; color: #6b7385"><span>{{s.name}}</span><strong style="color: #1d2433">{{s.value}}</strong></div>
+<div style="height: 6px; border-radius: 3px; background: #dfe4ee; position: relative"><div style="{{s.fill}}"></div><div style="{{s.thumb}}"></div></div>
+</div>
+</sc-for>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="color: #6b7385">降噪</div>
+<div style="display: flex; gap: 0; border: 1px solid #cfd5e0; border-radius: 6px; overflow: hidden; align-self: flex-start">
+<span style="padding: 6px 14px; background: #ffffff; border-right: 1px solid #cfd5e0">关</span>
+<span style="padding: 6px 14px; background: #ffffff; border-right: 1px solid #cfd5e0">轻</span>
+<span style="padding: 6px 14px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">中</span>
+<span style="padding: 6px 14px; background: #ffffff">强</span>
+</div>
+</div>
+<div style="color: #6b7385; font-size: 12px">防抖需要先分析整段，请到侧栏「防抖」里用“试一小段”预览。</div>
+<div style="margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #e4e7ec; padding-top: 14px">
+<span style="color: #6b7385">将生成 1 个新文件。</span>
+<button style="height: 36px; padding: 0 22px; border: 0; border-radius: 8px; background: #2457e6; color: #ffffff; font: inherit; font-weight: 600">规整 1 个文件</button>
+</div>
+</section>
+
+<section aria-label="预览" style="flex: 1; min-width: 0; box-sizing: border-box; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 8px">
+<strong style="font-size: 14px">预览</strong>
+<span style="font-size: 12px; font-weight: 600; color: #0b6b3a; background: #e6f6ec; border: 1px solid #b4e2c6; padding: 1px 8px; border-radius: 10px">实时</span>
+<span style="flex: 1"></span>
+<span style="color: #6b7385; font-size: 12px">对比方式</span>
+<div style="display: flex; gap: 0; border: 1px solid #cfd5e0; border-radius: 6px; overflow: hidden; font-size: 12px">
+<span style="padding: 4px 10px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">滑动</span>
+<span style="padding: 4px 10px; background: #ffffff; border-right: 1px solid #cfd5e0">并排</span>
+<span style="padding: 4px 10px; background: #ffffff">切换</span>
+</div>
+</div>
+<div style="position: relative; width: 100%; max-width: 480px; align-self: center; height: 270px; border-radius: 8px; overflow: hidden; background: #20252f">
+<div style="position: absolute; inset: 0">
+<div style="position: absolute; left: 0; right: 0; top: 0; height: 160px; background: #8fb7e8"></div>
+<div style="position: absolute; left: 0; right: 0; bottom: 0; height: 110px; background: #5f8f4f"></div>
+<div style="position: absolute; left: 340px; top: 36px; width: 48px; height: 48px; border-radius: 24px; background: #ffe08a"></div>
+<div style="position: absolute; left: 120px; top: 120px; width: 90px; height: 90px; background: #c9d4e6"></div>
+</div>
+<div style="position: absolute; left: 0; top: 0; bottom: 0; width: 50%; overflow: hidden">
+<div style="position: absolute; left: 0; top: 0; width: 480px; height: 270px">
+<div style="position: absolute; left: 0; right: 0; top: 0; height: 160px; background: #7d8794"></div>
+<div style="position: absolute; left: 0; right: 0; bottom: 0; height: 110px; background: #4f5a4a"></div>
+<div style="position: absolute; left: 340px; top: 36px; width: 48px; height: 48px; border-radius: 24px; background: #cdd2d9"></div>
+<div style="position: absolute; left: 120px; top: 120px; width: 90px; height: 90px; background: #98a1ae"></div>
+</div>
+</div>
+<div style="position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ffffff"></div>
+<div style="position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 15px; background: #ffffff; color: #1d2433; font-size: 13px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35)">‹›</div>
+<div style="position: absolute; left: 10px; top: 10px; font-size: 12px; font-weight: 600; color: #ffffff; background: rgba(15, 19, 32, 0.72); padding: 2px 8px; border-radius: 4px">原片</div>
+<div style="position: absolute; right: 10px; top: 10px; font-size: 12px; font-weight: 600; color: #ffffff; background: rgba(15, 19, 32, 0.72); padding: 2px 8px; border-radius: 4px">调整后</div>
+</div>
+<div style="width: 100%; max-width: 480px; align-self: center; display: flex; align-items: center; gap: 10px">
+<span style="color: #6b7385">0:42</span>
+<div style="flex: 1; height: 6px; border-radius: 3px; background: #dfe4ee; position: relative"><div style="width: 6%; height: 6px; border-radius: 3px; background: #3b6cf6"></div><div style="position: absolute; left: 6%; top: -5px; margin-left: -8px; width: 16px; height: 16px; border-radius: 8px; background: #ffffff; border: 2px solid #3b6cf6; box-sizing: border-box"></div></div>
+<span style="color: #6b7385">12:40</span>
+</div>
+<div style="width: 100%; max-width: 480px; align-self: center; color: #6b7385; font-size: 12px; line-height: 1.6">拖动时间条换一帧；改任何参数，画面立刻重画。预览只处理当前这一帧，不生成文件。</div>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const mk = (name, value, pos) => ({
+  name,
+  value,
+  fill: 'width:' + pos + '%;height:6px;border-radius:3px;background:#3b6cf6',
+  thumb: 'position:absolute;left:' + pos + '%;top:-5px;margin-left:-8px;width:16px;height:16px;border-radius:8px;background:#ffffff;border:2px solid #3b6cf6;box-sizing:border-box',
+});
+const sliders = [mk('亮度', '+8', 54), mk('对比度', '+12', 56), mk('饱和度', '+6', 53), mk('色温', '−4', 48)];
+return { sliders, no: false };
+}
+}
+</script>
+</body>
+</html>

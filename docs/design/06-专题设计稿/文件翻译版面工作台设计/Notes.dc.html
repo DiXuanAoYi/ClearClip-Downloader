@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 原因判断与取色对照</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1360px; height: 1000px; box-sizing: border-box; padding: 24px 28px; display: flex; gap: 28px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<section style="flex: 1.35; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 16px">每个问题我看到的原因，和怎么改</h2>
+<div style="display: flex; gap: 10px; padding: 0 12px; color: #6b7385; font-size: 12px"><div style="width: 130px; flex: none">你说的</div><div style="flex: 1">原因（读代码和截图得出的）</div><div style="flex: 1">改法</div><div style="width: 44px; flex: none">把握</div></div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="7">
+<div style="display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 8px; line-height: 1.55">
+<div style="width: 130px; flex: none; font-weight: 600">{{r.what}}</div>
+<div style="flex: 1; min-width: 0; color: #4a5367">{{r.why}}</div>
+<div style="flex: 1; min-width: 0">{{r.fix}}</div>
+<div style="width: 44px; flex: none"><span style="{{r.pill}}">{{r.sure}}</span></div>
+</div>
+</sc-for>
+</section>
+
+<section style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 16px">weld_app 的取色器 → 这里怎么放</h2>
+<div style="display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #e4e7ec; border-radius: 8px; overflow: hidden; font-size: 12.5px; line-height: 1.5">
+<div style="padding: 6px 10px; background: #eef0f4; font-weight: 600; border-bottom: 1px solid #e4e7ec">weld_app 有的</div><div style="padding: 6px 10px; background: #eef0f4; font-weight: 600; border-bottom: 1px solid #e4e7ec">这里</div>
+<sc-for list="{{weld}}" as="w" hint-placeholder-count="12">
+<div style="padding: 6px 10px; background: #ffffff; border-bottom: 1px solid #e4e7ec">{{w.a}}</div><div style="padding: 6px 10px; background: #ffffff; border-bottom: 1px solid #e4e7ec">{{w.b}}</div>
+</sc-for>
+</div>
+<h2 style="margin: 4px 0 0; font-size: 16px">借鉴 Adobe Color 的构思</h2>
+<ul style="margin: 0; padding-left: 18px; color: #4a5367; line-height: 1.7">
+<li><b style="color: #1d2433">Color wheel</b>：色轮上一组点联动，选配色规则，一次得到 5 个颜色（图 5）</li>
+<li><b style="color: #1d2433">Extract from image</b>：从原页取一组颜色，带“多彩 / 明亮 / 柔和 / 深色 / 暗”风格，圆点可拖（图 4）</li>
+<li><b style="color: #1d2433">Extract gradient</b>：沿原页上一条线取渐变，给“渐变背景”用（图 4）</li>
+<li><b style="color: #1d2433">Accessibility / Contrast analyzer</b>：对比度大数字、AA / AAA 逐项、一键“保持色相调明度”、色盲下重新算对比度（图 5）</li>
+</ul>
+<h2 style="margin: 4px 0 0; font-size: 16px">需要你确认的</h2>
+<ol style="margin: 0; padding-left: 18px; color: #4a5367; line-height: 1.7">
+<li><b style="color: #1d2433">color_utils.py</b>：color_dialog.py 引用了 widgets/color_utils（颜色名称表、色盲矩阵、安全色域钳制）但没在附件里。能给我的话，名称和模拟值会和 weld_app 完全一致；不给，我用标准公式重写，只有“名称”一栏会有差异。</li>
+<li><b style="color: #1d2433">页面颜色“反了”没能在真机验证</b>：想用真实 PDFium 渲染纯红页，这个环境不允许运行下载来的程序。动手时我先写这个检查放进测试；你也可以用一份纯色块 PDF 对一下。</li>
+<li><b style="color: #1d2433">几个默认值</b>：字号保持原字号、框往下长，碰到别的块才缩，最低 85%；背景外扩 = 字号 × 18%，至少 2 磅；换行“句号处保留换行”；进版面工作时左栏自动收成图标条；整份文件的颜色替换先显示改多少处再确认。</li>
+<li><b style="color: #1d2433">安全色域（BT.709）</b>：做 PDF 用不到，我放进“高级”默认关。要不要保留？</li>
+</ol>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+const pill = (fg, bg, bd) => 'font-size:12px;font-weight:600;padding:1px 7px;border-radius:10px;color:' + fg + ';background:' + bg + ';border:1px solid ' + bd;
+const hi = pill('#0b6b3a', '#e6f6ec', '#b4e2c6');
+const mid = pill('#a14a12', '#fdf0e6', '#f3cfb2');
+const rows = [
+  { what: '版面里译文下半被裁切（导出正常）', why: '版面里每块的高度等于原文字的框高；中文行高比英文大，加上超出部分被隐藏，下沿就被切掉。导出是把字画进 PDF，不受这个限制。', fix: '框上下左右外扩，单行垂直居中，放不下往下长；预览和导出共用同一套尺寸。', sure: '高', pill: hi },
+  { what: '背景太小，露出原文边缘', why: '遮盖刚好是文字框大小，原文抗锯齿的边缘比框稍大一点。', fix: '遮盖外扩字号 18%（至少 2 磅），可在检查器里调。', sure: '高', pill: hi },
+  { what: '文字颜色、背景颜色“识别错”', why: '截图里原页色块是蓝色，但页面上标注的色值 #f4a900 是黄色，译文字色（橙）和标注一致。红蓝两个通道正好对调，更像是页面图的像素顺序反了，不是文字色识别错；背景取样也基于这张图，所以跟着不对。另外背景取的是框外一圈像素的中位数，旁边有色块或描边会取错。', fix: '修正像素顺序并加测试；背景改成取框里“非文字像素”的主色，渐变底按两侧插值；每块都可手动改。', sure: '中', pill: mid },
+  { what: '行尾是 . 的行不要连在一起', why: '分块时把相邻的行用空格并成一段，只有“行尾是句号且这一行偏短”才停。', fix: '行尾是句号就保留换行，按行翻译并要求行数一致；缩写和编号不算。', sure: '高', pill: hi },
+  { what: '文字大小要一样', why: '放不下就逐次缩小字号，没有别的办法。', fix: '默认保持原字号，框往下 / 往右长；碰到别的块才缩，最低 85%，并标出“原 → 现”。', sure: '高', pill: hi },
+  { what: '颜色、字号、背景都能改；要有取色和调色工具，单选多选', why: '现在只能改位置和字号，文字色 / 背景色是只读的。', fix: '每块增加文字色、背景色、背景模式、对齐的覆盖值，存进缓存；预览和导出都按它。取色 / 调色见图 3、4、5；多选见图 2。', sure: '高', pill: hi },
+  { what: '左边“文件拖放 / 任务 / 翻译设置”能不能收起', why: '它现在是固定宽度的一栏。', fix: '版面工作时收成图标条（或悬停浮出），和主导航的做法一致（图 7）。', sure: '高', pill: hi },
+];
+const weld = [
+  { a: '4 种色域样式：矩形 / RGB 三角形 / HSL 圆柱 / HSV 圆环', b: '全部保留，再加一个“色轮”，下拉切换（图 3）' },
+  { a: '明度条，两侧 ▶◀ 指示', b: '保留；HSL 样式下控制 L，其余控制 V' },
+  { a: '基本颜色 48 格（8×6）', b: '保留同一组颜色' },
+  { a: '自定义颜色 16 格，选中高亮，“添加到自定义颜色”，自动保存', b: '保留；另加“这一页的颜色”（取自原页）' },
+  { a: '历史记录 12 个，最新在前、去重', b: '保留' },
+  { a: 'RGB / HSV / HSL / Lab 切换输入', b: '保留，输入框改任何一个，其他同步' },
+  { a: 'Hex、RGB(r, g, b) 写法、颜色名称三合一', b: '保留；名称在中文界面显示中文名' },
+  { a: '配色推荐：互补 / 类似 / 分裂互补 / 三角 / 四方，圆球可点', b: '保留，并在图 5 里变成可拖的色轮' },
+  { a: '对比度：对白、对黑，AAA / AA / AA 大 / ✗', b: '保留，并新增“对页面背景”，这才是翻译要用的' },
+  { a: '色盲模拟：红盲 / 绿盲 / 蓝盲', b: '保留，并算出色盲下的对比度，不够就提醒' },
+  { a: '安全色域 BT.709（Y 16–235、CbCr 16–240）+ 钳制提示 + 恢复默认', b: '保留在“高级”，默认关' },
+  { a: '吸管：截全屏，放大镜 + 色值，点击取色', b: '保留为“屏幕取色”，另加“原页取色”：直接在页面图像素上取' },
+  { a: '拖动时只更新色块、指示器、输入框，松手再算配色 / 色盲 / 对比；色域图按需重绘并缓存', b: '实现时沿用这个思路，保证拖动不卡' },
+  { a: '确定时存入历史 / 自定义', b: '保留；确定后应用到所选范围' },
+];
+return { rows, weld };
+}
+}
+</script>
+</body>
+</html>

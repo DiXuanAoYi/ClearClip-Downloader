@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 左栏收起</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1360px; height: 680px; box-sizing: border-box; padding: 20px; display: flex; flex-direction: column; gap: 14px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<div style="display: flex; align-items: baseline; gap: 12px"><strong style="font-size: 15px">进入版面工作时，两侧的栏都可以收起</strong><span style="color: #6b7385">下面是 1500 px 宽窗口里三种状态的比例示意；版面区宽度是我按栏宽估算的</span></div>
+<div style="flex: 1; min-height: 0; display: flex; gap: 20px">
+<sc-for list="{{states}}" as="s" hint-placeholder-count="3">
+<section style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><strong>{{s.title}}</strong><span style="{{s.pill}}">{{s.tag}}</span></div>
+<div style="position: relative; height: 330px; border: 1px solid #cfd5e0; border-radius: 10px; overflow: hidden; background: #e9ecf2; display: flex">
+<div style="{{s.nav}}"><span style="{{s.navText}}">{{s.navLabel}}</span></div>
+<div style="{{s.left}}"><span style="{{s.leftText}}">{{s.leftLabel}}</span></div>
+<div style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; background: #e9ecf2"><div style="display: flex; gap: 8px"><div style="width: 62px; height: 84px; background: #ffffff; border: 1px solid #cfd5e0"></div><div style="width: 62px; height: 84px; background: #ffffff; border: 1px solid #cfd5e0"></div></div></div>
+<div style="width: 56px; flex: none; background: #ffffff; border-left: 1px solid #e4e7ec; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #6b7385; writing-mode: vertical-rl">检查器</div>
+<div style="{{s.flyout}}">{{s.flyoutText}}</div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="color: #6b7385">版面区约占窗口</span><strong style="font-size: 16px">{{s.pct}}</strong><div style="flex: 1; height: 8px; border-radius: 4px; background: #dfe4ee"><div style="{{s.bar}}"></div></div></div>
+<p style="margin: 0; color: #4a5367; line-height: 1.65">{{s.note}}</p>
+</section>
+</sc-for>
+</div>
+<div style="display: flex; gap: 24px; padding: 12px 16px; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 10px; color: #4a5367; line-height: 1.65">
+<span><strong style="color: #1d2433">什么时候自动收</strong>　打开一份 PDF 切到“对比 / 译文”版面时自动收成图标条；回到文件列表时恢复。手动展开、收起的选择会被记住。</span>
+<span><strong style="color: #1d2433">里面有什么</strong>　文件：拖放 / 选择；任务：进行中数量角标、点开列出全部任务；设置：语言、输出方式等，图标上悬停显示当前设置的摘要。</span>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":680}}'>
+class Component extends DCLogic {
+renderVals() {
+const nav = (w, bg) => 'width:' + w + 'px;flex:none;background:' + bg + ';border-right:1px solid #e4e7ec;display:flex;align-items:center;justify-content:center;';
+const txt = 'font-size:11px;color:#6b7385;writing-mode:vertical-rl;';
+const pill = (fg, bg, bd) => 'font-size:12px;font-weight:600;padding:1px 8px;border-radius:10px;color:' + fg + ';background:' + bg + ';border:1px solid ' + bd;
+const states = [
+  {
+    title: 'A　现在', tag: '没有收起', pill: pill('#4a5367', '#eef0f4', '#d5d9e2'),
+    nav: nav(52, '#ffffff'), navLabel: '主导航 184', navText: txt,
+    left: 'width:62px;flex:none;background:#fafbfc;border-right:1px solid #e4e7ec;display:flex;align-items:center;justify-content:center;', leftLabel: '拖放 · 任务 · 设置', leftText: txt,
+    flyout: 'display:none', flyoutText: '',
+    pct: '51%', bar: 'width:51%;height:8px;border-radius:4px;background:#8a93a6',
+    note: '主导航 184 + 左栏约 330（文件拖放、任务、翻译设置）+ 右侧约 220，版面区只剩一半左右，页面要缩得很小才放得下对比。',
+  },
+  {
+    title: 'B　收成图标条', tag: '版面工作时的默认', pill: pill('#0b6b3a', '#e6f6ec', '#b4e2c6'),
+    nav: nav(18, '#ffffff'), navLabel: '', navText: txt,
+    left: 'width:16px;flex:none;background:#fafbfc;border-right:1px solid #e4e7ec;', leftLabel: '', leftText: txt,
+    flyout: 'display:none', flyoutText: '',
+    pct: '73%', bar: 'width:73%;height:8px;border-radius:4px;background:#3b6cf6',
+    note: '主导航 56 + 左栏图标条 48 + 检查器 300。图标条上的“›”或任一图标可以展开；检查器也可以点“»”收起，只留 40 的窄条，版面区再多出 260。',
+  },
+  {
+    title: 'C　悬停浮出', tag: '不挪动版面', pill: pill('#2457e6', '#eaf0ff', '#c3d3fb'),
+    nav: nav(18, '#ffffff'), navLabel: '', navText: txt,
+    left: 'width:16px;flex:none;background:#eaf0ff;border-right:1px solid #e4e7ec;', leftLabel: '', leftText: txt,
+    flyout: 'position:absolute;left:36px;top:0;bottom:0;width:150px;background:#ffffff;border-right:1px solid #cfd5e0;box-shadow:6px 0 16px rgba(0,0,0,0.18);display:flex;align-items:center;justify-content:center;color:#4a5367;font-size:12px;text-align:center;padding:0 10px;',
+    flyoutText: '文件 / 任务 / 设置：悬停 0.4 秒从图标条旁边浮出，盖在版面上，移开收回；点“固定”才推开版面',
+    pct: '73%', bar: 'width:73%;height:8px;border-radius:4px;background:#3b6cf6',
+    note: '想临时看一眼任务进度或改个设置时，不用展开再收起，版面也不会跳动；需要长时间操作再点“固定”。',
+  },
+];
+return { states };
+}
+}
+</script>
+</body>
+</html>

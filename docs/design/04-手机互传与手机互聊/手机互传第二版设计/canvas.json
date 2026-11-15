@@ -1,0 +1,100 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Desk.dc.html": {
+      "h": 780,
+      "title": "电脑端 · 亮色",
+      "w": 1180,
+      "x": 0,
+      "y": 0
+    },
+    "DeskDark.dc.html": {
+      "h": 780,
+      "title": "电脑端 · 暗色",
+      "w": 1180,
+      "x": 1260,
+      "y": 0
+    },
+    "Phone.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "手机端 · 发送 · 亮色",
+      "w": 390,
+      "x": 0,
+      "y": 900
+    },
+    "PhoneGetDark.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "手机端 · 电脑发来的 · 暗色",
+      "w": 390,
+      "x": 1410,
+      "y": 900
+    },
+    "PhoneGetLight.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "手机端 · 电脑发来的 · 亮色",
+      "w": 390,
+      "x": 940,
+      "y": 900
+    },
+    "PhoneSendDark.dc.html": {
+      "h": 844,
+      "radius": 28,
+      "title": "手机端 · 发送 · 暗色",
+      "w": 390,
+      "x": 470,
+      "y": 900
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-09T18:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "noteOrder": [
+    "t1",
+    "n1",
+    "n2"
+  ],
+  "notes": {
+    "n1": {
+      "fill": "orange",
+      "text": "改了什么\n1. 暗色主题单独调过：背景、气泡、文字、强调色都重配，正文对比度 ≥ 4.5:1。\n2. 手机上同一个文件只留一条：上传中显示进度，完成后同一条变成“已保存到电脑”，不再多出一条“已完成”。\n3. 电脑端左栏的“发送对象”可勾选，浏览器扩展默认不勾；发出的消息写明发给了谁。\n4. 底部输入区缩成一行；拖放区只在拖文件时才出现。\n5. 图片两端都有缩略图，点开看大图。",
+      "w": 760,
+      "x": 0,
+      "y": -150
+    },
+    "n2": {
+      "kind": "title1",
+      "maxW": 1800,
+      "text": "以下是手机端（390×844）：亮色 / 暗色 × 发送 / 电脑发来的",
+      "w": 240,
+      "x": 0,
+      "y": 820
+    },
+    "t1": {
+      "kind": "title1",
+      "maxW": 2440,
+      "text": "手机互传第二版：暗色可读、同一资源只显示一条、可勾选发送对象、图片有缩略图",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    }
+  },
+  "order": [
+    "Desk.dc.html",
+    "DeskDark.dc.html",
+    "Phone.dc.html",
+    "PhoneSendDark.dc.html",
+    "PhoneGetLight.dc.html",
+    "PhoneGetDark.dc.html"
+  ],
+  "pages": [],
+  "title": "手机互传 第二版设计"
+}

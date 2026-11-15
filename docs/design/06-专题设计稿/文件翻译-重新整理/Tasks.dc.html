@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 · 任务</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+button{font:inherit;cursor:pointer}
+.mute{color:#66716c;font-size:12px}
+.btn{border:1px solid #d9dedb;background:#fff;border-radius:7px;height:26px;padding:0 10px;font-size:12px;color:#1d2420}
+.btn.pri{background:#b4561a;border-color:#b4561a;color:#fff;font-weight:600}
+.btn.dng{color:#a8362d}
+.job{border:1px solid #d9dedb;border-radius:9px;padding:8px 10px;display:flex;flex-direction:column;gap:5px;background:#fff}
+.n{display:flex;align-items:center;gap:8px}
+.n b{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:5px;border-radius:3px;background:#e7ebe8;overflow:hidden}
+.bar i{display:block;height:100%;background:#d9762b}
+.tag{font-size:11.5px;border-radius:999px;padding:0 8px;line-height:20px;white-space:nowrap}
+.row{display:grid;grid-template-columns:350px minmax(0,1fr);gap:18px;align-items:start;padding:11px 0;border-top:1px solid #eef0ee}
+.why{font-size:12.5px;line-height:1.65;color:#4d5853}
+.why b{color:#1d2420}
+.menu{width:236px;border:1px solid #d9dedb;border-radius:10px;background:#fff;box-shadow:0 10px 28px rgba(0,0,0,.16);padding:5px;display:flex;flex-direction:column}
+.menu span{padding:6px 10px;border-radius:6px;font-size:12.5px}
+.menu span:hover{background:#fbeadb}
+.menu hr{border:0;border-top:1px solid #eef0ee;margin:4px 0;width:100%}
+</style>
+</helmet>
+<div style="width: 880px; height: 820px; box-sizing: border-box; padding: 22px 28px; background: #f4f5f4; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420; font-size: 13px; line-height: 1.55; display: flex; flex-direction: column; gap: 6px">
+  <div style="display: flex; align-items: baseline; gap: 12px"><h1 style="margin: 0; font-size: 20px">任务：每种状态有哪些按钮</h1></div>
+  <p style="margin: 0 0 6px; color: #66716c">现在只有运行中的任务有一个“取消”，其他状态什么都做不了，列表也清不掉。改成：每张卡片只放当前状态最常用的一两个按钮，其余收进“⋯”。</p>
+
+  <div style="background: #fff; border: 1px solid #d9dedb; border-radius: 12px; padding: 4px 18px 6px">
+    <div class="row" style="border-top: 0">
+      <div class="job"><div class="n"><b>report-2025.docx</b><span class="tag" style="background: #eceeed; color: #4d5853">排队中</span></div><div style="display: flex; gap: 6px; align-items: center"><span class="mute" style="flex: 1">前面还有 3 个在跑</span><button class="btn">优先</button><button class="btn">取消</button></div></div>
+      <div class="why"><b>排队中</b>：AI 类任务（翻译、摘要等）同时最多跑 3 个，其余排队。“优先”插到最前面；“取消”直接移出。</div>
+    </div>
+    <div class="row">
+      <div class="job"><div class="n"><b>Attention Is All You Need.pdf</b><span class="tag" style="background: #fbeadb; color: #8a3d0f">译第 7 / 18 页</span></div><div class="bar"><i style="width: 38%"></i></div><div style="display: flex; gap: 6px; align-items: center"><span class="mute" style="flex: 1">已缓存 112 段 · 约剩 4 分钟</span><button class="btn">停止</button><button class="btn" aria-label="更多">⋯</button></div></div>
+      <div class="why"><b>进行中</b>：“停止”不丢东西，已译的页都留着，之后点“继续”从第 7 页接着译（现在的“取消”会让人以为全没了）。显示约剩时间。</div>
+    </div>
+    <div class="row">
+      <div class="job"><div class="n"><b>paper-b.pdf</b><span class="tag" style="background: #eceeed; color: #4d5853">已停止 · 5 / 12 页</span></div><div style="display: flex; gap: 6px; align-items: center"><span class="mute" style="flex: 1">前 5 页的译文已保留</span><button class="btn pri">继续</button><button class="btn" aria-label="更多">⋯</button></div></div>
+      <div class="why"><b>已停止</b>：主按钮“继续”。退出程序再打开也是这个状态，源文件位置会记着（现在重启后会提示“源文件位置没有保留”）。</div>
+    </div>
+    <div class="row">
+      <div class="job"><div class="n"><b>chapter3.pdf</b><span class="tag" style="background: #f9e3e0; color: #a8362d">失败</span></div><div class="mute" style="color: #a8362d">第 9 页：模型没有返回译文（2 段）</div><div style="display: flex; gap: 6px"><span style="flex: 1"></span><button class="btn pri">重试失败的</button><button class="btn" aria-label="更多">⋯</button></div></div>
+      <div class="why"><b>失败</b>：写清是哪一页、什么原因（现在只有一句笼统的话）；“重试失败的”只翻没译出来的段，已译的走缓存。</div>
+    </div>
+    <div class="row">
+      <div class="job"><div class="n"><b>Attention Is All You Need.pdf</b><span class="tag" style="background: #fdf0d6; color: #7a4a05">已译完，待生成</span></div><div style="display: flex; gap: 6px; align-items: center"><span class="mute" style="flex: 1">18 页 · 在右边检查、改译文</span><button class="btn pri">生成文件</button><button class="btn" aria-label="更多">⋯</button></div></div>
+      <div class="why"><b>预览已译完</b>：开了“先预览”时停在这里，改完译文点“生成文件”。</div>
+    </div>
+    <div class="row">
+      <div class="job"><div class="n"><b>manual.epub</b><span class="tag" style="background: #e1f2e8; color: #1f6b41">已生成</span></div><div style="display: flex; gap: 6px; align-items: center"><span class="mute" style="flex: 1">12 页 · 2 小时前</span><button class="btn">打开</button><button class="btn">所在文件夹</button><button class="btn" aria-label="更多">⋯</button></div></div>
+      <div class="why"><b>已生成</b>：直接打开成品或定位到文件夹，不用再去“导出”菜单里找。</div>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 22px; align-items: flex-start; margin-top: 6px">
+    <div class="menu">
+      <span>在阅读器里打开</span><span>打开原文件所在位置</span><hr><span>换设置重新生成…</span><span>重新翻译（清掉这份译文）</span><hr><span>复制出错信息</span><span>从列表里移除</span><span class="dng" style="color: #a8362d">删除译文缓存…</span>
+    </div>
+    <div class="why" style="flex: 1; padding-top: 4px"><b>“⋯”菜单</b>（每个状态里不能用的项变灰）：<br>· “重新翻译”会先问一次，因为改过的译文也会一起清掉；<br>· “从列表里移除”只去掉这条记录，译文缓存还在，再拖入同一个文件会接着用；<br>· “删除译文缓存”才会真的清掉（含你改过的译文），会二次确认。<br><br><b>列表顶部</b>：筛选（全部 / 进行中 / 已完成 / 失败）、清除已结束的（保留进行中的）、全部停止 / 全部继续。</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":880,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>剪辑 混音与变速</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 760px; box-sizing: border-box; padding: 24px 28px; display: flex; gap: 22px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<section style="width: 560px; flex: none; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<strong style="font-size: 15px">音频混音器（第二批）</strong>
+<div style="display: flex; gap: 10px; flex: 1">
+<sc-for list="{{chs}}" as="c" hint-placeholder-count="5">
+<div style="width: 78px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; border: 1px solid #e4e7ec; border-radius: 8px; background: #f8f9fb">
+<span style="font-weight: 700; font-size: 12px">{{c.name}}</span>
+<div style="display: flex; gap: 4px"><span style="{{c.m}}">M</span><span style="{{c.s}}">S</span></div>
+<div style="flex: 1; display: flex; gap: 6px; align-items: stretch; height: 200px">
+<div style="width: 8px; background: #dde1e8; border-radius: 4px; position: relative; overflow: hidden"><i style="{{c.meter}}"></i></div>
+<div style="width: 4px; background: #cfd5e0; border-radius: 2px; position: relative"><i style="{{c.fader}}"></i></div>
+</div>
+<span style="font: 11px ui-monospace, Menlo, Consolas, monospace">{{c.db}}</span>
+<span style="color: #6b7385; font-size: 11px">声道 {{c.pan}}</span>
+</div>
+</sc-for>
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 4px; border: 1px solid #9db8f5; border-radius: 8px; background: #eaf0ff">
+<span style="font-weight: 700; font-size: 12px; color: #2457e6">总输出</span>
+<div style="flex: 1; display: flex; gap: 6px; height: 224px"><div style="width: 8px; background: #dde1e8; border-radius: 4px; position: relative; overflow: hidden"><i style="position: absolute; left: 0; right: 0; bottom: 0; height: 66%; background: linear-gradient(to top, #2f8a57 0 70%, #e0a21a 70% 90%, #e5484d 90%)"></i></div><div style="width: 4px; background: #cfd5e0; border-radius: 2px; position: relative"><i style="position: absolute; left: -6px; width: 16px; height: 8px; border-radius: 3px; background: #2457e6; bottom: 50%"></i></div></div>
+<span style="font: 11px ui-monospace, Menlo, Consolas, monospace">-14.2 LUFS</span>
+<span style="color: #6b7385; font-size: 11px">限幅 -1 dB</span>
+</div>
+</div>
+</section>
+
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<section style="background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+<strong style="font-size: 15px">自动避让 + 音量线（音量线在第一批，避让在第二批）</strong>
+<div style="border: 1px solid #dde1e8; border-radius: 8px; overflow: hidden; background: #eef0f4">
+<div style="display: flex; height: 50px"><div style="width: 90px; padding: 0 8px; display: flex; align-items: center; background: #fff; border-right: 1px solid #cfd5e0; border-bottom: 1px solid #dde1e8; font-weight: 600">A1 人声</div><div style="flex: 1; position: relative; border-bottom: 1px solid #dde1e8">
+<div style="position: absolute; left: 20px; width: 150px; top: 5px; bottom: 5px; border-radius: 6px; background: repeating-linear-gradient(90deg, rgba(47,138,87,.55) 0 2px, transparent 2px 5px), #d9f1e3; border: 1px solid #9fd3b4"></div>
+<div style="position: absolute; left: 250px; width: 190px; top: 5px; bottom: 5px; border-radius: 6px; background: repeating-linear-gradient(90deg, rgba(47,138,87,.55) 0 2px, transparent 2px 5px), #d9f1e3; border: 1px solid #9fd3b4"></div>
+</div></div>
+<div style="display: flex; height: 62px"><div style="width: 90px; padding: 0 8px; display: flex; flex-direction: column; justify-content: center; background: #fff; border-right: 1px solid #cfd5e0"><b>A2 配乐</b><span style="font-size: 10.5px; color: #2457e6">自动避让 开</span></div><div style="flex: 1; position: relative">
+<div style="position: absolute; left: 0; right: 0; top: 5px; bottom: 5px; border-radius: 6px; background: repeating-linear-gradient(90deg, rgba(47,138,87,.4) 0 2px, transparent 2px 6px), #d9f1e3; border: 1px solid #9fd3b4"></div>
+<svg width="100%" height="62" viewBox="0 0 460 62" preserveAspectRatio="none" style="position: absolute; left: 0; top: 0" role="img" aria-label="音量线：人声出现时配乐压低"><polyline points="0,14 14,14 26,40 170,40 190,14 240,14 252,40 440,40 460,14" fill="none" stroke="#e0a21a" stroke-width="2"></polyline><circle cx="26" cy="40" r="4" fill="#fff" stroke="#e0a21a" stroke-width="2"></circle><circle cx="170" cy="40" r="4" fill="#fff" stroke="#e0a21a" stroke-width="2"></circle></svg>
+<span style="position: absolute; left: 40px; top: 4px; font-size: 10.5px; color: #8a5a00; font-weight: 600">人声时自动压到 −12 dB</span>
+</div></div>
+</div>
+<div style="display: flex; gap: 14px; color: #4a5367; line-height: 1.6; font-size: 12.5px">
+<div style="flex: 1">橙线是这个片段的音量线：拖线上下调音量，点线加关键点，右键删除；片段两端的小三角是淡入淡出。</div>
+<div style="flex: 1">自动避让：选“触发轨”（人声）和“被压低的轨”（配乐），设压低量、提前量和恢复时间，音量线自动画出来，之后还能手动改。</div>
+</div>
+</section>
+
+<section style="background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+<strong style="font-size: 15px">变速曲线（第二批）</strong>
+<div style="display: flex; gap: 16px; align-items: stretch">
+<div style="width: 420px; height: 130px; border: 1px solid #cfd5e0; border-radius: 8px; background: #f8f9fb; position: relative">
+<svg width="420" height="130" viewBox="0 0 420 130" role="img" aria-label="变速曲线：先正常，中间慢放，最后加速"><line x1="0" y1="65" x2="420" y2="65" stroke="#cfd5e0" stroke-dasharray="4 4"></line><path d="M10,65 C90,65 110,105 180,105 C250,105 280,30 340,30 L410,30" fill="none" stroke="#2457e6" stroke-width="2.5"></path><circle cx="180" cy="105" r="5" fill="#fff" stroke="#2457e6" stroke-width="2"></circle><circle cx="340" cy="30" r="5" fill="#fff" stroke="#2457e6" stroke-width="2"></circle></svg>
+<span style="position: absolute; left: 8px; top: 4px; font-size: 11px; color: #6b7385">2×</span><span style="position: absolute; left: 8px; top: 58px; font-size: 11px; color: #6b7385">1×</span><span style="position: absolute; left: 8px; bottom: 4px; font-size: 11px; color: #6b7385">0.25×</span>
+</div>
+<div style="flex: 1; color: #4a5367; line-height: 1.7; font-size: 12.5px">在素材上打开“变速”，拖点改速度：先正常、再慢放、最后加速。预设：<b style="color: #1d2433">英雄时刻、子弹时间、闪入、闪出、跳切</b>。音调可保持或跟着变。导出时用 ffmpeg 的时间重映射，转场和音频自动跟着。</div>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":760}}'>
+class Component extends DCLogic {
+renderVals() {
+const mb = (on, c, bg) => 'width:22px;height:20px;border:1px solid ' + (on ? c : '#cfd5e0') + ';border-radius:4px;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;background:' + (on ? bg : '#fff') + ';color:' + (on ? c : '#6b7385');
+const mk = (name, db, h, pan, m) => ({
+  name, db, pan,
+  m: mb(m, '#b4561a', '#fdf0e6'), s: mb(false, '#2457e6', '#eaf0ff'),
+  meter: 'position:absolute;left:0;right:0;bottom:0;height:' + h + '%;background:linear-gradient(to top,#2f8a57 0 75%,#e0a21a 75% 92%,#e5484d 92%)',
+  fader: 'position:absolute;left:-6px;width:16px;height:8px;border-radius:3px;background:#2457e6;bottom:' + (db === '静音' ? 4 : 55) + '%',
+});
+const chs = [mk('A1 人声', '-3.0', 72, '居中', false), mk('A2 配乐', '-12.0', 38, '居中', false), mk('A3 音效', '静音', 0, '居中', true), mk('A4 环境声', '-18.0', 22, '居中', false)];
+return { chs };
+}
+}
+</script>
+</body>
+</html>

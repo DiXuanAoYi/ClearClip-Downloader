@@ -10,6 +10,7 @@
 - 依赖清理：移除 `deny.toml` / `.cargo/audit.toml` 里已过期的 5 条例外（RUSTSEC-2026-0217、0367、0368、0369、0429，对应的 tract-nnef 与 zip 在 #103 之后已是修复版本），`cargo deny check` 不再有 advisory-not-detected 警告；`package.json` 新增 `overrides`（glob ^14.0.2、minimatch ^11.0.1），消除只在开发依赖（@vue/test-utils → js-beautify）里的 5 条中危 npm 告警，不影响打包产物。
 - 前端工具链：vitest 3 → 5（连带 @vitest/coverage-v8），去掉随 vitest 3 带来的嵌套 vite 7，`npm audit` 不再有 critical；typescript 5.9 → 6.0。vue-tsc 固定在 3.3.13（3.3.14 在模板里含 `//` 的字符串时误报 `.value` 类型错误，上游 vuejs/language-tools#6322、#6352）；typescript 7 暂不能用，因为 vue-tsc 还依赖 TypeScript 的 JS API。
 - e2e 加固：vite 8 下 CI 曾因“vite 没有在 60 秒内就绪”失败。现在启动前先跑 `vite optimize` 预热，`optimizeDeps.include` 列出 e2e 与首屏用到的依赖，探测遇到依赖被重新优化（旧 `?v=` 地址 504）会重新探测，就绪总时限放宽到 180 秒（`E2E_READY_TIMEOUT_MS`）并在超时时打印 vite 日志尾部；测试语义不变。
+- 文档：`docs/design/` 按类别归档全部界面设计图（设计系统与令牌 / 主界面各页 / 子窗口与浮层 / 手机互传 / 浏览器扩展 / 专题设计稿 / 渲染图），并新增逐文件索引 `docs/design/README.md`（来源、对应页面、1.16.0 实现状态）；主画布按线上最新版更新。只动文档，程序不变。
 
 ## 1.16.0（扩展 1.25.0，2026-11-15）
 

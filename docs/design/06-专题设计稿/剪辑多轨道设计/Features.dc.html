@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>剪辑 功能清单</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 980px; box-sizing: border-box; padding: 24px 28px; display: flex; flex-direction: column; gap: 12px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<div style="display: flex; align-items: baseline; gap: 14px"><h2 style="margin: 0; font-size: 16px">对标达芬奇 / Premiere / 剪映，我建议加的功能</h2><span style="color: #6b7385">已有的（关键帧、转场、LUT、混响、防抖、区域效果、色键、遮罩、文稿剪辑）不重复列；分三批，第一批跟多轨一起做</span></div>
+
+<div style="display: flex; gap: 14px; flex: 1; min-height: 0">
+<sc-for list="{{cols}}" as="c" hint-placeholder-count="3">
+<section style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="{{c.head}}"><b>{{c.title}}</b><span>{{c.sub}}</span></div>
+<sc-for list="{{c.items}}" as="i" hint-placeholder-count="10">
+<div style="background: #ffffff; border: 1px solid #e4e7ec; border-radius: 8px; padding: 8px 11px; line-height: 1.55">
+<div style="display: flex; gap: 8px; align-items: baseline"><b>{{i.n}}</b><span style="color: #6b7385; font-size: 11.5px">{{i.ref}}</span></div>
+<div style="color: #4a5367; font-size: 12.5px">{{i.d}}</div>
+</div>
+</sc-for>
+</section>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+renderVals() {
+const head = (bg, fg) => 'display:flex;justify-content:space-between;align-items:baseline;padding:8px 12px;border-radius:8px;background:' + bg + ';color:' + fg + ';font-size:13px';
+const cols = [
+  { title: '第一批 · 跟多轨一起做', sub: '基本功，必须好用', head: head('#e6f6ec', '#0b6b3a'), items: [
+    { n: '轨道类型：画中画 / 全屏 / 调整图层 / 绿幕', ref: 'PR 调整图层、达芬奇调整片段', d: '点轨道名弹出选择；调整图层上的效果作用到它下面所有轨道。' },
+    { n: '工具：选择 / 刀片 / 修剪 / 标记', ref: '达芬奇 A / B / T、PR V / C', d: '刀片点哪切哪；修剪含波纹、滚动、滑移、滑动四种。' },
+    { n: '入点 / 出点', ref: '三家都有', d: '只导出、只预览、循环播放这一段；设了入出点，导出可选“只导出入出点”。' },
+    { n: '标记（带颜色和备注）', ref: '达芬奇标记、剪映标记', d: '播放位置按 M；可吸附；导出章节时当章节点。' },
+    { n: '联动 / 分组', ref: 'PR 链接、达芬奇链接片段', d: '视频和它的音频联动：一起移动、一起裁剪；多选后可分组。' },
+    { n: '音频波形 + 音量线', ref: 'PR 橡皮筋、达芬奇音量曲线', d: '时间线里直接看到波形；拖线调音量，点线加关键点；片段两端有淡入淡出手柄。' },
+    { n: '轨道头：静音 / 独奏 / 锁 / 眼 / 高度 / 颜色', ref: '达芬奇轨道头', d: '见图 2。' },
+    { n: '波纹删除 / 删除间隙', ref: '三家都有', d: '删掉素材并让后面的前移；右键间隙“删除间隙”。' },
+    { n: '时间线小地图 + 缩放到适应', ref: '达芬奇 Zoom to fit', d: '底部缩略条，拖动框就是平移；“适应”一键看全。' },
+  ] },
+  { title: '第二批 · 做完多轨再做', sub: '提升效率和质感', head: head('#eaf0ff', '#2457e6'), items: [
+    { n: '音频混音器', ref: '达芬奇 Fairlight、PR 音轨混合器', d: '每条音频轨一个推子、左右声道、电平表；有总输出和限幅。图 4。' },
+    { n: '自动避让（ducking）', ref: 'PR 自动闪避、剪映“人声增强”', d: '人声轨有声音时，配乐轨自动压低，停了再升回来；压低多少、反应多快可调。' },
+    { n: '变速曲线', ref: '达芬奇变速曲线、剪映曲线变速', d: '在素材上拖点改播放速度（慢动作、加速），音调可保持或跟着变。' },
+    { n: '复合片段（嵌套）', ref: 'PR 嵌套序列、达芬奇复合片段', d: '把选中的一组素材收成一个片段，当一个整体移动、套效果，双击进去改。' },
+    { n: '轨道预设与模板', ref: '剪映模板', d: '保存“播客：人声 + 配乐 + 字幕”这样的轨道配置，新工程一键套用。' },
+    { n: '代理素材 / 缩略图缓存', ref: '达芬奇优化媒体', d: '4K 素材自动生成低清代理，预览流畅，导出用原片。' },
+    { n: '素材库标签与颜色标签', ref: '达芬奇颜色标签', d: '给素材和片段染色、加标签，按颜色筛选。' },
+  ] },
+  { title: '先不做（说明为什么）', sub: '体量太大或需要专业硬件', head: head('#f0f1f4', '#4a5367'), items: [
+    { n: '节点式调色（Fusion / Color 页）', ref: '达芬奇', d: '现在的调色、LUT、区域调色已经够日常用；节点图是另一个产品级别的工程。' },
+    { n: '多机位同步剪辑', ref: 'PR / 达芬奇', d: '需要按波形对齐多个机位，用得少，之后看需求。' },
+    { n: '协作与云端项目', ref: '达芬奇 Cloud', d: '清影是本机工具，不做。' },
+    { n: '专业示波器（波形 / 矢量）', ref: '达芬奇', d: '依赖调色流程，等调色升级时一起考虑。' },
+  ] },
+];
+return { cols };
+}
+}
+</script>
+</body>
+</html>

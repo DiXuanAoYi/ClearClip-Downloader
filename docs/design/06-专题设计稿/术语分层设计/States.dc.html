@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>分层术语 · 操作</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+.mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace}
+.pn{display:flex;flex-direction:column;gap:12px;padding:20px;background:#fff;border:1px solid #d9dedb;border-radius:12px;min-width:0;box-sizing:border-box}
+.ph{display:flex;align-items:baseline;gap:10px}
+.ph b{font-size:14px;font-weight:600}
+.ph span{font-size:12px;color:#69746f}
+.row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:8px;align-items:center;height:36px;padding:0 10px;border-radius:6px;font-size:13px}
+.ind{display:inline-block;width:20px}
+.car{display:inline-block;width:16px;color:#69746f;font-size:11px}
+.kbd{display:inline-flex;align-items:center;height:18px;padding:0 5px;border:1px solid #d9dedb;border-radius:4px;background:#eef0ee;font-family:'JetBrains Mono',monospace;font-size:11px;color:#4a5550}
+.mi{display:flex;align-items:center;justify-content:space-between;gap:16px;height:32px;padding:0 10px;border:0;border-radius:6px;background:transparent;font:inherit;font-size:13px;color:#1d2420;text-align:left;cursor:pointer;width:100%}
+.btn{height:34px;padding:0 14px;border:1px solid #d9dedb;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#1d2420;cursor:pointer}
+mark{background:#f7c08a;color:#5a2a06;border-radius:3px;padding:0 2px}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; padding: 32px 40px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 24px; background: #f4f5f4; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420; line-height: 1.5">
+
+  <!-- A 搜索 -->
+  <section class="pn" aria-label="搜索">
+    <div class="ph"><b>搜索</b><span>命中的术语连同上级一起显示，上级变灰，其他收起</span></div>
+    <label style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 1px solid #d9762b; border-radius: 6px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#69746f" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+      <input value="复制" aria-label="搜索术语" style="flex: 1; border: 0; outline: none; font: inherit; font-size: 13px">
+      <span style="font-size: 12px; color: #69746f">找到 2 条</span>
+    </label>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <div class="row" style="color: #69746f"><span><span class="car">▾</span>界面</span><span>Interface</span></div>
+      <div class="row" style="color: #69746f"><span><span class="ind"></span><span class="car">▾</span>编辑</span><span>Edit</span></div>
+      <div class="row" style="background: #fbf1ea"><span><span class="ind"></span><span class="ind"></span><span class="car"></span><mark>复制</mark></span><span>Copy</span></div>
+      <div class="row" style="color: #69746f"><span><span class="car">▾</span>界面</span><span>Interface</span></div>
+      <div class="row" style="color: #69746f"><span><span class="ind"></span><span class="car">▾</span>文件</span><span>File</span></div>
+      <div class="row"><span><span class="ind"></span><span class="ind"></span><span class="car"></span><mark>复制</mark>路径</span><span>Copy Path</span></div>
+    </div>
+    <span style="font-size: 12px; color: #69746f">清空搜索后恢复原来的展开状态。也能搜译文和说明。</span>
+  </section>
+
+  <!-- B 更多操作菜单 -->
+  <section class="pn" aria-label="更多操作菜单">
+    <div class="ph"><b>更多操作</b><span>点行尾的 ⋯，或在行上右键</span></div>
+    <div style="position: relative; height: 100%">
+      <div class="row" style="background: #fbf1ea; box-shadow: inset 0 0 0 1px #ecbb95"><span><span class="ind"></span><span class="car">▾</span><b style="font-weight: 600">文件</b></span><span>File</span></div>
+      <div class="row"><span><span class="ind"></span><span class="ind"></span><span class="car"></span>打开文件</span><span>Open File</span></div>
+      <div class="row"><span><span class="ind"></span><span class="ind"></span><span class="car"></span>退出</span><span>Exit</span></div>
+      <div role="menu" aria-label="文件 的操作" style="position: absolute; left: 230px; top: 30px; width: 280px; padding: 6px; background: #fff; border: 1px solid #d9dedb; border-radius: 10px; box-shadow: 0 12px 32px #0000002e">
+        <button type="button" role="menuitem" class="mi">添加同级<span class="kbd">Enter</span></button>
+        <button type="button" role="menuitem" class="mi">添加下级<span class="kbd">Tab</span></button>
+        <div style="height: 1px; background: #e3e7e4; margin: 4px 6px"></div>
+        <button type="button" role="menuitem" class="mi">升一层<span class="kbd">Shift+Tab</span></button>
+        <button type="button" role="menuitem" class="mi">放进上一条下面<span class="kbd">Tab</span></button>
+        <button type="button" role="menuitem" class="mi">上移<span class="kbd">Alt+↑</span></button>
+        <button type="button" role="menuitem" class="mi">下移<span class="kbd">Alt+↓</span></button>
+        <div style="height: 1px; background: #e3e7e4; margin: 4px 6px"></div>
+        <button type="button" role="menuitem" class="mi">复制路径<span style="font-size: 11.5px; color: #69746f">界面 › 文件</span></button>
+        <button type="button" role="menuitem" class="mi" style="color: #c2453b">删除…<span style="font-size: 11.5px; color: #c2453b">含 2 条下级</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- C 拖动 -->
+  <section class="pn" aria-label="拖动整理">
+    <div class="ph"><b>拖动整理</b><span>按住行首的点拖动；连同下级一起移动</span></div>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <div class="row"><span><span class="car">▾</span>界面</span><span>Interface</span></div>
+      <div class="row"><span><span class="ind"></span><span class="car">▾</span>文件</span><span>File</span></div>
+      <div class="row"><span><span class="ind"></span><span class="ind"></span><span class="car"></span>打开文件</span><span>Open File</span></div>
+      <div class="row" style="opacity: .35"><span><span class="ind"></span><span class="ind"></span><span class="car"></span>退出</span><span>Exit</span></div>
+      <div class="row" style="background: #fbf1ea; box-shadow: inset 0 0 0 2px #d9762b"><span><span class="ind"></span><span class="car">▸</span>编辑</span><span>Edit</span></div>
+      <div class="row"><span><span class="ind"></span><span class="car">▸</span>帮助</span><span>Help</span></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; align-self: flex-start; margin-left: 120px; margin-top: -60px; padding: 6px 10px; background: #fff; border: 1px solid #d9dedb; border-radius: 6px; box-shadow: 0 8px 20px #00000026; font-size: 13px">
+      <svg width="10" height="14" viewBox="0 0 10 14" aria-hidden="true"><g fill="#b9c1bd"><circle cx="2.5" cy="2.5" r="1.3"></circle><circle cx="7.5" cy="2.5" r="1.3"></circle><circle cx="2.5" cy="7" r="1.3"></circle><circle cx="7.5" cy="7" r="1.3"></circle><circle cx="2.5" cy="11.5" r="1.3"></circle><circle cx="7.5" cy="11.5" r="1.3"></circle></g></svg>退出 <span style="color: #69746f">Exit</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #4a5550; margin-top: auto">
+      <span><b style="font-weight: 600; color: #8a4a19">整行框住</b>：放进这一条下面，成为它的下级（例如把“退出”放进“编辑”）。</span>
+      <span><b style="font-weight: 600; color: #8a4a19">两行之间一条橙线</b>：插在这个位置，和上下两条同级；线的起点表示第几层。</span>
+    </div>
+  </section>
+
+  <!-- D 删除确认 -->
+  <section class="pn" aria-label="删除确认">
+    <div class="ph"><b>删除有下级的术语</b><span>没有下级的直接删除，可以撤回</span></div>
+    <div role="alertdialog" aria-label="删除“文件”" style="align-self: center; margin-top: 16px; width: 420px; padding: 20px 22px; background: #fff; border: 1px solid #d9dedb; border-radius: 12px; box-shadow: 0 16px 40px #0000002e; display: flex; flex-direction: column; gap: 12px">
+      <b style="font-size: 15px; font-weight: 600">删除“文件”？</b>
+      <span style="font-size: 13px; color: #4a5550">它下面还有 2 条术语：打开文件、退出。</span>
+      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px">
+        <button type="button" class="btn" style="text-align: left; height: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">只删“文件”</span><span style="font-size: 12px; color: #69746f">下级升一层，留在“界面”下面</span></button>
+        <button type="button" class="btn" style="text-align: left; height: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; border-color: #e7b3ae"><span style="font-weight: 600; color: #b23a31">连同下级一起删（3 条）</span><span style="font-size: 12px; color: #69746f">保存前可以 Ctrl+Z 撤回</span></button>
+      </div>
+      <div style="display: flex; justify-content: flex-end"><button type="button" class="btn">取消</button></div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

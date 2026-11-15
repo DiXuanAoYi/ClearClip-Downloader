@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 · 整页</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+button{font:inherit;cursor:pointer}
+.card{border:1px solid #d9dedb;background:#fff;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:9px}
+.card h3{margin:0;font-size:13px;color:#4d5853;font-weight:600;display:flex;align-items:center;gap:8px}
+.mute{color:#66716c;font-size:12px}
+.seg{display:inline-flex;border:1px solid #d9dedb;border-radius:8px;overflow:hidden;background:#fff}
+.seg span{padding:0 10px;height:26px;line-height:26px;font-size:12px;color:#4d5853;white-space:nowrap}
+.seg span.on{background:#fbeadb;color:#8a3d0f;font-weight:600}
+.btn{border:1px solid #d9dedb;background:#fff;border-radius:7px;height:26px;padding:0 10px;font-size:12px;color:#1d2420}
+.btn.pri{background:#b4561a;border-color:#b4561a;color:#fff;font-weight:600}
+.btn.lnk{border:0;background:none;color:#8a3d0f;padding:0 4px}
+.job{border:1px solid #d9dedb;border-radius:9px;padding:8px 10px;display:flex;flex-direction:column;gap:5px;background:#fff}
+.job.cur{border-color:#d9762b;background:#fdf4ec}
+.job .n{display:flex;align-items:center;gap:8px}
+.job .n b{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{height:5px;border-radius:3px;background:#e7ebe8;overflow:hidden}
+.bar i{display:block;height:100%;background:#d9762b}
+.tag{font-size:11.5px;border-radius:999px;padding:0 8px;line-height:20px;white-space:nowrap}
+.fld{display:grid;grid-template-columns:62px minmax(0,1fr);gap:8px;align-items:center;font-size:12.5px}
+.sel{border:1px solid #d9dedb;border-radius:7px;height:28px;padding:0 9px;display:flex;align-items:center;font-size:12.5px;background:#fff}
+.thumb{width:44px;height:58px;border-radius:5px;border:1px solid #d9dedb;background:#fff;position:relative;display:grid;place-items:center;font-size:11px;color:#66716c}
+.thumb.on{border-color:#d9762b;box-shadow:0 0 0 2px #f5d4b8}
+.thumb i{position:absolute;right:-3px;top:-3px;width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 2px #f4f5f4}
+.p{margin:0 0 10px;font-size:13.5px;line-height:1.75}
+</style>
+</helmet>
+<div style="width: 1280px; height: 820px; box-sizing: border-box; padding: 20px 28px; background: #f4f5f4; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420; font-size: 13px; line-height: 1.55; display: flex; flex-direction: column; gap: 14px">
+  <div style="display: flex; align-items: flex-end; gap: 14px"><h1 style="margin: 0; font-size: 24px">文件翻译</h1><span class="mute">PDF（含扫描版）、EPUB、DOCX、TXT、Markdown、字幕，译成双语对照</span></div>
+
+  <div style="flex: 1; min-height: 0; display: flex; gap: 16px">
+    <!-- 左：拖入 / 任务 / 设置 -->
+    <aside style="width: 340px; flex: none; display: flex; flex-direction: column; gap: 10px; min-height: 0">
+      <div style="border: 2px dashed #cfd5d1; border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 12px; background: #fff">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b4561a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"></path></svg>
+        <div style="flex: 1"><b>拖入文件，或点击选择</b><div class="mute">可以一次拖多个；原文件不会被改动</div></div>
+      </div>
+
+      <div class="card" style="flex: 1; min-height: 0; overflow: hidden">
+        <h3>任务<span style="flex: 1"></span><button class="btn lnk">清除已结束的</button></h3>
+        <div class="seg" style="align-self: flex-start"><span class="on">全部 5</span><span>进行中 2</span><span>已完成 2</span><span>失败 1</span></div>
+        <div style="display: flex; flex-direction: column; gap: 7px; overflow: hidden">
+          <div class="job cur">
+            <div class="n"><b>Attention Is All You Need.pdf</b><span class="tag" style="background: #fbeadb; color: #8a3d0f">译第 7 / 18 页</span></div>
+            <div class="bar"><i style="width: 38%"></i></div>
+            <div style="display: flex; gap: 6px; align-items: center"><span class="mute" style="flex: 1">已缓存 112 段 · 约剩 4 分钟</span><button class="btn">停止</button><button class="btn" aria-label="更多">⋯</button></div>
+          </div>
+          <div class="job">
+            <div class="n"><b>paper-b.pdf</b><span class="tag" style="background: #eceeed; color: #4d5853">已停止 · 5 / 12 页</span></div>
+            <div style="display: flex; gap: 6px; align-items: center"><span class="mute" style="flex: 1">前 5 页的译文已保留</span><button class="btn pri">继续</button><button class="btn" aria-label="更多">⋯</button></div>
+          </div>
+          <div class="job">
+            <div class="n"><b>report-2025.docx</b><span class="tag" style="background: #eceeed; color: #4d5853">排队中</span></div>
+            <div style="display: flex; gap: 6px; align-items: center"><span class="mute" style="flex: 1">前面还有 1 个</span><button class="btn">优先</button><button class="btn">取消</button></div>
+          </div>
+          <div class="job">
+            <div class="n"><b>manual.epub</b><span class="tag" style="background: #e1f2e8; color: #1f6b41">已生成</span></div>
+            <div style="display: flex; gap: 6px; align-items: center"><span class="mute" style="flex: 1">12 页 · 2 小时前</span><button class="btn">打开</button><button class="btn" aria-label="更多">⋯</button></div>
+          </div>
+          <div class="job">
+            <div class="n"><b>chapter3.pdf</b><span class="tag" style="background: #f9e3e0; color: #a8362d">失败</span></div>
+            <div class="mute" style="color: #a8362d">第 9 页：模型没有返回译文（2 段）</div>
+            <div style="display: flex; gap: 6px"><span style="flex: 1"></span><button class="btn pri">重试失败的</button><button class="btn" aria-label="更多">⋯</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>翻译设置</h3>
+        <div class="fld"><span>语言</span><div class="sel">自动检测 → 简体中文</div></div>
+        <div class="fld"><span>输出</span><div class="seg"><span class="on">双语对照</span><span>仅译文</span></div></div>
+        <div class="fld"><span>PDF</span><div class="seg"><span class="on">原处替换</span><span>原页+译文页</span><span>只要文字</span></div></div>
+        <div class="fld"><span>页范围</span><div class="sel" style="color: #66716c">全部（共 18 页）</div></div>
+        <div style="border-top: 1px solid #eef0ee; padding-top: 8px; display: flex; align-items: center; gap: 8px"><span class="mute" style="flex: 1">专家 自动 · 术语库 开 · 先预览 开 · 识字 视觉模型</span><button class="btn lnk">高级 ▸</button></div>
+      </div>
+    </aside>
+
+    <!-- 右：阅读器 -->
+    <section style="flex: 1; min-width: 0; border: 1px solid #d9dedb; background: #fff; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #eef0ee">
+        <b style="font-size: 14px">Attention Is All You Need.pdf</b>
+        <span class="mute">第 7 / 18 页</span>
+        <span style="flex: 1"></span>
+        <div class="seg"><span>原文</span><span>对照</span><span class="on">译文</span><span>版面</span></div>
+        <button class="btn" aria-label="搜索">搜索</button>
+        <button class="btn">导出 ▾</button>
+      </div>
+      <div style="flex: 1; min-height: 0; display: flex">
+        <div style="width: 76px; flex: none; border-right: 1px solid #eef0ee; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 12px; background: #f4f5f4; overflow: hidden">
+          <div class="thumb">1<i style="background: #2f8a57"></i></div><div class="thumb">2<i style="background: #2f8a57"></i></div><div class="thumb">3<i style="background: #2f8a57"></i></div><div class="thumb">4<i style="background: #c2453b"></i></div><div class="thumb">5<i style="background: #2f8a57"></i></div><div class="thumb">6<i style="background: #2f8a57"></i></div><div class="thumb on">7<i style="background: #d9762b"></i></div><div class="thumb">8<i style="background: #b7beb9"></i></div><div class="thumb">9<i style="background: #b7beb9"></i></div>
+        </div>
+        <div style="flex: 1; min-width: 0; padding: 18px 26px; overflow: hidden; display: flex; flex-direction: column">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px"><span class="mute">只看</span><div class="seg"><span class="on">全部</span><span>未译 1</span><span>失败 2</span></div></div>
+          <p class="p">3.2 注意力。注意力函数可以描述为把一个查询和一组键值对映射到一个输出，其中查询、键、值和输出都是向量。输出是值的加权和，权重由查询与对应键的兼容函数算出。</p>
+          <p class="p">缩放点积注意力。输入由维度为 d_k 的查询和键，以及维度为 d_v 的值组成。我们对查询和所有键做点积，除以 √d_k，再用 softmax 得到值的权重。</p>
+          <p class="p" style="border-left: 3px solid #d9762b; padding-left: 10px; background: #fdf4ec">多头注意力。与其用 d_model 维的键、值和查询只做一次注意力，不如把它们分别线性投影 h 次，……<span class="mute">　翻译中…</span></p>
+          <p class="p" style="color: #8a948f; border: 1px dashed #d6dbd8; border-radius: 8px; padding: 6px 10px">（还没译到这一段；点“继续”之外，也可以现在自己写）</p>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-top: 1px solid #eef0ee; background: #fbfaf8; font-size: 12.5px">
+        <b>已译 6 / 18 页</b><span>112 / 340 段</span><span class="mute">先预览：译完在这里检查、改译文，再生成文件</span>
+        <span style="flex: 1"></span>
+        <button class="btn">重试失败（2）</button><button class="btn pri" style="opacity: .5">生成文件</button>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>剪辑 轨道操作</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 860px; box-sizing: border-box; padding: 24px 28px; display: flex; flex-direction: column; gap: 18px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<div style="display: flex; gap: 18px">
+
+<section style="flex: 1; min-width: 0; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><b style="width: 22px; height: 22px; border-radius: 11px; background: #1d2433; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px">1</b><strong style="font-size: 15px">拖素材：放进已有轨道，或放在轨道之间新建</strong></div>
+<div style="border: 1px solid #dde1e8; border-radius: 8px; overflow: hidden; background: #eef0f4">
+<div style="display: flex; height: 44px"><div style="width: 90px; padding: 0 8px; display: flex; align-items: center; gap: 6px; background: #fff; border-right: 1px solid #cfd5e0; border-bottom: 1px solid #dde1e8"><span style="width: 24px; height: 18px; border-radius: 4px; background: #2457e6; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">V2</span></div><div style="flex: 1; position: relative; border-bottom: 1px solid #dde1e8"><div style="position: absolute; left: 70px; width: 130px; top: 4px; bottom: 4px; border-radius: 6px; background: #dbe6ff; border: 1px solid #9db8f5; color: #2457e6; font-weight: 600; padding: 0 8px; display: flex; align-items: center">相机 B</div></div></div>
+<div style="height: 26px; position: relative; display: flex; align-items: center"><div style="position: absolute; left: 90px; right: 8px; top: 11px; height: 4px; background: #2457e6; border-radius: 2px"></div><span style="position: absolute; left: 100px; top: -1px; font-size: 11px; font-weight: 600; color: #fff; background: #2457e6; padding: 1px 8px; border-radius: 9px">松手：在 V1 和 V2 之间新建 V2，原来的 V2 变成 V3</span></div>
+<div style="display: flex; height: 44px"><div style="width: 90px; padding: 0 8px; display: flex; align-items: center; gap: 6px; background: #fff; border-right: 1px solid #cfd5e0"><span style="width: 24px; height: 18px; border-radius: 4px; background: #2457e6; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">V1</span></div><div style="flex: 1; position: relative"><div style="position: absolute; left: 0; width: 120px; top: 4px; bottom: 4px; border-radius: 6px; background: #dbe6ff; border: 1px solid #9db8f5; color: #2457e6; font-weight: 600; padding: 0 8px; display: flex; align-items: center">机场</div><div style="position: absolute; left: 124px; width: 130px; top: 4px; bottom: 4px; border-radius: 6px; background: #dbe6ff; border: 1px solid #9db8f5; color: #2457e6; font-weight: 600; padding: 0 8px; display: flex; align-items: center">地铁</div></div></div>
+</div>
+<ul style="margin: 0; padding-left: 18px; line-height: 1.7; color: #4a5367">
+<li>素材可以从素材库、桌面拖进来，也可以在时间线里拖到别的轨道。</li>
+<li>落在轨道<b style="color: #1d2433">上</b>：放进这一条。落在轨道<b style="color: #1d2433">之间</b>（蓝线）或最上 / 最下的空白：新建一条。</li>
+<li>拖的时候，同类型的轨道亮起来；类型不合的（视频拖进音频轨）变灰、不能放。</li>
+</ul>
+</section>
+
+<section style="flex: 1; min-width: 0; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><b style="width: 22px; height: 22px; border-radius: 11px; background: #1d2433; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px">2</b><strong style="font-size: 15px">同一条轨道上放不下时</strong></div>
+<div style="border: 1px solid #dde1e8; border-radius: 8px; overflow: hidden; background: #eef0f4">
+<div style="display: flex; height: 44px"><div style="width: 90px; padding: 0 8px; display: flex; align-items: center; gap: 6px; background: #fff; border-right: 1px solid #cfd5e0; border-bottom: 1px solid #dde1e8"><span style="width: 24px; height: 18px; border-radius: 4px; background: #2f8a57; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">A2</span></div><div style="flex: 1; position: relative; border-bottom: 1px solid #dde1e8"><div style="position: absolute; left: 20px; width: 200px; top: 4px; bottom: 4px; border-radius: 6px; background: #d9f1e3; border: 1px solid #9fd3b4; color: #2f8a57; font-weight: 600; padding: 0 8px; display: flex; align-items: center">配乐 A</div><div style="position: absolute; left: 150px; width: 160px; top: 4px; bottom: 4px; border-radius: 6px; background: rgba(47, 138, 87, 0.25); border: 2px dashed #2f8a57; color: #2f8a57; font-weight: 600; padding: 0 8px; display: flex; align-items: center">正在拖：配乐 B（和 A 重叠）</div></div></div>
+<div style="display: flex; height: 44px"><div style="width: 90px; padding: 0 8px; display: flex; align-items: center; gap: 6px; background: #fff; border-right: 1px solid #cfd5e0"><span style="width: 24px; height: 18px; border-radius: 4px; background: #2f8a57; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">A3</span><i style="font-size: 10px; color: #2457e6; font-style: normal">新</i></div><div style="flex: 1; position: relative; background: repeating-linear-gradient(45deg, rgba(59, 130, 246, .08) 0 8px, transparent 8px 16px)"><div style="position: absolute; left: 150px; width: 160px; top: 4px; bottom: 4px; border-radius: 6px; background: #d9f1e3; border: 1px solid #9fd3b4; color: #2f8a57; font-weight: 600; padding: 0 8px; display: flex; align-items: center">配乐 B（落到新轨）</div></div></div>
+</div>
+<ul style="margin: 0; padding-left: 18px; line-height: 1.7; color: #4a5367">
+<li>一条轨道上的素材<b style="color: #1d2433">不会重叠</b>（和别的剪辑软件一样）。拖到有人的地方，松手时自动落到上 / 下一条空的轨道，没有就新建。</li>
+<li>想让两段同时出现，就放在不同轨道：这正是多条轨道的用处。</li>
+<li>主轨开着“磁吸”时例外：在主轨里拖是排队、插入，后面的自动让位。</li>
+</ul>
+</section>
+</div>
+
+<div style="display: flex; gap: 18px; flex: 1; min-height: 0">
+
+<section style="width: 560px; flex: none; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><b style="width: 22px; height: 22px; border-radius: 11px; background: #1d2433; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px">3</b><strong style="font-size: 15px">轨道头：一排小按钮，右键有更多</strong></div>
+<div style="display: flex; gap: 18px; align-items: flex-start">
+<div style="width: 220px; flex: none; border: 1px solid #cfd5e0; border-radius: 8px; background: #fff; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 6px"><span style="width: 26px; height: 20px; border-radius: 5px; background: #2f8a57; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center">A2</span><b style="flex: 1">配乐</b></div>
+<div style="display: flex; gap: 6px">
+<sc-for list="{{heads}}" as="h" hint-placeholder-count="4"><span style="{{h.style}}" title="{{h.tip}}">{{h.t}}</span></sc-for>
+</div>
+<div style="color: #6b7385; font-size: 11.5px">音量 <span style="display: inline-block; width: 90px; height: 4px; background: #cfd5e0; border-radius: 2px; vertical-align: middle; position: relative"><i style="position: absolute; left: 60%; top: -4px; width: 12px; height: 12px; border-radius: 6px; background: #2457e6; border: 2px solid #fff; box-sizing: border-box"></i></span></div>
+</div>
+<div style="flex: 1; display: flex; flex-direction: column; border: 1px solid #cfd5e0; border-radius: 8px; overflow: hidden; background: #fff; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12)">
+<sc-for list="{{menu}}" as="m" hint-placeholder-count="9"><div style="{{m.style}}">{{m.t}}</div></sc-for>
+</div>
+</div>
+<div style="color: #6b7385; line-height: 1.6; font-size: 12px">M 静音　S 独奏（只听这一条）　锁 锁定（不能拖、不能改）　眼 隐藏（视频 / 文字轨，预览和导出都不显示）。名字双击可改。</div>
+</section>
+
+<section style="flex: 1; min-width: 0; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><b style="width: 22px; height: 22px; border-radius: 11px; background: #1d2433; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px">4</b><strong style="font-size: 15px">检查器里新增“所在轨道”，不拖也能换</strong></div>
+<div style="display: flex; gap: 18px">
+<div style="width: 250px; flex: none; border: 1px solid #cfd5e0; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: #fff">
+<b>相机 B 街景</b>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 60px; color: #6b7385">所在轨道</span><span style="flex: 1; height: 28px; border: 1px solid #cfd5e0; border-radius: 6px; display: flex; align-items: center; padding: 0 8px">V2 相机 B</span></div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 60px; color: #6b7385">开始</span><span style="flex: 1; height: 28px; border: 1px solid #cfd5e0; border-radius: 6px; display: flex; align-items: center; padding: 0 8px">0:04.0</span></div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 60px; color: #6b7385">叠放</span><span style="display: flex; border: 1px solid #cfd5e0; border-radius: 6px; overflow: hidden"><span style="padding: 3px 8px; border-right: 1px solid #cfd5e0">移到最上</span><span style="padding: 3px 8px; border-right: 1px solid #cfd5e0">上移</span><span style="padding: 3px 8px">下移</span></span></div>
+<div style="color: #6b7385; font-size: 11.5px">位置、缩放、透明度、特效……和现在一样。</div>
+</div>
+<ul style="margin: 0; padding-left: 18px; line-height: 1.7; color: #4a5367; flex: 1">
+<li>下拉里列出同类型的所有轨道，选一条就换过去；选“新建视频轨”就新开一条。</li>
+<li>上移 / 下移 = 把这条素材换到上一条 / 下一条轨道；“移到最上”放到最高的一条空位。</li>
+<li>多选素材后，可以一起换轨、一起改叠放。</li>
+</ul>
+</div>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const b = 'width:26px;height:22px;border:1px solid #cfd5e0;border-radius:5px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;';
+const heads = [
+  { t: 'M', tip: '静音', style: b + 'background:#fdf0e6;border-color:#d9762b;color:#b4561a' },
+  { t: 'S', tip: '独奏', style: b + 'background:#fff;color:#4a5367' },
+  { t: '锁', tip: '锁定', style: b + 'background:#fff;color:#4a5367' },
+  { t: '眼', tip: '隐藏', style: b + 'background:#f0f1f4;color:#a0a7b6' },
+];
+const mi = 'padding:7px 12px;border-bottom:1px solid #eef0f4;';
+const menu = [
+  { t: '重命名', style: mi },
+  { t: '在上方插入音频轨', style: mi },
+  { t: '在下方插入音频轨', style: mi },
+  { t: '上移一条', style: mi },
+  { t: '下移一条', style: mi },
+  { t: '复制这条轨道（连同素材）', style: mi },
+  { t: '轨道高度：小 / 中 / 大', style: mi },
+  { t: '选中这条轨道上的全部素材', style: mi },
+  { t: '删除轨道…', style: 'padding:7px 12px;color:#c4352a' },
+];
+return { heads, menu };
+}
+}
+</script>
+</body>
+</html>
