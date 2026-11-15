@@ -50,6 +50,14 @@ const init = `
   await page.waitForTimeout(600)
 
   ok('顶部有“单个解析 / 批量下载”切换，默认单个', (await page.locator('.modes button.on').innerText()) === '单个解析')
+  // 页头：大标题已删，只留视觉隐藏的 h1；剪贴板监听状态在分段控件同一行的最右边
+  const hd = await page.evaluate(() => {
+    const h = document.querySelector('.page h1'), m = document.querySelector('.modes'), c = m.querySelector('.clipstat'), seg = m.querySelector('button:nth-child(2)')
+    const hr = h.getBoundingClientRect(), mr = m.getBoundingClientRect(), cr = c.getBoundingClientRect(), sr = seg.getBoundingClientRect()
+    return { h: h.textContent, hw: hr.width, hh: hr.height, mTop: mr.top, rightGap: mr.right - cr.right, sameRow: Math.abs((cr.top + cr.height / 2) - (sr.top + sr.height / 2)) < 4, txt: c.textContent.trim() }
+  })
+  ok('页面只有一个视觉隐藏的 h1“解析”，不再占纵向空间', hd.h === '解析' && hd.hw <= 1 && hd.hh <= 1 && hd.mTop < 40, JSON.stringify(hd))
+  ok('“剪贴板监听中”在模式切换行的最右边', hd.txt === '剪贴板监听中' && hd.rightGap >= 0 && hd.rightGap < 2 && hd.sameRow, JSON.stringify(hd))
   ok('单个模式显示粘贴栏', (await page.locator('.paste').count()) === 1)
   ok('主页默认就显示批次区（没有解析结果时）', (await page.locator('.bl').count()) === 1 && (await page.locator('.bx').count()) === 1)
   ok('批次卡片带进度和操作', (await page.locator('.bx').innerText()).includes('23/50 完成') && (await page.locator('.bb button', { hasText: '只重试失败项' }).count()) === 1)

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import PageHead from '../components/ui/PageHead.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { api, errorText, events } from '../api'
@@ -368,7 +369,7 @@ async function clearHistory() {
 
 <template>
   <div class="dpage page">
-    <div class="dtop"><h1>媒体库</h1></div>
+    <PageHead title="媒体库" />
     <div class="head">
       <el-radio-group v-model="tab" class="dtabs">
         <el-radio-button value="files">已下载</el-radio-button>

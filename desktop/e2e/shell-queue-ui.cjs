@@ -84,6 +84,9 @@ const mkInit = (lang, theme) => `
   {
     const page = await open('queue', { width: 1280, height: 800 })
     const row = page.locator('.task', { hasText: '任务1' })
+    const h1 = await page.evaluate(() => { const pg = document.querySelector('.dstats').parentElement; const h = pg.querySelector('h1'); const r = h.getBoundingClientRect(); return { t: h.textContent, w: r.width, n: pg.querySelectorAll('h1').length, top: document.querySelector('.dstats').getBoundingClientRect().top } })
+    ok('队列页：只有一个视觉隐藏的 h1，统计卡片贴近顶部', h1.t === '下载队列' && h1.w <= 1 && h1.n === 1 && h1.top < 40, JSON.stringify(h1))
+    ok('队列页：下载中/限速徽标在筛选工具栏里', (await page.locator('.qbar .chip', { hasText: '个下载中' }).count()) === 1)
     ok('进行中：暂停是图标按钮，有 aria-label', (await row.locator('button[aria-label="暂停"]').count()) === 1)
     ok('旧的文字按钮（详情/取消/移除）不再直接露出', (await row.locator('.actions').innerText()).trim() === '')
     const unnamed = await page.locator('.task .actions button').evaluateAll((bs) => bs.filter((b) => !b.getAttribute('aria-label') && !b.innerText.trim()).length)

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, provide, ref, shallowRef, watch } from 'vue'
+import PageHead from '../components/ui/PageHead.vue'
 import { useAppStore } from '../stores/app'
 import { ACCEPTS, PREVIEW_KEY, QUICK_CARDS, QUICK_TOOLS, byId, idFor, loadRecent, pickKinds, pushRecent, type PreviewSpec } from '../utils/toolbox'
 import ToolboxSidebar from '../components/toolbox/ToolboxSidebar.vue'
@@ -89,8 +90,10 @@ const singleFile = computed(() => ['tags', 'subtitle', 'lut'].includes(cur.value
   <div class="tb">
     <ToolboxSidebar :model-value="cur" :recent="recent" @update:model-value="select" @back="back" />
     <div class="content" :class="{ wide: cur === 'edit' }">
-      <div class="dtop"><h1>工具箱</h1><span class="dspacer" /><span class="chip">{{ def.name }}</span></div>
-      <p class="mute note">所有处理都在本机完成，会生成新文件并登记到媒体库，不会修改原文件。需要 ffmpeg（在“设置 → 组件”里安装）。</p>
+      <PageHead title="工具箱">
+        <p class="mute note dgrow one">所有处理都在本机完成，会生成新文件并登记到媒体库，不会修改原文件。需要 ffmpeg（在“设置 → 组件”里安装）。</p>
+        <span class="chip">{{ def.name }}</span>
+      </PageHead>
       <section class="quick" aria-labelledby="quick-h">
         <h2 id="quick-h" class="qh">常用工具</h2>
         <div class="qgrid">

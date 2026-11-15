@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import PageHead from '../components/ui/PageHead.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
@@ -418,10 +419,9 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 
 <template>
   <div class="ft dpage">
-    <header class="h1 dtop">
-      <h1>文件翻译</h1>
-      <p class="dnote">PDF（含扫描版）、Word、PPT、Excel、EPUB、TXT、Markdown、字幕、图片，译完版面和格式不变，可双语对照，术语和专家沿用你的设置</p>
-    </header>
+    <PageHead title="文件翻译">
+      <p class="dnote dgrow one" title="PDF（含扫描版）、Word、PPT、Excel、EPUB、TXT、Markdown、字幕、图片，译完版面和格式不变，可双语对照，术语和专家沿用你的设置">PDF（含扫描版）、Word、PPT、Excel、EPUB、TXT、Markdown、字幕、图片，译完版面和格式不变，可双语对照，术语和专家沿用你的设置</p>
+    </PageHead>
     <div class="cols">
       <aside v-if="!leftOpen" class="lrail" aria-label="左栏（已收起）">
         <button type="button" title="展开左栏" aria-label="展开左栏" @click="leftOpen = true">»</button>
@@ -561,9 +561,6 @@ async function onExport(kind: 'file' | 'reveal' | 'txt' | 'md' | 'srt' | 'srt-tr
 
 <style scoped>
 .ft { height: 100%; box-sizing: border-box; min-height: 0 }
-.h1 { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap }
-.h1 h1 { margin: 0; font-size: 22px }
-.h1 p { margin: 0; color: var(--cc-mute) }
 .cols { flex: 1; display: flex; gap: 18px; min-height: 0 }
 .lrail { width: 46px; flex: none; display: flex; flex-direction: column; gap: 8px; align-items: stretch }
 .lrail button { position: relative; border: 1px solid var(--cc-line); background: var(--cc-card); color: var(--cc-fg); border-radius: 10px; padding: 9px 0; cursor: pointer; font: inherit; font-size: 12px; line-height: 1.2 }
