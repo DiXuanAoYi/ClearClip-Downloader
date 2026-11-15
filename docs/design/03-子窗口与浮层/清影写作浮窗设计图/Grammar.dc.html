@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>语法检查：行内标注</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body{margin:0}
+.chip{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:12px;border:1px solid #CBD5DC;background:#fff;font-size:12px;color:#14202B;white-space:nowrap}
+.on{background:#0F766E;border-color:#0F766E;color:#fff}
+.e1{border-bottom:2px solid #B42318;background:#FDECEA}
+.e2{border-bottom:2px solid #B45309;background:#FEF3E2}
+.e3{border-bottom:2px solid #1D5FA8;background:#E8F1FB}
+.card{border:1px solid #E2E8EC;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:#fff}
+.tag{font-size:11px;font-weight:700;letter-spacing:.04em}
+</style>
+</helmet>
+<div style="width:900px;height:640px;box-sizing:border-box;background:#F1F4F6;font-family:'Noto Sans SC',system-ui,sans-serif;color:#14202B;padding:32px;display:flex;gap:28px">
+
+  <div style="width:540px;flex:none;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:13px;color:#4A5A68;letter-spacing:.08em">网页输入框：检查后直接在文字下标注</div>
+    <div style="background:#fff;border:2px solid #0F766E;border-radius:10px;padding:16px 18px;font-size:14px;line-height:2.1">
+      我们公司成立于<span class="e1">2015在</span>，主要<span class="e2">做是</span>企业软件。
+      今年我们<span class="e3">非常的</span>高兴地宣布，新产品将于下周<span class="e1">发步</span>，
+      欢迎大家<span class="e2">的</span>关注。
+    </div>
+
+    <div style="display:flex;gap:14px;font-size:12px;color:#33434F;align-items:center;flex-wrap:wrap">
+      <span><span class="e1" style="padding:0 6px">错别字/语法</span></span>
+      <span><span class="e2" style="padding:0 6px">表达不通顺</span></span>
+      <span><span class="e3" style="padding:0 6px">风格建议</span></span>
+    </div>
+
+    <div style="background:#fff;border:1px solid #D5DDE3;border-radius:14px;box-shadow:0 10px 34px rgba(20,32,43,.14);padding:14px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <b style="font-size:13px">语法检查</b><span style="font-size:11px;color:#4A5A68">发现 5 处</span>
+        <span style="margin-left:auto" class="chip on">全部采用</span>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:8px"><span class="tag" style="color:#B42318">错别字</span><span style="font-size:13px"><span style="text-decoration:line-through;color:#8A1C12">发步</span> → <b>发布</b></span><span class="chip on" style="margin-left:auto;height:22px">采用</span></div>
+        <div style="font-size:11.5px;color:#4A5A68">“步”与“布”同音，此处应为“发布”。</div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:8px"><span class="tag" style="color:#B45309">不通顺</span><span style="font-size:13px"><span style="text-decoration:line-through;color:#8A1C12">做是</span> → <b>做</b></span><span class="chip on" style="margin-left:auto;height:22px">采用</span></div>
+        <div style="font-size:11.5px;color:#4A5A68">“做是”多出一个字，应为“主要做企业软件”或“主要是企业软件”。</div>
+      </div>
+      <div style="font-size:12px;color:#4A5A68;text-align:center">其余 3 处，点击文字下方的标注逐个查看</div>
+    </div>
+  </div>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:15px;font-weight:700">检查方式</div>
+    <div style="font-size:12.5px;line-height:1.75;color:#33434F;display:flex;flex-direction:column;gap:10px">
+      <div>停顿 1.5 秒后自动检查，或点面板“语法检查”。自动检查可在设置里关闭。</div>
+      <div>支持中文和英文。每条建议都带一句原因，点击标注可单独采用或忽略。</div>
+      <div>先用本地规则快速标出明显错误（重复字、标点、中英文间距），再交给模型处理复杂的语病。</div>
+      <div>网页输入框里不改动原文，标注画在输入框上方的透明层，不干扰网页自己的拼写检查。</div>
+      <div>专有名词、代码、网址、@名字不会被误判。</div>
+    </div>
+    <div style="margin-top:auto;border:1px dashed #9FB0BD;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.65;color:#33434F">
+      可勾选“把常用忽略词加入个人词典”，之后不再提示。
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":900,"height":640}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

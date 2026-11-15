@@ -1,0 +1,325 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>实时音效设计</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 布局：三块界面稿并排（弹窗“音效”页 / 视频上的小面板 / 不能处理时的提示），下面是信号链、预设表、内置播放器 */
+:root{
+  --bg:#f4f5f4; --card:#fff; --side:#eaedeb; --line:#d9dedb; --fg:#1d2420; --mute:#69746f;
+  --acc:#d9762b; --acc-soft:#f8e6d6; --ok:#2f8a57; --warn:#b7791f; --err:#c2453b; --ink:#10201a; --meter-bg:#e3e8e5;
+  --sans:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif; --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141a17; --card:#1d2420; --side:#222a26; --line:#33403a; --fg:#e6ece8; --mute:#93a09a;
+  --acc:#e8903f; --acc-soft:#3a2b1e; --ok:#52b57c; --warn:#d9a441; --err:#e0685e; --ink:#0c1410; --meter-bg:#2a332f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141a17; --card:#1d2420; --side:#222a26; --line:#33403a; --fg:#e6ece8; --mute:#93a09a;
+  --acc:#e8903f; --acc-soft:#3a2b1e; --ok:#52b57c; --warn:#d9a441; --err:#e0685e; --ink:#0c1410; --meter-bg:#2a332f; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.55;
+  padding-block:28px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:30px}
+h1{font-size:22px;margin:0;text-wrap:balance}
+h2{font-size:15px;margin:0 0 4px;text-wrap:balance}
+p{margin:0}
+.lead{color:var(--mute);max-width:70ch}
+.mute{color:var(--mute)} .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.sec{display:flex;flex-direction:column;gap:12px}
+.cap{font-size:12px;color:var(--mute);letter-spacing:.04em}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;align-items:start}
+.fig{display:flex;flex-direction:column;gap:8px;min-width:0}
+.fig>.cap b{color:var(--fg);font-weight:600}
+
+/* 扩展弹窗外壳 */
+.pop{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.08)}
+.tabs{display:flex;gap:2px;padding:8px 10px 0;background:var(--side);border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs span{padding:6px 10px;font-size:12.5px;color:var(--mute);border-radius:6px 6px 0 0;white-space:nowrap}
+.tabs span.on{background:var(--card);color:var(--fg);font-weight:600;box-shadow:inset 0 2px 0 var(--acc)}
+.body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:12px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.row small{display:block;color:var(--mute);font-size:11.5px}
+.sw{width:34px;height:20px;border-radius:10px;background:var(--line);position:relative;border:0;cursor:pointer;flex:none;transition:background .15s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.sw[aria-checked="true"]{background:var(--acc)} .sw[aria-checked="true"]::after{left:16px}
+.sw:focus-visible,.chip:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.state{display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;border-radius:8px;background:var(--side)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+.dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+
+/* 响度表 */
+.meter{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--line);border-radius:8px}
+.mrow{display:grid;grid-template-columns:44px 1fr 62px;align-items:center;gap:8px;font-size:11.5px}
+.bar{height:8px;border-radius:4px;background:var(--meter-bg);position:relative;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--acc);transition:width .35s}
+.bar.tg::after{content:"";position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--fg);left:var(--t,60%);opacity:.7}
+.bar.g i{background:var(--ok)}
+.mrow b{font-weight:600;text-align:right}
+
+/* 预设与自定义 */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:14px;padding:3px 11px;font:inherit;font-size:12px;cursor:pointer}
+.chip[aria-pressed="true"]{border-color:var(--acc);color:var(--acc);background:var(--acc-soft)}
+.chip small{color:var(--mute);margin-left:4px;font-family:var(--mono);font-size:10.5px}
+.lab{font-size:11.5px;color:var(--mute);letter-spacing:.04em}
+.field{display:grid;grid-template-columns:78px 1fr 58px;gap:8px;align-items:center;font-size:12px}
+.field output{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--fg);font:inherit;font-size:12px;padding:3px 10px;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--acc-soft);color:var(--acc);font-weight:600}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11.5px;color:var(--mute);border-top:1px solid var(--line);padding-top:10px}
+.link{color:var(--acc);background:none;border:0;font:inherit;padding:0;cursor:pointer}
+
+/* 视频页上的小面板 */
+.video{position:relative;aspect-ratio:16/9;border-radius:10px;background:linear-gradient(135deg,#26343a,#0f1a1d 60%,#2b2118);overflow:hidden;color:#fff}
+.video .ctl{position:absolute;left:0;right:0;bottom:0;padding:8px 12px;background:linear-gradient(transparent,rgba(0,0,0,.65));display:flex;align-items:center;gap:10px;font-size:11px}
+.video .prog{flex:1;height:3px;background:rgba(255,255,255,.3);border-radius:2px;position:relative}
+.video .prog::after{content:"";position:absolute;left:0;top:0;bottom:0;width:38%;background:#e8903f;border-radius:2px}
+.pill{position:absolute;right:12px;bottom:44px;background:rgba(16,32,26,.88);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:4px 10px;font-size:11.5px;display:flex;align-items:center;gap:6px;backdrop-filter:blur(6px)}
+.pill .dot{width:7px;height:7px}
+.mini{position:absolute;right:12px;bottom:78px;width:210px;background:rgba(16,32,26,.94);border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;font-size:11.5px;color:#fff}
+.mini .chips .chip{background:transparent;color:#fff;border-color:rgba(255,255,255,.25);padding:2px 8px;font-size:11px}
+.mini .chips .chip[aria-pressed="true"]{background:rgba(232,144,63,.25);border-color:#e8903f;color:#ffc590}
+.mini .row{font-size:11.5px}
+.mini .sw{background:rgba(255,255,255,.25)} .mini .sw[aria-checked="true"]{background:#e8903f}
+.toast{position:absolute;left:12px;top:12px;max-width:62%;background:rgba(16,32,26,.92);border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:8px 10px;font-size:11.5px;display:flex;gap:8px;align-items:flex-start}
+
+/* 信号链 */
+.chain{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:6px}
+.node{flex:none;min-width:132px;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:3px}
+.node b{font-size:13px} .node small{color:var(--mute);font-size:11px;line-height:1.4}
+.node.on{border-color:var(--acc)} .node .tag{font-size:10.5px;color:var(--acc);letter-spacing:.04em}
+.node.off{opacity:.6;border-style:dashed}
+.arrow{flex:none;width:22px;align-self:center;text-align:center;color:var(--mute)}
+
+/* 表 */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:620px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;color:var(--mute);font-weight:500;letter-spacing:.04em;background:var(--side)}
+tr:last-child td{border-bottom:0}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.def{font-size:10.5px;color:var(--acc);border:1px solid var(--acc);border-radius:8px;padding:0 6px;margin-left:6px}
+
+/* 内置播放器 */
+.player{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:grid;grid-template-columns:1fr 220px}
+.player .pv{aspect-ratio:16/9;background:linear-gradient(135deg,#223,#111 60%,#321);min-height:160px}
+.player .ps{padding:12px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:10px;font-size:12px}
+@media(max-width:640px){.player{grid-template-columns:1fr}.player .ps{border-left:0;border-top:1px solid var(--line)}}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.note{border-left:2px solid var(--line);padding-left:12px;font-size:13px}
+.note b{display:block;margin-bottom:2px}
+</style>
+
+<div class="wrap">
+  <header class="sec">
+    <h1>实时音效：响度标准化、混响、均衡器</h1>
+    <p class="lead">浏览器扩展给页面里的每个视频接一条处理链，播放时实时统一音量。响度标准化默认开启，目标 -16 LUFS，可以选常用预设，也可以自己调。下面的控件可以点着看，响度表是模拟的。</p>
+  </header>
+
+  <section class="sec">
+    <div class="three">
+      <div class="fig">
+        <div class="cap"><b>1</b> 扩展弹窗新增“音效”页（主入口）</div>
+        <div class="pop">
+          <div class="tabs"><span>当前页</span><span>嗅探</span><span>摘要</span><span class="on">音效</span><span>工具</span><span>设置</span></div>
+          <div class="body">
+            <div class="row">
+              <div><b>响度标准化</b><small>统一不同视频的音量，默认开启</small></div>
+              <button class="sw" id="swLoud" role="switch" aria-checked="true" aria-label="响度标准化"></button>
+            </div>
+
+            <div class="state"><span class="dot" id="stDot"></span><span id="stTxt">正在处理本页的 1 个视频（B 站，MSE 流）</span></div>
+
+            <div class="meter" aria-label="响度表（模拟）">
+              <div class="mrow"><span class="mute">输入</span><div class="bar"><i id="mIn" style="width:46%"></i></div><b class="mono" id="vIn">-24.1</b></div>
+              <div class="mrow"><span class="mute">输出</span><div class="bar tg g" id="barOut" style="--t:62%"><i id="mOut" style="width:62%"></i></div><b class="mono" id="vOut">-16.0</b></div>
+              <div class="mrow"><span class="mute">增益</span><div class="bar"><i id="mGain" style="width:40%;background:var(--mute)"></i></div><b class="mono" id="vGain">+8.1 dB</b></div>
+              <div class="mute" style="font-size:11px">单位 LUFS（短时响度）；竖线是目标。</div>
+            </div>
+
+            <div>
+              <div class="lab" style="margin-bottom:6px">预设</div>
+              <div class="chips" id="presets" role="group" aria-label="响度预设"></div>
+            </div>
+
+            <div id="custom" style="display:flex;flex-direction:column;gap:9px">
+              <div class="field"><label for="rTarget">目标响度</label><input id="rTarget" type="range" min="-30" max="-8" step="1" value="-16"><output id="oTarget">-16 LUFS</output></div>
+              <div class="field"><label for="rComp">压缩强度</label><input id="rComp" type="range" min="0" max="100" step="5" value="30"><output id="oComp">30%</output></div>
+              <div class="field"><label for="rMax">最大增益</label><input id="rMax" type="range" min="0" max="24" step="1" value="12"><output id="oMax">+12 dB</output></div>
+              <div class="row"><span style="font-size:12px">响应速度</span>
+                <span class="seg" id="speed"><button aria-pressed="false">慢</button><button aria-pressed="true">中</button><button aria-pressed="false">快</button></span></div>
+              <div class="row"><span style="font-size:12px">限幅器<small style="display:inline;margin-left:6px">防止拉高音量后爆音，峰值上限 -1 dBTP</small></span>
+                <button class="sw" role="switch" aria-checked="true" aria-label="限幅器"></button></div>
+            </div>
+
+            <div class="foot"><span>对 <b style="color:var(--fg)">bilibili.com</b> 启用</span><button class="link">本站关闭</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fig">
+        <div class="cap"><b>2</b> 视频页上的小按钮和快捷面板</div>
+        <div class="video" aria-label="视频页示意">
+          <div class="mini">
+            <div class="row"><b>响度标准化</b><button class="sw" role="switch" aria-checked="true" aria-label="快捷：响度标准化"></button></div>
+            <div class="chips" id="quick"></div>
+            <div class="row"><span class="mute">混响</span><span class="seg" id="qrev"><button aria-pressed="true">关</button><button aria-pressed="false">房间</button><button aria-pressed="false">大厅</button></span></div>
+            <button class="link" style="text-align:left">更多音效设置…</button>
+          </div>
+          <div class="pill"><span class="dot"></span><span>音效 <span class="mono" id="pillT">-16 LUFS</span></span></div>
+          <div class="ctl"><span>▶</span><div class="prog"></div><span class="mono">04:12 / 11:08</span></div>
+        </div>
+        <div class="mute" style="font-size:12px">鼠标移到视频上才显示右下角的小按钮，点开是快捷面板；绿点表示正在处理，不想要的网站可以在这里一键关闭。</div>
+      </div>
+
+      <div class="fig">
+        <div class="cap"><b>3</b> 不能处理的视频：跳过并提示，不改变声音</div>
+        <div class="video" style="background:linear-gradient(135deg,#2d2a26,#15130f 60%,#2a1d1d)">
+          <div class="toast"><span class="dot warn" style="margin-top:4px"></span><div><b>这个视频无法统一音量</b><br><span style="opacity:.8">视频文件来自另一个网站（cdn.example-video.net），浏览器不允许改它的声音，已按原样播放。</span></div></div>
+          <div class="pill"><span class="dot warn"></span><span>音效 未处理</span></div>
+          <div class="ctl"><span>▶</span><div class="prog"></div><span class="mono">00:48 / 03:20</span></div>
+        </div>
+        <div class="pop"><div class="body" style="gap:8px">
+          <div class="state"><span class="dot warn"></span><span>本页 1 个视频无法处理：<b>跨域直链</b></span></div>
+          <div class="mute" style="font-size:12px">也会这样提示的情况：受版权保护的视频（Netflix 等）、页面里没有可用的声音通道。声音一直是原样的，不会被静音。</div>
+          <div class="row"><span style="font-size:12px" class="mute">只提示一次，之后在小按钮上显示“未处理”</span><button class="link">不再提示</button></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>处理链</h2>
+    <p class="mute" style="font-size:13px">每一环可以单独绕过；全部关闭时，声音等于没接这条链。默认只开响度标准化和限幅器。</p>
+    <div class="chain" aria-label="处理链">
+      <div class="node on"><span class="tag">默认关</span><b>均衡器</b><small>人声增强、低音、高音、夜间（压低低频）</small></div>
+      <div class="arrow">→</div>
+      <div class="node off"><span class="tag">默认关</span><b>混响</b><small>房间 / 客厅 / 大厅 / 剧场；程序生成脉冲响应，混合量可调</small></div>
+      <div class="arrow">→</div>
+      <div class="node on"><span class="tag">默认开</span><b>响度测量</b><small>K 计权 + 400 ms 滑动窗，换算 LUFS（短时 3 s）</small></div>
+      <div class="arrow">→</div>
+      <div class="node on"><span class="tag">默认开</span><b>增益调整</b><small>按目标与测量值的差慢慢调；有最大增益，静音段不乱拉</small></div>
+      <div class="arrow">→</div>
+      <div class="node on"><span class="tag">默认开</span><b>压缩 / 限幅</b><small>温和压缩，最后一环限幅，峰值不超过 -1 dBTP</small></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>响度预设</h2>
+    <div class="tw"><table>
+      <thead><tr><th>预设</th><th>目标</th><th>压缩</th><th>最大增益</th><th>适合</th></tr></thead>
+      <tbody>
+        <tr><td><b>温和</b><span class="def">默认</span></td><td class="n">-16 LUFS</td><td class="n">30%</td><td class="n">+12 dB</td><td>短视频、网课、讲话类；保留一点动态</td></tr>
+        <tr><td><b>标准</b></td><td class="n">-14 LUFS</td><td class="n">40%</td><td class="n">+12 dB</td><td>和 YouTube、各大音乐平台的响度接近，更响更满</td></tr>
+        <tr><td><b>安静</b></td><td class="n">-18 LUFS</td><td class="n">35%</td><td class="n">+10 dB</td><td>在办公室或图书馆，声音不想太大</td></tr>
+        <tr><td><b>夜间</b></td><td class="n">-20 LUFS</td><td class="n">70%</td><td class="n">+12 dB</td><td>深夜看电影：压低爆炸、抬高对白，同时压低低频</td></tr>
+        <tr><td><b>广播</b></td><td class="n">-23 LUFS</td><td class="n">20%</td><td class="n">+8 dB</td><td>电视、播客的 EBU R128 标准，动态保留最多</td></tr>
+        <tr><td><b>自定义</b></td><td class="n">-30 ~ -8</td><td class="n">0 ~ 100%</td><td class="n">0 ~ +24 dB</td><td>改了任意一项就自动切到这里，可以另存为自己的预设</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="sec">
+    <h2>清影内置播放器</h2>
+    <div class="player">
+      <div class="pv" aria-hidden="true"></div>
+      <div class="ps">
+        <div class="row"><b>音效</b><button class="sw" role="switch" aria-checked="true" aria-label="播放器：响度标准化"></button></div>
+        <div class="chips"><button class="chip" aria-pressed="true">温和</button><button class="chip" aria-pressed="false">夜间</button></div>
+        <div class="mute">-16 LUFS · 当前增益 +3.2 dB</div>
+        <div class="mute" style="font-size:11.5px">本机文件没有跨域限制，一定能处理；和浏览器扩展共用同一份处理代码和预设。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>需要你确认的几处</h2>
+    <div class="notes">
+      <div class="note"><b>默认值</b>响度标准化开、预设“温和”、-16 LUFS、限幅器开；均衡器和混响默认关。</div>
+      <div class="note"><b>按网站记忆</b>每个网站可单独关闭，设置保存在浏览器里；弹窗底部和视频上的小面板都能一键关闭本站。</div>
+      <div class="note"><b>不能处理时</b>只提示，不改声音；提示每个页面最多出现一次，可选择“不再提示”。</div>
+      <div class="note"><b>耗电与延迟</b>只在视频播放时处理，暂停和标签页在后台时停止测量；响度测量窗口会带来约 0.4 秒的反应延迟，换视频时先快速拉到目标再放慢。</div>
+    </div>
+  </section>
+</div>
+
+<script>
+const PRESETS = [
+  { n: '温和', t: -16, c: 30, g: 12 }, { n: '标准', t: -14, c: 40, g: 12 }, { n: '安静', t: -18, c: 35, g: 10 },
+  { n: '夜间', t: -20, c: 70, g: 12 }, { n: '广播', t: -23, c: 20, g: 8 }, { n: '自定义', t: null }
+]
+const $ = (id) => document.getElementById(id)
+let cur = 0
+const state = { t: -16, c: 30, g: 12 }
+
+function bindSw(root = document) {
+  root.querySelectorAll('.sw').forEach((b) => b.addEventListener('click', () => {
+    b.setAttribute('aria-checked', b.getAttribute('aria-checked') === 'true' ? 'false' : 'true')
+    if (b.id === 'swLoud') {
+      const on = b.getAttribute('aria-checked') === 'true'
+      $('stDot').className = 'dot' + (on ? '' : ' warn')
+      $('stTxt').textContent = on ? '正在处理本页的 1 个视频（B 站，MSE 流）' : '已关闭，声音保持原样'
+      $('custom').style.opacity = on ? 1 : .45
+    }
+  }))
+}
+function draw() {
+  $('oTarget').textContent = state.t + ' LUFS'
+  $('oComp').textContent = state.c + '%'
+  $('oMax').textContent = '+' + state.g + ' dB'
+  $('rTarget').value = state.t; $('rComp').value = state.c; $('rMax').value = state.g
+  $('pillT').textContent = state.t + ' LUFS'
+  const pos = ((state.t + 30) / 22) * 100
+  $('barOut').style.setProperty('--t', pos + '%')
+  document.querySelectorAll('#presets .chip').forEach((b, i) => b.setAttribute('aria-pressed', String(i === cur)))
+  document.querySelectorAll('#quick .chip').forEach((b, i) => b.setAttribute('aria-pressed', String(i === cur)))
+}
+function pick(i) {
+  cur = i
+  const p = PRESETS[i]
+  if (p.t !== null) { state.t = p.t; state.c = p.c; state.g = p.g }
+  draw()
+}
+function mk(box, list, withNum) {
+  list.forEach((p, i) => {
+    const b = document.createElement('button')
+    b.className = 'chip'; b.type = 'button'
+    b.innerHTML = p.n + (withNum && p.t !== null ? `<small>${p.t}</small>` : '')
+    b.addEventListener('click', () => pick(i))
+    box.appendChild(b)
+  })
+}
+mk($('presets'), PRESETS, true)
+mk($('quick'), PRESETS.slice(0, 5), false)
+;[['rTarget', 't'], ['rComp', 'c'], ['rMax', 'g']].forEach(([id, k]) => $(id).addEventListener('input', (e) => {
+  state[k] = Number(e.target.value); cur = PRESETS.length - 1; draw()
+}))
+document.querySelectorAll('.seg').forEach((s) => s.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+  s.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+})))
+bindSw()
+draw()
+
+// 模拟响度表：输入随机起伏，输出被拉到目标附近
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+let inL = -24
+function tick() {
+  inL += (Math.random() - 0.5) * 3.2
+  inL = Math.max(-34, Math.min(-12, inL))
+  const on = $('swLoud').getAttribute('aria-checked') === 'true'
+  const gain = on ? Math.max(-6, Math.min(state.g, state.t - inL)) : 0
+  const out = inL + gain + (on ? (Math.random() - 0.5) * 0.8 : 0)
+  const pct = (v) => Math.max(0, Math.min(100, ((v + 40) / 32) * 100))
+  $('mIn').style.width = pct(inL) + '%'
+  $('mOut').style.width = pct(out) + '%'
+  $('mGain').style.width = Math.max(0, Math.min(100, ((gain + 6) / 30) * 100)) + '%'
+  $('vIn').textContent = inL.toFixed(1)
+  $('vOut').textContent = out.toFixed(1)
+  $('vGain').textContent = (gain >= 0 ? '+' : '') + gain.toFixed(1) + ' dB'
+}
+tick()
+if (!reduce) setInterval(tick, 900)
+</script>
+
+</body></html>

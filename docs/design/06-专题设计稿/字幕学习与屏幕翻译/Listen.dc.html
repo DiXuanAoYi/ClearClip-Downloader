@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>精听模式</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{width:1440px;height:900px;box-sizing:border-box;display:flex;gap:24px;padding:24px;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+.left{width:900px;flex:none;display:flex;flex-direction:column;gap:14px}
+.video{position:relative;width:900px;height:506px;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,#2a3a44 0%,#16202a 60%,#0f1418 100%)}
+.mask{position:absolute;left:0;right:0;bottom:78px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.mask .bar1{width:560px;height:34px;border-radius:6px;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;color:#ffd9b8;font-size:14px}
+.mask .bar2{width:420px;height:30px;border-radius:6px;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:#d3dadd;font-size:13px}
+.badge{position:absolute;left:14px;top:14px;display:flex;align-items:center;gap:8px;height:30px;border-radius:15px;background:#b4561a;color:#fff;font-weight:700;padding:0 14px;font-size:13px}
+.loop{position:absolute;right:14px;top:14px;height:30px;border-radius:15px;background:rgba(0,0,0,.55);color:#fff;font-size:13px;display:flex;align-items:center;padding:0 14px}
+.seg{position:absolute;left:16px;right:16px;bottom:46px;height:6px;border-radius:3px;background:rgba(255,255,255,.28)}
+.seg i{position:absolute;top:0;height:6px;background:#f0a064;border-radius:3px}
+.seg u{position:absolute;top:-4px;width:2px;height:14px;background:#fff;left:34.6%}
+.vbar{position:absolute;left:0;right:0;bottom:0;height:46px;display:flex;align-items:center;gap:14px;padding:0 16px;color:#fff;font-size:13px;background:linear-gradient(transparent,rgba(0,0,0,.78))}
+.ic{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.cb{height:40px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);display:flex;align-items:center;gap:6px;padding:0 14px}
+.cb.on{background:var(--soft);border-color:var(--acc);color:var(--acc);font-weight:700}
+.cb.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700}
+.keys{color:var(--mute);font-size:12.5px;display:flex;gap:14px;flex-wrap:wrap}
+.keys b{display:inline-block;min-width:18px;text-align:center;padding:0 5px;border:1px solid var(--line);border-radius:5px;color:var(--fg);margin-right:4px}
+.panel{flex:1;min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--card);display:flex;flex-direction:column;overflow:hidden}
+.ph{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.ph b{font-size:16px}
+.ph span{color:var(--mute);font-size:13px}
+.pb{flex:1;padding:16px;display:flex;flex-direction:column;gap:14px;min-height:0}
+.lab{font-size:12px;color:var(--mute);margin-bottom:6px}
+.ta{border:1px solid var(--acc);border-radius:10px;padding:12px 14px;font-size:17px;line-height:1.6;background:var(--bg)}
+.diff{border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:17px;line-height:1.9;background:var(--bg)}
+.ok{color:var(--good)}
+.bad{color:var(--badc);text-decoration:line-through;text-decoration-thickness:2px}
+.fix{color:var(--acc);font-weight:700;border-bottom:2px solid var(--acc)}
+.miss{color:var(--badc);font-weight:700;border-bottom:2px dashed var(--badc)}
+.score{display:flex;align-items:center;gap:12px}
+.ring{width:56px;height:56px;border-radius:50%;background:conic-gradient(var(--acc) 0 78%,var(--line) 0);display:flex;align-items:center;justify-content:center}
+.ring i{width:44px;height:44px;border-radius:50%;background:var(--card);display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:800}
+.score p{margin:0;color:var(--mute);line-height:1.5}
+.score p b{color:var(--fg)}
+.words{display:flex;gap:8px;flex-wrap:wrap}
+.wd{height:30px;border-radius:15px;border:1px solid var(--line);display:flex;align-items:center;gap:6px;padding:0 12px;color:var(--fg)}
+.wd.add{border-color:var(--acc);color:var(--acc);font-weight:700}
+.sl{display:flex;flex-direction:column;gap:6px}
+.si{display:flex;gap:10px;align-items:center;padding:6px 8px;border-radius:8px;color:var(--mute);font-size:13px}
+.si.cur{background:var(--soft);color:var(--fg)}
+.si .n{width:34px;font-variant-numeric:tabular-nums}
+.si .r{margin-left:auto;font-weight:700}
+.btn{height:36px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--fg);display:flex;align-items:center;justify-content:center;padding:0 14px}
+.btn.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700}
+.row{display:flex;gap:8px}
+</style>
+</helmet>
+<div class="root" style="{{vars}}">
+  <div class="left">
+    <div class="video">
+      <div class="badge">精听 · 第 12 句 / 共 86 句</div>
+      <div class="loop">单句循环 2 / 3</div>
+      <div class="mask">
+        <div class="bar1">原文已遮住，先听写</div>
+        <div class="bar2">译文已遮住</div>
+      </div>
+      <div class="seg"><i style="left:34%;width:3.6%"></i><u></u></div>
+      <div class="vbar">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg>
+        <span>3:10 / 9:40</span>
+        <span style="flex:1"></span>
+        <span>0.75×</span>
+      </div>
+    </div>
+    <div class="ctl">
+      <span class="cb">上一句</span>
+      <span class="cb">重听</span>
+      <span class="cb on">句末暂停</span>
+      <span class="cb on">循环 3 次</span>
+      <span class="cb">0.75× ▾</span>
+      <span class="cb">显示原文</span>
+      <span class="cb">显示译文</span>
+      <span class="cb p">下一句</span>
+    </div>
+    <div class="keys"><span><b>R</b>重听</span><span><b>Space</b>播放/暂停</span><span><b>←</b><b>→</b>上一句 / 下一句</span><span><b>Tab</b>揭示答案</span><span><b>Enter</b>提交听写</span></div>
+  </div>
+  <div class="panel">
+    <div class="ph"><b>听写</b><span>只听不看，写下你听到的</span></div>
+    <div class="pb">
+      <div>
+        <div class="lab">你写的</div>
+        <div class="ta">memory is stored as wait not as a database</div>
+      </div>
+      <div>
+        <div class="lab">对照原句</div>
+        <div class="diff"><span class="ok">Memory is stored as</span> <span class="bad">wait</span> <span class="fix">weights</span><span class="miss"> , </span><span class="ok">not as a database.</span></div>
+      </div>
+      <div class="score">
+        <div class="ring"><i>7/9</i></div>
+        <p><b>听对 7 个词</b>，错 1 个。<br>错词可以一键加入生词本，带上这一句。</p>
+      </div>
+      <div class="words">
+        <span class="wd add">weights　+ 加入生词本</span>
+        <span class="wd">stored　已掌握</span>
+      </div>
+      <div class="row"><span class="btn">再听一遍</span><span class="btn p" style="flex:1">下一句</span></div>
+      <div>
+        <div class="lab">本视频进度</div>
+        <div class="sl">
+          <div class="si"><span class="n">0:58</span><span>The training data shapes everything.</span><span class="r ok">9/9</span></div>
+          <div class="si"><span class="n">1:12</span><span>You can think of it as compressed experience.</span><span class="r ok">8/8</span></div>
+          <div class="si cur"><span class="n">3:10</span><span>当前句</span><span class="r">7/9</span></div>
+          <div class="si"><span class="n">3:24</span><span>未听写</span><span class="r">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const t = dark
+      ? { bg: '#14181a', card: '#1d2420', line: '#3a443e', fg: '#eef1ee', mute: '#a9b3ad', acc: '#f0a064', soft: '#3a2c20', onacc: '#14181a', good: '#6cc08a', badc: '#ee917b' }
+      : { bg: '#f1f3f1', card: '#ffffff', line: '#d9dedb', fg: '#1d2420', mute: '#5d6862', acc: '#b4561a', soft: '#f6e6da', onacc: '#ffffff', good: '#1f6a45', badc: '#9a3320' };
+    const vars = `--bg:${t.bg};--card:${t.card};--line:${t.line};--fg:${t.fg};--mute:${t.mute};--acc:${t.acc};--soft:${t.soft};--onacc:${t.onacc};--good:${t.good};--badc:${t.badc}`;
+    return { vars };
+  }
+}
+</script>
+</body>
+</html>

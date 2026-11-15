@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>页面总览网格</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;color:#1d2420}
+.m{font-size:12px;color:#5d6862;line-height:1.6}
+.btn{font:inherit;font-size:13px;border:1px solid #cfd5d1;background:#fff;color:#1d2420;border-radius:6px;padding:5px 12px;min-height:32px}
+.btn.pri{background:#b4561a;border-color:#b4561a;color:#fff;font-weight:700}
+.fchip{font:inherit;font-size:12px;border:1px solid #cfd5d1;background:#fff;border-radius:999px;padding:4px 12px;min-height:30px;color:#1d2420}
+.fchip.on{background:#1d2420;border-color:#1d2420;color:#fff}
+.row{display:flex;align-items:center;gap:8px}
+.g{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.it{position:relative;height:126px;border-radius:6px;border:2px solid transparent}
+.it.sel{border-color:#d9762b}
+.ck{position:absolute;left:6px;top:6px;width:18px;height:18px;border-radius:4px;border:1.5px solid #fff;background:#14181a66}
+.sel .ck{background:#2f8a57;border-color:#2f8a57}
+.lb{position:absolute;left:0;right:0;bottom:0;background:#14181acc;color:#e7ecea;font-size:11px;padding:2px 6px;border-radius:0 0 4px 4px;display:flex;justify-content:space-between}
+.tag{position:absolute;right:6px;top:6px;background:#14181acc;color:#e7ecea;font-size:11px;padding:0 6px;border-radius:4px}
+.done{opacity:.45}
+</style>
+</helmet>
+<div style="width:1200px;height:700px;background:#eef0ee;padding:40px">
+<div style="background:#fff;border:1px solid #cfd5d1;border-radius:12px;box-shadow:0 10px 28px #1d242018;height:620px;display:flex;flex-direction:column;overflow:hidden">
+
+<div class="row" style="padding:14px 20px;border-bottom:1px solid #e3e7e4;gap:12px">
+<div style="width:26px;height:26px;border-radius:7px;background:#d9762b"></div>
+<b style="font-size:16px">此页面的媒体</b><span class="m">86 项 · 示例专辑页 · album.example.com</span>
+<span style="flex:1"></span>
+<button class="btn">框选模式</button><button class="btn">关闭</button>
+</div>
+
+<div class="row" style="padding:12px 20px;border-bottom:1px solid #e3e7e4;flex-wrap:wrap;gap:10px">
+<button class="fchip on">全部 86</button><button class="fchip">图片 71</button><button class="fchip">视频 9</button><button class="fchip">音频 6</button>
+<span style="width:1px;height:20px;background:#cfd5d1"></span>
+<span class="m">最小宽度</span>
+<div style="width:120px;height:4px;background:#d9dedb;border-radius:2px;position:relative"><div style="width:35%;height:100%;background:#d9762b;border-radius:2px"></div></div>
+<b style="font-size:12px">400 px</b>
+<span style="width:1px;height:20px;background:#cfd5d1"></span>
+<button class="fchip on">去重</button><button class="fchip">JPG</button><button class="fchip">PNG</button><button class="fchip">WebP</button><button class="fchip">GIF</button>
+<span style="flex:1"></span>
+<span class="m">排序</span><button class="fchip">尺寸（大→小）▾</button>
+</div>
+
+<div style="flex:1;padding:16px 20px;overflow:hidden">
+<div class="g">
+<div class="it sel" style="background:linear-gradient(135deg,#cfd8d2,#a8b5ae)"><div class="ck"></div><div class="lb"><span>3840×2160</span><span>JPG</span></div></div>
+<div class="it sel" style="background:linear-gradient(135deg,#e3d5c6,#c2ab93)"><div class="ck"></div><div class="lb"><span>3000×2000</span><span>JPG</span></div></div>
+<div class="it" style="background:linear-gradient(135deg,#c9d3e0,#9db0c8)"><div class="ck"></div><div class="lb"><span>2400×1600</span><span>WebP</span></div></div>
+<div class="it sel" style="background:linear-gradient(135deg,#d9cfe0,#b3a3c4)"><div class="ck"></div><div class="tag">视频 02:14</div><div class="lb"><span>1920×1080</span><span>m3u8</span></div></div>
+<div class="it" style="background:linear-gradient(135deg,#d0e0d2,#a1c0a6)"><div class="ck"></div><div class="lb"><span>1600×1067</span><span>PNG</span></div></div>
+<div class="it done" style="background:linear-gradient(135deg,#e0d0d0,#c4a3a3)"><div class="ck"></div><div class="tag">已下载</div><div class="lb"><span>1600×900</span><span>JPG</span></div></div>
+<div class="it" style="background:linear-gradient(135deg,#d6dccf,#aab59c)"><div class="ck"></div><div class="lb"><span>1280×853</span><span>JPG</span></div></div>
+<div class="it sel" style="background:linear-gradient(135deg,#dccfd6,#b89aa9)"><div class="ck"></div><div class="lb"><span>1280×720</span><span>PNG</span></div></div>
+<div class="it" style="background:linear-gradient(135deg,#cfdcdc,#9fbcbc)"><div class="ck"></div><div class="lb"><span>1200×800</span><span>JPG</span></div></div>
+<div class="it" style="background:linear-gradient(135deg,#dcd8cf,#bdb49f)"><div class="ck"></div><div class="tag">音频 03:42</div><div class="lb"><span>—</span><span>mp3</span></div></div>
+<div class="it" style="background:linear-gradient(135deg,#cfd0dc,#9fa2bd)"><div class="ck"></div><div class="lb"><span>1024×683</span><span>WebP</span></div></div>
+<div class="it" style="background:linear-gradient(135deg,#dccfc9,#bd9d93)"><div class="ck"></div><div class="lb"><span>800×533</span><span>JPG</span></div></div>
+<div class="it" style="background:linear-gradient(135deg,#d3dccf,#a3bd9b)"><div class="ck"></div><div class="lb"><span>800×800</span><span>PNG</span></div></div>
+<div class="it" style="background:linear-gradient(135deg,#cfdad6,#9bbdb3)"><div class="ck"></div><div class="lb"><span>720×480</span><span>JPG</span></div></div>
+</div>
+</div>
+
+<div class="row" style="padding:12px 20px;border-top:1px solid #e3e7e4;background:#f6f7f6;gap:10px">
+<b style="font-size:14px">已选 4 项</b><span class="m">约 38 MB</span>
+<span style="flex:1"></span>
+<button class="btn">复制链接</button><button class="btn">浏览器下载</button><button class="btn">打包 ZIP</button><button class="btn pri">发送到清影</button>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":700}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

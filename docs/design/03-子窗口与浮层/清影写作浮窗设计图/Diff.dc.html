@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>结果：差异预览与候选</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body{margin:0}
+.chip{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:13px;border:1px solid #CBD5DC;background:#fff;font-size:12px;color:#14202B;white-space:nowrap}
+.on{background:#0F766E;border-color:#0F766E;color:#fff}
+.del{background:#FCE4E1;color:#8A1C12;text-decoration:line-through;border-radius:3px;padding:0 2px}
+.add{background:#D6F0E9;color:#085247;border-radius:3px;padding:0 2px}
+.btn{height:32px;padding:0 14px;border-radius:8px;font-size:12.5px;font-family:inherit;border:1px solid #CBD5DC;background:#fff;color:#14202B}
+.sec{font-size:11px;color:#4A5A68;letter-spacing:.08em}
+</style>
+</helmet>
+<div style="width:900px;height:780px;box-sizing:border-box;background:#F1F4F6;font-family:'Noto Sans SC',system-ui,sans-serif;color:#14202B;padding:32px;display:flex;gap:28px">
+
+  <div style="width:540px;flex:none;background:#fff;border:1px solid #D5DDE3;border-radius:14px;box-shadow:0 10px 34px rgba(20,32,43,.14);display:flex;flex-direction:column;overflow:hidden">
+    <div style="height:44px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid #E2E8EC">
+      <b style="font-size:13px">改写结果</b>
+      <span style="font-size:11px;color:#4A5A68">使其简洁 · 正式 · 电子邮件</span>
+      <span style="margin-left:auto;font-size:11px;color:#4A5A68">52 字 → 44 字</span>
+    </div>
+
+    <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="sec" style="margin-right:4px">候选</span>
+        <span class="chip on">方案 1</span><span class="chip">方案 2</span><span class="chip">方案 3</span>
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <span class="chip on">差异</span><span class="chip">只看新文</span><span class="chip">并排</span>
+        </span>
+      </div>
+
+      <div style="border:1px solid #E2E8EC;border-radius:10px;padding:14px 16px;font-size:14px;line-height:2;background:#FAFBFC">
+        <span class="del">王经理你好，</span><span class="add">王经理，您好：</span><br>
+        <span class="del">下周的交付可能要推迟两天，</span><span class="add">原定下周的交付需延后两天，</span><span class="del">因为测试发现了几个问题还没修完，</span><span class="add">原因是测试中发现的问题尚未全部修复。</span><span class="del">我们会尽快处理，到时候再通知你。</span><span class="add">我们会尽快处理，并及时向您同步进展。</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div class="sec">逐处确认（共 4 处改动）</div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;border:1px solid #E2E8EC;border-radius:8px;padding:6px 10px">
+          <span style="flex:1;min-width:0">你好 → 您好：<span style="color:#4A5A68">称呼更正式</span></span>
+          <span class="chip on" style="height:22px">采用</span><span class="chip" style="height:22px">放弃</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;border:1px solid #E2E8EC;border-radius:8px;padding:6px 10px">
+          <span style="flex:1;min-width:0">推迟两天 → 延后两天</span>
+          <span class="chip on" style="height:22px">采用</span><span class="chip" style="height:22px">放弃</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;border:1px solid #E2E8EC;border-radius:8px;padding:6px 10px;background:#F6F8F9">
+          <span style="flex:1;min-width:0">到时候再通知你 → 及时向您同步进展</span>
+          <span class="chip" style="height:22px">采用</span><span class="chip on" style="height:22px;background:#3E5568;border-color:#3E5568">放弃</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;border-top:1px solid #E2E8EC;padding-top:12px">
+        <button class="btn" style="background:#0F766E;border-color:#0F766E;color:#fff;font-weight:500">替换原文</button>
+        <button class="btn">插入到光标处</button>
+        <button class="btn">复制</button>
+        <button class="btn" style="margin-left:auto">再来一个</button>
+      </div>
+      <div style="display:flex;gap:14px;font-size:12px;color:#4A5A68">
+        <span>撤销（Ctrl + Z 同样有效）</span><span>收藏这个结果</span><span>历史记录</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:15px;font-weight:700">结果怎么交付</div>
+    <div style="font-size:12.5px;line-height:1.75;color:#33434F;display:flex;flex-direction:column;gap:10px">
+      <div>默认先看差异，不直接覆盖原文。红底删除、绿底新增，一眼看出改了什么。</div>
+      <div>逐处确认：每处改动可单独采用或放弃，最后一键合成。</div>
+      <div>一次可生成 1 到 3 个候选，点“再来一个”追加。</div>
+      <div>“替换原文”走输入框的正常编辑流程，网页自带的撤销栈依然可用，不会破坏网页的输入事件。</div>
+      <div>所有结果自动存入本地历史，可收藏，可按网站或应用筛选。</div>
+    </div>
+    <div style="margin-top:auto;border:1px dashed #9FB0BD;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.65;color:#33434F">
+      护栏提示示例：<b>“原文有 1 个网址、2 个数字，已全部保留。”</b>若缺失会显示橙色警告并默认不采用。
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":900,"height":780}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>页面媒体总览</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:#1d2624}
+.lab{font-size:12px;font-weight:600;color:#5b6764;margin-bottom:6px}
+.card{background:#fff;border:1px solid #cdd6d3;border-radius:10px;overflow:hidden;position:relative}
+.card.sel{outline:2px solid #187a56}
+.th{height:104px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px}
+.mt{padding:7px 10px;font-size:12px;line-height:1.5;color:#5b6764}
+.fm{position:absolute;right:6px;top:6px;font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:#10201acc;color:#fff}
+.fm.w{background:#c2570c}
+.btn{height:32px;padding:0 12px;border-radius:8px;border:1px solid #cdd6d3;background:#fff;font-size:13px;display:inline-flex;align-items:center;font-family:inherit;color:#1d2624}
+.btn.p{background:#187a56;border-color:#187a56;color:#fff}
+.sm{font-size:13px;color:#5b6764;line-height:1.65}
+</style>
+</helmet>
+<div style="width:1160px;height:760px;box-sizing:border-box;background:#e9eeec;padding:30px 36px;display:grid;grid-template-columns:1fr 1fr;gap:26px;align-content:start">
+  <div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><b style="font-size:17px">页面媒体总览</b><span class="sm">共 38 项 · 图片 31 · 视频 4 · 音频 3</span><span style="flex:1"></span><button class="btn">全选</button><button class="btn p">保存所选（2）</button></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+      <div class="card sel"><div class="fm">JPEG</div><div class="th" style="background:linear-gradient(135deg,#3e6b5c,#1a3a32)">1920×1080</div><div class="mt">cover-hd.jpg<br>412 KB</div></div>
+      <div class="card"><div class="fm">WebP</div><div class="th" style="background:linear-gradient(135deg,#6b5a3e,#3a2f1a)">1280×720</div><div class="mt">img_20491<br>96 KB</div></div>
+      <div class="card sel"><div class="fm w">AVIF ≠ .jpg</div><div class="th" style="background:linear-gradient(135deg,#3e4f6b,#1a2a3a)">800×800</div><div class="mt">product.jpg（实际是 AVIF）<br>58 KB</div></div>
+      <div class="card"><div class="fm">PNG</div><div class="th" style="background:linear-gradient(135deg,#5a3e6b,#2a1a3a)">512×512</div><div class="mt">logo<br>24 KB</div></div>
+      <div class="card"><div class="fm">GIF</div><div class="th" style="background:linear-gradient(135deg,#6b3e4f,#3a1a2a)">480×270</div><div class="mt">demo<br>1.2 MB</div></div>
+      <div class="card"><div class="fm">MP4</div><div class="th" style="background:linear-gradient(135deg,#243a36,#0c1a17)">▶ 02:14</div><div class="mt">trailer<br>18.4 MB</div></div>
+    </div>
+    <div class="sm" style="margin-top:14px"><b style="color:#1d2624">格式徽标</b>是探测出来的真实格式（读文件头或响应类型），不是看网址后缀。和后缀不一致时徽标变橙，保存时按真实格式命名。双击任意卡片打开查看器。</div>
+  </div>
+
+  <div>
+    <div class="lab">双击后：内置查看器</div>
+    <div style="background:#10201a;border-radius:12px;overflow:hidden;box-shadow:0 12px 40px #1d262433">
+      <div style="padding:10px 14px;display:flex;align-items:center;gap:10px;color:#fff;font-size:13px;border-bottom:1px solid #ffffff22"><b>cover-hd.jpg</b><span style="color:#b6c4bf">1 / 6</span><span style="flex:1"></span><span style="background:#ffffff1f;padding:2px 10px;border-radius:10px">JPEG · 1920×1080 · 412 KB</span><span>✕</span></div>
+      <div style="height:300px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;color:#fff;background:linear-gradient(135deg,#3e6b5c,#1a3a32)"><span style="font-size:26px">‹</span><span style="font-size:15px;opacity:.9">原图（按真实尺寸加载）</span><span style="font-size:26px">›</span></div>
+      <div style="padding:10px 14px;display:flex;gap:8px;align-items:center;color:#fff">
+        <button class="btn" style="background:#ffffff1f;color:#fff;border-color:#ffffff33">适应</button>
+        <button class="btn" style="background:#ffffff1f;color:#fff;border-color:#ffffff33">100%</button>
+        <button class="btn" style="background:#ffffff1f;color:#fff;border-color:#ffffff33">复制图片</button>
+        <button class="btn" style="background:#ffffff1f;color:#fff;border-color:#ffffff33">复制地址</button>
+        <span style="flex:1"></span>
+        <button class="btn p">保存原图</button>
+      </div>
+    </div>
+    <div class="sm" style="margin-top:12px">← → 切换　+ − 缩放　空格 适应/100%　Esc 关闭　S 保存。缩略图只是预览，查看器加载的是原图地址，保存的也是它。</div>
+  </div>
+
+  <div style="grid-column:1 / 3;background:#fff;border:1px solid #dfe5e3;border-radius:12px;padding:16px 22px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px">
+    <div><div class="lab">为什么保存成 .bin</div><div class="sm">这类图片地址没有后缀，收集时又没带类型，后端查类型表时表里没有任何图片类型，就落成 bin。单独“另存为”正常，是因为浏览器自己知道类型。</div></div>
+    <div><div class="lab">三道保险</div><div class="sm">① 收集时带上类型与尺寸　② 后端补全类型表　③ 下载完按文件头识别真实格式并改名。三道都过不了才用 bin。</div></div>
+    <div><div class="lab">同一套逻辑覆盖的入口</div><div class="sm">总览保存、悬浮下载按钮、右键“保存图片”、批量发送到清影，都走同一个识别函数。</div></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1160,"height":760}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

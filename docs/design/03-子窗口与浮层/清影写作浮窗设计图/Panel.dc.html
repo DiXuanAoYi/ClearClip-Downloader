@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>展开面板：动作与四组修饰符</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body{margin:0}
+.chip{display:inline-flex;align-items:center;height:28px;padding:0 11px;border-radius:14px;border:1px solid #CBD5DC;background:#fff;font-size:12px;color:#14202B;white-space:nowrap}
+.on{background:#0F766E;border-color:#0F766E;color:#fff}
+.lbl{font-size:11px;color:#4A5A68;letter-spacing:.08em;width:52px;flex:none;padding-top:7px}
+.row{display:flex;gap:8px;align-items:flex-start}
+.wrap{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
+.sec{font-size:11px;color:#4A5A68;letter-spacing:.08em;margin:2px 0 6px}
+</style>
+</helmet>
+<div style="width:900px;height:780px;box-sizing:border-box;background:#F1F4F6;font-family:'Noto Sans SC',system-ui,sans-serif;color:#14202B;padding:32px;display:flex;gap:28px">
+
+  <div style="width:520px;flex:none;background:#fff;border:1px solid #D5DDE3;border-radius:14px;box-shadow:0 10px 34px rgba(20,32,43,.14);display:flex;flex-direction:column;overflow:hidden">
+    <div style="height:44px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid #E2E8EC">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></svg>
+      <b style="font-size:13px">清影写作</b>
+      <span style="font-size:11px;color:#4A5A68;margin-left:4px">处理范围：</span>
+      <span class="chip on" style="height:22px;font-size:11px">选中 52 字</span>
+      <span class="chip" style="height:22px;font-size:11px">全文</span>
+      <span style="margin-left:auto;font-size:11px;color:#4A5A68">本地模型 · qwen2.5-7b</span>
+    </div>
+
+    <div style="padding:14px;display:flex;flex-direction:column;gap:12px;overflow:hidden">
+      <div>
+        <div class="sec">基础</div>
+        <div class="wrap" style="flex:none">
+          <span class="chip on">改写它</span>
+          <span class="chip">语法检查</span>
+          <span class="chip">翻译</span>
+          <span class="chip">总结</span>
+          <span class="chip">优化它</span>
+          <span class="chip">继续写作</span>
+          <span class="chip">缩短它</span>
+        </div>
+      </div>
+      <div>
+        <div class="sec">改写风格</div>
+        <div class="wrap" style="flex:none">
+          <span class="chip">加入统计数据</span>
+          <span class="chip">添加细节</span>
+          <span class="chip">增加幽默</span>
+          <span class="chip">使其礼貌</span>
+          <span class="chip on">使其简洁</span>
+          <span class="chip">去除专业术语</span>
+          <span class="chip">更多信息</span>
+          <span class="chip">更引人入胜</span>
+          <span class="chip">更有细节</span>
+          <span class="chip">更有说服力</span>
+          <span class="chip">更有歉意</span>
+          <span class="chip">使其真诚</span>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid #E2E8EC;padding-top:12px;display:flex;flex-direction:column;gap:9px">
+        <div class="row"><span class="lbl">长度</span><div class="wrap"><span class="chip on">自动</span><span class="chip">短</span><span class="chip">中等</span><span class="chip">长</span></div></div>
+        <div class="row"><span class="lbl">正式程度</span><div class="wrap"><span class="chip">自动</span><span class="chip">随意</span><span class="chip">中立</span><span class="chip on">正式</span></div></div>
+        <div class="row"><span class="lbl">格式</span><div class="wrap"><span class="chip">自动</span><span class="chip on">电子邮件</span><span class="chip">消息</span><span class="chip">评论</span><span class="chip">段落</span><span class="chip">文章</span><span class="chip">博客文章</span><span class="chip">想法</span><span class="chip">大纲</span><span class="chip">推特</span><span class="chip">Reddit</span><span class="chip">脸书</span><span class="chip">领英</span><span class="chip" style="border-style:dashed">+ 添加格式</span></div></div>
+        <div class="row"><span class="lbl">语气</span><div class="wrap"><span class="chip on">自动</span><span class="chip">热情的</span><span class="chip">幽默的</span><span class="chip">关心的</span><span class="chip">谦逊的</span><span class="chip">乐观的</span><span class="chip">有同理心的</span><span class="chip">坦率的</span><span class="chip">真诚的</span><span class="chip" style="border-style:dashed">+ 添加语气</span></div></div>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;border-top:1px solid #E2E8EC;padding-top:12px">
+        <div style="flex:1;min-width:0;height:34px;border:1px solid #CBD5DC;border-radius:8px;padding:0 10px;font-size:12px;line-height:34px;color:#6B7B88">还有特别要求？例如“对方是客户，别太生硬”</div>
+        <button style="height:34px;padding:0 18px;border-radius:8px;border:0;background:#0F766E;color:#fff;font-size:13px;font-weight:500;font-family:inherit">生成</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:15px;font-weight:700">怎么组合</div>
+    <div style="font-size:12.5px;line-height:1.75;color:#33434F;display:flex;flex-direction:column;gap:10px">
+      <div>每次只选一个动作，再叠加长度、正式程度、格式、语气四组修饰，合成一条提示词交给模型。</div>
+      <div>四组都选“自动”时，由模型根据原文和输入框所在的场景（邮件、评论、聊天）自己判断。</div>
+      <div>“添加格式/添加语气”可写自己的词，如“小红书风”“领导汇报”，保存后出现在列表里。</div>
+      <div>选中任意修饰不会立刻执行，点“生成”才发送，避免误触；设置里可改成“点即生成”。</div>
+    </div>
+    <div style="border-radius:8px;background:#fff;border:1px solid #D5DDE3;padding:12px 14px;font-size:12px;line-height:1.7;color:#33434F">
+      <b>护栏</b>：数字、网址、@人名、代码块、专有名词原样保留；改写后长度偏差过大时提示并可一键回退。
+    </div>
+    <div style="margin-top:auto;font-size:12px;line-height:1.7;color:#33434F">
+      顶部可切换处理范围：选中部分，或整个输入框。右上显示当前使用的模型，点击可换。
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":900,"height":780}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

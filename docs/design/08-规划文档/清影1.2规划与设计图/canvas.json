@@ -1,0 +1,33 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-05T08:40:00Z" },
+  "title": "清影 1.2 规划与设计图",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 1900, "title": "总规划：9 项需求" },
+    "AddService.dc.html": { "x": 1360, "y": 0, "w": 1160, "h": 760, "title": "⓪ 添加服务：检测可用模型" },
+    "PdfLayout.dc.html": { "x": 2600, "y": 0, "w": 1160, "h": 760, "title": "① PDF 原处排版翻译" },
+    "Transcript.dc.html": { "x": 1360, "y": 880, "w": 1160, "h": 760, "title": "② 文稿：字幕轨与原文语言" },
+    "Comments.dc.html": { "x": 2600, "y": 880, "w": 1160, "h": 760, "title": "③ 评论定位" },
+    "AudioPill.dc.html": { "x": 1360, "y": 1760, "w": 1160, "h": 760, "title": "④ 视频上的音效按钮开关" },
+    "Vocab.dc.html": { "x": 2600, "y": 1760, "w": 1160, "h": 760, "title": "⑤ 生词本：来源与视频缓存" },
+    "Sentences.dc.html": { "x": 1360, "y": 2640, "w": 1160, "h": 760, "title": "⑥ SenseVoice 断句" },
+    "Media.dc.html": { "x": 2600, "y": 2640, "w": 1160, "h": 760, "title": "⑦ 页面媒体总览：格式与查看" },
+    "Select.dc.html": { "x": 1360, "y": 3520, "w": 1160, "h": 760, "title": "⑧ 清影写作：划词工具条" }
+  },
+  "order": [
+    "Main.dc.html",
+    "AddService.dc.html",
+    "PdfLayout.dc.html",
+    "Transcript.dc.html",
+    "Comments.dc.html",
+    "AudioPill.dc.html",
+    "Vocab.dc.html",
+    "Sentences.dc.html",
+    "Media.dc.html",
+    "Select.dc.html"
+  ],
+  "notes": {},
+  "designSystems": []
+}

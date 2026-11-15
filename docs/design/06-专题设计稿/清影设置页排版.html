@@ -1,0 +1,237 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>清影设置页排版</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 布局：三个等宽的演示框叠着放，同一组卡片、同一个窗口宽度，直接对比哪里有空白。 */
+:root {
+  --bg: #f4f2ef; --surface: #ffffff; --fg: #24201c; --mute: #6f675e; --line: #e3ddd4;
+  --accent: #d9772f; --accent-soft: #fbe9d9; --gap-bg: #fbe3e1; --gap-line: #e9a7a1; --gap-fg: #a33a31; --ok: #23703f;
+  --font: "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141210; --surface: #24211e; --fg: #f2eee8; --mute: #a89f94; --line: #37322c;
+    --accent: #f08c3e; --accent-soft: #4a2f1b; --gap-bg: #3a1f1d; --gap-line: #7a3a35; --gap-fg: #ff9d94; --ok: #6fd49a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141210; --surface: #24211e; --fg: #f2eee8; --mute: #a89f94; --line: #37322c;
+  --accent: #f08c3e; --accent-soft: #4a2f1b; --gap-bg: #3a1f1d; --gap-line: #7a3a35; --gap-fg: #ff9d94; --ok: #6fd49a; color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); line-height: 1.55 }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: -0.01em; text-wrap: balance }
+.lead { margin: 0 0 22px; color: var(--mute); max-width: 68ch }
+h2 { margin: 0; font-size: 16px }
+.ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; margin-bottom: 22px }
+.ctl label { font-size: 13px; color: var(--mute) }
+.ctl input[type=range] { width: min(320px, 60vw); accent-color: var(--accent); vertical-align: middle }
+.ctl output { font-family: var(--mono); font-size: 13px; color: var(--fg); margin-left: 6px }
+.legend { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--mute) }
+.sw { width: 18px; height: 12px; border-radius: 3px; border: 1px solid var(--gap-line); background: repeating-linear-gradient(135deg, var(--gap-bg) 0 4px, transparent 4px 8px) }
+.sw.c { background: var(--surface); border-color: var(--line) }
+
+.opt { margin-top: 34px; display: grid; gap: 10px }
+.ohead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px }
+.tag { font-size: 11.5px; letter-spacing: .06em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--mute) }
+.tag.rec { background: var(--accent-soft); border-color: var(--accent); color: var(--fg); font-weight: 600 }
+.desc { margin: 0; color: var(--mute); font-size: 13.5px; max-width: 72ch }
+.meter { font-size: 13px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
+.meter b { font-family: var(--mono); font-size: 15px }
+.bar { width: 160px; height: 8px; border-radius: 4px; background: var(--gap-bg); border: 1px solid var(--gap-line); overflow: hidden }
+.bar i { display: block; height: 100%; background: var(--ok) }
+.frame-scroll { overflow-x: auto; padding-bottom: 4px }
+.frame { width: var(--w, 1040px); max-width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: repeating-linear-gradient(135deg, var(--gap-bg) 0 6px, transparent 6px 12px), var(--bg) }
+.frame.clean { background: var(--bg) }
+.stage { display: grid; gap: 12px }
+.stage.now { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start }
+.cols { display: flex; gap: 12px; align-items: flex-start }
+.cols > .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 12px }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; min-width: 0 }
+.card h3 { margin: 0; font-size: 11.5px; letter-spacing: .08em; color: var(--mute); font-weight: 600 }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; min-height: 22px }
+.row span:first-child { min-width: 0 }
+.sw2 { width: 28px; height: 16px; border-radius: 8px; background: var(--line); position: relative; flex: none }
+.sw2.on { background: var(--accent) }
+.sw2::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff }
+.sw2.on::after { left: 14px }
+.fake { height: 22px; min-width: 70px; border: 1px solid var(--line); border-radius: 5px; flex: none }
+.n { font-family: var(--mono); font-size: 11px; color: var(--mute); margin-left: 8px; flex: none }
+.note { margin-top: 36px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface) }
+.note h2 { margin-bottom: 8px }
+.note ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; font-size: 13.5px }
+.note li { max-width: 80ch }
+@media (max-width: 560px) { .cols { flex-direction: column } .cols > .col { width: 100% } .stage.now { grid-template-columns: 1fr } }
+</style>
+
+<div class="wrap">
+  <h1>设置页怎么排，才能少留空白</h1>
+  <p class="lead">同一组卡片（取自设置里真实的卡片标题和行数）放进三种排法。粉色斜纹是空着的地方。拖动下面的窗口宽度，看每种排法在你常用的窗口大小下空白有多少。</p>
+
+  <div class="ctl" role="group" aria-label="演示控制">
+    <div><label for="w">窗口宽度</label> <input id="w" type="range" min="700" max="1180" step="10" value="1040"><output id="wo">1040 px</output></div>
+    <div class="legend"><span class="sw"></span>空白<span class="sw c"></span>卡片</div>
+  </div>
+
+  <section class="opt" id="o0">
+    <div class="ohead"><h2>现在：按行排的网格</h2><span class="tag">不改</span></div>
+    <p class="desc">每一行里的卡片顶对齐，矮的卡片下面就空着，行高由最高的那张决定。这就是你截图里右上和左下那两块黑的。</p>
+    <div class="meter" data-for="s0"></div>
+    <div class="frame-scroll"><div class="frame"><div class="stage now" id="s0"></div></div></div>
+  </section>
+
+  <section class="opt" id="o3">
+    <div class="ohead"><h2>方案 A：自动平衡分栏</h2><span class="tag rec">推荐</span></div>
+    <p class="desc">先量出每张卡片的高度，再自动把卡片分到各列，让各列总高度尽量接近；每一列里仍保持原来的先后顺序。列数跟着窗口宽度变，卡片展开或收起后重新分配。不用手工分栏，新增卡片也不用管。代价：左右两列之间的先后关系不再严格，但同一列从上到下仍是原顺序。</p>
+    <div class="meter" data-for="s3"></div>
+    <div class="frame-scroll"><div class="frame clean"><div class="cols" id="s3"></div></div></div>
+  </section>
+
+  <section class="opt" id="o1">
+    <div class="ohead"><h2>方案 B：按顺序的瀑布</h2><span class="tag">最保守</span></div>
+    <p class="desc">卡片严格按原来的顺序，每一张放进当前最矮的那一列。顺序最可预期，但列底参差不齐，空白比方案 A 多。</p>
+    <div class="meter" data-for="s1"></div>
+    <div class="frame-scroll"><div class="frame clean"><div class="cols" id="s1"></div></div></div>
+  </section>
+
+  <section class="opt" id="o2">
+    <div class="ohead"><h2>方案 C：按用途固定两栏</h2><span class="tag">不用脚本</span></div>
+    <p class="desc">我手工把每个页签的卡片分到左右两栏，让两栏高度接近：常改的放左边，偶尔才碰的放右边。不依赖窗口宽度，也不会跳；代价是以后新增一张卡片要手动挑一栏，窗口很宽时右边仍会留一条。</p>
+    <div class="meter" data-for="s2"></div>
+    <div class="frame-scroll"><div class="frame clean"><div class="cols" id="s2"></div></div></div>
+  </section>
+
+  <section class="note">
+    <h2>三种的取舍</h2>
+    <ul>
+      <li><b>方案 A</b>：自动，对所有页签一次生效，新增卡片不用管。改动在 <code>SettingsView.vue</code> 里约 50 行（量高度、分栏、窗口或卡片高度变化时重算），卡片内容完全不动。</li>
+      <li><b>方案 B</b>：改动最小，顺序最可预期，空白比 A 多。</li>
+      <li><b>方案 C</b>：最稳，但要逐页签手工分栏：设置里一共有 19 张卡片分在几个页签，每个页签都要各分一次。</li>
+      <li>两种都不改变卡片里的内容和顺序的含义，只改位置。窄窗口（手机宽度）都会变成单列。</li>
+      <li>这一页的卡片高度是按行数估的，真实高度会有出入；做出来之后我会在真实的设置页里再量一次空白比例。</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+/* 卡片：标题 + 行数（取自设置页“下载 / 解析 / 外观”页签里的真实卡片，行数是估的） */
+const CARDS = [
+  { t: '保存', rows: ['保存位置', '文件名模板', '同名文件', '按平台建子文件夹'], sw: [3] },
+  { t: '队列与断点续传', rows: ['同时下载几个', '每个文件几段', '失败自动重试', '断点续传', '下载完成后校验'], sw: [2, 3, 4] },
+  { t: '批量下载', rows: ['列表展开上限', '每批默认清晰度', '每批字幕语言'], sw: [] },
+  { t: '限速计划与省流量', rows: ['全局限速', '工作日时段', '周末时段', '计量网络暂停', '电池供电降速', '夜间自动下载'], sw: [3, 4, 5] },
+  { t: '整理', rows: ['自动分类', '规则 1', '规则 2', '重复文件'], sw: [0] },
+  { t: '完成后', rows: ['提示音', '系统通知', '打开文件夹', '关机'], sw: [0, 1] },
+  { t: '剪贴板', rows: ['监听剪贴板', '识别所有网址', '额外识别的网站', '弹窗合并', '记录收到的链接'], sw: [0, 3, 4] },
+  { t: '可选组件', rows: ['ffmpeg', 'yt-dlp', 'PDFium', 'PaddleOCR', 'Whisper', '更新检查'], sw: [] },
+  { t: '收到的链接', rows: ['保留天数', '最多保留条数'], sw: [] },
+  { t: '字幕与弹幕', rows: ['偏好语言', '同时处理字幕', '含自动生成', 'VTT 转 SRT', 'B站弹幕转 ASS', '弹幕字号', '弹幕不透明度'], sw: [2, 3, 4] },
+  { t: '解析方式', rows: ['优先引擎', 'Cookie 来源', '代理', '超时'], sw: [] },
+  { t: '清晰度与格式', rows: ['默认清晰度', '优先格式', '合并音视频', '保留封面', '保留元数据'], sw: [2, 3, 4] },
+  { t: '其他网站', rows: ['自定义解析规则', '导入规则'], sw: [] },
+  { t: '外观与行为', rows: ['主题', '语言', '关闭按钮行为', '开机启动', '托盘图标', '窗口记忆'], sw: [2, 3, 4, 5] },
+];
+const LEFT = ['保存', '队列与断点续传', '批量下载', '整理', '完成后', '清晰度与格式', '外观与行为'];
+
+function makeCard(c) {
+  const d = document.createElement('div');
+  d.className = 'card';
+  const h = document.createElement('h3'); h.textContent = c.t; d.appendChild(h);
+  c.rows.forEach((r, i) => {
+    const row = document.createElement('div'); row.className = 'row';
+    const a = document.createElement('span'); a.textContent = r;
+    const b = document.createElement('span');
+    if (c.sw.includes(i)) { b.className = 'sw2' + (i % 2 ? ' on' : ''); } else { b.className = 'fake'; }
+    row.append(a, b); d.appendChild(row);
+  });
+  return d;
+}
+function build(el, cols) {
+  el.innerHTML = '';
+  const columns = Array.from({ length: cols }, () => { const c = document.createElement('div'); c.className = 'col'; el.appendChild(c); return c; });
+  return columns;
+}
+function measure(el, hostSel) {
+  const host = el.closest('.frame');
+  const cards = [...el.querySelectorAll('.card')];
+  const hr = el.getBoundingClientRect();
+  const area = cards.reduce((s, c) => { const r = c.getBoundingClientRect(); return s + r.width * r.height; }, 0);
+  const total = hr.width * hr.height;
+  const empty = total ? Math.max(0, 1 - area / total) : 0;
+  const m = document.querySelector('.meter[data-for="' + el.id + '"]');
+  const pct = Math.round(empty * 100);
+  m.innerHTML = '空白约 <b>' + pct + '%</b><span class="bar" aria-hidden="true"><i style="width:' + (100 - pct) + '%"></i></span><span class="n">' + cards.length + ' 张卡片 · ' + Math.round(hr.height) + ' px 高</span>';
+}
+/* 把 hs 里的高度分到 k 列，让最高一列尽量矮：k=2 时枚举所有分法，更多列时先贪心再两两交换。返回每张卡片的列号。 */
+function balance(hs, k) {
+  const n = hs.length;
+  if (k <= 1) return hs.map(() => 0);
+  if (k === 2) {
+    const total = hs.reduce((a, b) => a + b, 0);
+    let best = 0, bestScore = Infinity;
+    for (let m = 0; m < 1 << n; m++) {
+      let a = 0;
+      for (let i = 0; i < n; i++) if (m & (1 << i)) a += hs[i];
+      const score = Math.max(a, total - a);
+      if (score < bestScore) { bestScore = score; best = m; }
+    }
+    return hs.map((_, i) => ((best >> i) & 1 ? 0 : 1));
+  }
+  const order = hs.map((_, i) => i).sort((a, b) => hs[b] - hs[a]);
+  const load = Array(k).fill(0), res = Array(n).fill(0);
+  order.forEach((i) => { let c = 0; for (let j = 1; j < k; j++) if (load[j] < load[c]) c = j; res[i] = c; load[c] += hs[i]; });
+  for (let pass = 0; pass < 30; pass++) {
+    let moved = false;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      if (res[i] === res[j]) continue;
+      const a = res[i], b = res[j], d = hs[i] - hs[j];
+      const before = Math.max(...load);
+      load[a] -= d; load[b] += d;
+      if (Math.max(...load) < before) { [res[i], res[j]] = [b, a]; moved = true; } else { load[a] += d; load[b] -= d; }
+    }
+    if (!moved) break;
+  }
+  return res;
+}
+function colCount(el, minCol) {
+  const w = el.getBoundingClientRect().width;
+  return Math.max(1, Math.floor((w + 12) / (minCol + 12)));
+}
+function render() {
+  const s0 = document.getElementById('s0');
+  s0.innerHTML = ''; CARDS.forEach((c) => s0.appendChild(makeCard(c)));
+
+  const s1 = document.getElementById('s1');
+  const n1 = colCount(s1.parentElement, 340);
+  const cols1 = build(s1, n1);
+  CARDS.forEach((c) => {
+    const target = cols1.reduce((a, b) => (b.offsetHeight < a.offsetHeight ? b : a));
+    target.appendChild(makeCard(c));
+  });
+
+  const s2 = document.getElementById('s2');
+  const n2 = colCount(s2.parentElement, 340) >= 2 ? 2 : 1;
+  const cols2 = build(s2, n2);
+  CARDS.forEach((c) => {
+    const left = LEFT.includes(c.t);
+    (n2 === 2 ? cols2[left ? 0 : 1] : cols2[0]).appendChild(makeCard(c));
+  });
+  const s3 = document.getElementById('s3');
+  const n3 = colCount(s3.parentElement, 340);
+  const cols3 = build(s3, n3);
+  const hs = CARDS.map((c) => { const t = makeCard(c); s3.appendChild(t); const h = t.offsetHeight; t.remove(); return h; });
+  const assign = balance(hs, n3);
+  CARDS.forEach((c, i) => cols3[assign[i]].appendChild(makeCard(c)));
+  ['s0', 's1', 's2', 's3'].forEach((id) => measure(document.getElementById(id)));
+}
+const w = document.getElementById('w'), wo = document.getElementById('wo');
+function setW() { document.documentElement.style.setProperty('--w', w.value + 'px'); wo.textContent = w.value + ' px'; render(); }
+w.addEventListener('input', setW);
+addEventListener('resize', render);
+setW();
+</script>
+
+</body></html>

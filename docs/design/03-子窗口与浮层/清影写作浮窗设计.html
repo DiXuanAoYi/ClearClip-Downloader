@@ -1,0 +1,167 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>清影写作浮窗设计</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 布局：左侧浮标三种状态 + 输入框示意，右侧写作窗（处理前/处理后）并排；配色直接取自浏览器扩展弹窗 */
+:root{--bg:#f4f5f4;--card:#fff;--line:#d9dedb;--fg:#1d2420;--mute:#5d6862;--acc:#d9762b;--accd:#b4561a;--accsoft:#fbeadb;--ok:#2f8a57;--err:#c2453b;--del:#fbe3e0;--add:#dff1e6;--shadow:0 10px 30px rgba(20,30,25,.18),0 1px 3px rgba(20,30,25,.12);--stage:#e4e8e5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14181a;--card:#22292c;--line:#2f383c;--fg:#e7ecea;--mute:#9aa6a2;--acc:#f08a3c;--accd:#c8641f;--accsoft:#3a2a1d;--ok:#5cc28a;--err:#ec7a70;--del:#4a2724;--add:#1f3a2c;--shadow:0 10px 30px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);--stage:#0f1315;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14181a;--card:#22292c;--line:#2f383c;--fg:#e7ecea;--mute:#9aa6a2;--acc:#f08a3c;--accd:#c8641f;--accsoft:#3a2a1d;--ok:#5cc28a;--err:#ec7a70;--del:#4a2724;--add:#1f3a2c;--shadow:0 10px 30px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);--stage:#0f1315;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:13px/1.55 -apple-system,"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;padding-block:20px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1000px;margin:0 auto}
+h1{font-size:18px;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 18px}
+h2{font-size:14px;margin:26px 0 8px;padding-top:14px;border-top:1px solid var(--line)}
+.notes{color:var(--mute);margin:0 0 12px;padding-left:18px}
+.stage{background:var(--stage);border-radius:12px;padding:22px;display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;justify-content:center}
+.cap{font-size:11px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px}
+
+/* 浮标 */
+.badges{display:flex;gap:26px;flex-wrap:wrap}
+.b{width:30px;height:30px;border-radius:50%;border:0;background:var(--accd);color:#fff;display:grid;place-items:center;box-shadow:0 2px 8px rgba(180,86,26,.45),0 0 0 3px color-mix(in srgb,var(--card) 85%,transparent);font:700 14px/1 inherit;padding:0}
+.b.hov{background:var(--acc);transform:scale(1.08)}
+.b.busy{background:var(--accd)}
+.b.busy::after{content:"";width:14px;height:14px;border-radius:50%;border:2px solid #fff6;border-top-color:#fff;animation:sp 1s linear infinite}
+.b.busy span{display:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.b.busy::after{animation:none}}
+.field{position:relative;width:250px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;height:84px;color:var(--mute)}
+.field .b{position:absolute;right:6px;bottom:6px;width:26px;height:26px;font-size:12px}
+.tip{position:absolute;right:0;top:-30px;background:var(--fg);color:var(--bg);font-size:11px;padding:3px 8px;border-radius:6px;white-space:nowrap}
+
+/* 写作窗 */
+.win{width:420px;max-width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;gap:8px;padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--bg);cursor:grab;user-select:none}
+.logo{width:20px;height:20px;border-radius:6px;background:var(--acc);display:grid;place-items:center;color:#fff;font:700 11px/1 inherit;flex:none}
+.bar b{font-size:13px}
+.from{font-size:11px;color:var(--mute);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:0 8px;line-height:18px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grip{margin-left:auto;display:grid;grid-template-columns:repeat(3,3px);gap:3px;opacity:.55}
+.grip i{width:3px;height:3px;border-radius:50%;background:var(--mute)}
+.x{border:0;background:none;color:var(--mute);width:24px;height:24px;border-radius:6px;font-size:16px;line-height:1;cursor:pointer}
+.x:hover{background:var(--line);color:var(--fg)}
+.body{padding:12px;display:flex;flex-direction:column;gap:10px}
+.src{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg);min-height:62px}
+.src small{display:block;color:var(--mute);font-size:11px;margin-top:4px}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:8px;padding:3px 10px;font:inherit;font-size:12px;cursor:default}
+.chip.on{background:var(--accsoft);border-color:var(--acc);color:var(--accd);font-weight:600}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .chip.on{color:var(--acc)}}
+:root[data-theme="dark"] .chip.on{color:var(--acc)}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.in{border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:var(--card);color:var(--mute);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act{display:flex;gap:8px;align-items:center}
+.go{flex:1;border:0;border-radius:8px;background:var(--accd);color:#fff;padding:8px;font:inherit;font-weight:600}
+.go kbd{font:11px inherit;opacity:.8;margin-left:6px;border:1px solid #fff6;border-radius:4px;padding:0 4px}
+.ghost{border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:8px;padding:7px 12px;font:inherit}
+.res{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+.out{background:var(--accsoft);border-radius:8px;padding:9px 11px;border:1px solid color-mix(in srgb,var(--acc) 35%,transparent)}
+.diff{display:flex;flex-direction:column;gap:5px;font-size:12px}
+.diff div{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+.diff s{background:var(--del);color:var(--err);text-decoration:line-through;border-radius:4px;padding:0 4px}
+.diff u{background:var(--add);color:var(--ok);text-decoration:none;border-radius:4px;padding:0 4px;font-weight:600}
+.diff small{color:var(--mute)}
+.ok{color:var(--ok);font-size:12px}
+.foot{display:flex;gap:8px;align-items:center}
+.foot .go{flex:none;padding:7px 16px}
+.pad{height:8px}
+.page{width:100%;max-width:560px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 14px 0;position:relative}
+.page .ph{height:8px;border-radius:4px;background:var(--line);margin-bottom:8px}
+.page .area{border:1px solid var(--acc);border-radius:8px;padding:9px 12px;min-height:70px;position:relative;box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 22%,transparent);background:var(--card)}
+.page .area .b{position:absolute;right:6px;bottom:6px;width:auto;border-radius:15px;height:28px;padding:0 11px 0 8px;gap:5px;grid-auto-flow:column;font-size:12px}
+.pw{width:480px;max-width:100%;margin:12px 0 14px auto}
+.err-u{border-bottom:2px solid var(--err);background:var(--del)}
+.wrn-u{border-bottom:2px solid #c98a1a;background:color-mix(in srgb,#c98a1a 18%,var(--card))}
+.kbdrow{display:flex;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--mute)}
+</style>
+<div class="wrap">
+<h1>清影写作浮窗：新设计稿</h1>
+<p class="sub">配色和扩展弹窗一致（橙色主色、偏绿的灰底、同一套深浅色），按系统深浅色自动切换。确认后我再改代码。</p>
+
+<h2>一、浮标（输入框右下角）</h2>
+<ul class="notes">
+<li>30px 圆形，橙色实心加一圈浅边，深浅色背景上都看得清；悬停变亮放大一点；处理中转圈。</li>
+<li>贴在输入框内侧右下角，不压住文字；12 秒没人点自动收起。</li>
+</ul>
+<div class="stage">
+  <div><div class="cap">在输入框里</div><div class="field">给王经理的回复，周五下午可以吗…<div class="tip">清影写作</div><button class="b hov"><span>写</span></button></div></div>
+  <div><div class="cap">三种状态</div>
+    <div class="badges">
+      <div><button class="b"><span>写</span></button><div class="cap" style="margin-top:6px">平时</div></div>
+      <div><button class="b hov"><span>写</span></button><div class="cap" style="margin-top:6px">悬停</div></div>
+      <div><button class="b busy"><span>写</span></button><div class="cap" style="margin-top:6px">处理中</div></div>
+    </div>
+  </div>
+</div>
+
+<h2>二、写作窗（快捷键 / 点浮标弹出）</h2>
+<ul class="notes">
+<li>顶栏整条可以拖着移动（橙色标志、标题、来源程序、右侧三列点都是把手），光标变成抓手；关掉再打开仍出现在光标附近。</li>
+<li>先选「做什么」，再点主按钮；结果放在下面，替换原文是主按钮，复制和重试是次要按钮。</li>
+<li>改动用红删绿增标出，每条带原因。</li>
+</ul>
+<div class="stage">
+  <div>
+    <div class="cap">刚弹出</div>
+    <div class="win">
+      <div class="bar"><span class="logo">写</span><b>清影写作</b><span class="from">WeChat.exe</span><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span><button class="x" title="关闭 (Esc)">×</button></div>
+      <div class="body">
+        <div class="src">周五下午我可以过去，你看看几点方便，我提前把资料准备好。<small>已读取选中的文字，共 29 字</small></div>
+        <div class="seg"><span class="chip on">润色</span><span class="chip">语法检查</span><span class="chip">翻译</span><span class="chip">缩写</span><span class="chip">扩写</span><span class="chip">回复</span><span class="chip">更多…</span></div>
+        <div class="opts"><div class="in">场景：工作消息</div><div class="in">额外要求（可选）</div></div>
+        <div class="act"><button class="go">润色<kbd>Ctrl ↵</kbd></button><button class="ghost">🎤 听写</button></div>
+        <div class="pad"></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="cap">处理完成（语法检查）</div>
+    <div class="win">
+      <div class="bar"><span class="logo">写</span><b>清影写作</b><span class="from">WeChat.exe</span><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span><button class="x">×</button></div>
+      <div class="body">
+        <div class="seg"><span class="chip">润色</span><span class="chip on">语法检查</span><span class="chip">翻译</span><span class="chip">回复</span></div>
+        <div class="res" style="border-top:0;padding-top:0">
+          <div class="out">周五下午我可以过去，你看看几点方便，我提前把资料准备好。</div>
+          <div class="diff">
+            <div><s>你看看</s> → <u>你看哪个时间</u> <small>表达更完整</small></div>
+            <div><s>过去</s> → <u>过来</u> <small>主语方向不一致</small></div>
+          </div>
+          <div class="foot"><button class="go">替换原文</button><button class="ghost">复制</button><button class="ghost">重试</button><span class="ok">✓ 已替换</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>三、浏览器里的清影写作（扩展）</h2>
+<ul class="notes">
+<li>和桌面端同一套：同样的橙色、同样的顶栏、同样的动作按钮和差异标记，在网页里看到的和在桌面上看到的是一个东西。</li>
+<li>浮标收成圆角小胶囊，平时只显示“写”，鼠标移上去才展开“清影写作”，不遮挡输入框里的字。</li>
+<li>面板贴在输入框旁边，顶栏同样整条可拖；宽度从 520 收到 480，在窄窗口里不溢出。</li>
+<li>语法检查直接在原文里用红线（错误）和黄线（建议）标出，点一处看原因，这部分保留，只是换成同一套配色。</li>
+</ul>
+<div class="stage" style="display:block">
+  <div class="page">
+    <div class="ph" style="width:38%"></div><div class="ph" style="width:70%"></div>
+    <div class="area">周五下午我<span class="err-u">可已</span>过去，你<span class="wrn-u">看看几点方便</span>，我提前把资料准备好。
+      <button class="b hov"><span>写</span><span style="font-size:12px;font-weight:600;display:inline">清影写作</span></button>
+    </div>
+    <div class="pw">
+      <div class="win">
+        <div class="bar"><span class="logo">写</span><b>清影写作</b><span class="from">mail.example.com</span><span class="grip"><i></i><i></i><i></i><i></i><i></i><i></i></span><button class="x">×</button></div>
+        <div class="body">
+          <div class="seg"><span class="chip">润色</span><span class="chip on">语法检查</span><span class="chip">翻译</span><span class="chip">缩写</span><span class="chip">扩写</span><span class="chip">回复</span></div>
+          <div class="opts"><div class="in">语气：自然</div><div class="in">场景：工作邮件</div></div>
+          <div class="res" style="border-top:0;padding-top:0">
+            <div class="out">周五下午我<s style="background:var(--del);color:var(--err)">可已</s><u style="background:var(--add);color:var(--ok);text-decoration:none;font-weight:600">可以</u>过去，你看看几点方便，我提前把资料准备好。</div>
+            <div class="diff"><div><s>可已</s> → <u>可以</u> <small>错别字</small></div><div><span class="wrn-u">看看几点方便</span> <small>建议：改成“你看几点方便”更自然 · 点一下采用</small></div></div>
+            <div class="foot"><button class="go">采用并写回</button><button class="ghost">复制</button><button class="ghost">重试</button></div>
+          </div>
+          <div class="kbdrow"><span>Ctrl ↵ 运行</span><span>Esc 关闭</span><span>本机模型优先 · 文字不经第三方</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+</body></html>

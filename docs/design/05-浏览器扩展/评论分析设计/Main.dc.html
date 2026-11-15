@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>评论分析</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{width:1480px;height:1180px;box-sizing:border-box;padding:40px;display:flex;gap:40px;background:#e9ecea;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.col{width:440px;display:flex;flex-direction:column;gap:12px}
+.cap{margin:0;font-size:13px;color:#4a544f;line-height:1.5}
+.cap b{color:#1d2420;font-size:15px}
+.panel{box-sizing:border-box;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);font-size:13px;line-height:1.5;overflow:hidden;display:flex;flex-direction:column;flex:1}
+.light{--bg:#f4f5f4;--card:#fff;--line:#d9dedb;--fg:#1d2420;--mute:#5d6862;--acc:#b4561a;--accbg:#fbeadb;--pos:#2f7d57;--neu:#8a948f;--neg:#b8472f;--onacc:#fff}
+.dark{--bg:#14181a;--card:#22292c;--line:#2f383c;--fg:#e7ecea;--mute:#9aa6a2;--acc:#f08a3c;--accbg:#3a2a1d;--pos:#5fc08f;--neu:#7d8a86;--neg:#e5836c;--onacc:#14181a}
+.tabs{display:flex;gap:2px;padding:8px 8px 0;border-bottom:1px solid var(--line);background:var(--card)}
+.tabs span{padding:7px 8px;color:var(--mute);white-space:nowrap}
+.tabs span.on{color:var(--acc);font-weight:700;box-shadow:inset 0 -2px 0 var(--acc)}
+.body{padding:12px;display:flex;flex-direction:column;gap:12px;flex:1;overflow:hidden}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.h{font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+.h small{font-weight:400;color:var(--mute);font-size:12px}
+.mute{color:var(--mute);font-size:12px}
+.row{display:flex;gap:8px;align-items:center}
+.sp{flex:1}
+.btn{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);display:flex;align-items:center;font-size:12px;white-space:nowrap}
+.btn.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700}
+.seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px}
+.seg span{padding:3px 10px;border-radius:6px;color:var(--mute);font-size:12px}
+.seg span.on{background:var(--acc);color:var(--onacc);font-weight:700}
+.stack{display:flex;height:10px;border-radius:5px;overflow:hidden;gap:2px}
+.stack i{display:block}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--mute)}
+.legend b{color:var(--fg)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.theme{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+.theme:first-of-type{border-top:0;padding-top:0}
+.bar{height:6px;border-radius:3px;background:var(--line)}
+.bar i{display:block;height:6px;border-radius:3px;background:var(--acc)}
+.quote{background:var(--bg);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.55}
+.quote .m{display:flex;justify-content:space-between;color:var(--mute);margin-top:4px;font-size:11.5px}
+.chip{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:11px;background:var(--accbg);color:var(--acc);font-size:12px;font-weight:600}
+.chip.g{background:var(--bg);color:var(--mute);font-weight:400;border:1px solid var(--line)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:11px;padding:1px 6px;border-radius:4px;background:var(--accbg);color:var(--acc);font-weight:600}
+.tag.ok{background:var(--bg);color:var(--pos);border:1px solid var(--line)}
+.tag.no{background:var(--bg);color:var(--neg);border:1px solid var(--line)}
+.inp{height:34px;border:1px solid var(--line);border-radius:8px;background:var(--bg);display:flex;align-items:center;padding:0 10px;color:var(--mute)}
+.prog{height:6px;border-radius:3px;background:var(--line)}
+.prog i{display:block;height:6px;border-radius:3px;background:var(--acc);width:44%}
+.chk{width:14px;height:14px;border-radius:4px;border:1.5px solid var(--acc);background:var(--acc);display:inline-block}
+.chk.off{background:transparent;border-color:var(--mute)}
+.ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+</style>
+</helmet>
+<div class="root">
+
+  <div class="col">
+    <p class="cap"><b>① 分析结果 · 总览</b><br>切到「评论」页，一眼看到整体情绪、一句话结论和主要观点</p>
+    <div class="panel light">
+      <div class="tabs"><span>摘要</span><span>章节</span><span>文稿</span><span>导图</span><span>问答</span><span>笔记</span><span class="on">评论</span><span>更多</span></div>
+      <div class="body">
+        <div class="row">
+          <span class="mute">已读取 <b style="color:var(--fg)">312</b> 条评论 · 含回复 486 条</span>
+          <span class="sp"></span>
+          <div class="seg"><span class="on">热门</span><span>最新</span></div>
+        </div>
+        <div class="card">
+          <div class="h">整体情绪<small>基于已读取的评论</small></div>
+          <div class="stack"><i style="width:58%;background:var(--pos)"></i><i style="width:29%;background:var(--neu)"></i><i style="width:13%;background:var(--neg)"></i></div>
+          <div class="legend"><span><span class="dot" style="background:var(--pos)"></span>正面 <b>58%</b></span><span><span class="dot" style="background:var(--neu)"></span>中性 <b>29%</b></span><span><span class="dot" style="background:var(--neg)"></span>负面 <b>13%</b></span></div>
+          <div style="line-height:1.65">观众整体认可讲解清晰、案例实用；主要不满集中在后半段节奏偏快，以及对其中一个数据来源的质疑。</div>
+        </div>
+        <div class="card">
+          <div class="h">主要观点<small>按提及人数</small></div>
+          <div class="theme">
+            <div class="row"><b>讲解清晰，适合入门</b><span class="sp"></span><span class="mute">128 人</span></div>
+            <div class="bar"><i style="width:82%"></i></div>
+            <div class="quote">“第一次把这个概念听明白了，比课本强太多。”<div class="m"><span>@用户A · 赞 1.2k</span><span>03:12</span></div></div>
+          </div>
+          <div class="theme">
+            <div class="row"><b>后半段节奏太快</b><span class="sp"></span><span class="mute">47 人</span></div>
+            <div class="bar"><i style="width:36%"></i></div>
+            <div class="quote">“07:40 之后基本跟不上，希望能放慢一点。”<div class="m"><span>@用户B · 赞 356</span><span>07:40</span></div></div>
+          </div>
+          <div class="theme">
+            <div class="row"><b>希望出配套实操</b><span class="sp"></span><span class="mute">31 人</span></div>
+            <div class="bar"><i style="width:24%"></i></div>
+          </div>
+          <div class="row"><span class="mute">查看全部 6 个观点</span></div>
+        </div>
+        <div class="row"><div class="btn p">重新分析</div><div class="btn">导出 Markdown</div><div class="btn">存为笔记</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <p class="cap"><b>② 分析结果 · 深入</b><br>往下滑：争议点、观众提问、纠错与补充，评论里的时间点可一键跳转</p>
+    <div class="panel light">
+      <div class="tabs"><span>摘要</span><span>章节</span><span>文稿</span><span>导图</span><span>问答</span><span>笔记</span><span class="on">评论</span><span>更多</span></div>
+      <div class="body">
+        <div class="card">
+          <div class="h">争议点</div>
+          <div class="row" style="align-items:flex-start"><span class="tag no">分歧</span><div>其中一个数据的来源是否可靠：<b>支持 41</b> · <b>质疑 38</b></div></div>
+          <div class="quote">“这个数字我查过，原始报告里不是这么写的。”<div class="m"><span>@用户C · 赞 804</span><span>05:21</span></div></div>
+        </div>
+        <div class="card">
+          <div class="h">观众提问<small>12 个 · 4 个未解答</small></div>
+          <div class="row" style="align-items:flex-start"><span class="tag no">未解答</span><div>文中的方法能否用在小样本上？</div></div>
+          <div class="row" style="align-items:flex-start"><span class="tag ok">已回答</span><div>字幕/资料在哪里可以下载？<span class="mute"> 作者置顶回复</span></div></div>
+          <div class="row" style="align-items:flex-start"><span class="tag no">未解答</span><div>第二个例子的参数怎么选？</div></div>
+          <div class="mute">用「问评论」把这些问题交给 AI 汇总回答</div>
+        </div>
+        <div class="card">
+          <div class="h">纠错与补充<small>评论指出的内容</small></div>
+          <div class="row" style="align-items:flex-start"><span class="chip">05:21</span><div>数据应为 2021 年而不是 2019 年（多人提到）</div></div>
+          <div class="row" style="align-items:flex-start"><span class="chip">09:03</span><div>补充：这一步在新版本里已经改成自动完成</div></div>
+        </div>
+        <div class="card">
+          <div class="h">热词</div>
+          <div class="chips"><span class="chip">入门</span><span class="chip">案例</span><span class="chip">节奏</span><span class="chip g">数据来源</span><span class="chip g">字幕</span><span class="chip g">实操</span><span class="chip g">版本</span></div>
+        </div>
+        <div class="card">
+          <div class="h">问评论</div>
+          <div class="inp">例如：大家最希望作者下期讲什么？</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <p class="cap"><b>③ 读取前 / 读取中 / 读取失败（深色）</b><br>首次进入先选读取范围；评论读取与分析分开，不浪费额度</p>
+    <div class="panel dark">
+      <div class="tabs"><span>摘要</span><span>章节</span><span>文稿</span><span>导图</span><span>问答</span><span>笔记</span><span class="on">评论</span><span>更多</span></div>
+      <div class="body">
+        <div class="card">
+          <div class="h">读取评论</div>
+          <div class="mute" style="line-height:1.6">读取这个视频的评论后，可以分析整体情绪、主要观点、观众提问和纠错补充。评论只用于当前分析，不会上传到别处。</div>
+          <div class="row"><span class="mute">数量</span><div class="seg"><span>100</span><span class="on">300</span><span>500</span><span>尽量多</span></div></div>
+          <div class="row"><span class="mute">排序</span><div class="seg"><span class="on">热门</span><span>最新</span></div></div>
+          <div class="row"><span class="chk"></span><span>包含回复</span><span class="sp"></span><span class="mute">更全，读取更慢</span></div>
+          <div class="row"><div class="btn p">读取并分析</div><div class="btn">只读取</div></div>
+        </div>
+        <div class="card">
+          <div class="h">读取中<small>已读 132 / 300</small></div>
+          <div class="prog"><i></i></div>
+          <div class="row"><span class="mute">先读取，再分批让 AI 归纳；可随时停止，已读的会保留</span><span class="sp"></span><div class="btn">停止</div></div>
+        </div>
+        <div class="card">
+          <div class="h">读取失败</div>
+          <div style="color:var(--neg)">这个视频的评论已被作者关闭。</div>
+          <div class="mute" style="line-height:1.6">其他可能的原因：需要登录才能查看（B 站）、请求过于频繁（稍后再试）。</div>
+          <div class="row"><div class="btn">重试</div><div class="btn">导入评论文件</div></div>
+        </div>
+        <div class="card">
+          <div class="h">支持的站点</div>
+          <div class="mute" style="line-height:1.6">YouTube、哔哩哔哩。其他站点读不到评论时，可粘贴或导入评论文本再分析。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1480,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>添加服务检测模型</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:#1d2624}
+.lab{font-size:12px;font-weight:600;color:#5b6764;margin-bottom:6px}
+.in{height:38px;border:1px solid #cdd6d3;border-radius:8px;padding:0 12px;display:flex;align-items:center;font-size:14px;background:#fff;box-sizing:border-box}
+.btn{height:36px;padding:0 16px;border-radius:8px;border:1px solid #cdd6d3;background:#fff;font-size:14px;display:inline-flex;align-items:center;gap:6px;color:#1d2624;font-family:inherit}
+.btn.p{background:#187a56;border-color:#187a56;color:#fff}
+.tag{font-size:11px;padding:1px 8px;border-radius:9px;font-weight:600}
+.cap{background:#e6eefb;color:#1d4a91}.vis{background:#f3e6f7;color:#6b2a80}.free{background:#fbeede;color:#8a4608}.emb{background:#eceeed;color:#444f4c}
+.m{display:grid;grid-template-columns:28px 1fr 190px 130px 90px;gap:12px;align-items:center;padding:10px 14px;border-top:1px solid #e8edeb;font-size:14px}
+.ok{color:#14614a;font-weight:600}.bad{color:#b3261e;font-weight:600}.wait{color:#5b6764}
+.cb{width:18px;height:18px;border:1.5px solid #8a9692;border-radius:4px;box-sizing:border-box}
+.cb.on{background:#187a56;border-color:#187a56}
+</style>
+</helmet>
+<div style="width:1160px;height:760px;box-sizing:border-box;background:#e9eeec;padding:40px;display:flex;align-items:flex-start;justify-content:center">
+  <div style="width:1000px;background:#fff;border-radius:14px;border:1px solid #cdd6d3;overflow:hidden;box-shadow:0 12px 40px #1d262422">
+    <div style="padding:18px 24px;border-bottom:1px solid #e8edeb;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:18px;font-weight:700">添加服务 · 自定义（OpenAI 兼容）</div>
+      <div style="font-size:13px;color:#5b6764">AI → 模型池</div>
+    </div>
+    <div style="padding:22px 24px;display:grid;grid-template-columns:1fr 1fr 150px;gap:14px;align-items:end">
+      <div><div class="lab">服务地址</div><div class="in">https://api.siliconflow.cn/v1</div></div>
+      <div><div class="lab">密钥</div><div class="in">sk-••••••••••••••••••••3f2a</div></div>
+      <button class="btn p" style="height:38px;justify-content:center">检测可用模型</button>
+    </div>
+    <div style="padding:0 24px 12px;font-size:13px;color:#14614a;display:flex;gap:18px">
+      <span>已连通 · 读到 46 个模型 · 用时 0.8 秒</span><span style="color:#5b6764">密钥只在本机发出请求，不会上传</span>
+    </div>
+
+    <div style="margin:0 24px;border:1px solid #dfe5e3;border-radius:10px;overflow:hidden">
+      <div style="padding:10px 14px;display:flex;gap:10px;align-items:center;background:#f4f6f5">
+        <div class="in" style="width:260px;height:32px;color:#5b6764">搜索模型，例如 qwen、vl</div>
+        <button class="btn" style="height:32px;background:#e4f3ec;border-color:#bfe0d1">对话 31</button>
+        <button class="btn" style="height:32px">识图 6</button>
+        <button class="btn" style="height:32px">语音 3</button>
+        <button class="btn" style="height:32px">嵌入 6</button>
+        <div style="flex:1"></div>
+        <button class="btn" style="height:32px">测试已勾选（3）</button>
+      </div>
+
+      <div class="m" style="border-top:0;background:#fff;color:#5b6764;font-size:12px;font-weight:600"><div></div><div>模型</div><div>能力</div><div>测试结果</div><div>延迟</div></div>
+      <div class="m"><div class="cb on"></div><div><b>Qwen/Qwen2.5-7B-Instruct</b></div><div style="display:flex;gap:6px"><span class="tag cap">对话</span><span class="tag free">免费</span></div><div class="ok">✓ 可用</div><div>0.9 秒</div></div>
+      <div class="m"><div class="cb on"></div><div><b>Qwen/Qwen2.5-VL-7B-Instruct</b></div><div style="display:flex;gap:6px"><span class="tag cap">对话</span><span class="tag vis">识图</span></div><div class="ok">✓ 可用，能看图</div><div>1.6 秒</div></div>
+      <div class="m"><div class="cb on"></div><div><b>deepseek-ai/DeepSeek-V3</b></div><div style="display:flex;gap:6px"><span class="tag cap">对话</span></div><div class="bad">✗ 余额不足（402）</div><div>0.4 秒</div></div>
+      <div class="m"><div class="cb"></div><div><b>THUDM/glm-4-9b-chat</b></div><div style="display:flex;gap:6px"><span class="tag cap">对话</span><span class="tag free">免费</span></div><div class="wait">未测试</div><div>—</div></div>
+      <div class="m"><div class="cb"></div><div><b>FunAudioLLM/SenseVoiceSmall</b></div><div style="display:flex;gap:6px"><span class="tag emb">语音</span></div><div class="wait">未测试</div><div>—</div></div>
+      <div class="m"><div class="cb"></div><div><b>BAAI/bge-m3</b></div><div style="display:flex;gap:6px"><span class="tag emb">嵌入</span></div><div class="wait">翻译用不到，已折叠</div><div>—</div></div>
+    </div>
+
+    <div style="padding:18px 24px;display:flex;align-items:center;gap:14px;border-top:1px solid #e8edeb;margin-top:16px;background:#fafbfa">
+      <div style="font-size:14px;line-height:1.6;flex:1">已勾选 3 个，其中 2 个测试通过。<br><span style="color:#5b6764;font-size:13px">测试失败的不会加入；余额不足的可以以后在模型池里再测。</span></div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:14px">用于 <span class="in" style="width:200px;height:34px">翻译、摘要、对话</span></div>
+      <button class="btn">取消</button>
+      <button class="btn p">加入模型池（2）</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1160,"height":760}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>展开、下载、归档</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1300px; height: 900px; box-sizing: border-box; padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<div style="display: flex; align-items: baseline; gap: 12px"><h2 style="margin: 0; font-size: 16px">一个播放列表，从点开到存好</h2><span style="color: #6b7385">下面四步；最后一块是出错时屏幕上写什么</span></div>
+
+<div style="display: flex; gap: 10px; align-items: stretch">
+<sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+<div style="flex: 1; min-width: 0; background: #fff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 22px; height: 22px; border-radius: 11px; background: #2457e6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700">{{s.n}}</span><b style="font-size: 14px">{{s.h}}</b></div>
+<div style="color: #4a5367; line-height: 1.65">{{s.b}}</div>
+<div style="margin-top: auto; font: 12px ui-monospace, Menlo, Consolas, monospace; background: #f5f6f8; border-radius: 8px; padding: 8px 10px; color: #4a5367; line-height: 1.6">{{s.code}}</div>
+</div>
+</sc-for>
+</div>
+
+<div style="display: flex; gap: 16px; flex: 1; min-height: 0">
+
+<div style="flex: 1; background: #fff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+<b style="font-size: 14px">现在的报错 → 改成这样</b>
+<div style="background: #fdf0e6; border: 1px solid #f3cfb2; border-radius: 8px; padding: 10px 12px; color: #a14a12; line-height: 1.6">现在：“彼德·生活工程師- Playlists”：已加入0项，1条失败。AI新聞：嵌套的列表请单独打开</div>
+<div style="color: #6b7385">原因：“Playlists”栏返回的每一项本身是个列表，旧代码把它当单个视频去解析，所以全部被拒。</div>
+<div style="background: #eaf6ef; border: 1px solid #bfe2cd; border-radius: 8px; padding: 10px 12px; color: #1f6b43; line-height: 1.6">改后：勾选的列表自动展开成里面的视频再加入。“已加入 57 个视频（来自 3 个列表）”，每个列表一个文件夹。</div>
+<div style="color: #6b7385">只有真的做不到时才报错，并且写清楚是哪一个、为什么、怎么办。</div>
+</div>
+
+<div style="flex: 1.3; background: #fff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
+<b style="font-size: 14px">各种情况屏幕上写什么</b>
+<sc-for list="{{msgs}}" as="m" hint-placeholder-count="6">
+<div style="display: flex; gap: 10px; padding: 7px 0; border-top: 1px solid #eef0f4"><span style="{{m.tag}}">{{m.k}}</span><span style="flex: 1; line-height: 1.55">{{m.t}}</span></div>
+</sc-for>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1300,"height":900}}'>
+class Component extends DCLogic {
+renderVals() {
+const steps = [
+  { n: 1, h: '展开', b: '点列表右边的“展开”，才去读里面的视频，一次 50 条，往下滚再加载。没展开的列表只知道名字和个数。', code: '读 /playlist?list=… \n→ 视频 × N' },
+  { n: 2, h: '勾选', b: '勾整个列表 = 里面全部；展开后可以单独去掉几个。底部写“已选 3 个列表（共 57 个视频）”。没展开的列表勾选时，加入队列时才去读。', code: '已选 3 个列表\n共 57 个视频' },
+  { n: 3, h: '加入队列', b: '按列表分组入队，每个视频带上“来自哪个列表、第几个”。已经下过的默认不再下，可在设置里改。', code: '组：AI新聞\n  #1 #2 #3 …' },
+  { n: 4, h: '存到文件夹', b: '文件保存到 下载目录/平台/创作者/列表名/，文件名带序号。单个视频、不属于任何列表的，照旧放平台文件夹。', code: '…/AI新聞/\n  01 - 标题.mp4' },
+];
+const tg = (c, bg) => 'flex:none;width:64px;text-align:center;border-radius:6px;padding:2px 0;font-size:12px;font-weight:600;color:' + c + ';background:' + bg;
+const msgs = [
+  { k: '要登录', t: '“这个列表要登录才能看（私享/会员）。去设置登录后点重试。”不影响其他列表。', tag: tg('#a14a12', '#fdf0e6') },
+  { k: '列表为空', t: '“这个列表里现在没有视频。”显示为灰色，不算失败。', tag: tg('#4a5367', '#eef0f4') },
+  { k: '部分失败', t: '“已加入 54 个视频，3 个失败（已删除 2、地区限制 1）。”点开看每个原因，可只重试失败的。', tag: tg('#a14a12', '#fdf0e6') },
+  { k: '列表套列表', t: '“合集里还有子列表”时自动展开到视频，最多展开 3 层，超过就停下并说明。', tag: tg('#2457e6', '#eaf0ff') },
+  { k: '重复视频', t: '同一个视频出现在两个列表里：默认下一次，在两个文件夹里各放一个入口说明；也可以设成“各存一份”。', tag: tg('#2457e6', '#eaf0ff') },
+  { k: '太多', t: '一次选了超过 500 个视频：先问“确认加入 812 个视频？”，不直接塞满队列。', tag: tg('#a14a12', '#fdf0e6') },
+];
+return { steps, msgs };
+}
+}
+</script>
+</body>
+</html>

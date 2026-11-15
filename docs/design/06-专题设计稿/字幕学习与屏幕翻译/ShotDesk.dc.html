@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>桌面全局截图翻译</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{position:relative;width:1280px;height:900px;box-sizing:border-box;overflow:hidden;background:#20262b;color:var(--fg);font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+.app{position:absolute;left:40px;top:40px;width:760px;height:700px;border-radius:10px;background:#2b3238;border:1px solid #3d464d;overflow:hidden}
+.app .tt{height:34px;background:#232a2f;display:flex;align-items:center;gap:8px;padding:0 12px;color:#9aa6ad;font-size:12px}
+.app .tt i{width:10px;height:10px;border-radius:50%;background:#4a545b;display:block}
+.app .bd{padding:22px 26px;display:flex;flex-direction:column;gap:12px;color:#cfd6da}
+.app .bd h2{margin:0;font-size:21px;color:#eef1ee}
+.app .bd p{margin:0;line-height:1.7;font-size:14px}
+.code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#1d2327;border-radius:8px;padding:10px 12px;color:#9fd0a8;line-height:1.6}
+.dim{position:absolute;inset:0;background:rgba(8,10,12,.5)}
+.sel{position:absolute;left:66px;top:168px;width:700px;height:150px;border:2px dashed #f0a064;border-radius:3px;box-shadow:0 0 0 9999px rgba(8,10,12,.5);background:transparent}
+.sel .lab{position:absolute;left:-2px;top:-26px;height:22px;border-radius:5px;background:#f0a064;color:#14181a;font-size:12px;font-weight:700;padding:0 8px;display:flex;align-items:center}
+.h{position:absolute;width:9px;height:9px;background:#f0a064;border:2px solid #fff;border-radius:2px}
+.card{position:absolute;left:66px;top:336px;width:700px;box-sizing:border-box;padding:14px 16px;border-radius:12px;background:var(--card);border:1px solid var(--line);box-shadow:0 14px 40px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:10px}
+.card .hd{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:12.5px}
+.card .hd b{color:var(--fg)}
+.card .hd .pin{margin-left:auto}
+.orig{color:var(--mute);font-size:13px;line-height:1.6;border-left:3px solid var(--line);padding-left:10px}
+.tr{font-size:17px;line-height:1.7;font-weight:600}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{height:30px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);display:flex;align-items:center;padding:0 12px;font-size:13px;gap:6px}
+.btn.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700}
+.btn.on{background:var(--soft);border-color:var(--acc);color:var(--acc);font-weight:700}
+.chip{height:24px;border-radius:12px;border:1px solid var(--line);display:flex;align-items:center;padding:0 10px;font-size:12px;color:var(--mute)}
+.chip.on{background:var(--soft);border-color:var(--acc);color:var(--acc);font-weight:700}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cmp div{border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:13px;line-height:1.6;background:var(--bg)}
+.cmp div span{display:block;color:var(--mute);font-size:11.5px;margin-bottom:2px}
+.key{display:inline-block;min-width:18px;text-align:center;padding:0 6px;border:1px solid var(--line);border-radius:5px;color:var(--fg);margin:0 3px}
+.panel{position:absolute;right:40px;top:40px;width:380px;box-sizing:border-box;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line);color:var(--fg);display:flex;flex-direction:column;gap:12px}
+.panel h3{margin:0;font-size:15px}
+.panel .sub{color:var(--mute);font-size:12.5px;line-height:1.55}
+.fld{display:flex;align-items:center;gap:8px}
+.fld span{width:70px;color:var(--mute);font-size:12.5px;flex:none}
+.sl{flex:1;height:30px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:var(--bg)}
+.sw{display:flex;align-items:center;gap:8px;font-size:13px}
+.sw i{width:30px;height:17px;border-radius:9px;background:var(--line);position:relative;flex:none}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--card)}
+.sw.on i{background:var(--acc)}
+.sw.on i::after{left:15px}
+.opt{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;background:var(--bg)}
+.opt.cur{border-color:var(--acc);background:var(--soft)}
+.opt b{font-size:13.5px}
+.opt span{color:var(--mute);font-size:12.5px;line-height:1.5}
+.hist{position:absolute;right:40px;top:520px;width:380px;box-sizing:border-box;padding:14px 16px;border-radius:12px;background:var(--card);border:1px solid var(--line);color:var(--fg);display:flex;flex-direction:column;gap:8px}
+.hist h3{margin:0;font-size:14px;display:flex;align-items:center}
+.hist h3 span{margin-left:auto;color:var(--mute);font-size:12px;font-weight:400}
+.hi{display:flex;gap:10px;align-items:center;padding:6px 8px;border-radius:8px;font-size:13px}
+.hi.cur{background:var(--soft)}
+.hi i{width:44px;height:30px;border-radius:5px;background:var(--line);flex:none;display:block}
+.hi div{min-width:0;flex:1}
+.hi div b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.hi div span{display:block;color:var(--mute);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hi em{font-style:normal;color:var(--mute);font-size:12px}
+.tip{position:absolute;left:40px;bottom:28px;display:flex;gap:18px;color:#aeb8bd;font-size:12.5px}
+</style>
+</helmet>
+<div class="root" style="{{vars}}">
+  <div class="app">
+    <div class="tt"><i></i><i></i><i></i><span>Terminal — deploy.log</span></div>
+    <div class="bd">
+      <h2>Deployment failed</h2>
+      <p>Build finished in 42s but the health check never returned a 200 response.</p>
+      <div class="code">ERROR  connect ECONNREFUSED 127.0.0.1:8080<br>Retrying in 5 seconds… (attempt 3 of 5)<br>Hint: make sure the service is listening before the probe starts.</div>
+      <p>Check the container logs, then redeploy once the port is open.</p>
+    </div>
+  </div>
+  <div class="sel">
+    <span class="lab">英文 → 简体中文 · 700×150</span>
+    <i class="h" style="left:-6px;top:-6px"></i><i class="h" style="right:-6px;top:-6px"></i><i class="h" style="left:-6px;bottom:-6px"></i><i class="h" style="right:-6px;bottom:-6px"></i>
+  </div>
+  <div class="card">
+    <div class="hd"><b>译文</b><span>AI 模型池 · 专家：技术文档</span><span class="pin btn" style="height:24px">📌 钉在桌面</span><span class="btn" style="height:24px">×</span></div>
+    <div class="orig">ERROR connect ECONNREFUSED 127.0.0.1:8080 · Retrying in 5 seconds… (attempt 3 of 5) · Hint: make sure the service is listening before the probe starts.</div>
+    <div class="tr">错误：连接 127.0.0.1:8080 被拒绝。5 秒后重试…（第 3 次，共 5 次）。提示：请确保服务在探测开始之前已经开始监听。</div>
+    <div class="cmp">
+      <div><span>换一个服务对比 · 通用翻译</span>错误：连接被拒绝 127.0.0.1:8080，5 秒后重试……（第 3/5 次）。提示：确认服务先于探测开始监听。</div>
+      <div><span>换一个服务对比 · 本地模型</span>错误：无法连接到 127.0.0.1:8080。5 秒后重试（第 3 次，共 5 次）。提示：探测前先让服务监听端口。</div>
+    </div>
+    <div class="row">
+      <span class="btn p">复制译文</span>
+      <span class="btn">复制原文</span>
+      <span class="btn">朗读</span>
+      <span class="btn on">对比服务</span>
+      <span class="btn">贴回原处</span>
+      <span class="btn">存为笔记</span>
+      <span style="flex:1"></span>
+      <span class="chip">按 <span class="key">Esc</span>关闭</span>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>全局截图翻译</h3>
+    <div class="sub">在任何软件上按快捷键，框选一块区域，译文就浮在旁边。截图只在本机处理，识别完立刻丢弃，不落盘。</div>
+    <div class="fld"><span>快捷键</span><div class="sl">Ctrl + Alt + T<i style="font-style:normal">修改</i></div></div>
+    <div class="fld"><span>语言</span><div class="sl">自动检测 → 简体中文<i style="font-style:normal">▾</i></div></div>
+    <div class="opt cur"><b>识别方式：本机文字识别（推荐）</b><span>离线、快、不上传图片。适合网页、文档、终端、聊天窗口。</span></div>
+    <div class="opt"><b>视觉模型识别</b><span>把截图发给你配置的视觉模型，漫画、艺术字、竖排、手写体更准；会上传这块图片，开启前会提示。</span></div>
+    <div class="sw on"><i></i>框选后自动翻译（不用再按回车）</div>
+    <div class="sw on"><i></i>译文卡片自动贴近选区，避开遮挡</div>
+    <div class="sw"><i></i>翻译后自动复制译文</div>
+  </div>
+  <div class="hist">
+    <h3>最近的截图翻译<span>只存文字，不存图片</span></h3>
+    <div class="hi cur"><i></i><div><b>ERROR connect ECONNREFUSED…</b><span>错误：连接 127.0.0.1:8080 被拒绝…</span></div><em>刚刚</em></div>
+    <div class="hi"><i></i><div><b>Pricing starts at $12 per seat</b><span>定价从每席位每月 12 美元起</span></div><em>5 分钟前</em></div>
+    <div class="hi"><i></i><div><b>Are you still coming tonight?</b><span>你今晚还来吗？</span></div><em>昨天</em></div>
+  </div>
+  <div class="tip"><span>全局：<span class="key">Ctrl</span>+<span class="key">Alt</span>+<span class="key">T</span> 框选翻译</span><span><span class="key">Enter</span>重新翻译</span><span><span class="key">Tab</span>切换识别方式</span></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const t = dark
+      ? { bg: '#14181a', card: '#1d2420', line: '#3a443e', fg: '#eef1ee', mute: '#a9b3ad', acc: '#f0a064', soft: '#3a2c20', onacc: '#14181a' }
+      : { bg: '#f1f3f1', card: '#ffffff', line: '#d9dedb', fg: '#1d2420', mute: '#5d6862', acc: '#b4561a', soft: '#f6e6da', onacc: '#ffffff' };
+    const vars = `--bg:${t.bg};--card:${t.card};--line:${t.line};--fg:${t.fg};--mute:${t.mute};--acc:${t.acc};--soft:${t.soft};--onacc:${t.onacc}`;
+    return { vars };
+  }
+}
+</script>
+</body>
+</html>

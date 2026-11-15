@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>生词本与复习</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{width:1280px;height:900px;box-sizing:border-box;display:flex;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+.side{width:200px;flex:none;border-right:1px solid var(--line);background:var(--card);padding:20px 12px;display:flex;flex-direction:column;gap:4px}
+.side .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:16px;padding:0 8px 16px}
+.side .brand i{width:24px;height:24px;border-radius:7px;background:var(--acc);display:block}
+.nav{height:38px;border-radius:8px;display:flex;align-items:center;padding:0 12px;color:var(--mute)}
+.nav.cur{background:var(--soft);color:var(--acc);font-weight:700}
+.page{flex:1;min-width:0;padding:28px 32px;display:flex;flex-direction:column;gap:18px}
+.h1{display:flex;align-items:flex-end;gap:16px}
+.h1 h1{margin:0;font-size:26px}
+.h1 p{margin:0;color:var(--mute)}
+.stats{display:flex;gap:12px}
+.stat{flex:1;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:14px 16px}
+.stat b{display:block;font-size:26px}
+.stat span{color:var(--mute);font-size:13px}
+.stat.hot{border-color:var(--acc)}
+.stat.hot b{color:var(--acc)}
+.body{flex:1;display:flex;gap:20px;min-height:0}
+.listc{flex:1;min-width:0;border:1px solid var(--line);background:var(--card);border-radius:12px;display:flex;flex-direction:column;overflow:hidden}
+.filters{display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);align-items:center}
+.chip{height:28px;border-radius:14px;border:1px solid var(--line);display:flex;align-items:center;padding:0 12px;font-size:13px;color:var(--mute)}
+.chip.on{background:var(--soft);border-color:var(--acc);color:var(--acc);font-weight:700}
+.search{margin-left:auto;width:200px;height:30px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;padding:0 10px;color:var(--mute)}
+.th{display:grid;grid-template-columns:150px 1fr 190px 84px;gap:12px;padding:8px 16px;color:var(--mute);font-size:12px;border-bottom:1px solid var(--line)}
+.tr{display:grid;grid-template-columns:150px 1fr 190px 84px;gap:12px;padding:11px 16px;align-items:center;border-bottom:1px solid var(--line)}
+.tr.sel{background:var(--soft)}
+.tr b{font-size:15px}
+.ph{color:var(--mute);font-size:12px;margin-left:6px;font-weight:400}
+.src{color:var(--mute);font-size:12.5px;line-height:1.4}
+.tm{display:inline-block;margin-left:6px;padding:0 6px;border:1px solid var(--line);border-radius:5px;color:var(--acc);font-weight:700;font-size:12px}
+.dots{display:flex;gap:4px}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.dots i.f{background:var(--acc)}
+.rev{width:380px;flex:none;display:flex;flex-direction:column;gap:12px}
+.fc{border:1px solid var(--line);background:var(--card);border-radius:14px;padding:22px 22px 18px;display:flex;flex-direction:column;gap:14px}
+.fc .cap{display:flex;justify-content:space-between;color:var(--mute);font-size:12px}
+.fc h2{margin:0;font-size:30px;text-align:center}
+.fc .sent{font-size:15px;line-height:1.7;text-align:center}
+.blank{display:inline-block;min-width:78px;border-bottom:2px solid var(--acc);color:transparent;user-select:none}
+.zh{color:var(--mute);text-align:center;font-size:13px}
+.play{align-self:center;display:flex;align-items:center;gap:8px;height:34px;padding:0 16px;border-radius:17px;border:1px solid var(--line);color:var(--fg)}
+.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.grade{display:flex;gap:8px}
+.g{flex:1;height:54px;border-radius:10px;border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--card);gap:2px}
+.g span{font-size:11px;color:var(--mute)}
+.g.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700}
+.g.p span{color:var(--onacc)}
+.exp{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.exp b{font-size:14px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn{height:32px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);display:flex;align-items:center;padding:0 12px}
+.btn.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700}
+.hint{color:var(--mute);font-size:12.5px;line-height:1.5}
+</style>
+</helmet>
+<div class="root" style="{{vars}}">
+  <div class="side">
+    <div class="brand"><i></i>清影</div>
+    <div class="nav">解析</div><div class="nav">下载队列</div><div class="nav">媒体库</div><div class="nav">字幕</div><div class="nav">工具箱</div>
+    <div class="nav cur">生词本</div>
+    <div class="nav">设置</div>
+  </div>
+  <div class="page">
+    <div class="h1"><h1>生词本</h1><p>来自你看过的视频字幕，每个词都带着原句和出处</p></div>
+    <div class="stats">
+      <div class="stat"><b>238</b><span>全部生词</span></div>
+      <div class="stat hot"><b>18</b><span>今天该复习</span></div>
+      <div class="stat"><b>61</b><span>已掌握</span></div>
+      <div class="stat"><b>14</b><span>本周新增</span></div>
+    </div>
+    <div class="body">
+      <div class="listc">
+        <div class="filters">
+          <span class="chip on">全部</span><span class="chip">待复习 18</span><span class="chip">新词</span><span class="chip">已掌握</span>
+          <span class="chip">来源：全部视频 ▾</span>
+          <span class="search">搜索单词或释义</span>
+        </div>
+        <div class="th"><span>单词</span><span>释义与原句</span><span>来源</span><span>熟练度</span></div>
+        <div class="tr sel">
+          <div><b>weights</b><span class="ph">/weɪts/</span></div>
+          <div><div>n. 权重；参数权值</div><div class="src">Memory is stored as weights, not as a database.</div></div>
+          <div class="src">How a language model remembers<span class="tm">3:12</span></div>
+          <div class="dots"><i class="f"></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="tr">
+          <div><b>retrieve</b><span class="ph">/rɪˈtriːv/</span></div>
+          <div><div>v. 检索；取回</div><div class="src">The model can retrieve facts it saw during training.</div></div>
+          <div class="src">How a language model remembers<span class="tm">4:05</span></div>
+          <div class="dots"><i class="f"></i><i class="f"></i><i></i><i></i></div>
+        </div>
+        <div class="tr">
+          <div><b>fluctuate</b><span class="ph">/ˈflʌktʃueɪt/</span></div>
+          <div><div>v. 波动；起伏</div><div class="src">Prices fluctuate depending on demand.</div></div>
+          <div class="src">Macro in ten minutes<span class="tm">12:40</span></div>
+          <div class="dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i></div>
+        </div>
+        <div class="tr">
+          <div><b>ubiquitous</b><span class="ph">/juːˈbɪkwɪtəs/</span></div>
+          <div><div>adj. 无处不在的</div><div class="src">Smartphones have become ubiquitous.</div></div>
+          <div class="src">Why we scroll<span class="tm">1:58</span></div>
+          <div class="dots"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="tr">
+          <div><b>nuance</b><span class="ph">/ˈnjuːɑːns/</span></div>
+          <div><div>n. 细微差别</div><div class="src">There is a nuance you might be missing here.</div></div>
+          <div class="src">Why we scroll<span class="tm">8:21</span></div>
+          <div class="dots"><i class="f"></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+      <div class="rev">
+        <div class="fc">
+          <div class="cap"><span>今日复习 3 / 18</span><span>来自 How a language model remembers</span></div>
+          <div class="sent">Memory is stored as <span class="blank">weights</span>, not as a database.</div>
+          <div class="zh">记忆是以权重的形式存储的，而不是数据库。</div>
+          <div class="play"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg>播放这句原声</div>
+          <div class="grade">
+            <div class="g">不认识<span>10 分钟后</span></div>
+            <div class="g">模糊<span>1 天后</span></div>
+            <div class="g p">认识<span>4 天后</span></div>
+          </div>
+        </div>
+        <div class="exp">
+          <b>导出</b>
+          <div class="btns"><span class="btn p">导出到 Anki</span><span class="btn">CSV</span><span class="btn">Markdown</span><span class="btn">JSON</span></div>
+          <div class="hint">Anki 卡片正面是挖空原句，背面是释义和出处链接；原声片段随卡片一起导出</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const t = dark
+      ? { bg: '#14181a', card: '#1d2420', line: '#3a443e', fg: '#eef1ee', mute: '#a9b3ad', acc: '#f0a064', soft: '#3a2c20', onacc: '#14181a' }
+      : { bg: '#f1f3f1', card: '#ffffff', line: '#d9dedb', fg: '#1d2420', mute: '#5d6862', acc: '#b4561a', soft: '#f6e6da', onacc: '#ffffff' };
+    const vars = `--bg:${t.bg};--card:${t.card};--line:${t.line};--fg:${t.fg};--mute:${t.mute};--acc:${t.acc};--soft:${t.soft};--onacc:${t.onacc}`;
+    return { vars };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>字幕模式与实施分期</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{position:relative;width:1440px;height:900px;box-sizing:border-box;overflow:hidden;background:#14181a;color:#eef1ee;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;padding:32px 44px}
+h1{margin:0;font-size:26px}
+h2{margin:0;font-size:15px;color:#f0a064;letter-spacing:1px}
+.sub{color:#a9b3ad;font-size:13.5px;line-height:1.6;margin:6px 0 0;max-width:980px}
+.cap{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:#a9b3ad}
+.cap b{color:#eef1ee;font-size:14px}
+.cap i{font-style:normal;background:#f0a064;color:#14181a;border-radius:10px;padding:0 8px;font-weight:700;font-size:12px}
+.vid{position:absolute;left:44px;top:134px;width:640px}
+.frame{position:relative;width:640px;height:340px;border-radius:10px;overflow:hidden;border:1px solid #3a443e;background:linear-gradient(#26344a,#4d6178 55%,#2d3a2e 55%,#1c261e)}
+.sil{position:absolute;left:250px;top:90px;width:70px;height:170px;background:#0e1318;border-radius:35px 35px 6px 6px}
+.sil::before{content:"";position:absolute;left:14px;top:-34px;width:42px;height:42px;border-radius:50%;background:#0e1318}
+.osub{position:absolute;left:60px;right:60px;bottom:22px;text-align:center;color:#fff;font-weight:700;font-size:20px;text-shadow:0 0 3px #000,0 0 3px #000}
+.strip{position:absolute;left:46px;right:46px;bottom:12px;height:44px;border:2px dashed #f0a064;border-radius:4px}
+.strip i{position:absolute;left:-2px;top:-19px;font-style:normal;font-size:10.5px;background:#f0a064;color:#14181a;padding:0 6px;border-radius:3px 3px 0 0;font-weight:700;white-space:nowrap}
+.tsub{position:absolute;left:46px;right:46px;bottom:12px;height:44px;border-radius:4px;background:rgba(0,0,0,.78);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.3}
+.tsub b{font-size:18px}
+.tsub span{font-size:11.5px;color:#c8d0d6}
+.tl{position:absolute;left:44px;top:496px;width:640px;background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:7px}
+.tl b{font-size:14px}
+.rowt{display:grid;grid-template-columns:72px 1fr;gap:8px;align-items:center;font-size:12px;color:#a9b3ad}
+.lane{position:relative;height:22px;background:#14181a;border-radius:5px}
+.lane i{position:absolute;top:3px;height:16px;border-radius:4px;font-style:normal;font-size:10.5px;display:flex;align-items:center;padding:0 6px;color:#14181a;font-weight:700;white-space:nowrap;overflow:hidden}
+.panel{position:absolute;left:708px;top:112px;width:310px;box-sizing:border-box;background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:9px}
+.panel h3{margin:0;font-size:15px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld span{color:#a9b3ad;font-size:12px}
+.sl{height:30px;border:1px solid #3a443e;border-radius:8px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#14181a;font-size:13px}
+.sw{display:flex;align-items:center;gap:8px;font-size:12.8px;line-height:1.4}
+.sw i{width:30px;height:17px;border-radius:9px;background:#3a443e;position:relative;flex:none}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#1d2420}
+.sw.on i{background:#f0a064}
+.sw.on i::after{left:15px}
+.seg{display:flex;border:1px solid #3a443e;border-radius:8px;overflow:hidden}
+.seg span{flex:1;text-align:center;padding:6px 0;font-size:12.5px;color:#a9b3ad}
+.seg .on{background:#f0a064;color:#14181a;font-weight:700}
+.ask{position:absolute;left:1042px;top:112px;width:354px;box-sizing:border-box;background:#2a2218;border:1px solid #f0a064;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:9px}
+.ask h2{color:#f3d3b5}
+.ask ol{margin:0;padding:0 0 0 18px;display:flex;flex-direction:column;gap:9px;color:#f3d3b5;font-size:13px;line-height:1.55}
+.ask ol b{color:#fff}
+.ph{position:absolute;left:44px;top:660px;width:1352px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.p{background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.p.a{border-color:#f0a064}
+.p em{font-style:normal;background:#f0a064;color:#14181a;border-radius:10px;padding:0 9px;font-size:12px;font-weight:700;align-self:flex-start}
+.p b{font-size:15px}
+.p span{color:#a9b3ad;font-size:12.5px;line-height:1.6}
+.p .re{color:#8fd0b0;font-size:12px;line-height:1.55}
+</style>
+</helmet>
+<div class="root">
+  <h1>字幕模式 · 以及怎么分期做</h1>
+  <p class="sub">看视频、直播、游戏过场时，只盯画面下方那一条字幕。字幕换了才翻译；一句话分成两行、两屏出现时，等它说完再合成一句。</p>
+
+  <div class="vid">
+    <div class="cap" style="margin-bottom:6px"><i>①</i><b>只框一条字幕带，译文盖在原位</b></div>
+    <div class="frame">
+      <div class="sil"></div>
+      <div class="osub">あの日から、ずっと探していたんだ。</div>
+      <div class="strip"><i>字幕带 · 640×44 · 6 帧/秒</i></div>
+    </div>
+    <div class="cap" style="margin:10px 0 6px"><i>②</i><b>翻译后（双语，原文小字）</b></div>
+    <div class="frame" style="height:120px;background:linear-gradient(#26344a,#4d6178)">
+      <div class="tsub" style="bottom:38px"><b>从那天起，我一直在找你。</b><span>あの日から、ずっと探していたんだ。</span></div>
+    </div>
+  </div>
+
+  <div class="tl" style="top:604px;display:none"></div>
+
+  <div class="panel">
+    <h3>字幕模式 · 设置</h3>
+    <div class="fld"><span>显示位置</span><div class="seg"><span class="on">盖住原字幕</span><span>悬浮条</span></div></div>
+    <div class="fld"><span>显示内容</span><div class="seg"><span>仅译文</span><span class="on">双语</span></div></div>
+    <div class="fld"><span>刷新速度</span><div class="seg"><span>3 帧</span><span class="on">6 帧</span><span>10 帧</span></div></div>
+    <div class="fld"><span>字幕稳定多久再翻（毫秒）</span><div class="sl">300<i style="font-style:normal">±</i></div></div>
+    <div class="fld"><span>字幕消失后译文保留（毫秒）</span><div class="sl">600<i style="font-style:normal">±</i></div></div>
+    <div class="sw on"><i></i>相同或很像的字幕不重复翻译</div>
+    <div class="sw on"><i></i>一句话分两行 / 两屏时，合成一句再翻</div>
+    <div class="sw on"><i></i>悬浮条可拖动，记住位置和字号</div>
+    <div class="sw"><i></i>本地视频提醒：用“生成字幕”更准（提前翻好，不会晚一拍）</div>
+  </div>
+
+  <div class="ask">
+    <h2>想请你拍板的几件事</h2>
+    <ol>
+      <li><b>识字引擎：</b>默认用 Windows 自带的文字识别（零下载、很快，但要装对应语言包），再提供一个“增强识字组件”按需下载（准确率更高、语言更多）。这样可以吗？</li>
+      <li><b>漫画模式默认走视觉模型</b>，会上传图片，开启前提示一次。可以接受吗？还是宁可本机识字、准确率低一些？</li>
+      <li><b>第一期只做 Windows</b>（你的游戏场景基本都在 Windows 上）。</li>
+      <li><b>控制条</b>：做成像 Bubble Translate 的小悬浮钮，还是只用托盘 + 快捷键？</li>
+      <li><b>系统声音实时字幕</b>（把游戏或视频的声音实时转成字幕再翻译，借鉴 win_subtitle）：要不要排进后面的期次？</li>
+    </ol>
+  </div>
+
+  <div class="ph">
+    <div class="p a"><em>第一期 · 标准模式</em><b>能翻、能贴、不闪</b><span>窗口 / 区域取景、变化检测、本机识字、整屏批量翻译与缓存、透明贴字层、控制条与快捷键、截图时排除自己。</span><span class="re">复用：模型池 · 术语库 · 专家 · 已有的透明窗口与截图窗口</span></div>
+    <div class="p"><em>第二期 · 字幕模式</em><b>字幕带 + 合并断句</b><span>固定字幕带、更高刷新、字幕去重、跨屏断句合并、悬浮条。</span><span class="re">复用：字幕工坊的断句与双语样式</span></div>
+    <div class="p"><em>第三期 · 漫画模式</em><b>气泡 + 竖排 + 擦字</b><span>气泡检测、视觉模型竖排识字、取色填充 / 邻近修补、翻页续翻、拟声词旁注。</span><span class="re">复用：已做的截图翻译（视觉模型）接口</span></div>
+    <div class="p"><em>第四期 · 打磨</em><b>按程序记设置</b><span>每个游戏单独的区域 / 模式 / 术语库、翻译历史、更多识字语言；可选：系统声音实时字幕。</span><span class="re">复用：SenseVoice 本机语音识别</span></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

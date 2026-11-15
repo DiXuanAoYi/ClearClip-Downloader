@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>图片悬停放大</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;color:#1d2420}
+.card{background:#fff;border:1px solid #cfd5d1;border-radius:12px;padding:16px;box-shadow:0 10px 28px #1d242018}
+.h{font-size:14px;font-weight:700;margin:0 0 4px}
+.m{font-size:12px;color:#5d6862;line-height:1.6}
+.tile{width:222px;height:150px;border-radius:6px}
+.cc{background:#14181aee;color:#e7ecea;border-radius:8px;font-size:12px}
+.chip{font:inherit;font-size:12px;color:#e7ecea;background:transparent;border:1px solid #3a4448;border-radius:6px;padding:4px 8px;min-height:28px}
+.chip.pri{background:#f08a3c;border-color:#f08a3c;color:#14181a;font-weight:700}
+.row{display:flex;align-items:center;gap:8px}
+.kbd{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:11px;background:#eef0ee;border:1px solid #cfd5d1;border-radius:4px;padding:1px 6px}
+.ck{width:16px;height:16px;border-radius:4px;border:1.5px solid #8c9894;flex:none}
+.ck.on{background:#2f8a57;border-color:#2f8a57}
+.step{display:flex;gap:10px;font-size:12px;line-height:1.6;padding:6px 0;border-bottom:1px solid #eceeed}
+.step b{width:20px;height:20px;border-radius:50%;background:#d9762b;color:#14181a;display:flex;align-items:center;justify-content:center;flex:none;font-size:12px}
+</style>
+</helmet>
+<div style="width:1200px;height:700px;background:#eef0ee;padding:40px;display:flex;gap:32px;align-items:flex-start">
+
+<div style="width:760px">
+<div style="font-size:14px;font-weight:700;margin-bottom:10px">悬停放大 <span style="font-weight:400;color:#5d6862">停留约 0.2 秒出现；移开立刻消失，不影响点击和拖拽</span></div>
+<div style="background:#fff;border:1px solid #cfd5d1;border-radius:12px;box-shadow:0 10px 28px #1d242018;height:560px;position:relative;overflow:hidden;padding:20px">
+<div style="display:flex;flex-wrap:wrap;gap:16px">
+<div class="tile" style="background:linear-gradient(135deg,#cfd8d2,#a8b5ae)"></div>
+<div class="tile" style="background:linear-gradient(135deg,#e3d5c6,#c2ab93);outline:2px dashed #d9762b;outline-offset:3px"></div>
+<div class="tile" style="background:linear-gradient(135deg,#c9d3e0,#9db0c8)"></div>
+<div class="tile" style="background:linear-gradient(135deg,#d9cfe0,#b3a3c4)"></div>
+<div class="tile" style="background:linear-gradient(135deg,#d0e0d2,#a1c0a6)"></div>
+<div class="tile" style="background:linear-gradient(135deg,#e0d0d0,#c4a3a3)"></div>
+</div>
+
+<div style="position:absolute;left:260px;top:90px;width:440px">
+<div style="width:440px;height:310px;border-radius:8px 8px 0 0;background:linear-gradient(135deg,#efe3d4,#bfa688);box-shadow:0 14px 40px #14181a55;border:1px solid #14181a22"></div>
+<div class="cc row" style="border-radius:0 0 8px 8px;padding:6px 8px;gap:6px;flex-wrap:wrap">
+<button class="chip pri">发送到清影</button>
+<button class="chip">保存</button>
+<button class="chip">以图搜图 ▾</button>
+<button class="chip">旋转</button>
+<button class="chip">画廊</button>
+<span style="flex:1"></span>
+<span style="color:#aab4b0">3840×2160 · JPG · 原图</span>
+</div>
+</div>
+</div>
+<div class="m" style="margin-top:10px">快捷键：<span class="kbd">Alt</span> 锁定位置　<span class="kbd">+</span><span class="kbd">−</span> 缩放　<span class="kbd">R</span> 旋转　<span class="kbd">S</span> 保存　<span class="kbd">←</span><span class="kbd">→</span> 画廊切换　<span class="kbd">Esc</span> 关闭</div>
+</div>
+
+<div style="width:340px;display:flex;flex-direction:column;gap:20px">
+<div class="card">
+<div class="h">以图搜图 <span class="m">功能 3c · 点击才发出，且会告诉你发给了谁</span></div>
+<div class="row" style="padding:5px 0"><div class="ck on"></div><span style="font-size:13px">Google</span></div>
+<div class="row" style="padding:5px 0"><div class="ck on"></div><span style="font-size:13px">Bing</span></div>
+<div class="row" style="padding:5px 0"><div class="ck on"></div><span style="font-size:13px">Yandex</span></div>
+<div class="row" style="padding:5px 0"><div class="ck on"></div><span style="font-size:13px">TinEye</span></div>
+<div class="row" style="padding:5px 0"><div class="ck on"></div><span style="font-size:13px">百度</span></div>
+<div class="row" style="padding:5px 0"><div class="ck on"></div><span style="font-size:13px">搜狗</span></div>
+<div class="m" style="margin-top:6px">默认勾选的就是菜单里的引擎；菜单还有“全部引擎打开”和“上传本地图片 / 截取页面区域”。图片地址无法公开访问时，由扩展取回后再上传。</div>
+</div>
+<div class="card">
+<div class="h">取原图的三层 <span class="m">功能 3e</span></div>
+<div class="step"><b>1</b><span>页面自带线索：<code>srcset</code>、<code>data-original</code>、外层链接指向的图片、<code>og:image</code></span></div>
+<div class="step"><b>2</b><span>通用后缀规则：<code>_thumb</code>、<code>!small</code>、<code>?x-oss-process=</code>、<code>=w200</code> 等</span></div>
+<div class="step" style="border:0"><b>3</b><span>少量内置站点规则 + 你自己加的“匹配 → 替换”规则；找不到更大的就显示原图本身</span></div>
+</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":700}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

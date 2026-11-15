@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>播放页字幕查词</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{width:1440px;height:900px;box-sizing:border-box;display:flex;flex-direction:column;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+.top{height:56px;flex:none;display:flex;align-items:center;gap:16px;padding:0 24px;border-bottom:1px solid var(--line);background:var(--card)}
+.top .logo{width:28px;height:28px;border-radius:8px;background:var(--acc);color:var(--card)}
+.top .search{flex:1;max-width:520px;height:34px;border:1px solid var(--line);border-radius:17px;display:flex;align-items:center;padding:0 14px;color:var(--mute)}
+.main{flex:1;display:flex;gap:24px;padding:24px;min-height:0}
+.left{width:900px;display:flex;flex-direction:column;gap:14px}
+.video{position:relative;width:900px;height:506px;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,#2a3a44 0%,#16202a 60%,#0f1418 100%)}
+.sub{position:absolute;left:0;right:0;bottom:70px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.sub .en{background:rgba(0,0,0,.66);color:#fff;font-size:24px;padding:3px 12px;border-radius:4px;line-height:1.4}
+.sub .zh{background:rgba(0,0,0,.66);color:#ffd9b8;font-size:20px;padding:2px 12px;border-radius:4px}
+.w{border-bottom:2px dotted #f0a064}
+.w.on{border-bottom:2px solid #7fd1ff;background:rgba(127,209,255,.22)}
+.bar{position:absolute;left:0;right:0;bottom:0;height:52px;display:flex;align-items:center;gap:14px;padding:0 16px;background:linear-gradient(transparent,rgba(0,0,0,.78));color:#fff;font-size:13px}
+.prog{position:absolute;left:16px;right:16px;bottom:46px;height:3px;border-radius:2px;background:rgba(255,255,255,.3)}
+.prog i{display:block;width:34%;height:3px;background:#f0a064;border-radius:2px}
+.ic{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.pill{display:flex;align-items:center;gap:6px;height:28px;padding:0 4px 0 8px;border-radius:14px;background:rgba(255,255,255,.18);font-weight:600}
+.mark{width:16px;height:16px;border-radius:5px;background:#f0a064;color:#14181a;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.sw{width:28px;height:16px;border-radius:8px;background:#f0a064;position:relative}
+.sw::after{content:"";position:absolute;top:2px;left:14px;width:12px;height:12px;border-radius:50%;background:#fff}
+.note{position:absolute;left:14px;top:14px;height:28px;border-radius:14px;background:#b4561a;color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;padding:0 12px}
+.tip{position:absolute;left:372px;bottom:176px;width:340px;box-sizing:border-box;padding:14px 16px;border-radius:12px;background:var(--card);color:var(--fg);border:1px solid var(--line);box-shadow:0 12px 32px rgba(0,0,0,.38);display:flex;flex-direction:column;gap:8px}
+.tip::after{content:"";position:absolute;left:96px;bottom:-7px;width:12px;height:12px;background:var(--card);border-right:1px solid var(--line);border-bottom:1px solid var(--line);transform:rotate(45deg)}
+.hd{display:flex;align-items:center;gap:8px}
+.hd b{font-size:19px}
+.ph{color:var(--mute);font-size:13px}
+.btn-i{width:30px;height:30px;border-radius:15px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--fg);background:var(--card)}
+.btn-i.on{background:var(--soft);border-color:var(--acc);color:var(--acc)}
+.pos{color:var(--acc);font-weight:700;margin-right:6px}
+.ctx{background:var(--soft);border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.5}
+.ctx i{font-style:normal;color:var(--acc);font-weight:700}
+.tg{display:inline-block;font-size:11px;padding:0 6px;border-radius:4px;background:var(--soft);color:var(--acc);font-weight:700;margin-right:6px}
+.row2{display:flex;gap:8px}
+.btn{height:32px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);display:flex;align-items:center;justify-content:center;padding:0 12px;flex:none}
+.btn.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700;flex:1}
+.meta h1{margin:0;font-size:20px}
+.meta p{margin:4px 0 0;color:var(--mute)}
+.panel{width:468px;flex:none;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+.tabs{display:flex;gap:16px;padding:0 16px;border-bottom:1px solid var(--line);height:44px;align-items:flex-end;font-size:13px;color:var(--mute)}
+.tabs span{padding-bottom:10px}
+.tabs .cur{color:var(--acc);font-weight:700;border-bottom:2px solid var(--acc)}
+.cnt{display:inline-block;min-width:16px;padding:0 5px;margin-left:4px;border-radius:8px;background:var(--acc);color:var(--onacc);font-size:11px;text-align:center}
+.toolrow{display:flex;align-items:center;gap:8px;padding:12px 16px;flex-wrap:wrap}
+.chip{height:26px;border-radius:13px;border:1px solid var(--line);display:flex;align-items:center;padding:0 10px;font-size:12px;color:var(--mute)}
+.chip.on{background:var(--soft);border-color:var(--acc);color:var(--acc);font-weight:700}
+.list{flex:1;overflow:hidden;padding:0 16px;display:flex;flex-direction:column;gap:10px}
+.card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:5px}
+.card .t{display:flex;align-items:center;gap:8px}
+.card .t b{font-size:16px}
+.tm{margin-left:auto;font-size:12px;height:22px;padding:0 8px;border-radius:6px;border:1px solid var(--line);display:flex;align-items:center;color:var(--acc);font-weight:700}
+.sent{font-size:12.5px;color:var(--mute);line-height:1.5}
+.sent u{text-decoration:none;color:var(--fg);font-weight:700;background:var(--soft);border-radius:3px;padding:0 2px}
+.foot{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
+.foot .btn{flex:1}
+</style>
+</helmet>
+<div class="root" style="{{vars}}">
+  <div class="top">
+    <div class="logo"></div>
+    <div class="search">搜索视频</div>
+  </div>
+  <div class="main">
+    <div class="left">
+      <div class="video">
+        <div class="note">笔记 (3)</div>
+        <div class="tip">
+          <div class="hd"><b>weights</b><span class="ph">/weɪts/</span>
+            <span style="flex:1"></span>
+            <span class="btn-i"><svg class="ic" viewBox="0 0 24 24" aria-label="朗读"><path d="M4 10v4h4l5 4V6L8 10zM16 9a4 4 0 010 6"/></svg></span>
+            <span class="btn-i on"><svg class="ic" viewBox="0 0 24 24" aria-label="已收藏" style="fill:currentColor"><path d="M12 20s-7-4.6-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.4-7 10-7 10z"/></svg></span>
+          </div>
+          <div style="line-height:1.55"><span class="pos">n.</span>权重；砝码；重量 <span class="ph">(weight 的复数)</span></div>
+          <div class="ctx"><i>在这句话里：</i>指神经网络里学出来的参数，也就是“权重”。</div>
+          <div class="sent">“Memory is stored as <u>weights</u>, not as a database.” <span class="tg">本句</span></div>
+          <div class="row2">
+            <div class="btn">跳到这句 3:12</div>
+            <div class="btn p">已加入生词本</div>
+          </div>
+        </div>
+        <div class="sub">
+          <div class="en">Memory is stored as <span class="w on">weights</span>, not as a <span class="w">database</span>.</div>
+          <div class="zh">记忆是以权重的形式存储的，而不是数据库。</div>
+        </div>
+        <div class="prog"><i></i></div>
+        <div class="bar">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6L8 10zM16 9a4 4 0 010 6"/></svg>
+          <span>3:12 / 9:40</span>
+          <span style="flex:1"></span>
+          <div class="pill"><span class="mark">清</span><span>双语</span><span class="sw"></span></div>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        </div>
+      </div>
+      <div class="meta">
+        <h1>How a language model remembers: weights, not a database</h1>
+        <p>悬停字幕里的单词，0.3 秒出释义；虚线下划线是“可能还不熟”的词，实线蓝色是当前悬停的词</p>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="tabs"><span>摘要</span><span>章节</span><span>文稿</span><span>问答</span><span>笔记</span><span>评论</span><span class="cur">生词<span class="cnt">6</span></span></div>
+      <div class="toolrow">
+        <span class="chip on">本视频</span><span class="chip">全部</span>
+        <span style="flex:1"></span>
+        <span class="chip">难词标注：四级以上</span>
+      </div>
+      <div class="list">
+        <div class="card">
+          <div class="t"><b>weights</b><span class="ph">/weɪts/</span><span class="tm">3:12</span></div>
+          <div>n. 权重；参数权值</div>
+          <div class="sent">Memory is stored as <u>weights</u>, not as a database.</div>
+        </div>
+        <div class="card">
+          <div class="t"><b>retrieve</b><span class="ph">/rɪˈtriːv/</span><span class="tm">4:05</span></div>
+          <div>v. 检索；取回</div>
+          <div class="sent">The model can <u>retrieve</u> facts it saw during training.</div>
+        </div>
+        <div class="card">
+          <div class="t"><b>hallucinate</b><span class="ph">/həˈluːsɪneɪt/</span><span class="tm">6:48</span></div>
+          <div>v. （模型）一本正经地编造</div>
+          <div class="sent">Sometimes it will <u>hallucinate</u> a plausible answer.</div>
+        </div>
+        <div class="card">
+          <div class="t"><b>compress</b><span class="ph">/kəmˈpres/</span><span class="tm">7:30</span></div>
+          <div>v. 压缩；浓缩</div>
+          <div class="sent">Training <u>compresses</u> the whole web into parameters.</div>
+        </div>
+      </div>
+      <div class="foot"><div class="btn">导出 Anki</div><div class="btn">存为笔记</div><div class="btn p" style="flex:1.2">去应用里复习</div></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const t = dark
+      ? { bg: '#14181a', card: '#1d2420', line: '#3a443e', fg: '#eef1ee', mute: '#a9b3ad', acc: '#f0a064', soft: '#3a2c20', onacc: '#14181a' }
+      : { bg: '#f1f3f1', card: '#ffffff', line: '#d9dedb', fg: '#1d2420', mute: '#5d6862', acc: '#b4561a', soft: '#f6e6da', onacc: '#ffffff' };
+    const vars = `--bg:${t.bg};--card:${t.card};--line:${t.line};--fg:${t.fg};--mute:${t.mute};--acc:${t.acc};--soft:${t.soft};--onacc:${t.onacc}`;
+    return { vars };
+  }
+}
+</script>
+</body>
+</html>

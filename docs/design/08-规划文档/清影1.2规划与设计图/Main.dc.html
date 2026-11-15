@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影规划总览</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:#1d2624}
+.row{display:grid;grid-template-columns:56px 200px 1fr 1fr 150px;gap:20px;padding:18px 0;border-top:1px solid #dfe5e3;align-items:start}
+.num{width:36px;height:36px;border-radius:50%;background:#e4f3ec;color:#14614a;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:16px}
+.t{font-weight:700;font-size:16px;line-height:1.4}
+.p{font-size:14px;line-height:1.7;color:#2e3a37}
+.lab{font-size:12px;letter-spacing:.08em;color:#5b6764;margin-bottom:4px;font-weight:600}
+.ph{display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600}
+.p1{background:#e4f3ec;color:#14614a}.p2{background:#e6eefb;color:#1d4a91}.p3{background:#fbeede;color:#8a4608}.p4{background:#f3e6f7;color:#6b2a80}
+</style>
+</helmet>
+<div style="width:1280px;height:1900px;box-sizing:border-box;padding:56px 64px;background:#f7f9f8;display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-size:13px;letter-spacing:.14em;color:#14614a;font-weight:700">清影 ClearClip · 1.1.0 之后的规划</div>
+    <h1 style="margin:0;font-size:40px;line-height:1.25">9 项需求：原因、方案、顺序</h1>
+    <p style="margin:0;font-size:16px;line-height:1.7;color:#2e3a37;max-width:880px">每一项都先查了现有代码，写清楚问题出在哪、怎么改、哪里有风险。右边 9 张画板是对应的界面设计。确认后再开工，没有确认的地方我按下面“默认做法”处理。</p>
+  </div>
+
+  <div style="background:#fff;border:1px solid #dfe5e3;border-radius:14px;padding:8px 28px 12px">
+    <div class="row" style="border-top:0;padding-bottom:8px">
+      <div></div><div class="lab">需求</div><div class="lab">现状与原因（已查代码）</div><div class="lab">方案</div><div class="lab">批次</div>
+    </div>
+
+    <div class="row"><div class="num">0</div><div class="t">添加服务时检测可用模型</div>
+      <div class="p">“添加服务”只能手填模型名，填错要到真正调用时才知道。后端没有任何拉取模型列表的接口。</div>
+      <div class="p">填好地址和密钥后点“检测”：读取该服务的模型列表（OpenAI 兼容 /models，Anthropic、Gemini 各自的接口），按名称和返回字段标出对话、识图、嵌入、语音。每个模型可“测试”发一条极短请求，显示通过、失败原因和耗时。勾选后一键加入模型池。</div>
+      <div><span class="ph p1">1.2.0</span></div></div>
+
+    <div class="row"><div class="num">1</div><div class="t">PDF 输出保持原版面，译文在原处</div>
+      <div class="p">现在用 lopdf 只取纯文字，丢掉位置，所以只能输出 TXT。扫描版靠视觉模型识字，同样没有位置。</div>
+      <div class="p">新增“PDF 排版组件”（PDFium，按需下载，和 ffmpeg 组件同一方式）。文字版取每个文字块的位置、字号、颜色；扫描版把页面渲染成图，让视觉模型给出文字和框。翻译后用取样的背景色盖住原文，把译文按框宽换行并自动缩字号写回，思路和实时屏幕翻译的贴字层一致。三种输出：原位替换、原文与译文并排、译文放在原文下方。</div>
+      <div><span class="ph p4">1.4.0</span></div></div>
+
+    <div class="row"><div class="num">2</div><div class="t">文稿的“原文”为什么是中文</div>
+      <div class="p"><b>根因：</b>选字幕轨的顺序是“偏好语言 → 浏览器语言（zh-CN）→ zh → en”。英文视频只要带有中文轨（自动翻译或上传的），就先选中文轨，并当成“原文”。</div>
+      <div class="p">选轨改成“视频自己的语言优先”：YouTube 用自动字幕轨标记和音轨语言判断原语言，其次是同语言的人工字幕。偏好语言只影响译文。文稿页顶部显示当前字幕轨和语言，可切换，机翻轨有标记；没有语言信息时用文本检测兜底。</div>
+      <div><span class="ph p1">1.2.0</span></div></div>
+
+    <div class="row"><div class="num">3</div><div class="t">评论可以点击定位</div>
+      <div class="p">抓评论时只留了文字和点赞，没保存评论编号，摘要里引用的评论没有锚点。</div>
+      <div class="p">保存评论编号（YouTube commentId、B站 rpid）。每条评论和“代表评论”旁加“定位”：评论区已加载就滚动并高亮；没加载就自动向下加载直到找到。YouTube 另有 &amp;lc= 链接可在新标签精确定位。B站评论在 shadow DOM 里，需要穿透查找；找不到时退回按文字搜索并提示。</div>
+      <div><span class="ph p2">1.3.0</span></div></div>
+
+    <div class="row"><div class="num">4</div><div class="t">视频上的“响度标准化”浮窗</div>
+      <div class="p">audio-fx 在视频角上常驻“音效 -16 LUFS”按钮和面板，和插件弹窗里的“音效”页功能重复。</div>
+      <div class="p">弹窗“工具”页加开关“在视频上显示音效按钮”，另可选“只在鼠标移到视频时显示”。关掉后音效仍然生效，入口是弹窗“音效”页和快捷键。新安装默认关，升级的用户保持现状。</div>
+      <div><span class="ph p1">1.2.0</span></div></div>
+
+    <div class="row"><div class="num">5</div><div class="t">生词本记录来源，并关联视频缓存</div>
+      <div class="p">数据库里已有来源网址和时间点，但主程序只显示成文字，点不开。摘要和字幕层缓存存在浏览器扩展里，主程序读不到。</div>
+      <div class="p">来源可点击，双击一行用默认浏览器打开并跳到该时间；装了扩展会自动定位到那一句并高亮词。扩展把该视频的摘要和双语字幕快照同步到主程序（只同步收藏过词或手动勾选的视频，有大小上限）。主程序里能查看，也能“打开视频并恢复缓存”。</div>
+      <div><span class="ph p2">1.3.0</span></div></div>
+
+    <div class="row"><div class="num">6</div><div class="t">SenseVoice 字幕句子太长</div>
+      <div class="p"><b>根因：</b>语音活动检测切出的一段就是一条字幕，段落可长达二十秒；而视频摘要用的转写通道没有走断句，只有字幕工坊走了。</div>
+      <div class="p">先不用 AI：收紧检测参数产生更短的段；对所有转写出口默认启用规则断句（按 SenseVoice 自带的标点和长度上限拆，时间按字数分配）。“AI 语义断句”做成可选的高质量模式，只处理仍超长的句子并缓存结果。SenseVoice 本身不分句，所以不交给它。</div>
+      <div><span class="ph p1">1.2.0</span></div></div>
+
+    <div class="row"><div class="num">7</div><div class="t">保存的图片是 .bin；总览要格式准、能双击看原图</div>
+      <div class="p"><b>根因：</b>地址里没有扩展名且请求没带类型时，后端查 MIME 表，而表里没有任何图片类型，所以落成 bin。</div>
+      <div class="p">补全图片、视频、音频类型表；下载后按文件头识别真实格式并纠正扩展名；扩展收集时带上类型和自然尺寸。总览卡片显示真实格式徽标，双击打开内置查看器看原图（切换、缩放、格式、尺寸、大小、复制、保存）。</div>
+      <div><span class="ph p1">1.2.0</span></div></div>
+
+    <div class="row"><div class="num">8</div><div class="t">清影写作：划词的翻译、释义、朗读、AI 搜索、总结、高亮</div>
+      <div class="p">写作浮窗只有改写类动作；网页翻译和划词解释各是一套，没有朗读、搜索、高亮，桌面端和扩展端的动作也不一致。</div>
+      <div class="p">做一条统一的划词工具条，扩展和桌面共用同一份动作表。高亮在网页上持久保存并统一管理、导出；桌面端无法标记别的软件，改成“存入摘录”。释义可一键加入生词本，总结可存笔记，动作之间互相联动。</div>
+      <div><span class="ph p2">1.3.0</span></div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+    <div style="background:#fff;border:1px solid #dfe5e3;border-radius:14px;padding:22px 28px">
+      <div class="lab">发布顺序</div>
+      <div class="p"><b>1.2.0（快、风险小）：</b>0、2、4、6、7<br><b>1.3.0：</b>3、5、8<br><b>1.4.0（最大）：</b>1 PDF 原处排版，单独发，因为要新增下载组件并在 Windows 真机验证。</div>
+    </div>
+    <div style="background:#fff;border:1px solid #dfe5e3;border-radius:14px;padding:22px 28px">
+      <div class="lab">没有回复时我按这些默认做</div>
+      <div class="p">PDF 组件按需下载，不随安装包；音效按钮新装默认关；视频缓存只同步收藏过词的视频，上限 500 MB；AI 搜索先用已配置的模型加打开搜索引擎，不新增搜索服务密钥。</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

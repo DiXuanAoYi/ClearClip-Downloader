@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>标准模式 · 游戏与软件界面</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{position:relative;width:1440px;height:900px;box-sizing:border-box;overflow:hidden;background:#14181a;color:#eef1ee;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;padding:32px 44px}
+h1{margin:0;font-size:26px}
+h2{margin:0;font-size:15px;color:#f0a064;letter-spacing:1px}
+.sub{color:#a9b3ad;font-size:13.5px;line-height:1.6;margin:6px 0 0;max-width:900px}
+.scenes{position:absolute;left:44px;top:112px;display:flex;gap:20px}
+.cap{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:#a9b3ad}
+.cap b{color:#eef1ee;font-size:14px}
+.cap i{font-style:normal;background:#f0a064;color:#14181a;border-radius:10px;padding:0 8px;font-weight:700;font-size:12px}
+.scene{position:relative;width:510px;height:350px;border-radius:10px;overflow:hidden;border:1px solid #3a443e;background:linear-gradient(#37506b 0%,#6f8fa0 46%,#5b6b4a 46%,#3a4a30 100%)}
+.hill{position:absolute;left:-40px;right:-40px;top:150px;height:120px;border-radius:50% 50% 0 0;background:#44583a}
+.tower{position:absolute;left:300px;top:70px;width:46px;height:120px;background:#2c3438;border-radius:6px 6px 0 0}
+.tower::before{content:"";position:absolute;left:-8px;top:-18px;border:31px solid transparent;border-bottom:26px solid #3a4348;border-top:0}
+.hero{position:absolute;left:150px;top:150px;width:32px;height:70px;background:#c9824a;border-radius:16px 16px 6px 6px}
+.hero::before{content:"";position:absolute;left:5px;top:-20px;width:22px;height:22px;border-radius:50%;background:#e8c9a0}
+.g{position:absolute;color:#fff;font-weight:700;text-shadow:0 1px 2px #000;white-space:nowrap}
+.hud{left:14px;top:12px;font-size:15px}
+.quest{right:14px;top:12px;font-size:13px;text-align:right;background:rgba(10,12,14,.55);padding:5px 9px;border-radius:5px}
+.dlg{position:absolute;left:14px;right:14px;bottom:14px;height:92px;background:rgba(14,18,30,.82);border:2px solid #cdd6e4;border-radius:8px;box-sizing:border-box;padding:10px 14px;color:#fff;font-size:15px;line-height:1.55}
+.dlg b{color:#ffd37a}
+.menu{position:absolute;right:14px;top:96px;display:flex;flex-direction:column;gap:5px;font-size:13px;color:#fff}
+.menu span{background:rgba(10,12,14,.6);padding:3px 12px;border-radius:4px;text-align:center}
+.box{position:absolute;border:1.5px dashed #f0a064;border-radius:3px}
+.box i{position:absolute;left:-1px;top:-16px;font-style:normal;font-size:10.5px;background:#f0a064;color:#14181a;padding:0 5px;border-radius:3px 3px 0 0;font-weight:700;white-space:nowrap}
+.tr{position:absolute;box-sizing:border-box;border-radius:4px;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.35}
+.tr.loading{outline:2px solid #f0a064;outline-offset:1px}
+.bar{position:absolute;left:44px;top:536px;display:flex;align-items:center;gap:10px;background:#1d2420;border:1px solid #3a443e;border-radius:28px;padding:7px 10px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.bar .dot{width:30px;height:30px;border-radius:50%;background:#f0a064;color:#14181a;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
+.bar .b{height:30px;border-radius:15px;border:1px solid #3a443e;padding:0 12px;display:flex;align-items:center;font-size:13px;color:#eef1ee;gap:6px}
+.bar .b.p{background:#f0a064;color:#14181a;border-color:#f0a064;font-weight:700}
+.bar .b.on{background:#3a2c20;border-color:#f0a064;color:#f0a064;font-weight:700}
+.bar .live{display:flex;align-items:center;gap:6px;color:#8fd0b0;font-size:12.5px}
+.bar .live i{width:8px;height:8px;border-radius:50%;background:#8fd0b0;display:block}
+.note{position:absolute;left:44px;top:596px;width:1030px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.nt{background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.nt b{font-size:14.5px}
+.nt span{color:#a9b3ad;font-size:12.8px;line-height:1.6}
+.panel{position:absolute;right:44px;top:32px;width:300px;box-sizing:border-box;background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.panel h3{margin:0;font-size:15px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld span{color:#a9b3ad;font-size:12px}
+.sl{height:30px;border:1px solid #3a443e;border-radius:8px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#14181a;font-size:13px}
+.sw{display:flex;align-items:center;gap:8px;font-size:13px;line-height:1.4}
+.sw i{width:30px;height:17px;border-radius:9px;background:#3a443e;position:relative;flex:none}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#1d2420}
+.sw.on i{background:#f0a064}
+.sw.on i::after{left:15px}
+.seg{display:flex;border:1px solid #3a443e;border-radius:8px;overflow:hidden}
+.seg span{flex:1;text-align:center;padding:6px 0;font-size:12.5px;color:#a9b3ad}
+.seg .on{background:#f0a064;color:#14181a;font-weight:700}
+</style>
+</helmet>
+<div class="root">
+  <h1>标准模式 · 游戏与软件界面</h1>
+  <p class="sub">框一块区域（或点“跟随窗口”），按开始。清影每隔一会儿看一眼，文字变了就重新识别、翻译、贴字。游戏里的菜单、任务栏、对话框，软件里的按钮和提示，都按原来的位置换成译文。</p>
+
+  <div class="scenes">
+    <div>
+      <div class="cap"><i>①</i><b>识别到的文字框</b><span>每个框是一行，位置和大小来自识别结果</span></div>
+      <div class="scene">
+        <div class="hill"></div><div class="tower"></div><div class="hero"></div>
+        <span class="g hud">HP 128/200</span>
+        <span class="g quest">Quest: Find the lost key</span>
+        <div class="menu"><span>Inventory</span><span>Map</span><span>Save</span></div>
+        <div class="dlg"><b>Elder:</b> The ruins to the north are guarded by an ancient spirit. Take this lantern with you.</div>
+        <div class="box" style="left:10px;top:11px;width:96px;height:24px"><i>HP 128/200 · 数字不翻</i></div>
+        <div class="box" style="right:10px;top:11px;width:206px;height:30px"><i>1</i></div>
+        <div class="box" style="right:12px;top:94px;width:86px;height:24px"><i>2</i></div>
+        <div class="box" style="right:12px;top:123px;width:86px;height:24px"><i>3</i></div>
+        <div class="box" style="right:12px;top:152px;width:86px;height:24px"><i>4</i></div>
+        <div class="box" style="left:14px;bottom:14px;width:482px;height:92px"><i>5 · 对话框：两行合成一句翻译</i></div>
+      </div>
+    </div>
+    <div>
+      <div class="cap"><i>②</i><b>贴字结果</b><span>底色取自原画面，译文盖在原位置</span></div>
+      <div class="scene">
+        <div class="hill"></div><div class="tower"></div><div class="hero"></div>
+        <span class="g hud">HP 128/200</span>
+        <div class="tr" style="right:14px;top:12px;width:210px;height:32px;background:rgba(10,12,14,.82);font-size:13px">任务：找到丢失的钥匙</div>
+        <div class="tr" style="right:14px;top:96px;width:86px;height:24px;background:rgba(10,12,14,.82);font-size:12.5px">背包</div>
+        <div class="tr" style="right:14px;top:125px;width:86px;height:24px;background:rgba(10,12,14,.82);font-size:12.5px">地图</div>
+        <div class="tr" style="right:14px;top:154px;width:86px;height:24px;background:rgba(10,12,14,.82);font-size:12.5px">存档</div>
+        <div class="tr" style="left:14px;bottom:14px;width:482px;height:92px;background:rgba(14,18,30,.95);border:2px solid #cdd6e4;font-size:15.5px;justify-content:flex-start;text-align:left;padding:10px 14px"><span><span style="color:#ffd37a">长老：</span>北边的遗迹由一位古老的灵魂守护。带上这盏灯笼吧。</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <span class="dot">清</span>
+    <span class="b p">⏸ 暂停</span>
+    <span class="b">▭ 重选区域</span>
+    <span class="b on">标准</span><span class="b">漫画</span><span class="b">字幕</span>
+    <span class="b">👁 隐藏译文</span>
+    <span class="live"><i></i>实时翻译中 · 3 帧/秒</span>
+  </div>
+
+  <div class="note">
+    <div class="nt"><b>数字、专有名词、已是目标语言的，不翻</b><span>“HP 128/200”原样保留；游戏术语库里的人名、道具名按你定的译名，整局前后一致。</span></div>
+    <div class="nt"><b>新译文没出来之前，旧的不撤</b><span>画面变化时，该处先显示橙色描边“翻译中”，译文就绪再换，不会满屏闪烁、也不会出现半截句子。</span></div>
+    <div class="nt"><b>悬浮层不拦鼠标</b><span>点击穿透到游戏本身；想复制某一行时，按住 Alt 才临时接住鼠标，点一下复制译文。</span></div>
+  </div>
+
+  <div class="panel">
+    <h3>标准模式 · 设置</h3>
+    <div class="fld"><span>取景方式</span><div class="seg"><span class="on">框选区域</span><span>跟随窗口</span><span>整个屏幕</span></div></div>
+    <div class="fld"><span>语言</span><div class="sl">自动检测 → 简体中文<i style="font-style:normal">▾</i></div></div>
+    <div class="fld"><span>识别方式</span><div class="sl">本机文字识别（不上传）<i style="font-style:normal">▾</i></div></div>
+    <div class="fld"><span>翻译服务</span><div class="sl">AI 模型池 · 速度优先<i style="font-style:normal">▾</i></div></div>
+    <div class="fld"><span>术语库 / 专家</span><div class="sl">《本游戏》术语库 · 游戏本地化<i style="font-style:normal">▾</i></div></div>
+    <div class="fld"><span>刷新速度</span><div class="seg"><span>省电 1 帧</span><span class="on">均衡 3 帧</span><span>流畅 6 帧</span></div></div>
+    <div class="sw on"><i></i>画面稳定半秒后才翻译（防止逐字出现时翻半句）</div>
+    <div class="sw on"><i></i>已翻过的文字走缓存，不重复花钱</div>
+    <div class="sw"><i></i>按程序记住设置（下次打开这个游戏自动恢复）</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

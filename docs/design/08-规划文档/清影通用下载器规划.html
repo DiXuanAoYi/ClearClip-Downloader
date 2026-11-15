@@ -1,0 +1,655 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>清影通用下载器规划</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文档，左对齐窄正文，宽表格各自横向滚动 */
+:root{
+  --bg:#f3f4f2; --surface:#ffffff; --fg:#1d2420; --muted:#5d6862; --line:#d9ddd8;
+  --accent:#d9762b; --accent-soft:#f6e3d2; --ok:#2f8a57; --warn:#b7791f; --bad:#c2453b;
+  --f-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121614; --surface:#1a201d; --fg:#e4e9e6; --muted:#9aa6a0; --line:#2c3531;
+  --accent:#f0954d; --accent-soft:#3a2a1d; --ok:#5cc28a; --warn:#e0a84a; --bad:#ec7a70; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121614; --surface:#1a201d; --fg:#e4e9e6; --muted:#9aa6a0; --line:#2c3531;
+  --accent:#f0954d; --accent-soft:#3a2a1d; --ok:#5cc28a; --warn:#e0a84a; --bad:#ec7a70; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.7;margin:0}
+.wrap{max-width:1080px;margin:0 auto;padding-inline:20px;padding-block:40px 80px}
+h1,h2,h3{text-wrap:balance;line-height:1.3}
+h1{font-size:clamp(28px,4vw,38px);font-weight:900;margin:0 0 8px}
+h2{font-size:23px;font-weight:900;margin:52px 0 12px;padding-top:20px;border-top:1px solid var(--line)}
+h3{font-size:17px;font-weight:700;margin:26px 0 8px}
+p,li{max-width:70ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.lede{color:var(--muted);font-size:16px}
+code,.mono{font-family:var(--f-mono);font-size:.88em}
+code{background:var(--accent-soft);padding:1px 5px;border-radius:4px}
+nav.toc{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
+nav.toc a{font-size:13px;color:var(--fg);text-decoration:none;border:1px solid var(--line);padding:4px 12px;border-radius:999px;background:var(--surface)}
+nav.toc a:hover,nav.toc a:focus-visible{border-color:var(--accent);outline:none}
+.verdict{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:16px 20px;margin:20px 0}
+.verdict p{margin:6px 0}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface);margin:12px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:820px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:500;letter-spacing:.04em;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+.sev{display:inline-block;font-family:var(--f-mono);font-size:11px;padding:0 6px;border-radius:3px;color:#fff;white-space:nowrap}
+.sev.h{background:var(--bad)}.sev.m{background:var(--warn)}.sev.l{background:var(--muted)}
+.pri{font-family:var(--f-mono);font-size:11px;font-weight:600;white-space:nowrap}
+.pri.p0{color:var(--bad)}.pri.p1{color:var(--warn)}.pri.p2{color:var(--muted)}
+.rec{color:var(--ok);font-weight:700}
+pre{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--f-mono);font-size:12.5px;line-height:1.6}
+.phases{border-left:2px solid var(--line);margin-left:6px}
+.phase{position:relative;padding:0 0 22px 22px}
+.phase::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:2px solid var(--accent)}
+.phase h3{margin:0 0 2px}
+.phase .when{font-family:var(--f-mono);font-size:12px;color:var(--accent)}
+.phase ul{margin:6px 0 0;padding-left:18px}
+.phase .done{font-size:13px;color:var(--muted);margin-top:4px}
+.decide{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.decide div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;min-width:0}
+.decide b{display:block;margin-bottom:4px}
+.site-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+.site-stats div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.site-stats b{display:block;font-size:24px;font-weight:900;font-variant-numeric:tabular-nums}
+.site-stats span{font-size:12.5px;color:var(--muted)}
+.site-tools{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:8px 0}
+.site-tools input[type=search]{flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);font:inherit;font-size:14px}
+.site-tools input[type=search]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.site-tools label{font-size:13.5px;display:flex;gap:6px;align-items:center}
+.site-list{max-height:560px;overflow:auto}
+.site-list table{min-width:640px}
+.site-list th{position:sticky;top:0}
+.site-list td{padding:6px 12px}
+tr.broken td{color:var(--muted)}
+.yes{color:var(--ok);font-size:12.5px;white-space:nowrap}
+.mute{color:var(--muted)}
+.small-note{font-size:13px}
+.mermaid-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px}
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">清影 ClearClip · 审查与重构规划</div>
+  <h1>清影通用下载器规划</h1>
+  <p class="lede">对当前桌面程序（Rust 约 3500 行 + Vue 前端）的审查结果，以及改造成“通用下载器 + 国内平台专项支持”的方案。本页只做规划，没有改动代码。</p>
+  <nav class="toc"><a href="#verdict">结论</a><a href="#decide">已确定的决定</a><a href="#review">审查发现</a><a href="#options">方案对比</a><a href="#arch">目标架构</a><a href="#cookies">账号与 Cookie</a><a href="#resume">断点续传</a><a href="#network">网络与下载源</a><a href="#drama">短剧与剧集</a><a href="#subscribe">订阅与追更</a><a href="#live">直播录制</a><a href="#phone">手机发链接</a><a href="#features">功能清单</a><a href="#platforms">平台细分</a><a href="#phases">分阶段计划</a><a href="#quality">质量与维护</a></nav>
+
+  <div class="verdict" id="verdict">
+    <p><b>结论：建议重构，但分阶段演进，不推倒重写。</b></p>
+    <p>做法是“通用内核 + 平台插件”：五个国内平台保留现在的原生解析器，另新增 Pixiv 原生插件（yt-dlp 在这些平台上不支持、支持不全或经常失效）；其他网站交给 yt-dlp 兜底；再加上任意直链、m3u8（HLS）下载和 ffmpeg 合并。很多短剧和小站用 m3u8 播放，这一项对“短剧”场景帮助最大。</p>
+    <p>现有代码可以大部分保留：解析器、命名、数据库、界面结构都能复用。要改的核心是<b>数据模型</b>（从“一个作品几条直链”改为“作品 + 多种清晰度/格式 + 播放列表”）和<b>下载任务</b>（从内存里的单次 HTTP 下载改为可持久化、多步骤的任务）。</p>
+    <p>当前的合并请求 #1 已合并。完整计划约 24–27 周，分 7 个阶段：阶段 4 结束发布 1.0（通用下载器 + 手机发送），之后 1.1 加订阅追更、1.2 加直播录制。下一步从阶段 1“加固现有程序”开始。</p>
+  </div>
+
+
+  <h2 id="decide">已确定的决定</h2>
+  <div class="decide">
+    <div><b>通用范围</b>暂时只做视频和图片网站，不做任意文件、磁力、BT 下载。平台细分覆盖 yt-dlp 支持的全部站点（见第 12 节）。</div>
+    <div><b>yt-dlp 和 ffmpeg</b>第一次用到时再下载，不打包进安装包。ffmpeg 选 LGPL 版本。</div>
+    <div><b>合并请求顺序</b>#1 已于 2026-10-04 合并，重构按阶段另开合并请求。</div>
+    <div><b>新增三大功能</b>订阅与追更（第 8 节）、直播录制（第 9 节）、手机发链接到电脑（第 10 节）都做，分别在 1.1、1.2、1.0 版本交付。</div>
+    <div><b>网络与短剧</b>按网站分流（国内直连、海外走代理）、组件国内镜像（第 6 节）；短剧按集批量下载，加密短剧不支持（第 7 节）。</div>
+    <div><b>断点续传</b>所有下载方式都必须支持，包括关闭程序、断网、直链过期之后继续下载（见第 5 节）。</div>
+    <div><b>Cookie 来源</b>提供浏览器扩展同步、内置登录窗口、导入 cookies.txt / 手动粘贴三种。<b>不做</b>“从本机浏览器直接读取”（新版浏览器加密后成功率接近 0）。</div>
+    <div><b>“P站”</b>同时支持 Pixiv 和 Pornhub，默认文案与示例以 Pornhub 为主。Pornhub 通过 yt-dlp 接入；yt-dlp 没有 Pixiv 提取器，Pixiv 做成原生插件。</div>
+  </div>
+
+  <h2 id="review">1. 审查发现</h2>
+  <p>按影响排序。位置为 <code>desktop/src-tauri/src/</code> 下的文件。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>级别</th><th>问题</th><th>位置</th><th>影响与修法</th></tr></thead>
+    <tbody>
+      <tr><td><span class="sev h">高</span></td><td>五个平台的解析都没用真实链接测过</td><td><code>providers/*</code></td><td>解析器可能一上线就失效。先在能访问这些网站的机器上逐个实测，并把真实响应保存为测试样本</td></tr>
+      <tr><td><span class="sev h">高</span></td><td>下载队列只存在内存里</td><td><code>download.rs:69</code></td><td>关闭程序或崩溃后，未完成任务全部丢失，<code>.part</code> 文件留在磁盘上。任务需要写入 SQLite，启动时恢复为“已暂停”</td></tr>
+      <tr><td><span class="sev h">高</span></td><td>数据模型只能表达“一条直链”</td><td><code>model.rs:23</code>、<code>model.rs:78</code></td><td>无法选清晰度，无法处理音视频分离（B站 1080P、YouTube）、m3u8 和合集。这是做通用下载器必须先改的地方</td></tr>
+      <tr><td><span class="sev h">高</span></td><td>没有日志和诊断信息</td><td>全局</td><td>用户反馈“解析失败”时无从排查。需要滚动日志文件，以及“复制诊断信息”按钮（版本、平台、脱敏后的请求与错误）</td></tr>
+      <tr><td><span class="sev h">高</span></td><td>登录 Cookie 明文写在 settings.json</td><td><code>settings.rs:35</code></td><td>其他程序可直接读取账号凭据。改为加密存储，密钥放系统钥匙串（见第 4 节）</td></tr>
+      <tr><td><span class="sev h">高</span></td><td>下载文件时把平台登录 Cookie 发给了 CDN</td><td><code>download.rs</code>（按平台取 Cookie）</td><td>例如 B站的登录 Cookie 会被发到 <code>bilivideo.com</code> 视频服务器。改为按域名匹配，Cookie 只发给它所属的网站</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>Cookie 只存成一整串 <code>name=value; …</code></td><td><code>settings.rs</code>、<code>commands.rs</code></td><td>丢失域名、路径、过期时间；微博的 <code>.weibo.cn</code> 和 <code>.weibo.com</code> 分不开，也无法提示过期。改为按条存完整字段</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>B站播放地址接口没有做 wbi 签名，且只取 html5 合一 MP4</td><td><code>providers/bilibili.rs</code></td><td>可能被接口拒绝；只能拿到低清。需要 wbi 签名，高清走 DASH（视频轨 + 音频轨）再用 ffmpeg 合并</td></tr>
+      <tr><td><span class="sev h">高</span></td><td>直链过期重新解析后，已下载的部分被删掉从头下</td><td><code>download.rs:241</code></td><td>大文件下到一半链接过期，进度全部作废。重新解析后应先确认是同一文件（大小一致），再接着下</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>续传时不校验服务器上的文件是否变了</td><td><code>download.rs:473</code></td><td>只发 <code>Range</code>，不带 <code>If-Range</code>，也不核对响应的 <code>Content-Range</code> 起点和总大小。文件被替换时会把两份内容拼在一起，得到损坏的文件</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>同一资源可以重复加入队列</td><td><code>download.rs:114</code></td><td>只检查“已下载完成”的记录，不检查队列里正在下的同一资源，结果下载两份并生成“(1)”文件</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>续传时速度显示瞬间虚高</td><td><code>download.rs:205</code></td><td><code>last_bytes</code> 从 0 起算，续传后第一次计算把已下载部分当成本次速度。应从续传起点开始</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>网络卡住时点“暂停”要等很久才生效</td><td><code>download.rs:500</code></td><td>只在收到下一块数据时检查暂停标记，最长要等 30 秒读取超时。应改为用取消令牌与读取操作同时等待</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>文件名没有处理 Windows 保留名和路径长度</td><td><code>naming.rs:83</code></td><td>标题为 <code>CON</code>、<code>NUL</code> 等时保存失败；路径超过 260 字符时 Windows 上报错</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>全局快捷键注册失败用户看不到</td><td><code>commands.rs:78</code></td><td>快捷键被其他软件占用时只打印到控制台。应返回错误并在设置页提示</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>多数命令是同步命令，在主线程执行</td><td><code>commands.rs</code>（26 个命令中 3 个异步）</td><td>数据库、删除文件等操作会短暂卡住界面，媒体库大了以后更明显。改为异步命令</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>媒体库封面直接用平台 CDN 地址</td><td><code>db.rs</code>、媒体库页</td><td>地址过期后封面全部不显示。下载时把封面缓存到本地</td></tr>
+      <tr><td><span class="sev m">中</span></td><td>没有代理和限速设置</td><td><code>settings.rs</code></td><td>需要代理的网站无法使用；下载时占满带宽。通用下载器必须有</td></tr>
+      <tr><td><span class="sev l">低</span></td><td>所有 <code>t.cn</code> 短链都被当成微博</td><td><code>providers/weibo.rs</code></td><td>指向其他网站的 t.cn 链接会报“没能识别微博 ID”。可先跳转，再按最终地址重新匹配平台</td></tr>
+      <tr><td><span class="sev l">低</span></td><td>只有中文界面</td><td>前端</td><td>做通用下载器后用户面更广，建议接入多语言</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="options">2. 要不要重构：三种方案</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>方案</th><th>做法</th><th>优点</th><th>缺点</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr><td><b>A. 保持专用</b></td><td>只继续加国内平台解析器</td><td>改动最小，安装包小</td><td>每加一个网站都要自己写、自己维护；覆盖面永远有限</td><td>不推荐</td></tr>
+      <tr><td><b>B. 通用内核 + 平台插件</b></td><td>原生解析器优先，yt-dlp 兜底，再加通用直链 / m3u8 / 网页嗅探；统一的任务和后处理</td><td>国内平台体验最好，同时覆盖上千个网站；yt-dlp 由社区维护</td><td>需要管理 yt-dlp 和 ffmpeg 两个外部程序（体积、更新、许可证）</td><td class="rec">推荐</td></tr>
+      <tr><td><b>C. 改成 yt-dlp 图形界面</b></td><td>所有解析都交给 yt-dlp</td><td>开发量最少</td><td>yt-dlp 不支持快手，抖音、小红书经常失效；失去现有的差异化（同类产品已有 Open Video Downloader、Stacher 等）</td><td>不推荐</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="arch">3. 目标架构</h2>
+  <p>一条链接进来后，依次经过以下环节：</p>
+  <div class="mermaid-wrap">
+<pre class="mermaid">
+flowchart LR
+  IN["输入<br/>粘贴 / 剪贴板 / 拖拽<br/>浏览器扩展 / 手机扫码发送"] --> R["链接路由"]
+  SUB["订阅调度<br/>定期检查新内容"] --> R
+  R --> N["原生插件<br/>抖音 快手 小红书 B站 微博 Pixiv"]
+  R --> Y["yt-dlp<br/>1300+ 个站点"]
+  R --> G["通用嗅探<br/>直链 / m3u8 / 网页里的视频"]
+  N --> M["统一模型<br/>作品 + 多格式 + 播放列表"]
+  Y --> M
+  G --> M
+  M --> Q["持久化任务队列<br/>调度 / 限速 / 重试"]
+  Q --> E["下载引擎<br/>HTTP 单线程 / 分段多线程<br/>HLS / DASH / yt-dlp 委托"]
+  E --> P["后处理（ffmpeg）<br/>合并音视频 / 转封装 / 提取 MP3<br/>写入封面和元数据"]
+  P --> L["媒体库"]
+  LV["直播监控<br/>开播检测"] --> REC["录制引擎<br/>分段 / 断流重连"]
+  REC --> P
+  NET["网络分流<br/>直连 / 代理"] -.-> E
+  NET -.-> REC
+</pre>
+  </div>
+  <p>路由规则：原生插件能匹配的链接先走原生，失败时再试 yt-dlp；原生匹配不到的交给 yt-dlp；yt-dlp 也不支持时做通用嗅探（判断是否直链、是否 m3u8，或在网页里找 <code>&lt;video&gt;</code>、<code>og:video</code>、<code>.m3u8</code>）。现有的远程 PHP 接口保留为抖音、快手的备用通道。</p>
+
+  <h3>数据模型的主要变化</h3>
+<pre>Media（作品）
+├── 基本信息：平台、ID、标题、作者、封面、时长、发布时间、原始链接
+├── formats：可选的清晰度 / 格式（列表）
+│     每项：id、类型（视频 / 音频 / 音视频）、协议（http / hls / dash / ytdlp）、
+│           分辨率、码率、编码、预估大小、请求头（Referer / Cookie / UA）
+├── images：图集图片（列表）
+├── extras：背景音乐、封面、字幕、弹幕
+└── playlist：如果是合集 / 多 P / 用户主页，列出条目，按需再解析
+
+Job（下载任务，存入 SQLite）
+├── 选中的格式（视频轨 + 音频轨可分开）
+├── 步骤：下载 → 合并 → 后处理 → 完成，每步都有状态和进度
+└── 断点信息：已下载字节、分段进度、m3u8 已完成的分片</pre>
+  <p>请求头从“按平台固定”改为“按资源携带”，这样 yt-dlp 返回的、需要特殊 Referer 的格式也能直接用内置下载器下载。</p>
+
+  <h3>外部程序</h3>
+  <ul>
+    <li><b>yt-dlp</b>：单文件可执行程序（约 20–35 MB），公有领域许可。建议首次需要时下载到应用数据目录，并支持在设置里一键更新，因为网站变化后通常要更新 yt-dlp 才能恢复。下载时校验 SHA-256。</li>
+    <li><b>ffmpeg</b>：合并音视频、转封装、提取音频必需。体积较大（约 80 MB 以上），同样建议按需下载。要选 LGPL 版本，或者只下载不打包，避免整个程序受 GPL 约束。</li>
+  </ul>
+
+
+  <h2 id="cookies">4. 账号与 Cookie</h2>
+  <p>YouTube、Pornhub、Pixiv、B站等网站的部分内容（年龄限制、会员专享、高清、R-18）需要登录才能下载。Cookie 做成一个统一模块，原生解析器和 yt-dlp 共用。</p>
+
+  <h3>获取方式</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>方式</th><th>适用</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><b>浏览器扩展一键同步</b>（主力）</td><td>所有网站，YouTube、Pornhub 首选</td><td>在已登录的网页上点扩展按钮，扩展读取当前网站的 Cookie 发送给清影。不受浏览器加密影响。与“网页一键发送到清影”做成同一个扩展（Chrome / Edge / Firefox）</td></tr>
+      <tr><td><b>内置登录窗口</b>（已有）</td><td>B站、微博、国内平台、Pixiv</td><td>谷歌会拦截内嵌浏览器登录，<b>YouTube 不能用这种方式</b>，界面上要直接引导到扩展</td></tr>
+      <tr><td><b>导入 cookies.txt / 手动粘贴</b></td><td>兜底</td><td>支持 Netscape 格式的 cookies.txt（与 yt-dlp 通用）和请求头里的 Cookie 字符串</td></tr>
+      <tr><td><s>从本机浏览器直接读取</s></td><td>—</td><td><b>不做。</b>新版 Chrome 等浏览器在 Windows 上对 Cookie 做了专门加密，第三方程序成功率接近 0</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>存储与使用</h3>
+  <ul>
+    <li><b>按条存完整字段</b>：域名、路径、过期时间、Secure、HttpOnly。请求时按域名匹配，Cookie 只发给所属网站，不会再发给 CDN。</li>
+    <li><b>加密存储</b>：Cookie 文件用 AES-GCM 加密，密钥存系统钥匙串。不直接存进钥匙串，因为 Windows 凭据管理器单条约 2.5 KB，放不下 YouTube 的 Cookie。</li>
+    <li><b>交给 yt-dlp</b>：运行前生成只有当前用户可读的临时 cookies.txt，用 <code>--cookies</code> 传入，结束后把 yt-dlp 更新过的 Cookie 读回加密库，再删除临时文件。</li>
+    <li><b>日志与诊断信息</b>一律隐去 Cookie 值。</li>
+  </ul>
+
+  <h3>YouTube 的特殊处理</h3>
+  <ul>
+    <li>YouTube 会定期轮换 Cookie。导出的 Cookie 与浏览器里的会话同时使用时会很快失效，所以每次运行后都要读回 yt-dlp 更新后的 Cookie。</li>
+    <li>引导用户按 yt-dlp 官方建议操作：用无痕 / 隐私窗口登录，同步 Cookie 后关闭该窗口，不再在浏览器里使用这次登录。</li>
+    <li>YouTube 有时还要求 PO Token 验证，光有 Cookie 不一定够。这部分依赖 yt-dlp 跟进，“一键更新 yt-dlp”必须做好。</li>
+  </ul>
+
+  <h3>界面与体验</h3>
+  <ul>
+    <li><b>按网站显示登录状态</b>：是否已登录、账号名（B站可通过个人信息接口取用户名和大会员状态）、关键 Cookie 过期时间（如 B站 <code>SESSDATA</code>、Pixiv <code>PHPSESSID</code>），以及“检测”按钮。</li>
+    <li><b>出错时直接引导</b>：解析返回“需要登录”“年龄限制”“会员专享”时，弹出“为这个网站添加 Cookie”，并按网站推荐获取方式（YouTube → 扩展）。</li>
+    <li><b>同一网站多个账号</b>：例如普通号和大会员号，下载时选择使用哪个。</li>
+    <li><b>过期提醒</b>：关键 Cookie 快过期时在设置页和托盘提示。</li>
+    <li><b>保护账号</b>：使用登录 Cookie 批量下载时自动降速、限数量，并提示登录后大量下载有封号风险。</li>
+  </ul>
+
+  <h3>边界</h3>
+  <ul>
+    <li>只用于用户本人有权访问的内容（自己的会员权益、通过年龄验证的内容）。</li>
+    <li>不做付费内容绕过和 DRM 破解；加密的会员剧集即使有 Cookie 也明确提示不支持。</li>
+    <li>网站在某些地区因法规屏蔽访问时，程序不提供绕过手段。</li>
+  </ul>
+
+  <h2 id="resume">5. 断点续传</h2>
+  <p>目标：任何情况下中断，都从已下载的位置接着下，而且保证拼出来的文件完整、正确。</p>
+
+  <h3>现在的情况</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>中断原因</th><th>现在</th><th>目标</th></tr></thead>
+    <tbody>
+      <tr><td>手动暂停后继续</td><td>支持（<code>.part</code> 文件 + Range 请求）</td><td>保持；网络卡住时暂停也要立即生效</td></tr>
+      <tr><td>短暂断网</td><td>支持，自动重试 3 次并续传</td><td>重试次数和间隔可设置；网络恢复后自动继续</td></tr>
+      <tr><td>关闭程序、崩溃、断电、重启电脑</td><td><b>不支持</b>：队列在内存里，任务丢失，<code>.part</code> 变成孤立文件</td><td>任务存数据库，启动后恢复，从 <code>.part</code> 的实际大小接着下</td></tr>
+      <tr><td>直链过期（403 / 404 / 410）</td><td>会重新解析，但<b>删掉已下载部分从头下</b></td><td>重新解析后核对总大小，一致就接着下，不一致才从头</td></tr>
+      <tr><td>服务器上的文件被替换</td><td>不检测，可能拼出损坏文件</td><td>用 ETag / Last-Modified 检测，变化时从头下载并提示</td></tr>
+      <tr><td>服务器不支持 Range</td><td>自动从头下载</td><td>保持，并在任务上标注“不支持续传”</td></tr>
+      <tr><td>m3u8、音视频分离、yt-dlp 下载</td><td>尚未实现</td><td>按分片 / 分轨续传，合并失败不用重新下载</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>做法</h3>
+  <ul>
+    <li><b>任务存数据库</b>：每个任务记录地址、请求头、保存路径、<code>.part</code> 路径、总大小、ETag、Last-Modified、当前步骤（下载 / 合并 / 后处理）、各分段或分片的进度。每下载约 1 MB 或每 2 秒更新一次进度。</li>
+    <li><b>启动时恢复</b>：未完成的任务恢复为“已暂停”（可在设置里改成自动继续）；以 <code>.part</code> 文件的实际大小为准。发现不属于任何任务的 <code>.part</code> 文件时，提示用户清理。</li>
+    <li><b>校验续传的是同一个文件</b>：续传请求带 <code>If-Range</code>（优先 ETag，其次 Last-Modified）；收到 206 时核对 <code>Content-Range</code> 的起点等于本地已下载大小、总大小与记录一致；任何一项不符就从头下载。</li>
+    <li><b>直链过期</b>：重新解析拿到新地址后，先请求 1 个字节拿到总大小，与记录一致就保留 <code>.part</code> 接着下。抖音、B站等平台的视频地址几小时就过期，关机后第二天继续下载主要靠这一条。</li>
+    <li><b>暂停立即生效</b>：用取消令牌和读取操作同时等待，不再等下一块数据到达；暂停前把缓冲写入磁盘。</li>
+    <li><b>分段多线程下载</b>：先按总大小预分配文件，每段用 Range 下载并写到对应位置，数据库记录每段已完成的字节数；恢复时只补没下完的部分。服务器不支持 Range 时退回单线程。</li>
+    <li><b>m3u8（HLS）</b>：分片单独保存到临时目录，数据库记录哪些分片已完成；恢复时只下缺的分片。播放列表地址过期时重新解析，按分片序号对应。加密密钥缓存下来。</li>
+    <li><b>音视频分离（DASH）</b>：视频轨、音频轨分别续传，都下完再合并；合并失败只重试合并。</li>
+    <li><b>yt-dlp 委托下载</b>：使用 yt-dlp 自带的续传（保留它的 <code>.part</code> 文件，使用固定的临时文件名），恢复时用同样的参数重新运行。</li>
+    <li><b>完成后校验</b>：核对最终文件大小等于总大小；服务器提供校验值时一并核对；通过后再把 <code>.part</code> 改名为正式文件。</li>
+  </ul>
+
+  <h3>界面</h3>
+  <ul>
+    <li>任务上显示“可续传”或“服务器不支持续传”；恢复时提示“已从 312 MB 处继续”。</li>
+    <li>设置项：启动时自动继续未完成任务、重试次数和间隔、取消任务时是否保留已下载部分。</li>
+    <li>退出程序时如果还有下载中的任务，提示“下次启动可以接着下载”。</li>
+  </ul>
+
+  <h3>测试</h3>
+  <p>用本地模拟服务器覆盖：支持 / 不支持 Range、ETag 变化、Content-Range 起点不符、416、下载中途断开、进程被强制结束后重启恢复、直链过期后同大小与不同大小两种情况、m3u8 部分分片已完成后恢复。</p>
+
+  <h2 id="network">6. 网络与下载源</h2>
+  <h3>按网站分流</h3>
+  <p>国内平台走海外代理时，经常返回不同内容或直接拦截；YouTube、Pornhub、Pixiv 在国内又必须走代理。所以不能只设一个全局代理。</p>
+  <ul>
+    <li><b>三种出口</b>：直连、系统代理（自动读取 Windows / macOS 的系统代理设置）、自定义代理（HTTP / SOCKS5，可存多个）。</li>
+    <li><b>按网站的规则表</b>：预置“抖音、快手、小红书、B站、微博等国内平台 → 直连”，“YouTube、Pornhub、Pixiv、X、Instagram、Facebook、Twitch → 系统代理”；其他网站使用默认出口。用户可以按域名增删规则。</li>
+    <li><b>规则对所有环节生效</b>：原生解析、下载引擎、yt-dlp（通过 <code>--proxy</code> 传入）、直播录制、订阅检查都用同一套规则。</li>
+    <li><b>连通性测试</b>：设置页对每条规则一键测试，显示延迟或失败原因（代理连不上 / 网站不可达 / 被拦截）。</li>
+    <li><b>错误提示联动</b>：遇到“地区限制”“连接超时”时，提示检查这个网站的代理规则，并给出跳转按钮。</li>
+  </ul>
+
+  <h3>国内可用的下载源</h3>
+  <p>yt-dlp、ffmpeg 和程序自身的更新包默认都在 GitHub，国内经常很慢或下载失败。</p>
+  <ul>
+    <li>维护一份带签名的“组件清单”，列出每个组件的版本、各系统的下载地址（GitHub + 备用镜像）和 SHA-256。程序按清单测速选择最快的地址，下载后校验 SHA-256，不一致就丢弃。</li>
+    <li>备用镜像放在国内可访问的对象存储或 CDN 上，由发布流程自动同步。</li>
+    <li>支持“手动选择本地文件导入”：用户从别处下好 yt-dlp / ffmpeg 后直接指定文件，程序校验版本后使用。</li>
+    <li>设置页显示各组件版本、来源和更新时间，可单独更新或回退到上一个版本（yt-dlp 新版偶尔会出问题）。</li>
+  </ul>
+
+  <h2 id="drama">7. 短剧与剧集</h2>
+  <ul>
+    <li><b>可以做的</b>：网页端能播放的短剧（多数用 m3u8 播放）、yt-dlp 支持的剧集页、B站等平台上的短剧合集。</li>
+    <li><b>做不了的</b>：只能在手机 App 里观看、内容加密的短剧（如部分短剧 App 的付费剧集）。遇到这类内容时明确提示“内容已加密，不支持下载”，不尝试破解。</li>
+    <li><b>按集批量下载</b>：解析剧集页后列出全部集数，支持“全选 / 第 1–80 集 / 只下未下载的集”，按集数顺序下载。</li>
+    <li><b>命名</b>：新增模板变量 <code>{series}</code>（剧名）、<code>{episode}</code>（集数，可补零到两位或三位）、<code>{index}</code>（列表序号）、<code>{season}</code>；默认保存为 <code>剧名/第01集.mp4</code>。</li>
+    <li><b>追更</b>：剧集可以直接加入订阅（见第 8 节），更新后自动下载新集。</li>
+    <li><b>m3u8 细节</b>：分片并发下载、AES-128 解密、广告分片过滤（时长或域名明显不同的分片可选跳过）、合并后用 ffmpeg 转为 MP4 并修正时间戳。</li>
+  </ul>
+
+  <h2 id="subscribe">8. 订阅与追更</h2>
+  <p>关注某个频道、UP主、画师、合集或剧集，定期检查，有新内容自动下载。</p>
+  <h3>可以订阅的对象</h3>
+  <ul>
+    <li>YouTube 频道 / 播放列表、B站 UP主空间 / 合集 / 收藏夹、Pixiv 画师、Pornhub 用户、短剧剧集，以及 yt-dlp 能列出条目的任意列表页。</li>
+    <li>抖音用户主页：作品列表接口需要签名参数，难度和风险最高。计划用程序内置的隐藏浏览器窗口打开主页读取作品列表，失败时提示需要登录。</li>
+  </ul>
+  <h3>检查与下载</h3>
+  <ul>
+    <li><b>检查频率</b>：每个订阅单独设置，最短 1 小时，默认 6 小时；在设定时间上随机加减几分钟，避免固定节奏被识别。每次只拉取最新的一页（例如最近 30 条）。</li>
+    <li><b>首次订阅</b>：选择“只下载以后的新内容”（默认）、“下载最近 N 条”或“下载全部”。</li>
+    <li><b>去重</b>：每个订阅记录已见过的条目（下载档案），已下载、已忽略的不会重复下载；与媒体库的已下载记录互通。</li>
+    <li><b>过滤条件</b>：标题包含 / 排除关键词、时长范围、发布时间、类型（视频 / 图集 / 直播回放）。</li>
+    <li><b>每个订阅独立设置</b>：画质预设、保存目录、命名模板、使用哪个登录账号、网络规则。</li>
+    <li><b>后台运行</b>：程序在托盘运行时检查；可设开机自启。程序关闭期间错过的检查，启动后补做一次。</li>
+    <li><b>异常处理</b>：连续 3 次检查失败（例如 Cookie 过期、频道被删）自动暂停该订阅并通知，给出修复入口。</li>
+  </ul>
+  <h3>界面</h3>
+  <ul>
+    <li>新增“订阅”页面：每个订阅显示头像、名称、平台、上次检查时间、新内容数量、状态；支持“立即检查”“暂停”“编辑”。</li>
+    <li>订阅详情：已下载 / 待下载 / 已忽略三个列表，可手动补下或忽略某条。</li>
+    <li>有新内容下载完成时发系统通知（可按订阅关闭）。</li>
+  </ul>
+  <h3>限制</h3>
+  <ul>
+    <li>默认关闭，首次开启时说明用途和封号风险。</li>
+    <li>每个网站的检查和下载都受第 11 节中的“按网站限流”约束；单次检查最多自动下载 N 条（默认 20），超出的进入待下载列表等用户确认。</li>
+  </ul>
+  <h3>技术要点</h3>
+  <ul>
+    <li>列表获取：原生插件实现各平台的列表接口；yt-dlp 用 <code>--flat-playlist</code> 只取条目信息，不逐条解析。</li>
+    <li>数据表：<code>subscriptions</code>（订阅设置、上次检查时间、状态）、<code>subscription_items</code>（条目 ID、标题、发布时间、状态）。</li>
+  </ul>
+
+  <h2 id="live">9. 直播录制</h2>
+  <p>添加直播间后自动监控，开播即录制，下播自动结束。参考产品：录播姬（BililiveRecorder，B站专用）、DouyinLiveRecorder（多平台）。</p>
+  <h3>支持的平台</h3>
+  <ul>
+    <li><b>原生实现</b>：B站、抖音、快手、斗鱼、虎牙。各平台获取直播流地址的方式不同，斗鱼、虎牙需要计算签名参数，维护成本较高。</li>
+    <li><b>通过 yt-dlp</b>：YouTube 直播、Twitch 等 yt-dlp 支持的直播。</li>
+  </ul>
+  <h3>录制</h3>
+  <ul>
+    <li><b>不转码</b>：直接保存直播流（FLV 或 HLS 分片），CPU 占用低；录制格式用 FLV 或 TS，因为程序崩溃或断电时 MP4 会损坏，FLV / TS 已录部分仍可播放。</li>
+    <li><b>自动分段</b>：按时长（默认每 1 小时）或大小切分文件。</li>
+    <li><b>断流重连</b>：网络或推流中断时自动重连，同一场直播继续录到新分段；直播间恢复后不丢内容。</li>
+    <li><b>录完处理</b>：可选用 ffmpeg 无损转为 MP4、修正时间戳、合并同一场的分段。</li>
+    <li><b>画质</b>：每个直播间可选画质（原画 / 蓝光 / 超清等，按平台提供的档位）。</li>
+    <li><b>弹幕</b>：B站、抖音、斗鱼、虎牙的弹幕同步保存为 XML，可转 ASS 字幕（阶段内的 P2）。</li>
+    <li><b>命名</b>：默认 <code>主播名/2026-10-04_直播标题_01.flv</code>。</li>
+  </ul>
+  <h3>监控与资源</h3>
+  <ul>
+    <li>开播检测间隔默认 60 秒（每个平台有下限），检测请求受按网站限流约束。</li>
+    <li>同时录制数量上限可设；录制前和录制中检查磁盘空间，低于阈值时停止录制并通知。</li>
+    <li>可选按天数自动清理旧录像（默认关闭）。</li>
+    <li>开播、录制开始、录制异常、下播都可发通知。</li>
+  </ul>
+  <h3>界面</h3>
+  <ul>
+    <li>新增“直播”页面：直播间卡片显示封面、主播、状态（未开播 / 录制中 / 异常）、已录时长和大小；支持“立即录制”“停止”“暂停监控”。</li>
+    <li>录制中可打开所在文件夹，或用系统播放器查看正在录制的文件。</li>
+  </ul>
+  <h3>边界</h3>
+  <ul>
+    <li>仅供个人留存，不做转推、二次直播。</li>
+    <li>付费直播、加密直播不支持。</li>
+  </ul>
+
+  <h2 id="phone">10. 手机发链接到电脑</h2>
+  <p>短视频链接大多在手机上复制。电脑端开启“手机发送”后，手机扫码打开局域网网页，粘贴链接即可让电脑开始下载，不经过任何外部服务器。</p>
+  <h3>流程</h3>
+  <ul>
+    <li>电脑端开启后，在局域网地址上启动一个小型网页服务（随机端口），界面显示二维码。</li>
+    <li>手机扫码打开网页：一个粘贴框、一个“发送”按钮，下方显示最近发送的链接及其状态（解析中 / 下载中 / 已完成 / 失败）。</li>
+    <li>电脑收到后按正常流程解析和下载；“识别后自动下载”关闭时，在电脑上弹出迷你窗确认。</li>
+  </ul>
+  <h3>手机上的快捷方式</h3>
+  <ul>
+    <li><b>iPhone</b>：提供“快捷指令”模板，加入系统分享菜单后，在抖音等 App 里点“分享 → 发送到清影”即可，不用打开网页。</li>
+    <li><b>Android</b>：提供配置说明，用 HTTP Shortcuts 等工具加入分享菜单。</li>
+    <li>局域网网页是 HTTP 页面，浏览器不允许它直接读取剪贴板，所以网页上需要用户手动长按粘贴；快捷方式没有这个限制。</li>
+  </ul>
+  <h3>安全</h3>
+  <ul>
+    <li>默认关闭；只监听局域网地址，拒绝来自公网的请求。</li>
+    <li>二维码里带随机生成的访问令牌；新设备第一次发送时，电脑端弹窗确认配对，之后可在设置里查看和撤销已配对的设备。</li>
+    <li>网页只能“发送链接”和“查看自己发送的任务状态”，不能浏览或下载电脑上的文件。</li>
+    <li>限制请求大小和频率；关闭功能时立即停止服务。</li>
+    <li>首次开启时 Windows 会弹出防火墙提示，界面上提前说明。</li>
+    <li>不在同一网络时不支持（需要服务器中转，不在本期范围）。</li>
+  </ul>
+
+  <h2 id="features">11. 功能增强清单</h2>
+  <p>P0：通用下载器必须有；P1：明显提升体验；P2：锦上添花。订阅、直播、手机发送的细节分别见第 8、9、10 节。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>范围</th><th>功能</th><th>优先级</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="6">解析</td><td>清晰度 / 格式选择</td><td><span class="pri p0">P0</span></td><td>列出分辨率、编码、预估大小</td></tr>
+      <tr><td>画质预设与播放兼容性</td><td><span class="pri p0">P0</span></td><td>预设“最高画质 / 最高 1080P / 省空间 / 只要音频”；默认优先 H.264 编码的 MP4（YouTube 高清常为 AV1 / VP9，很多设备播不了）；可选 MKV 容器</td></tr>
+      <tr><td>只下载音频（转 MP3 / M4A）</td><td><span class="pri p0">P0</span></td><td>通过 ffmpeg 提取，写入封面和标题</td></tr>
+      <tr><td>合集 / 多 P / 播放列表 / 剧集</td><td><span class="pri p0">P0</span></td><td>先列出条目再勾选下载；按集数顺序命名（见第 7 节）</td></tr>
+      <tr><td>字幕、弹幕</td><td><span class="pri p2">P2</span></td><td>下载 SRT / ASS，可选嵌入视频</td></tr>
+      <tr><td>用户主页批量下载</td><td><span class="pri p2">P2</span></td><td>默认关闭，限速、限数量；日常追更用订阅功能</td></tr>
+      <tr><td rowspan="9">下载</td><td>断点续传（全场景）</td><td><span class="pri p0">P0</span></td><td>详见第 5 节</td></tr>
+      <tr><td>m3u8（HLS）下载</td><td><span class="pri p0">P0</span></td><td>分片并发、AES-128 解密、广告分片过滤、按分片续传、合并为 MP4</td></tr>
+      <tr><td>分段多线程下载</td><td><span class="pri p1">P1</span></td><td>大文件按 Range 切段并行下载，服务器不支持时退回单线程</td></tr>
+      <tr><td>按网站分流、代理、限速</td><td><span class="pri p0">P0</span></td><td>详见第 6 节；全局限速与按任务限速</td></tr>
+      <tr><td>按网站限制并发和频率</td><td><span class="pri p0">P0</span></td><td>每个网站单独的同时连接数和请求间隔；带登录 Cookie 时自动更保守，降低封号风险</td></tr>
+      <tr><td>磁盘空间检查、临时目录</td><td><span class="pri p0">P0</span></td><td>已知大小时下载前检查剩余空间（合并需要约两倍空间）；临时文件目录可单独指定到其他磁盘</td></tr>
+      <tr><td>队列排序、优先级、定时下载</td><td><span class="pri p1">P1</span></td><td>拖动排序；指定时间开始</td></tr>
+      <tr><td>下载期间阻止系统休眠</td><td><span class="pri p1">P1</span></td><td>有下载或录制任务时阻止休眠</td></tr>
+      <tr><td>文件冲突策略</td><td><span class="pri p1">P1</span></td><td>跳过 / 重命名 / 覆盖</td></tr>
+      <tr><td rowspan="5">整理与后处理</td><td>合并音视频、转封装</td><td><span class="pri p0">P0</span></td><td>DASH 和 HLS 的必要步骤</td></tr>
+      <tr><td>命名模板与自动建文件夹</td><td><span class="pri p1">P1</span></td><td>模板支持 <code>/</code> 建子文件夹；合集、剧集、订阅、直播各有默认模板；新增 <code>{series}</code> <code>{episode}</code> <code>{index}</code> <code>{uploader}</code> 等变量</td></tr>
+      <tr><td>写入封面和元数据；信息文件</td><td><span class="pri p1">P1</span></td><td>视频内嵌封面、标题、作者；可选保存作品信息 JSON（标题、简介、原链接、标签）；可选生成 Jellyfin / Plex 能识别的 NFO 文件</td></tr>
+      <tr><td>下载完成后的动作</td><td><span class="pri p1">P1</span></td><td>打开文件夹、全部完成后关机或睡眠；运行自定义脚本（默认关闭，需要手动开启）</td></tr>
+      <tr><td>图集合成视频</td><td><span class="pri p2">P2</span></td><td>图片 + 背景音乐生成 MP4</td></tr>
+      <tr><td rowspan="5">输入</td><td>手机发链接到电脑</td><td><span class="pri p1">P1</span></td><td>局域网扫码 + iPhone 快捷指令，详见第 10 节</td></tr>
+      <tr><td>拖拽链接或文本文件</td><td><span class="pri p1">P1</span></td><td>一次导入大量链接</td></tr>
+      <tr><td>浏览器扩展</td><td><span class="pri p1">P1</span></td><td>一键“发送到清影”和同步 Cookie，通过 <code>clearclip://</code> 唤起程序</td></tr>
+      <tr><td>Cookie：扩展同步、cookies.txt 导入、多账号</td><td><span class="pri p0">P0</span></td><td>详见第 4 节</td></tr>
+      <tr><td>剪贴板监听白名单</td><td><span class="pri p1">P1</span></td><td>通用化后能识别的链接很多，默认只监听常用平台，避免频繁弹窗</td></tr>
+      <tr><td rowspan="3">订阅与直播</td><td>订阅、追更</td><td><span class="pri p1">P1</span></td><td>详见第 8 节</td></tr>
+      <tr><td>直播录制</td><td><span class="pri p1">P1</span></td><td>详见第 9 节</td></tr>
+      <tr><td>直播弹幕录制</td><td><span class="pri p2">P2</span></td><td>保存 XML，可转 ASS</td></tr>
+      <tr><td rowspan="4">媒体库</td><td>本地封面缓存、网格视图、筛选</td><td><span class="pri p1">P1</span></td><td>按平台、类型、来源（手动 / 订阅 / 直播）、日期筛选</td></tr>
+      <tr><td>大量数据时的性能</td><td><span class="pri p1">P1</span></td><td>队列、媒体库、订阅条目用虚拟滚动；数据库建索引；上千条任务时界面不卡</td></tr>
+      <tr><td>重新下载、检测文件缺失</td><td><span class="pri p1">P1</span></td><td>文件被移动或删除时提示，可一键重新下载</td></tr>
+      <tr><td>内置播放器</td><td><span class="pri p2">P2</span></td><td>直接预览已下载文件</td></tr>
+      <tr><td rowspan="7">可靠性与安全</td><td>易懂的错误提示</td><td><span class="pri p0">P0</span></td><td>把原生解析和 yt-dlp 的报错归为几类，每类给出下一步：需要登录 → 添加 Cookie；地区限制 → 检查代理规则；已删除；内容加密 → 不支持；需要更新 yt-dlp → 一键更新；网站改版 → 复制诊断信息</td></tr>
+      <tr><td>yt-dlp 调用安全</td><td><span class="pri p0">P0</span></td><td>链接前固定加 <code>--</code>，防止以 <code>-</code> 开头的内容被当成参数；加 <code>--ignore-config</code>，不受用户电脑上原有配置影响；不开放 <code>--exec</code> 等可执行命令的参数</td></tr>
+      <tr><td>日志与诊断信息</td><td><span class="pri p0">P0</span></td><td>滚动日志文件；“复制诊断信息”自动隐去 Cookie 和令牌</td></tr>
+      <tr><td>Cookie 加密存储、按域名匹配</td><td><span class="pri p0">P0</span></td><td>密钥存系统钥匙串；显示过期时间</td></tr>
+      <tr><td>平台健康检查</td><td><span class="pri p1">P1</span></td><td>设置页一键用示例链接测试各平台解析、直播检测是否正常</td></tr>
+      <tr><td>解析规则远程更新</td><td><span class="pri p2">P2</span></td><td>把易变的接口地址、字段路径做成带签名的规则包，不发新版也能修复</td></tr>
+      <tr><td>签名自动更新</td><td><span class="pri p1">P1</span></td><td>接入 Tauri 官方更新插件（需要签名密钥），更新包同样走国内镜像</td></tr>
+      <tr><td rowspan="2">通用</td><td>便携版</td><td><span class="pri p1">P1</span></td><td>Windows 提供免安装 zip 包，数据保存在程序目录</td></tr>
+      <tr><td>多语言、开机自启</td><td><span class="pri p2">P2</span></td><td>中文 / 英文；订阅和直播监控需要开机自启</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="platforms">12. 平台细分</h2>
+  <p>分三层：原生插件平台（自己写解析，体验最好）、重点站点（走 yt-dlp，但界面和 Cookie 引导单独优化）、yt-dlp 支持的全部站点（自动兜底）。</p>
+
+  <h3>12.1 原生插件平台</h3>
+  <p>这些平台 yt-dlp 不支持或经常失效，由清影自己维护解析器；yt-dlp 有对应提取器的，作为原生失败时的备用。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>平台</th><th>yt-dlp 是否支持</th><th>需要补的</th></tr></thead>
+    <tbody>
+      <tr><td>抖音</td><td>有 <code>Douyin</code>，作备用</td><td>用真实页面校验 <code>_ROUTER_DATA</code> 字段；多清晰度（<code>bit_rate</code> 列表）；实况照片；合集；需要登录时自动提示</td></tr>
+      <tr><td>快手</td><td><b>不支持</b></td><td>实测分享页结构和回退接口；Cookie 失效检测；长视频</td></tr>
+      <tr><td>小红书</td><td>有 <code>XiaoHongShu</code>，作备用</td><td>缺少 <code>xsec_token</code> 时的明确提示；实况照片（图片 + 短视频）；多清晰度视频</td></tr>
+      <tr><td>B站</td><td>有完整提取器（视频、番剧、合集、空间等），作备用</td><td>wbi 签名；DASH 高清（视频轨 + 音频轨合并）；多 P 列表勾选；字幕、弹幕；番剧和付费内容明确拒绝</td></tr>
+      <tr><td>微博</td><td>有 <code>Weibo</code>、<code>WeiboVideo</code>、<code>WeiboUser</code>，作备用</td><td><code>weibo.com/tv/show</code> 视频页；实况照片；访客 Cookie 自动获取；t.cn 先跳转再匹配平台</td></tr>
+      <tr><td><b>Pixiv（新增）</b></td><td><b>不支持</b>（yt-dlp 没有 Pixiv 提取器）</td><td>新写原生插件：作品接口 <code>/ajax/illust/{id}</code> 与 <code>/ajax/illust/{id}/pages</code>；图片需要 Referer <code>https://www.pixiv.net/</code>；R-18 需登录 Cookie（<code>PHPSESSID</code>，内置登录窗口获取）；多图按图集处理；动图（ugoira）下载帧压缩包后用 ffmpeg 合成 GIF / MP4；画师作品列表按合集处理</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>12.2 重点站点（走 yt-dlp，单独优化）</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>站点</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr><td>YouTube</td><td>高清为音视频分离，需要 ffmpeg 合并；年龄限制、会员视频需扩展同步的 Cookie；处理 Cookie 轮换和 PO Token；播放列表、频道、Shorts、字幕</td></tr>
+      <tr><td>Pornhub</td><td>部分视频需要登录或年龄验证，用扩展同步 Cookie；多为 m3u8，需要 ffmpeg 合并；用户上传列表、播放列表按合集处理</td></tr>
+      <tr><td>TikTok</td><td>yt-dlp 中部分子提取器标记为失效；海外短视频的主要来源，需要关注更新</td></tr>
+      <tr><td>X（Twitter）、Instagram、Facebook</td><td>多数内容需要登录 Cookie；Instagram 部分提取器失效；图文混合帖按图集处理</td></tr>
+      <tr><td>Vimeo、Twitch、Dailymotion、Niconico</td><td>均支持账号登录；Twitch 区分直播回放和剪辑</td></tr>
+      <tr><td>国内其他：AcFun、斗鱼、虎牙、优酷、爱奇艺、喜马拉雅</td><td>yt-dlp 有提取器，稳定性不一；会员和加密内容不支持</td></tr>
+      <tr><td>SoundCloud、Bandcamp</td><td>音频站点，默认只下载音频并写入封面和元数据</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>12.3 yt-dlp 支持的全部站点</h3>
+  <p>以下是 yt-dlp 官方 <a href="https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md">supportedsites.md</a> 的完整列表（2026-10-04 取自 master 分支）。“可登录”表示 yt-dlp 支持该站点的账号登录，清影会为这些站点显示 Cookie 入口；任何站点都可以使用 Cookie。“已失效”是 yt-dlp 自己标注的。</p>
+  <div class="site-stats" id="site-stats"></div>
+  <div class="site-tools">
+    <input type="search" id="site-q" placeholder="搜索站点名或说明，例如 youtube、bilibili、porn" aria-label="搜索站点">
+    <label><input type="checkbox" id="site-login"> 只看可登录</label>
+    <label><input type="checkbox" id="site-hide-broken"> 隐藏已失效</label>
+    <span id="site-count" class="mute"></span>
+  </div>
+  <div class="scroll site-list"><table>
+    <thead><tr><th>提取器</th><th>说明</th><th>可登录</th><th>状态</th></tr></thead>
+    <tbody id="site-rows"></tbody>
+  </table></div>
+  <p class="mute small-note">程序里不写死这份列表：运行时用 <code>yt-dlp --list-extractors</code> 读取当前版本实际支持的站点，yt-dlp 更新后自动同步。</p>
+  <script type="application/json" id="site-data">{"rows":[["10play","",1,0],["10play:season","",0,0],["17live","",0,0],["17live:clip","",0,0],["17live:vod","",0,0],["1News","1news.co.nz article videos",0,0],["1tv","Первый канал",0,0],["1tv:live","Первый канал (прямой эфир)",0,0],["20min","",0,1],["23video","",0,0],["247sports","",0,1],["24tv.ua","",0,0],["3qsdn","3Q SDN",0,0],["3sat","",0,0],["4tube","",0,0],["56.com","",0,0],["7plus","",0,0],["9c9media","",0,0],["9gag","9GAG",0,0],["9News","",0,0],["9now.com.au","",0,0],["abc.net.au","",0,0],["abc.net.au:iview","",0,0],["abc.net.au:​iview:showseries","",0,0],["abcnews","",0,0],["abcnews:video","",0,0],["abcotvs","ABC Owned Television Stations",0,0],["abcotvs:clips","",0,0],["AbemaTV","",1,0],["AbemaTVTitle","",1,0],["AcademicEarth:Course","",0,0],["acast","",0,0],["acast:channel","",0,0],["AcFunBangumi","",0,0],["AcFunVideo","",0,0],["ADN","Animation Digital Network",1,0],["ADNSeason","Animation Digital Network",1,0],["AdobeConnect","",0,1],["adobetv","",0,0],["AdultSwim","",0,0],["aenetworks","A+E Networks: A&E, Lifetime, History.com, FYI Network and History Vault",0,0],["aenetworks:collection","",0,0],["aenetworks:show","",0,0],["AeonCo","",0,0],["agalega:videos","",0,0],["AitubeKZVideo","",0,0],["Alibaba","",0,0],["AliExpressLive","",0,0],["AlJazeera","",0,0],["Allocine","",0,0],["Allstar","",0,0],["AllstarProfile","",0,0],["AlphaPorno","",0,0],["altcensored","",0,0],["altcensored:channel","",0,0],["Alura","",1,0],["AluraCourse","",1,0],["AmadeusTV","",0,0],["Amara","",0,0],["AmazonMiniTV","",0,0],["amazonminitv:season","Amazon MiniTV Season, \"minitv:season:\" prefix",0,0],["amazonminitv:series","Amazon MiniTV Series, \"minitv:series:\" prefix",0,0],["AmazonReviews","",0,0],["AmazonStore","",0,0],["AMCNetworks","",0,0],["AmericasTestKitchen","",0,0],["AmericasTestKitchenSeason","",0,0],["AmHistoryChannel","",0,0],["anderetijden","npo.nl, ntr.nl, omroepwnl.nl, zapp.nl and npo3.nl",0,0],["Angel","",0,0],["AnimalPlanet","",0,0],["ant1newsgr:article","ant1news.gr articles",0,0],["ant1newsgr:embed","ant1news.gr embedded videos",0,0],["antenna:watch","antenna.gr and ant1news.gr videos",0,0],["Anvato","",0,0],["aol.com","",0,1],["APA","",0,0],["Aparat","",0,0],["apple:​music:connect","Apple Music Connect",0,0],["apple:podcasts","Apple Podcasts",0,0],["archive.org","archive.org video and audio",0,0],["ArcPublishing","",0,0],["ARDAudiothek","",0,0],["ARDAudiothekPlaylist","",0,0],["ARDMediathek","",0,0],["ARDMediathekCollection","",0,0],["Art19","",0,0],["Art19Show","",0,0],["arte.sky.it","",0,0],["ArteTV","",0,0],["ArteTVCategory","",0,0],["ArteTVEmbed","",0,0],["ArteTVPlaylist","",0,0],["asobichannel","ASOBI CHANNEL",0,0],["asobichannel:tag","ASOBI CHANNEL",0,0],["AsobiStage","ASOBISTAGE (アソビステージ)",0,0],["AtresPlayer","",1,0],["AtScaleConfEvent","",0,0],["AudiMedia","",0,0],["AudioBoom","",0,0],["Audiodraft:custom","",0,0],["Audiodraft:generic","",0,0],["audiomack","",0,0],["audiomack:album","",0,0],["Audius","Audius.co",0,0],["audius:artist","Audius.co profile/artist pages",0,0],["audius:playlist","Audius.co playlists",0,0],["audius:track","Audius track ID or API link. Prepend with \"audius:\"",0,0],["AZMedien","AZ Medien videos",0,0],["BaiduVideo","百度视频",0,0],["BanBye","",0,0],["BanByeChannel","",0,0],["Bandcamp","",0,0],["Bandcamp:album","",0,0],["Bandcamp:user","",0,0],["Bandcamp:weekly","",0,0],["Bandlab","",0,0],["BandlabPlaylist","",0,0],["BannedVideo","",0,0],["bbc","BBC",1,0],["bbc.co.uk","BBC iPlayer",1,0],["bbc.co.uk:article","BBC articles",0,0],["bbc.co.uk:​iplayer:episodes","",0,0],["bbc.co.uk:​iplayer:group","",0,0],["bbc.co.uk:playlist","",0,0],["BBVTV","",1,0],["BBVTVLive","",1,0],["BBVTVRecordings","",1,0],["BeaconTv","",0,0],["Beatport","",0,0],["Beeg","",0,0],["BehindKink","",0,1],["BerufeTV","",0,0],["Bet","",0,0],["bfi:player","",0,1],["bfmtv","",0,0],["bfmtv:article","",0,0],["bfmtv:live","",0,0],["bibeltv:live","BibelTV live program",0,0],["bibeltv:series","BibelTV series playlist",0,0],["bibeltv:video","BibelTV single video",0,0],["Bigo","",0,0],["Bild","Bild.de",0,0],["BiliBili","",0,0],["Bilibili category extractor","",0,0],["BilibiliAudio","",0,0],["BilibiliAudioAlbum","",0,0],["BiliBiliBangumi","",0,0],["BiliBiliBangumiMedia","",0,0],["BiliBiliBangumiSeason","",0,0],["BilibiliCheese","",0,0],["BilibiliCheeseSeason","",0,0],["BilibiliCollectionList","",0,0],["BiliBiliDynamic","",0,0],["BilibiliFavoritesList","",0,0],["BiliBiliPlayer","",0,0],["BilibiliPlaylist","",0,0],["BiliBiliSearch","Bilibili video search; \"bilisearch:\" prefix",0,0],["BilibiliSeriesList","",0,0],["BilibiliSpaceAudio","",0,0],["BilibiliSpaceVideo","",0,0],["BilibiliWatchlater","",0,0],["BiliIntl","",1,0],["biliIntl:series","",1,0],["BiliLive","",0,0],["BioBioChileTV","",0,0],["Biography","",0,0],["BitChute","",0,0],["BitChuteChannel","",0,0],["Bitmovin","",0,0],["BlackboardCollaborate","",0,0],["BlackboardCollaborateLaunch","",0,0],["BleacherReport","",0,1],["BleacherReportCMS","",0,1],["blerp","",0,0],["blogger.com","",0,0],["Bloomberg","",0,0],["Bluesky","",0,0],["BongaCams","",0,0],["Boosty","",0,0],["BostonGlobe","",0,0],["Box","",0,0],["BoxCastVideo","",0,0],["Bpb","Bundeszentrale für politische Bildung",0,0],["BR","Bayerischer Rundfunk",0,1],["BrainPOP","",1,0],["BrainPOPELL","",1,0],["BrainPOPEsp","BrainPOP Español",1,0],["BrainPOPFr","BrainPOP Français",1,0],["BrainPOPIl","BrainPOP Hebrew",1,0],["BrainPOPJr","",1,0],["BravoTV","",0,0],["BreitBart","",0,0],["brightcove:legacy","",0,0],["brightcove:new","",0,0],["Brilliantpala:Classes","VoD on classes.brilliantpala.org",1,0],["Brilliantpala:Elearn","VoD on elearn.brilliantpala.org",1,0],["bt:article","Bergens Tidende Articles",0,0],["bt:vestlendingen","Bergens Tidende - Vestlendingen",0,0],["BTVPlus","",0,0],["Bundesliga","",0,0],["Bundestag","",0,0],["BunnyCdn","",0,0],["BusinessInsider","",0,0],["BuzzFeed","",0,0],["BYUtv","",0,1],["Caltrans","",0,0],["CAM4","",0,0],["CamFMEpisode","",0,0],["CamFMShow","",0,0],["CamModels","",0,0],["Camsoda","",0,0],["CamtasiaEmbed","",0,0],["Canal1","",0,0],["CanalAlpha","",0,0],["canalc2.tv","",0,0],["Canalplus","mycanal.fr and piwiplus.fr",0,0],["Canalsurmas","",0,0],["CaracolTvPlay","",1,0],["cbc.ca","",0,0],["cbc.ca:listen","",0,0],["cbc.ca:player","",0,0],["cbc.ca:​player:playlist","",0,0],["CBS","",0,1],["CBSLocal","",0,0],["CBSLocalArticle","",0,0],["CBSLocalLive","",0,0],["cbsnews","CBS News",0,0],["cbsnews:embed","",0,0],["cbsnews:live","CBS News Livestream",0,0],["cbsnews:livevideo","CBS News Live Videos",0,0],["cbssports","",0,1],["cbssports:embed","",0,1],["CCMA","3Cat, TV3 and Catalunya Ràdio",0,0],["CCTV","央视网",0,0],["CDA","",1,0],["CDAFolder","",0,0],["Cellebrite","",0,0],["CeskaTelevize","",0,0],["CGTN","",0,0],["CharlieRose","",0,0],["Chaturbate","",0,0],["Chilloutzone","",0,0],["chzzk:live","",0,0],["chzzk:video","",0,0],["cielotv.it","",0,0],["Cinemax","",0,1],["CinetecaMilano","",0,0],["Cineverse","",0,0],["CineverseDetails","",0,0],["CiscoLiveSearch","",0,0],["CiscoLiveSession","",0,0],["ciscowebex","Cisco Webex",0,0],["CJSW","",0,0],["Clipchamp","",0,0],["ClipRs","",0,1],["CloserToTruth","",0,1],["CloudflareStream","",0,0],["CloudyCDN","",0,0],["Clubic","",0,1],["Clyp","",0,0],["CNBCVideo","",0,0],["CNN","",0,0],["CNNIndonesia","",0,0],["ComedyCentral","",0,0],["ConanClassic","",0,1],["CondeNast","Condé Nast media group: Allure, Architectural Digest, Ars Technica, Bon Appétit, Brides, Condé Nast, Condé Nast Traveler, Details, Epicurious, GQ, Glamour, Golf Digest, SELF, Teen Vogue, The New Yorker, Vanity Fair, Vogue, W Magazine, WIRED",0,0],["CookingChannel","",0,0],["Corus","",0,0],["Coub","",0,0],["CozyTV","",0,0],["cp24","",0,0],["cpac","",0,0],["cpac:playlist","",0,0],["Cracked","",0,0],["Craftsy","",0,0],["croatian.film","",0,0],["CrooksAndLiars","",0,0],["CrowdBunker","",0,0],["CrowdBunkerChannel","",0,0],["Crtvg","",0,0],["CSpan","C-SPAN",0,0],["CSpanCongress","",0,0],["CtsNews","華視新聞",0,0],["CTVNews","",0,0],["cu.ntv.co.jp","日テレ無料TADA!",0,0],["CultureUnplugged","",0,0],["curiositystream","",1,0],["curiositystream:collections","",1,0],["curiositystream:series","",1,0],["Cybrary","",1,0],["CybraryCourse","",1,0],["DacastPlaylist","",0,0],["DacastVOD","",0,0],["DagelijkseKost","dagelijksekost.een.be",0,0],["DailyMail","",0,0],["dailymotion","",1,0],["dailymotion:playlist","",1,0],["dailymotion:search","",1,0],["dailymotion:user","",1,0],["DailyWire","",0,0],["DailyWirePodcast","",0,0],["damtomo:record","",0,0],["damtomo:video","",0,0],["dangalplay","",1,0],["dangalplay:season","",1,0],["daum.net","",0,0],["daum.net:clip","",0,0],["daum.net:playlist","",0,0],["daum.net:user","",0,0],["daystar:clip","",0,0],["DBTV","",0,0],["DctpTv","",0,0],["democracynow","",0,0],["DestinationAmerica","",0,0],["DetikEmbed","",0,0],["DeuxM","",0,0],["DeuxMNews","",0,0],["DHM","Filmarchiv - Deutsches Historisches Museum",0,1],["DigitalConcertHall","DigitalConcertHall extractor",1,0],["DigitallySpeaking","",0,1],["Digiteka","",0,0],["Digiview","",0,0],["DiscogsReleasePlaylist","",0,0],["DiscoveryLife","",0,0],["DiscoveryNetworksDe","",0,0],["DiscoveryPlus","",0,0],["DiscoveryPlusIndia","",0,0],["DiscoveryPlusIndiaShow","",0,0],["DiscoveryPlusItaly","",0,0],["DiscoveryPlusItalyShow","",0,0],["Disney","",0,0],["dlf","",0,0],["dlf:corpus","DLF Multi-feed Archives",0,0],["dlive:stream","",0,0],["dlive:vod","",0,0],["Douyin","",0,0],["DouyuShow","",0,0],["DouyuTV","斗鱼直播",0,0],["DPlay","",0,0],["DRBonanza","",0,0],["Dropbox","",0,0],["Dropout","",1,0],["DropoutSeason","",0,0],["DrTalks","",0,0],["DrTuber","",0,0],["drtv","",0,0],["drtv:live","",0,0],["drtv:season","",0,0],["drtv:series","",0,0],["DTube","",0,1],["Dumpert","",0,0],["Duoplay","",0,0],["dvtv","http://video.aktualne.cz/",0,0],["dw","",0,1],["dw:article","",0,1],["dzen.ru","Дзен (dzen) formerly Яндекс.Дзен (Yandex Zen)",0,0],["dzen.ru:channel","",0,0],["EbaumsWorld","",0,0],["Ebay","",0,0],["egghead:course","egghead.io course",0,0],["egghead:lesson","egghead.io lesson",0,0],["eggs:artist","",0,0],["eggs:single","",0,0],["EinsUndEinsTV","",1,0],["EinsUndEinsTVLive","",1,0],["EinsUndEinsTVRecordings","",1,0],["ElementorEmbed","",0,0],["Elonet","",0,0],["ElPais","El País",0,0],["ElTreceTV","El Trece TV (Argentina)",0,0],["Embedly","",0,0],["EMPFlix","",0,0],["Epicon","",0,0],["EpiconSeries","",0,0],["EpidemicSound","",0,0],["eplus","e+ (イープラス)",1,0],["Epoch","",0,0],["Eporner","",0,0],["Erocast","",0,0],["EroProfile","",1,0],["EroProfile:album","",0,0],["ERRArhiiv","",0,0],["ERRJupiter","",0,0],["ertflix","ERTFLIX videos",0,0],["ertflix:codename","ERTFLIX videos by codename",0,0],["ertwebtv:embed","ert.gr webtv embedded videos",0,0],["ESPN","",0,0],["ESPNArticle","",0,0],["ESPNCricInfo","",0,0],["EttuTv","",0,0],["Europa","",0,1],["EuroParlWebstream","",0,0],["EuropeanTour","",0,0],["Eurosport","",0,0],["EUScreen","",0,0],["EWETV","",1,0],["EWETVLive","",1,0],["EWETVRecordings","",1,0],["Expressen","",0,0],["facebook","",0,0],["facebook:ads","",0,0],["facebook:reel","",0,0],["FacebookPluginsVideo","",0,0],["fancode:live","",1,1],["fancode:vod","",1,1],["Fathom","",0,0],["Faulio","",0,0],["FaulioLive","",0,0],["faz.net","",0,0],["fc2","",1,0],["fc2:embed","",0,0],["fc2:live","",0,0],["Fczenit","",0,0],["Fifa","",0,0],["FilmArchiv","FILMARCHIV ON",0,0],["filmon","",0,0],["filmon:channel","",0,0],["Filmweb","",0,0],["FiveThirtyEight","",0,0],["FiveTV","",0,0],["Flickr","",0,0],["Floatplane","",0,0],["FloatplaneChannel","",0,0],["Folketinget","Folketinget (ft.dk; Danish parliament)",0,1],["FoodNetwork","",0,0],["FootyRoom","",0,0],["Formula1","",0,0],["FOX","",0,0],["FOX9","",0,0],["FOX9News","",0,0],["foxnews","Fox News and Fox Business Video",0,0],["foxnews:article","",0,0],["FoxNewsVideo","",0,0],["FoxSports","",0,0],["fptplay","fptplay.vn",0,0],["FrancaisFacile","",0,0],["FranceCulture","",0,0],["franceinfo","franceinfo.fr (formerly francetvinfo.fr)",0,0],["francetv","",0,0],["francetv:site","",0,0],["Freesound","",0,0],["freespeech.org","",0,0],["freetv:series","",0,0],["FreeTvMovies","",0,0],["FrontendMasters","",1,0],["FrontendMastersCourse","",1,0],["FrontendMastersLesson","",1,0],["Funk","",0,0],["Funker530","",0,0],["Fux","",0,0],["FuyinTV","",0,0],["Gab","",0,0],["Gaia","",1,0],["GameDevTVDashboard","",1,0],["GameJolt","",0,0],["GameJoltCommunity","",0,0],["GameJoltGame","",0,0],["GameJoltGameSoundtrack","",0,0],["GameJoltSearch","",0,0],["GameJoltUser","",0,0],["GameSpot","",0,0],["GameStar","",0,0],["Gaskrank","",0,0],["Gazeta","",0,1],["GBNews","GB News clips, features and live streams",0,0],["GDCVault","",1,1],["GediDigital","",0,0],["gem.cbc.ca","",1,0],["gem.cbc.ca:live","",1,0],["gem.cbc.ca:olympics","",1,0],["gem.cbc.ca:playlist","",1,0],["Genius","",0,0],["GeniusLyrics","",0,0],["Germanupa","germanupa.de",0,0],["GetCourseRu","",1,0],["GetCourseRuPlayer","",0,0],["Gettr","",0,0],["GettrStreaming","",0,0],["GiantBomb","",0,0],["GlattvisionTV","",1,0],["GlattvisionTVLive","",1,0],["GlattvisionTVRecordings","",1,0],["Glide","Glide mobile video messages (glide.me)",0,0],["GlobalPlayerAudio","",0,0],["GlobalPlayerAudioEpisode","",0,0],["GlobalPlayerLive","",0,0],["GlobalPlayerLivePlaylist","",0,0],["GlobalPlayerVideo","",0,0],["Globo","",1,0],["GloboArticle","",0,0],["glomex","Glomex videos",0,0],["glomex:embed","Glomex embedded videos",0,0],["GMANetworkVideo","",0,0],["Go","",0,0],["GoDiscovery","",0,0],["GodResource","",0,0],["GodTube","",0,1],["Golem","",0,0],["goodgame:stream","",0,0],["GoogleDrive","",0,0],["GoogleDrive:Folder","",0,0],["GoPro","",0,0],["GoToStage","",0,0],["Graspop","",0,0],["Gronkh","",0,0],["gronkh:feed","",0,0],["gronkh:vods","",0,0],["Groupon","",0,0],["Harpodeon","",0,0],["hbo","",0,0],["HearThisAt","",0,0],["Heise","",0,0],["HellPorno","",0,0],["hetklokhuis","",0,0],["hgtv.com:show","",0,0],["HGTVDe","",0,0],["HGTVUsa","",0,0],["HiDive","",1,0],["HistoricFilms","",0,0],["history:player","",0,0],["history:topic","History.com Topic",0,0],["HitRecord","",0,0],["HollywoodReporter","",0,0],["HollywoodReporterPlaylist","",0,0],["Holodex","",0,0],["HotNewHipHop","",0,1],["hotstar","JioHotstar",0,0],["hotstar:series","",0,0],["hrfernsehen","",0,0],["HRTi","",1,0],["HRTiPlaylist","",1,0],["HSEProduct","",0,0],["HSEShow","",0,0],["html5","",0,0],["Huajiao","花椒直播",0,0],["HuffPost","Huffington Post",0,0],["Hungama","",0,0],["HungamaAlbumPlaylist","",0,0],["HungamaSong","",0,0],["huya:live","虎牙直播",0,0],["huya:video","虎牙视频",0,0],["Hypem","",0,0],["Hytale","",0,0],["Icareus","",0,0],["IdagioAlbum","",0,0],["IdagioPersonalPlaylist","",0,0],["IdagioPlaylist","",0,0],["IdagioRecording","",0,0],["IdagioTrack","",0,0],["iflix:episode","",0,0],["IflixSeries","",0,0],["ign.com","",0,0],["IGNArticle","",0,0],["IGNVideo","",0,0],["iheartradio","",0,0],["iheartradio:podcast","",0,0],["IlPost","",0,0],["Iltalehti","",0,0],["imdb","Internet Movie Database trailers",0,0],["imdb:list","Internet Movie Database lists",0,0],["Imgur","",0,0],["imgur:album","",0,0],["imgur:gallery","",0,0],["Ina","",0,0],["Inc","",0,0],["IndavideoEmbed","",0,0],["InfoQ","",0,0],["Instagram","",0,0],["instagram:story","",0,0],["instagram:tag","Instagram hashtag search URLs",0,0],["instagram:user","Instagram user profile",0,1],["InstagramIOS","IOS instagram:// URL",0,0],["Internazionale","",0,0],["InvestigationDiscovery","",0,0],["IPrima","",1,0],["IPrimaCNN","",0,0],["iq.com","International version of iQiyi",0,0],["iq.com:album","",0,0],["iqiyi","爱奇艺",0,0],["IslamChannel","",0,0],["IslamChannelSeries","",0,0],["IsraelNationalNews","",0,0],["ITProTV","",0,0],["ITProTVCourse","",0,0],["ITV","",0,0],["ITVBTCC","",0,0],["ivi","ivi.ru",0,0],["ivi:compilation","ivi.ru compilations",0,0],["ivideon","Ivideon TV",0,0],["Ivoox","",0,0],["iwara","",1,0],["iwara:playlist","",1,0],["iwara:user","",1,0],["Ixigua","",0,0],["Jamendo","",0,0],["JamendoAlbum","",0,0],["JeuxVideo","",0,1],["jiosaavn:album","",0,0],["jiosaavn:artist","",0,0],["jiosaavn:playlist","",0,0],["jiosaavn:show","",0,0],["jiosaavn:​show:playlist","",0,0],["jiosaavn:song","",0,0],["Joj","",0,0],["Jove","",0,0],["JStream","",0,0],["JTBC","jtbc.co.kr",0,0],["JTBC:program","",0,0],["JWPlatform","",0,0],["Kakao","",0,0],["Kaltura","",0,0],["KankaNews","",0,1],["Karaoketv","",0,1],["Katsomo","",0,1],["KelbyOne","",0,1],["Kenh14Playlist","",0,0],["Kenh14Video","",0,0],["khanacademy","",0,0],["khanacademy:unit","",0,0],["kick:clips","",0,0],["kick:live","",0,0],["kick:vod","",0,0],["Kicker","",0,0],["KickStarter","",0,0],["Kika","KiKA.de",0,0],["KikaPlaylist","",0,0],["KinoPoisk","",0,0],["Kommunetv","",0,0],["KompasVideo","",0,0],["KrasView","Красвью",0,1],["KTH","",0,0],["Ku6","",0,0],["KukuluLive","",0,0],["kuwo:album","酷我音乐 - 专辑",0,1],["kuwo:category","酷我音乐 - 分类",0,1],["kuwo:chart","酷我音乐 - 排行榜",0,1],["kuwo:mv","酷我音乐 - MV",0,1],["kuwo:singer","酷我音乐 - 歌手",0,1],["kuwo:song","酷我音乐",0,1],["la7.it","",0,0],["la7.it:​pod:episode","",0,0],["la7.it:podcast","",0,0],["laracasts","",0,0],["laracasts:series","",0,0],["LastFM","",0,0],["LastFMPlaylist","",0,0],["LastFMUser","",0,0],["LaXarxaMes","",1,0],["lbry","odysee.com",0,0],["lbry:channel","odysee.com channels",0,0],["lbry:playlist","odysee.com playlists",0,0],["LCI","",0,0],["Lcp","",0,1],["LcpPlay","",0,1],["Le","乐视网",0,0],["LearningOnScreen","",0,0],["Lecture2Go","",0,1],["Lecturio","",1,0],["LecturioCourse","",1,0],["LecturioDeCourse","",1,0],["LeFigaroVideoEmbed","",0,0],["LeFigaroVideoSection","",0,0],["LEGO","",0,0],["Lemonde","",0,0],["Lenta","",0,1],["LePlaylist","",0,0],["Libsyn","",0,0],["life","Life.ru",0,0],["life:embed","",0,0],["likee","",0,0],["likee:user","",0,0],["LinkedIn","",0,0],["linkedin:events","",0,0],["linkedin:learning","",0,0],["linkedin:​learning:course","",0,0],["Liputan6","",0,0],["ListenNotes","",0,0],["LiTV","",0,0],["LiveJournal","",0,1],["Livestreamfails","",0,0],["Lnk","",0,0],["loc","Library of Congress",0,0],["Locipo","",0,0],["LocipoPlaylist","",0,0],["Loco","",0,0],["loom","",0,0],["loom:folder","",0,1],["LoveHomePorn","",0,0],["LRTRadio","",0,0],["LRTStream","",0,0],["LRTVOD","",0,0],["LSMLREmbed","",0,0],["LSMLTVEmbed","",0,0],["LSMReplay","",0,0],["Lumni","",0,0],["maariv.co.il","",0,0],["MagellanTV","",0,0],["MagentaMusik","",0,0],["mailru","Видео@Mail.Ru",0,0],["mailru:music","Музыка@Mail.Ru",0,0],["mailru:​music:search","Музыка@Mail.Ru",0,0],["MainStreaming","MainStreaming Player",0,0],["mangomolo:live","",0,0],["mangomolo:video","",0,0],["MangoTV","芒果TV",0,0],["ManyVids","",0,0],["MaoriTV","",0,0],["Markiza","",0,1],["MarkizaPage","",0,1],["massengeschmack.tv","",0,0],["Masters","",0,0],["MatchiTV","",0,0],["MatchTV","",0,0],["mave","",0,0],["mave:channel","",0,0],["MBN","mbn.co.kr (매일방송)",0,0],["MDR","MDR.DE",0,0],["MedalTV","",0,0],["media.ccc.de","",0,0],["media.ccc.de:lists","",0,0],["Mediaite","",0,0],["MediaKlikk","",0,0],["Medialaan","",0,0],["Mediaset","",0,0],["MediasetShow","",0,0],["Mediasite","",0,0],["MediasiteCatalog","",0,0],["MediasiteNamedCatalog","",0,0],["MediaStream","",0,0],["MediaWorksNZVOD","",0,0],["Medici","",0,0],["megaphone.fm","megaphone.fm embedded players",0,0],["megatvcom","megatv.com videos",0,0],["megatvcom:embed","megatv.com embedded videos",0,0],["Meipai","美拍",0,0],["mellowfan","mellow-fan",1,0],["mellowfan:capture","",1,0],["mellowfan:channel","",1,0],["mellowfan:​channel:search","",1,0],["mellowfan:movie","",1,0],["mellowfan:playlist","",1,0],["MelonVOD","",0,0],["Metacritic","",0,0],["mewatch","",0,0],["MicrosoftBuild","",0,0],["MicrosoftEmbed","",0,0],["MicrosoftLearnEpisode","",0,0],["MicrosoftLearnPlaylist","",0,0],["MicrosoftLearnSession","",0,0],["MicrosoftMedius","",0,0],["minds","",0,0],["minds:channel","",0,0],["minds:group","",0,0],["mir24.tv","",0,0],["mirrativ","",0,0],["mirrativ:user","",0,0],["MirrorCoUK","",0,0],["mixch","",0,0],["mixch:archive","",0,0],["mixch:movie","",0,0],["mixcloud","",0,0],["mixcloud:playlist","",0,0],["mixcloud:user","",0,0],["Mixlr","",0,0],["MixlrRecoring","",0,0],["MLB","",0,0],["MLBArticle","",0,0],["MLBTV","",1,0],["MLBVideo","",0,0],["MLSSoccer","",0,0],["MNetTV","",1,0],["MNetTVLive","",1,0],["MNetTVRecordings","",1,0],["MochaVideo","",0,0],["Mojevideo","mojevideo.sk",0,0],["Monstercat","",0,0],["monstersiren","塞壬唱片",0,0],["Motorsport","motorsport.com",0,1],["MovieFap","",0,0],["moviepilot","Moviepilot trailer",0,0],["MovingImage","",0,0],["MSN","",0,0],["mtg","MTG services",0,0],["mtv","",0,0],["MTVUutisetArticle","",0,1],["MuenchenTV","münchen.tv",0,1],["MujRozhlas","",0,0],["Murrtube","",0,0],["MurrtubeUser","Murrtube user profile",0,1],["MuseAI","",0,0],["MuseScore","",0,0],["Mux","",0,0],["Mx3","",0,0],["Mx3Neo","",0,0],["Mx3Volksmusik","",0,0],["mxplayer","Amazon MX Player",0,0],["mxplayer:season","",0,0],["mxplayer:show","",0,0],["MySpace","",0,0],["MySpace:album","",0,0],["MySpass","",0,0],["MyVideoGe","",0,0],["MyVidster","",0,0],["Mzaalo","",0,0],["n-tv.de","",0,0],["N1Info:article","",0,0],["N1InfoAsset","",0,0],["NascarClassics","",0,0],["Nate","",0,0],["NateProgram","",0,0],["NationalGeographicTV","",0,0],["Naver","",0,0],["Naver:live","",0,0],["nba","",0,1],["nba:channel","",0,1],["nba:embed","",0,1],["nba:watch","",0,1],["nba:​watch:collection","",0,1],["nba:​watch:embed","",0,1],["NBC","",0,0],["NBCNews","",0,0],["nbcolympics","",0,0],["nbcolympics:stream","",0,1],["NBCSports","",0,1],["NBCSportsStream","",0,1],["NBCSportsVPlayer","",0,1],["NBCStations","",0,0],["ndr","NDR.de - Norddeutscher Rundfunk",0,0],["ndr:embed","",0,0],["ndr:​embed:base","",0,0],["NDTV","",0,1],["nebula:channel","",1,0],["nebula:media","",1,0],["nebula:season","",1,0],["nebula:subscriptions","",1,0],["nebula:video","",1,0],["NekoHacker","",0,0],["Nest","",0,0],["NestClip","",0,0],["NetAppCollection","",0,0],["NetAppVideo","",0,0],["netease:album","网易云音乐 - 专辑",0,0],["netease:djradio","网易云音乐 - 电台",0,0],["netease:mv","网易云音乐 - MV",0,0],["netease:playlist","网易云音乐 - 歌单",0,0],["netease:program","网易云音乐 - 电台节目",0,0],["netease:singer","网易云音乐 - 歌手",0,0],["netease:song","网易云音乐",0,0],["NetPlusTV","",1,0],["NetPlusTVLive","",1,0],["NetPlusTVRecordings","",1,0],["Netzkino","",0,0],["Newgrounds","",1,0],["Newgrounds:playlist","",0,0],["Newgrounds:user","",0,0],["NewsPicks","",0,0],["Newsy","",0,0],["Nexx","",0,0],["NexxEmbed","",0,0],["nfb","nfb.ca and onf.ca films and episodes",0,0],["nfb:series","nfb.ca and onf.ca series",0,0],["NFHSNetwork","",0,0],["nfl.com","",0,0],["nfl.com:article","",0,0],["nfl.com:​plus:episode","",0,0],["nfl.com:​plus:replay","",0,0],["NhkForSchoolBangumi","",0,0],["NhkForSchoolProgramList","",0,0],["NhkForSchoolSubject","Portal page for each school subjects, like Japanese (kokugo, 国語) or math (sansuu/suugaku or 算数・数学)",0,0],["NhkRadioNewsPage","",0,0],["NhkRadiru","NHK らじる (Radiru/Rajiru)",0,0],["NhkRadiruLive","",0,0],["NhkVod","",0,0],["NhkVodProgram","",0,0],["nhl.com","",0,0],["nick.com","",0,0],["niconico","ニコニコ動画",1,0],["niconico:history","NicoNico user history or likes. Requires cookies.",0,0],["niconico:live","ニコニコ生放送",1,0],["niconico:playlist","",0,0],["niconico:series","",0,0],["niconico:tag","NicoNico video tag URLs",0,0],["NiconicoChannelPlus","ニコニコチャンネルプラス",0,0],["NiconicoChannelPlus:​channel:lives","ニコニコチャンネルプラス - チャンネル - ライブリスト. nicochannel.jp/channel/lives",0,0],["NiconicoChannelPlus:​channel:videos","ニコニコチャンネルプラス - チャンネル - 動画リスト. nicochannel.jp/channel/videos",0,0],["NiconicoUser","",0,0],["nicovideo:search","Nico video search; \"nicosearch:\" prefix",0,0],["nicovideo:​search:date","Nico video search, newest first; \"nicosearchdate:\" prefix",0,0],["nicovideo:search_url","Nico video search URLs",0,0],["NinaProtocol","",0,0],["Nintendo","",0,0],["Nitter","",0,0],["njoy","N-JOY",0,0],["njoy:embed","",0,0],["NobelPrize","",0,0],["NoicePodcast","",0,0],["NonkTube","",0,0],["NoodleMagazine","",0,0],["NOSNLArticle","",0,0],["Nova","TN.cz, Prásk.tv, Nova.cz, Novaplus.cz, FANDA.tv, Krásná.cz and Doma.cz",0,0],["NovaEmbed","",0,0],["NovaPlay","",0,0],["NowCanal","",0,0],["nowness","",0,0],["nowness:playlist","",0,0],["nowness:series","",0,0],["Noz","",0,1],["npo","npo.nl, ntr.nl, omroepwnl.nl, zapp.nl and npo3.nl",0,0],["npo.nl:live","",0,0],["npo.nl:radio","",0,0],["npo.nl:​radio:fragment","",0,0],["Npr","",0,0],["NRK","",0,0],["NRKPlaylist","",0,0],["NRKRadioPodkast","",0,0],["NRKSkole","NRK Skole",0,0],["NRKTV","NRK TV and NRK Radio",0,0],["NRKTVDirekte","NRK TV Direkte and NRK Radio Direkte",0,0],["NRKTVEpisode","",0,0],["NRKTVEpisodes","",0,0],["NRKTVSeason","",0,0],["NRKTVSeries","",0,0],["NRLTV","",0,1],["nts.live","",0,0],["ntv.ru","",0,0],["NubilesPorn","",1,0],["Nuvid","",0,0],["NYTimes","",0,0],["NYTimesArticle","",0,0],["NYTimesCookingGuide","",0,0],["NYTimesCookingRecipe","",0,0],["nzherald","",0,0],["NZOnScreen","",0,0],["NZZ","",0,0],["ocw.mit.edu","",0,0],["Odnoklassniki","",0,0],["OfTV","",0,0],["OfTVPlaylist","",0,0],["OktoberfestTV","",0,1],["OlympicsReplay","",0,0],["Omnyfm","",0,0],["OmnyfmPlaylist","",0,0],["OmnyfmShow","",0,0],["on24","ON24",0,0],["OnDemandChinaEpisode","",0,0],["OnDemandKorea","",0,0],["OnDemandKoreaProgram","",0,0],["OneFootball","",0,0],["OnePlacePodcast","",0,0],["onet.pl","",0,0],["onet.tv","",0,0],["onet.tv:channel","",0,0],["OnetMVP","",0,0],["onsen","インターネットラジオステーション＜音泉＞",1,0],["Opencast","",0,0],["OpencastPlaylist","",0,0],["orf:​fm4:story","fm4.orf.at stories",0,0],["orf:iptv","iptv.ORF.at",0,0],["orf:on","",0,0],["orf:podcast","",0,0],["orf:radio","",0,0],["OsnatelTV","",1,0],["OsnatelTVLive","",1,0],["OsnatelTVRecordings","",1,0],["OutsideTV","",0,0],["OwnCloud","",0,0],["PacktPub","",1,0],["PacktPubCourse","",0,0],["PalcoMP3:artist","",0,0],["PalcoMP3:song","",0,0],["PalcoMP3:video","",0,0],["PandaTv","pandalive.co.kr (팬더티비)",0,0],["Panopto","",0,0],["PanoptoList","",0,0],["PanoptoPlaylist","",0,0],["ParamountPressExpress","",0,0],["Parler","Posts on parler.com",0,0],["parliamentlive.tv","UK parliament videos",0,0],["Parlview","",0,0],["parti:livestream","",0,0],["parti:video","",0,0],["patreon","",0,0],["patreon:campaign","",0,0],["pbs","Public Broadcasting Service (PBS) and member stations: PBS: Public Broadcasting Service, APT - Alabama Public Television (WBIQ), GPB/Georgia Public Broadcasting (WGTV), Mississippi Public Broadcasting (WMPN), Nashville Public Television (WNPT), WFSU-TV (WFSU), WSRE (WSRE), WTCI (WTCI), WPBA/Channel 30 (WPBA), Alaska Public Media (KAKM), Arizona PBS (KAET), KNME-TV/Channel 5 (KNME), Vegas PBS (KLVX), AETN/ARKANSAS ETV NETWORK (KETS), KET (WKLE), WKNO/Channel 10 (WKNO), LPB/LOUISIANA PUBLIC BROADCASTING (WLPB), OETA (KETA), Ozarks Public Television (KOZK), WSIU Public Broadcasting (WSIU), KEET TV (KEET), KIXE/Channel 9 (KIXE), KPBS San Diego (KPBS), KQED (KQED), KVIE Public Television (KVIE), PBS SoCal/KOCE (KOCE), ValleyPBS (KVPT), CONNECTICUT PUBLIC TELEVISION (WEDH), KNPB Channel 5 (KNPB), SOPTV (KSYS), Rocky Mountain PBS (KRMA), KENW-TV3 (KENW), KUED Channel 7 (KUED), Wyoming PBS (KCWC), Colorado Public Television / KBDI 12 (KBDI), KBYU-TV (KBYU), Thirteen/WNET New York (WNET), WGBH/Channel 2 (WGBH), WGBY (WGBY), NJTV Public Media NJ (WNJT), WLIW21 (WLIW), mpt/Maryland Public Television (WMPB), WETA Television and Radio (WETA), WHYY (WHYY), PBS 39 (WLVT), WVPT - Your Source for PBS and More! (WVPT), Howard University Television (WHUT), WEDU PBS (WEDU), WGCU Public Media (WGCU), WPBT2 (WPBT), WUCF TV (WUCF), WUFT/Channel 5 (WUFT), WXEL/Channel 42 (WXEL), WLRN/Channel 17 (WLRN), WUSF Public Broadcasting (WUSF), ETV (WRLK), UNC-TV (WUNC), PBS Hawaii - Oceanic Cable Channel 10 (KHET), Idaho Public Television (KAID), KSPS (KSPS), OPB (KOPB), KWSU/Channel 10 & KTNW/Channel 31 (KWSU), WILL-TV (WILL), Network Knowledge - WSEC/Springfield (WSEC), WTTW11 (WTTW), Iowa Public Television/IPTV (KDIN), Nine Network (KETC), PBS39 Fort Wayne (WFWA), WFYI Indianapolis (WFYI), Milwaukee Public Television (WMVS), WNIN (WNIN), WNIT Public Television (WNIT), WPT (WPNE), WVUT/Channel 22 (WVUT), WEIU/Channel 51 (WEIU), WQPT-TV (WQPT), WYCC PBS Chicago (WYCC), WIPB-TV (WIPB), WTIU (WTIU), CET  (WCET), ThinkTVNetwork (WPTD), WBGU-TV (WBGU), WGVU TV (WGVU), NET1 (KUON), Pioneer Public Television (KWCM), SDPB Television (KUSD), TPT (KTCA), KSMQ (KSMQ), KPTS/Channel 8 (KPTS), KTWU/Channel 11 (KTWU), East Tennessee PBS (WSJK), WCTE-TV (WCTE), WLJT, Channel 11 (WLJT), WOSU TV (WOSU), WOUB/WOUC (WOUB), WVPB (WVPB), WKYU-PBS (WKYU), KERA 13 (KERA), MPBN (WCBB), Mountain Lake PBS (WCFE), NHPTV (WENH), Vermont PBS (WETK), witf (WITF), WQED Multimedia (WQED), WMHT Educational Telecommunications (WMHT), Q-TV (WDCQ), WTVS Detroit Public TV (WTVS), CMU Public Television (WCMU), WKAR-TV (WKAR), WNMU-TV Public TV 13 (WNMU), WDSE - WRPT (WDSE), WGTE TV (WGTE), Lakeland Public Television (KAWE), KMOS-TV - Channels 6.1, 6.2 and 6.3 (KMOS), MontanaPBS (KUSM), KRWG/Channel 22 (KRWG), KACV (KACV), KCOS/Channel 13 (KCOS), WCNY/Channel 24 (WCNY), WNED (WNED), WPBS (WPBS), WSKG Public TV (WSKG), WXXI (WXXI), WPSU (WPSU), WVIA Public Media Studios (WVIA), WTVI (WTVI), Western Reserve PBS (WNEO), WVIZ/PBS ideastream (WVIZ), KCTS 9 (KCTS), Basin PBS (KPBT), KUHT / Channel 8 (KUHT), KLRN (KLRN), KLRU (KLRU), WTJX Channel 12 (WTJX), WCVE PBS (WCVE), KBTC Public Television (KBTC)",0,0],["PBSKids","",0,0],["PearVideo","",0,0],["PeekVids","",0,0],["peer.tv","",0,0],["PeerTube","",0,0],["PeerTube:Playlist","",0,0],["peloton","",1,0],["peloton:live","Peloton Live",0,0],["PerformGroup","",0,0],["periscope","Periscope",0,0],["periscope:user","Periscope user videos",0,0],["PGATour","",0,0],["PhilharmonieDeParis","Philharmonie de Paris",0,0],["phoenix.de","",0,0],["Photobucket","",0,0],["PiaLive","",0,0],["Piapro","",1,0],["picarto","",0,0],["picarto:vod","",0,0],["Piksel","",0,0],["Pinkbike","",0,0],["Pinterest","",0,0],["PinterestCollection","",0,0],["Platzi","",1,0],["PlatziCourse","",1,0],["play.tv","PLAY (formerly goplay.be)",1,0],["player.sky.it","",0,0],["PlayerFm","",0,0],["PlaySuisse","",1,0],["Playtvak","Playtvak.cz, iDNES.cz and Lidovky.cz",0,1],["PlayVids","",0,0],["pluralsight","",1,0],["pluralsight:course","",0,0],["PlutoTV","",0,1],["PlyrEmbed","",0,0],["PodbayFM","",0,0],["PodbayFMChannel","",0,0],["Podchaser","",0,0],["podomatic","",0,1],["PokerGo","",1,0],["PokerGoCollection","",1,0],["PolsatGo","",0,0],["PolskieRadio","",0,0],["polskieradio:audition","",0,0],["polskieradio:category","",0,0],["polskieradio:legacy","",0,0],["polskieradio:player","",0,0],["polskieradio:podcast","",0,0],["polskieradio:​podcast:list","",0,0],["Popcorntimes","",0,0],["PopcornTV","",0,0],["Pornbox","",0,0],["PornerBros","",0,0],["PornFlip","",0,0],["PornHub","PornHub and Thumbzilla",1,0],["PornHubPagedVideoList","",1,0],["PornHubPlaylist","",1,0],["PornHubUser","",1,0],["PornHubUserVideosUpload","",1,0],["Pornotube","",0,0],["PornoVoisines","",0,1],["PornoXO","",0,1],["PornTop","",0,0],["PornTube","",0,0],["Pr0gramm","",0,0],["PrankCast","",0,0],["PrankCastPost","",0,0],["PremiershipRugby","",0,0],["PressTV","",0,0],["ProjectVeritas","",0,1],["PRXAccount","",0,0],["PRXSeries","",0,0],["prxseries:search","PRX Series Search; \"prxseries:\" prefix",0,0],["prxstories:search","PRX Stories Search; \"prxstories:\" prefix",0,0],["PRXStory","",0,0],["puhutv","",0,0],["puhutv:serie","",0,0],["Pyvideo","",0,0],["QDance","",1,0],["QingTing","",0,0],["qqmusic","QQ音乐",0,0],["qqmusic:album","QQ音乐 - 专辑",0,0],["qqmusic:mv","QQ音乐 - MV",0,0],["qqmusic:playlist","QQ音乐 - 歌单",0,0],["qqmusic:singer","QQ音乐 - 歌手",0,0],["qqmusic:toplist","QQ音乐 - 排行榜",0,0],["QuantumTV","",1,0],["QuantumTVLive","",1,0],["QuantumTVRecordings","",1,0],["R7","",0,1],["R7Article","",0,1],["Radiko","",0,0],["RadikoRadio","",0,0],["radio.de","",0,1],["Radio1Be","",0,0],["radiocanada","",0,0],["radiocanada:audiovideo","",0,0],["radiofrance","",0,0],["RadioFranceLive","",0,0],["RadioFrancePodcast","",0,0],["RadioFranceProfile","",0,0],["RadioFranceProgramSchedule","",0,0],["RadioJavan","",0,1],["radiokapital","",0,0],["radiokapital:show","",0,0],["RadioRadicale","",0,0],["RadioZetPodcast","",0,0],["radlive","",0,0],["radlive:channel","",0,0],["radlive:season","",0,0],["Rai","",0,0],["RaiCultura","",0,0],["RaiNews","",0,0],["RaiPlay","",0,0],["RaiPlayLive","",0,0],["RaiPlayPlaylist","",0,0],["RaiPlaySound","",0,0],["RaiPlaySoundLive","",0,0],["RaiPlaySoundPlaylist","",0,0],["RaiSudtirol","",0,0],["RayWenderlich","",0,0],["RayWenderlichCourse","",0,0],["RbgTum","",0,0],["RbgTumCourse","",0,0],["RbgTumNewCourse","",0,0],["RCS","",0,0],["RCSEmbeds","",0,0],["RCSVarious","",0,0],["RCTIPlus","",0,0],["RCTIPlusSeries","",0,0],["RCTIPlusTV","",0,0],["RDS","RDS.ca",0,1],["RedBull","",0,0],["RedBullEmbed","",0,0],["RedBullTV","",0,0],["RedBullTVRrnContent","",0,0],["Reddit","",0,0],["RedGifs","",0,0],["RedGifsSearch","Redgifs search",0,0],["RedGifsUser","Redgifs user",0,0],["RedTube","",0,0],["RENTV","",0,1],["RENTVArticle","",0,1],["Restudy","",0,1],["Reuters","",0,1],["ReverbNation","",0,0],["RideHome","",0,0],["RinseFM","",0,0],["RinseFMArtistPlaylist","",0,0],["RockstarGames","",0,1],["Rokfin","",1,0],["rokfin:channel","Rokfin Channels",0,0],["rokfin:search","Rokfin Search; \"rkfnsearch:\" prefix",0,0],["rokfin:stack","Rokfin Stacks",0,0],["RoosterTeeth","",1,0],["RoosterTeethSeries","",1,0],["RottenTomatoes","",0,0],["RoyaLive","",0,0],["Rozhlas","",0,0],["RozhlasVltava","",0,0],["RTBF","",1,1],["RTDocumentry","",0,0],["RTDocumentryPlaylist","",0,0],["rte","Raidió Teilifís Éireann TV",0,0],["rte:radio","Raidió Teilifís Éireann radio",0,0],["rtl.lu:article","",0,0],["rtl.lu:tele-vod","",0,0],["rtl.nl","rtl.nl and rtlxl.nl",0,0],["rtl2","",0,1],["RTLLuLive","",0,0],["RTLLuRadio","",0,0],["RTNews","",0,0],["RTP","",0,0],["RTRFM","",0,0],["RTS","RTS.ch",0,1],["RTVCKaltura","",0,0],["RTVCPlay","",0,0],["RTVCPlayEmbed","",0,0],["rtve.es:alacarta","RTVE a la carta and Play",0,0],["rtve.es:audio","RTVE audio",0,0],["rtve.es:live","RTVE.es live streams",0,0],["rtve.es:program","RTVE.es programs",0,0],["rtve.es:television","",0,0],["rtvslo.si","",0,0],["rtvslo.si:show","",0,0],["RudoVideo","",0,0],["Rule34Video","",0,0],["Rumble","",0,0],["RumbleChannel","",0,0],["RumbleEmbed","",0,0],["Ruptly","",0,0],["rutube","Rutube videos",0,0],["rutube:channel","Rutube channel",0,0],["rutube:embed","Rutube embedded videos",0,0],["rutube:movie","Rutube movies",0,0],["rutube:person","Rutube person videos",0,0],["rutube:playlist","Rutube playlists",0,0],["rutube:tags","Rutube tags",0,0],["Ruutu","",0,1],["Ruv","",0,0],["ruv.is:spila","",0,0],["S4C","",0,0],["S4CSeries","",0,0],["safari","safaribooksonline.com online video",1,0],["safari:api","",1,0],["safari:course","safaribooksonline.com online courses",1,0],["Saitosan","",0,1],["SAKTV","",1,0],["SAKTVLive","",1,0],["SAKTVRecordings","",1,0],["SaltTV","",1,0],["SaltTVLive","",1,0],["SaltTVRecordings","",1,0],["SampleFocus","",0,0],["Sangiin","参議院インターネット審議中継 (archive)",0,0],["Sapo","SAPO Vídeos",0,0],["SaucePlus","Sauce+",0,0],["SaucePlusChannel","",0,0],["SBS","sbs.com.au",0,0],["sbs.co.kr","",0,0],["sbs.co.kr:allvod_program","",0,0],["sbs.co.kr:programs_vod","",0,0],["schooltv","",0,0],["ScienceChannel","",0,0],["Screen9","",0,0],["Screencast","",0,0],["Screencastify","",0,0],["ScreencastOMatic","",0,0],["ScreenRec","",0,0],["ScrippsNetworks","",0,0],["scrippsnetworks:watch","",0,0],["Scrolller","",0,0],["sejm","",0,1],["Sen","",0,0],["SenalColombiaLive","",0,1],["senate.gov","",0,0],["senate.gov:isvp","",0,0],["Servus","",0,0],["Sexu","",0,1],["SeznamZpravy","",0,0],["SeznamZpravyArticle","",0,0],["Shahid","",1,0],["ShahidShow","",0,0],["SharePoint","",0,0],["ShemarooMe","",0,0],["Shiey","",0,0],["showroom:live","SHOWROOM",0,0],["showroom:vod","",0,0],["ShugiinItvLive","衆議院インターネット審議中継",0,0],["ShugiinItvLiveRoom","衆議院インターネット審議中継 (中継)",0,0],["ShugiinItvVod","衆議院インターネット審議中継 (ビデオライブラリ)",0,0],["SibnetEmbed","",0,0],["simplecast","",0,0],["simplecast:episode","",0,0],["simplecast:podcast","",0,0],["Sina","",0,0],["Skeb","",0,0],["sky.it","",0,0],["sky:news","",0,0],["sky:​news:story","",0,0],["sky:sports","",0,0],["sky:​sports:news","",0,0],["SkylineWebcams","",0,1],["skynewsarabia:article","",0,1],["skynewsarabia:video","",0,1],["SkyNewsAU","",0,0],["Slideshare","",0,0],["SlidesLive","",0,0],["Slutload","",0,0],["smotrim","",0,0],["smotrim:audio","",0,0],["smotrim:live","",0,0],["smotrim:playlist","",0,0],["SnapchatSpotlight","",0,0],["SoftWhiteUnderbelly","",1,0],["Sohu","",0,0],["SohuV","",0,0],["SonyLIV","",1,0],["SonyLIVSeries","",0,0],["soop","sooplive.com",1,0],["soop:catchstory","sooplive.com catch story",1,0],["soop:live","sooplive.com livestreams",1,0],["soop:user","",1,0],["soundcloud","",1,0],["soundcloud:playlist","",1,0],["soundcloud:related","",1,0],["soundcloud:search","Soundcloud search; \"scsearch:\" prefix",1,0],["soundcloud:set","",1,0],["soundcloud:trackstation","",1,0],["soundcloud:user","",1,0],["soundcloud:​user:permalink","",1,0],["SoundcloudEmbed","",0,0],["soundgasm","",0,0],["soundgasm:profile","",0,0],["southpark.cc.com","",0,0],["southpark.cc.com:español","",0,0],["southpark.de","",0,0],["southpark.lat","",0,0],["southparkstudios.co.uk","",0,0],["southparkstudios.com.br","",0,0],["southparkstudios.nu","",0,0],["SovietsCloset","",0,0],["SovietsClosetPlaylist","",0,0],["SpankBang","",0,0],["SpankBangPlaylist","",0,0],["Spiegel","",0,0],["Sport5","",0,0],["SportBox","",0,1],["sporteurope","",0,0],["Spreaker","",0,0],["SpreakerShow","",0,0],["SproutVideo","",0,0],["sr:mediathek","Saarländischer Rundfunk",0,0],["SRGSSR","",0,0],["SRGSSRPlay","srf.ch, rts.ch, rsi.ch, rtr.ch and swissinfo.ch play sites",0,0],["StacommuLive","",1,0],["StacommuVOD","",1,0],["StagePlusVODConcert","",1,0],["startrek","STAR TREK",0,0],["startv","",0,0],["Steam","",0,0],["SteamCommunity","",0,0],["SteamCommunityBroadcast","",0,0],["StoryFire","",0,0],["StoryFireSeries","",0,0],["StoryFireUser","",0,0],["Streaks","",0,0],["Streamable","",0,0],["StreamCZ","",0,0],["StreetVoice","",0,0],["Stripchat","",0,0],["stv:player","",0,0],["stvr","Slovak Television and Radio (formerly RTVS)",0,0],["Subsplash","",0,0],["subsplash:playlist","",0,0],["Substack","",0,0],["SunPorno","",0,0],["sverigesradio:episode","",0,0],["sverigesradio:publication","",0,0],["svt:page","",0,0],["svt:play","SVT Play and Öppet arkiv",0,0],["svt:​play:series","",0,0],["Syfy","",0,0],["SztvHu","",0,0],["t-online.de","",0,1],["Tagesschau","",0,1],["TapTapApp","",0,0],["TapTapAppIntl","",0,0],["TapTapMoment","",0,0],["TapTapPostIntl","",0,0],["tarangplus:episodes","",0,0],["tarangplus:playlist","",0,0],["tarangplus:video","",0,0],["Tass","",0,1],["TBS","",0,0],["TBSJPEpisode","",0,0],["TBSJPPlaylist","",0,0],["TBSJPProgram","",0,0],["Teachable","",1,1],["TeachableCourse","",1,0],["teachertube","teachertube.com videos",0,1],["teachertube:​user:collection","teachertube.com user and collection videos",0,1],["TeachingChannel","",0,1],["Teamcoco","",0,0],["TeamTreeHouse","",1,0],["techtv.mit.edu","",0,0],["TedEmbed","",0,0],["TedPlaylist","",0,0],["TedSeries","",0,0],["TedTalk","",0,0],["Tele13","",0,0],["Tele5","",0,0],["TeleBruxelles","",0,0],["TelecaribePlay","",0,0],["Telecinco","telecinco.es, cuatro.com and mediaset.es",0,0],["Telegraaf","",0,0],["telegram:embed","",0,0],["TeleMB","",0,1],["Telemundo","",0,1],["TeleQuebec","",0,0],["TeleQuebecEmission","",0,0],["TeleQuebecLive","",0,0],["TeleQuebecSquat","",0,0],["TeleQuebecVideo","",0,0],["TeleTask","",0,1],["Telewebion","",0,0],["TennisTV","",1,0],["TF1","",0,0],["TFO","",0,1],["theatercomplextown:ppv","",1,0],["theatercomplextown:vod","",1,0],["TheChosen","",0,0],["TheChosenGroup","",0,1],["TheGuardianPodcast","",0,0],["TheGuardianPodcastPlaylist","",0,0],["TheHighWire","",0,0],["TheIntercept","",0,0],["ThePlatform","",0,0],["ThePlatformFeed","",0,0],["TheStar","",0,0],["TheSun","",0,0],["TheWeatherChannel","",0,0],["ThisAmericanLife","",0,0],["ThisOldHouse","",1,0],["ThisVid","",0,0],["ThisVidMember","",0,0],["ThisVidPlaylist","",0,0],["ThreeSpeak","",0,0],["ThreeSpeakUser","",0,0],["TikTok","",0,0],["tiktok:collection","",0,0],["tiktok:effect","",0,1],["tiktok:live","",0,0],["tiktok:sound","",0,1],["tiktok:tag","",0,1],["tiktok:user","",0,0],["TLC","",0,0],["TMZ","",0,0],["TNAFlix","",0,0],["TNAFlixNetworkEmbed","",0,0],["toggle","",0,0],["toggo","",0,0],["tokfm:audition","",0,0],["tokfm:podcast","",0,0],["ToonGoggles","",0,0],["tou.tv","",1,0],["toutiao","今日头条",0,0],["Toypics","Toypics video",0,1],["ToypicsUser","Toypics user profile",0,1],["TravelChannel","",0,0],["TrtCocukVideo","",0,0],["TrtWorld","",0,0],["TrueID","",0,0],["TruNews","",0,0],["Truth","",0,0],["ttinglive","띵라이브 (formerly FlexTV)",0,0],["Tube8","",0,1],["TubeTuGraz","tube.tugraz.at",1,0],["TubeTuGrazSeries","",1,0],["tubitv","",1,0],["tubitv:series","",0,0],["Tumblr","",1,0],["tunein:embed","",0,0],["tunein:podcast","",0,0],["tunein:​podcast:program","",0,0],["tunein:station","",0,0],["tv.dfb.de","",0,0],["TV2","",0,0],["TV2Article","",0,0],["TV2DK","",0,0],["TV2DKBornholmPlay","",0,0],["tv2play.hu","",0,0],["tv2playseries.hu","",0,0],["TV4","tv4.se and tv4play.se",0,0],["TV5MONDE","",0,0],["tv5unis","",0,0],["tv5unis:video","",0,0],["tv8.it","",0,0],["tv8.it:live","TV8 Live",0,0],["tv8.it:playlist","TV8 Playlist",0,0],["TVANouvelles","",0,0],["TVANouvellesArticle","",0,0],["tvaplus","TVA+",0,0],["TVC","",0,0],["TVCArticle","",0,0],["TVer","",0,0],["tver:olympic","",0,0],["tvigle","Интернет-телевидение Tvigle.ru",0,0],["TVIPlayer","",0,0],["TVN24","",0,1],["tvnoe","Televize Noe",0,0],["TVO","",0,0],["tvopengr:embed","tvopen.gr embedded videos",0,0],["tvopengr:watch","tvopen.gr (and ethnos.gr) videos",0,0],["tvp","Telewizja Polska",0,0],["tvp:embed","Telewizja Polska",0,0],["tvp:stream","",0,0],["tvp:vod","",0,0],["tvp:​vod:series","",0,0],["TVPlayHome","",0,0],["tvw","",0,0],["tvw:news","",0,0],["tvw:tvchannels","",0,0],["Tweakers","",0,0],["TwitCasting","",0,0],["TwitCastingLive","",0,0],["TwitCastingUser","",0,0],["twitch:clips","",1,0],["twitch:collection","",1,0],["twitch:stream","",1,0],["twitch:videos","",1,0],["twitch:​videos:clips","",1,0],["twitch:​videos:collections","",1,0],["twitch:vod","",1,0],["twitter","",0,0],["twitter:amplify","",0,0],["twitter:broadcast","",0,0],["twitter:card","",0,0],["twitter:shortener","",0,0],["twitter:spaces","",0,0],["Txxx","",0,0],["udemy","",1,0],["udemy:course","",1,0],["UDNEmbed","聯合影音",0,0],["UFCTV","",1,0],["ukcolumn","",0,1],["UlizaPlayer","",0,0],["UlizaPortal","ulizaportal.jp",0,0],["umg:de","Universal Music Deutschland",0,0],["Unistra","",0,0],["UnitedNationsWebTv","",0,0],["Unity","",0,1],["uol.com.br","",0,0],["uplynk","",0,0],["uplynk:preplay","",0,0],["Urort","NRK P3 Urørt",0,1],["URPlay","",0,0],["USANetwork","",0,0],["USAToday","",0,0],["ustream","",0,0],["ustream:channel","",0,0],["ustudio","",0,0],["ustudio:embed","",0,0],["Varzesh3","",0,1],["Vbox7","",0,0],["Veo","",0,0],["Vevo","",0,0],["VevoPlaylist","",0,0],["VGTV","VGTV, BTTV, FTV, Aftenposten and Aftonbladet",0,1],["vh1.com","",0,0],["vhx:embed","",1,0],["vice","",0,1],["vice:article","",0,1],["vice:show","",0,1],["Viddler","",0,1],["Videa","",0,0],["video.arnes.si","Arnes Video",0,0],["video.google:search","Google Video search; \"gvsearch:\" prefix",0,0],["video.sky.it","",0,0],["video.sky.it:live","",0,0],["VideoKenPlayer","",0,0],["VideoPress","",0,0],["Vidflex","",0,0],["Vidio","",1,0],["VidioLive","",1,0],["VidioPremier","",1,0],["VidLii","",0,0],["Vidly","",0,0],["vids.io","",0,0],["Vidyard","",0,0],["viewlift","",0,0],["viewlift:embed","",0,0],["Viidea","",0,0],["vimeo","",1,0],["vimeo:album","",1,0],["vimeo:channel","",1,0],["vimeo:event","",1,0],["vimeo:group","",1,0],["vimeo:likes","Vimeo user likes",1,0],["vimeo:ondemand","",1,0],["vimeo:pro","",1,0],["vimeo:review","Review pages on vimeo",1,0],["vimeo:user","",1,0],["vimeo:watchlater","Vimeo watch later list, \":vimeowatchlater\" keyword (requires authentication)",1,0],["ViMP","",0,0],["ViMP:Playlist","",0,0],["Viously","",0,0],["Viqeo","",0,1],["Visir","Vísir",0,0],["Viu","",0,0],["viu:ott","",1,0],["viu:playlist","",0,0],["ViuOTTIndonesia","",0,0],["vk","VK",1,0],["vk:uservideos","VK - User's Videos",1,0],["vk:wallpost","",1,0],["VKPlay","",0,0],["VKPlayLive","",0,0],["vm.tiktok","",0,0],["Vocaroo","",0,0],["VODPlatform","",0,0],["voicy","",0,1],["voicy:channel","",0,1],["volejtv:category","",0,0],["volejtv:club","",0,0],["volejtv:match","",0,0],["VoxMedia","",0,0],["VoxMediaVolume","",0,0],["vpro","npo.nl, ntr.nl, omroepwnl.nl, zapp.nl and npo3.nl",0,0],["vqq:series","",0,0],["vqq:video","",0,0],["vrsquare","VR SQUARE",0,0],["vrsquare:channel","",0,0],["vrsquare:search","",0,0],["vrsquare:section","",0,0],["VRT","VRT NWS, Flanders News, Flandern Info and Sporza",0,0],["vrtmax","VRT MAX (formerly VRT NU)",1,0],["VTM","",0,0],["VTV","",0,0],["VTVGo","",0,0],["VTXTV","",1,0],["VTXTVLive","",1,0],["VTXTVRecordings","",1,0],["Walla","",0,1],["WalyTV","",1,0],["WalyTVLive","",1,0],["WalyTVRecordings","",1,0],["washingtonpost","",0,0],["washingtonpost:article","",0,0],["wat.tv","",0,0],["WatchESPN","",0,0],["WDR","",0,0],["WDRElefant","",0,0],["WDRPage","",0,0],["web.archive:youtube","web.archive.org saved youtube videos, \"ytarchive:\" prefix",0,0],["Webcamerapl","",0,0],["Webcaster","",0,0],["WebcasterFeed","",0,0],["WebOfStories","",0,0],["WebOfStoriesPlaylist","",0,0],["Weibo","",0,0],["WeiboUser","",0,0],["WeiboVideo","",0,0],["WeiqiTV","WQTV",0,1],["wetv:episode","",0,0],["WeTvSeries","",0,0],["Weverse","",1,0],["WeverseLive","",1,0],["WeverseLiveTab","",1,0],["WeverseMedia","",1,0],["WeverseMediaTab","",1,0],["WeverseMoment","",1,0],["WeVidi","",0,0],["whowatch","",0,1],["Whyp","",0,0],["wikimedia.org","",0,0],["Wimbledon","",0,0],["WimTV","",0,0],["WinSportsVideo","",0,0],["Wistia","",0,0],["WistiaChannel","",0,0],["WistiaPlaylist","",0,0],["wnl","npo.nl, ntr.nl, omroepwnl.nl, zapp.nl and npo3.nl",0,0],["wordpress:mb.miniAudioPlayer","",0,0],["wordpress:playlist","",0,0],["WorldStarHipHop","",0,0],["wppilot","",0,0],["wppilot:channels","",0,0],["wrestleuniverse:ppv","",1,0],["wrestleuniverse:vod","",1,0],["WSJ","Wall Street Journal",0,0],["WSJArticle","",0,0],["WWE","",0,0],["wyborcza:video","",0,0],["WyborczaPodcast","",0,0],["wykop:dig","",0,0],["wykop:​dig:comment","",0,0],["wykop:post","",0,0],["wykop:​post:comment","",0,0],["XboxClips","",0,0],["XHamster","",0,0],["XHamsterEmbed","",0,0],["XHamsterUser","",0,0],["XiaoHongShu","小红书",0,0],["ximalaya","喜马拉雅FM",0,0],["ximalaya:album","喜马拉雅FM 专辑",0,0],["Xinpianchang","新片场",0,0],["XMinus","",0,1],["XNXX","",0,0],["XVideos","",0,0],["xvideos:quickies","",0,0],["XXXYMovies","",0,0],["yahoo","",0,0],["yahoo:japannews","Yahoo! Japan News",0,0],["yahoo:search","\"yvsearch:\" prefix",0,0],["YandexDisk","",0,0],["yandexmusic:album","Яндекс.Музыка - Альбом",0,0],["yandexmusic:​artist:albums","Яндекс.Музыка - Артист - Альбомы",0,0],["yandexmusic:​artist:tracks","Яндекс.Музыка - Артист - Треки",0,0],["yandexmusic:playlist","Яндекс.Музыка - Плейлист",0,0],["yandexmusic:track","Яндекс.Музыка - Трек",0,0],["YandexVideo","",0,0],["YandexVideoPreview","",0,0],["YapFiles","",0,1],["Yappy","",0,1],["YappyProfile","",0,0],["yfanefa","",0,0],["YleAreena","",0,0],["YouJizz","",0,0],["youku","优酷",0,0],["youku:show","",0,0],["YouNowChannel","",0,0],["YouNowLive","",0,0],["YouNowMoment","",0,0],["YouPorn","",0,0],["YouPornCategory","YouPorn category, with sorting, filtering and pagination",0,0],["YouPornChannel","YouPorn channel, with sorting and pagination",0,0],["YouPornCollection","YouPorn collection (user playlist), with sorting and pagination",0,0],["YouPornStar","YouPorn Pornstar, with description, sorting and pagination",0,0],["YouPornTag","YouPorn tag (porntags), with sorting, filtering and pagination",0,0],["YouPornVideos","YouPorn video (browse) playlists, with sorting, filtering and pagination",0,0],["youtube","YouTube",1,0],["youtube:clip","",1,0],["youtube:favorites","YouTube liked videos; \":ytfav\" keyword (requires cookies)",1,0],["youtube:history","Youtube watch history; \":ythis\" keyword (requires cookies)",1,0],["youtube:​music:search_url","YouTube music search URLs with selectable sections, e.g. #songs",1,0],["youtube:notif","YouTube notifications; \":ytnotif\" keyword (requires cookies)",1,0],["youtube:playlist","YouTube playlists",1,0],["youtube:recommended","YouTube recommended videos; \":ytrec\" keyword",1,0],["youtube:search","YouTube search; \"ytsearch:\" prefix",1,0],["youtube:search_url","YouTube search URLs with sorting and filter support",1,0],["youtube:​shorts:pivot:audio","YouTube Shorts audio pivot (Shorts using audio of a given video)",1,0],["youtube:subscriptions","YouTube subscriptions feed; \":ytsubs\" keyword (requires cookies)",1,0],["youtube:tab","YouTube Tabs",1,0],["youtube:user","YouTube user videos; \"ytuser:\" prefix",1,0],["youtube:watchlater","Youtube watch later list; \":ytwatchlater\" keyword (requires cookies)",1,0],["YoutubeLivestreamEmbed","YouTube livestream embeds",1,0],["YoutubeYtBe","youtu.be",1,0],["Zaiko","",0,0],["ZaikoETicket","",0,0],["zan","Z-aN",0,0],["Zapiks","",0,0],["Zattoo","",1,0],["ZattooLive","",1,0],["ZattooMovies","",1,0],["ZattooRecordings","",1,0],["zdf","",0,0],["zdf:channel","",0,0],["ZeeNews","",0,1],["ZenPorn","",0,0],["ZetlandDKArticle","",0,0],["Zhihu","",0,0],["zingmp3","zingmp3.vn",0,0],["zingmp3:album","",0,0],["zingmp3:chart-home","",0,0],["zingmp3:chart-music-video","",0,0],["zingmp3:hub","",0,0],["zingmp3:liveradio","",0,0],["zingmp3:podcast","",0,0],["zingmp3:podcast-episode","",0,0],["zingmp3:user","",0,0],["zingmp3:week-chart","",0,0],["zoom","",0,0],["zoom:clips","",0,0],["Zype","",0,0],["generic","Generic downloader that works on some sites",0,0]],"stats":{"ex":1731,"groups":1363,"login":228,"broken":136}}</script>
+  <script>
+  (function(){
+    var d; try { d = JSON.parse(document.getElementById('site-data').textContent); } catch(e) { return; }
+    var st = d.stats;
+    document.getElementById('site-stats').innerHTML =
+      '<div><b>' + st.groups + '</b><span>个站点</span></div>' +
+      '<div><b>' + st.ex + '</b><span>个提取器</span></div>' +
+      '<div><b>' + st.login + '</b><span>个支持账号登录</span></div>' +
+      '<div><b>' + st.broken + '</b><span>个已失效</span></div>';
+    var q = document.getElementById('site-q'), lg = document.getElementById('site-login'), hb = document.getElementById('site-hide-broken');
+    var tb = document.getElementById('site-rows'), cnt = document.getElementById('site-count');
+    function esc(t){ return t.replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+    function render(){
+      var k = q.value.trim().toLowerCase(), out = [], n = 0;
+      for (var i = 0; i < d.rows.length; i++) {
+        var r = d.rows[i];
+        if (lg.checked && !r[2]) continue;
+        if (hb.checked && r[3]) continue;
+        if (k && (r[0] + ' ' + r[1]).toLowerCase().indexOf(k) < 0) continue;
+        n++;
+        out.push('<tr' + (r[3] ? ' class="broken"' : '') + '><td class="mono">' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td><td>' + (r[2] ? '<span class="yes">可登录</span>' : '') + '</td><td>' + (r[3] ? '<span class="sev l">已失效</span>' : '') + '</td></tr>');
+      }
+      tb.innerHTML = out.join('') || '<tr><td colspan="4" class="mute">没有匹配的站点。yt-dlp 的通用提取器仍可能支持，最终以实际解析为准。</td></tr>';
+      cnt.textContent = '显示 ' + n + ' / ' + d.rows.length;
+    }
+    q.addEventListener('input', render); lg.addEventListener('change', render); hb.addEventListener('change', render);
+    render();
+  })();
+  </script>
+
+  <h2 id="phases">13. 分阶段计划</h2>
+  <p>按 1 名开发估算，约 24–27 周（6 个月左右）。每阶段单独开合并请求，前一阶段合并后再开始下一阶段。建议阶段 4 完成后发布 1.0（通用下载器），订阅追更为 1.1，直播录制为 1.2。</p>
+  <div class="phases">
+    <div class="phase"><span class="when">阶段 1 · 2–3 周</span><h3>加固现有程序</h3>
+      <ul><li>五个平台真实链接实测，用真实响应替换测试样本；加入“录制样本”调试功能</li><li>修复审查中的问题：重复入队、速度虚高、暂停延迟、Windows 文件名、快捷键错误提示、同步命令</li><li>断点续传加固：任务存数据库并在启动时恢复；If-Range 与 Content-Range 校验；直链过期后保留已下载部分；暂停立即生效</li><li>日志文件与“复制诊断信息”；错误分类的第一版</li><li>Cookie 按条存储、按域名匹配（不再发给 CDN）、加密存储；cookies.txt 导入</li></ul>
+      <div class="done">验收：审查表里的“高”“中”级问题全部关闭（数据模型那项留给阶段 2）；下载到一半强制结束程序，重启后能从断点继续；每个平台 10 条真实链接解析成功率不低于 90%。</div></div>
+    <div class="phase"><span class="when">阶段 2 · 4 周</span><h3>通用内核</h3>
+      <ul><li>新数据模型（多格式、播放列表、剧集、按资源的请求头），现有解析器迁移过去</li><li>多步骤任务（下载 → 合并 → 后处理），每一步都可恢复</li><li>下载引擎抽象：HTTP 单线程、分段多线程（按段续传）</li><li>网络分流规则、代理、限速；按网站限制并发和频率</li><li>磁盘空间检查、临时目录、文件冲突策略</li><li>Cookie 多账号、登录状态检测、过期提醒、“需要登录”时的引导</li></ul>
+      <div class="done">验收：现有功能不退化；可选清晰度；国内平台直连、海外网站走代理同时工作。</div></div>
+    <div class="phase"><span class="when">阶段 3 · 4–5 周</span><h3>通用下载能力</h3>
+      <ul><li>组件清单、国内镜像、yt-dlp 和 ffmpeg 的按需下载、校验、更新与回退、手动导入</li><li>yt-dlp 解析接入（调用安全措施同步落实），原生失败时自动兜底</li><li>m3u8 下载器（按分片续传、广告分片过滤）、DASH 分轨续传与合并、只下音频</li><li>画质预设与 H.264 优先；短剧按集批量下载与剧集命名</li><li>通用网页嗅探；B站 DASH 高清</li><li>yt-dlp 的临时 cookies 文件与 Cookie 回写</li><li>Pixiv 原生插件（作品、多图、动图合成、R-18 登录）</li><li>从 <code>yt-dlp --list-extractors</code> 生成“支持的网站”页面</li></ul>
+      <div class="done">验收：YouTube、Pornhub、B站 1080P、Pixiv 多图和动图、典型 m3u8 短剧页都能正常下载；在国内网络下首次使用能顺利装好 yt-dlp 和 ffmpeg。</div></div>
+    <div class="phase"><span class="when">阶段 4 · 3–4 周</span><h3>体验细节 → 发布 1.0</h3>
+      <ul><li>格式选择界面、合集 / 剧集勾选、拖拽导入、剪贴板白名单</li><li>手机发链接到电脑（局域网服务、配对、iPhone 快捷指令模板）</li><li>媒体库封面缓存、筛选、重新下载；整理功能（自动建文件夹、元数据、信息文件、NFO）</li><li>下载完成动作、队列排序、定时下载、阻止休眠</li><li>大量数据时的性能（虚拟滚动、索引）；平台健康检查；便携版</li></ul>
+      <div class="done">验收：手机分享链接到电脑 5 秒内开始下载；1000 条任务时界面流畅。</div></div>
+    <div class="phase"><span class="when">阶段 5 · 3 周</span><h3>订阅与追更 → 1.1</h3>
+      <ul><li>订阅数据表、检查调度（随机间隔、补检、按网站限流）、下载档案去重</li><li>各平台列表获取：yt-dlp 平铺列表、B站 / Pixiv 原生接口、抖音主页（隐藏浏览器窗口）</li><li>过滤条件、首次订阅策略、单次下载上限、失败自动暂停</li><li>“订阅”页面与通知；开机自启</li></ul>
+      <div class="done">验收：订阅 10 个不同平台的对象，连续运行 3 天，新内容全部按时下载且没有重复。</div></div>
+    <div class="phase"><span class="when">阶段 6 · 4–5 周</span><h3>直播录制 → 1.2</h3>
+      <ul><li>开播检测与直播流获取：B站、抖音、快手、斗鱼、虎牙原生实现；其他走 yt-dlp</li><li>录制引擎：FLV / HLS 直接保存、自动分段、断流重连、磁盘空间保护</li><li>录完处理（转 MP4、修正时间戳、合并分段）</li><li>“直播”页面、通知；弹幕录制（P2）</li></ul>
+      <div class="done">验收：同时录制 3 个直播间各 6 小时，中途断网 1 分钟后自动恢复，文件都能正常播放。</div></div>
+    <div class="phase"><span class="when">阶段 7 · 3 周</span><h3>生态与分发</h3>
+      <ul><li>浏览器扩展：一键发送链接 + 一键同步 Cookie，<code>clearclip://</code> 唤起（YouTube 登录依赖这一项，可在阶段 3 之后提前穿插）</li><li>签名自动更新（走国内镜像）、Windows 代码签名、macOS 公证</li><li>上架 winget、Scoop、Homebrew；准备国内下载地址</li><li>解析规则远程更新、多语言、字幕弹幕、图集合成视频</li></ul></div>
+  </div>
+
+  <h3>主要风险</h3>
+  <ul>
+    <li><b>平台风控和改版</b>：通用化不会消除这一点。靠日志、健康检查、样本录制和规则更新尽快发现和修复。</li>
+    <li><b>签名参数</b>：抖音主页列表、斗鱼和虎牙直播流都需要计算签名，平台调整后要尽快跟进；订阅和直播是最容易失效的部分。</li>
+    <li><b>外部程序</b>：yt-dlp 和 ffmpeg 的版本差异、杀毒软件误报都要处理；镜像需要持续同步。</li>
+    <li><b>账号风险</b>：用登录 Cookie 大量下载或频繁检查订阅可能导致账号被标记或封禁；程序按网站限流并明确提示。</li>
+    <li><b>后台资源</b>：订阅检查和直播录制要求程序常驻，需控制内存、网络和磁盘占用。</li>
+    <li><b>合规</b>：保持免责声明；不做 DRM 破解、会员内容绕过、直播转推；批量采集默认关闭。</li>
+    <li><b>体积</b>：程序本体约 10 MB；加上 yt-dlp 和 ffmpeg 后磁盘占用约 100–150 MB，直播录像另计。</li>
+  </ul>
+
+  <h2 id="quality">14. 质量与维护</h2>
+  <h3>每阶段的验收方式</h3>
+  <ul>
+    <li>每个阶段的“验收”写在上面的计划里，用真实链接、真实直播间和模拟服务器两类测试共同验证；合并前在 Windows、macOS、Linux 各跑一遍主要流程。</li>
+    <li>CI 继续跑格式检查、代码检查、单元测试、前端构建；新增模拟服务器上的断点续传、m3u8、订阅调度测试。</li>
+  </ul>
+  <h3>解析器维护流程</h3>
+  <ul>
+    <li><b>录制样本</b>：程序里的调试功能，把出问题链接的页面和接口响应去掉 Cookie 等隐私信息后保存，直接作为回归测试样本。</li>
+    <li><b>定期巡检</b>：每天用一组真实链接和直播间自动检查各平台。GitHub 的服务器在海外，国内平台的巡检放在国内机器上运行（自建运行器或定时任务），结果汇总到一个看板。</li>
+    <li><b>快速修复</b>：巡检失败时先尝试远程规则更新；需要改代码的问题发布补丁版本，通过签名自动更新推送。</li>
+  </ul>
+  <h3>分发</h3>
+  <ul>
+    <li>GitHub Releases + 国内下载地址（同一套组件清单和镜像）。</li>
+    <li>winget、Scoop、Homebrew；Windows 便携版 zip。</li>
+    <li>Windows 代码签名减少“未知发布者”拦截；macOS 签名与公证。</li>
+  </ul>
+</div>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+</body></html>
