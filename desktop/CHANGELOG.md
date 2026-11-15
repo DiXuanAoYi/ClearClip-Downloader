@@ -2,6 +2,11 @@
 
 版本号与 `tauri.conf.json` 一致；每个版本对应一个 `desktop-v<版本>` 的 Release。
 
+## 未发布
+
+### 内部（不改产品行为）
+- 前端工具链：vitest 3 → 5（连带 @vitest/coverage-v8），去掉随 vitest 3 带来的嵌套 vite 7，`npm audit` 不再有 critical；typescript 5.9 → 6.0。vue-tsc 固定在 3.3.13（3.3.14 在模板里含 `//` 的字符串时误报 `.value` 类型错误，上游 vuejs/language-tools#6322、#6352）；typescript 7 暂不能用，因为 vue-tsc 还依赖 TypeScript 的 JS API。
+
 ## 1.16.0（扩展 1.25.0，2026-11-15）
 
 发布日期：2026-11-15。除特别注明外，改动都只在开发环境（Linux、Chromium、单元 / 组件 / 界面测试）里验证过；**没有在真实的 Windows、macOS、WebView2、真实网站和真实浏览器里的扩展上验证**。
