@@ -10,6 +10,23 @@ export default defineConfig({
   // 样式仍在 main.ts 里整份先加载：skin.css 对 .el-* 的覆盖依赖“Element 样式在前”，按需样式会随懒加载块后到而压过皮肤。
   plugins: [vue(), Components({ resolvers: [ElementPlusResolver({ importStyle: false })], dts: false })],
   clearScreen: false,
+  // e2e 与应用首屏都会用到的依赖：显式预构建。不写的话 vite 要等页面请求到才发现它们，边爬边重新优化，
+  // 冷启动慢时 e2e 的就绪探测会被卡住（run.mjs 里还会先跑一次 `vite optimize` 预热）。
+  optimizeDeps: {
+    include: [
+      'vue',
+      'pinia',
+      'element-plus',
+      'element-plus/es',
+      'element-plus/es/locale/lang/zh-cn',
+      'element-plus/es/locale/lang/en',
+      '@tauri-apps/api/core',
+      '@tauri-apps/api/event',
+      '@tauri-apps/api/webview',
+      '@tauri-apps/api/window',
+      '@tauri-apps/plugin-dialog',
+    ],
+  },
   server: {
     port: 1420,
     strictPort: true,
