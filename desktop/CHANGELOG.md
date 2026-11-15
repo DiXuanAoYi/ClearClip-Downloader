@@ -6,6 +6,9 @@
 
 - 依赖升级（无功能变化）：aes 0.9 / cbc 0.2（仅 HLS 分片解密）、sha2 0.11、windows-sys 0.61、tract-onnx 0.23。AES / SHA-256 已用固定向量确认输出与旧版一致，保险箱文件格式不变；Windows 代码只在 Linux 上交叉检查过，真实 OCR 模型没有对比过。
 
+### 内部（不改产品行为）
+- 前端工具链：vitest 3 → 5（连带 @vitest/coverage-v8），去掉随 vitest 3 带来的嵌套 vite 7，`npm audit` 不再有 critical；typescript 5.9 → 6.0。vue-tsc 固定在 3.3.13（3.3.14 在模板里含 `//` 的字符串时误报 `.value` 类型错误，上游 vuejs/language-tools#6322、#6352）；typescript 7 暂不能用，因为 vue-tsc 还依赖 TypeScript 的 JS API。
+
 ## 1.16.0（扩展 1.25.0，2026-11-15）
 
 发布日期：2026-11-15。除特别注明外，改动都只在开发环境（Linux、Chromium、单元 / 组件 / 界面测试）里验证过；**没有在真实的 Windows、macOS、WebView2、真实网站和真实浏览器里的扩展上验证**。
@@ -47,6 +50,7 @@
 - 修复：文稿页勾选“显示在视频上”后字幕层不立即显示。
 - 修复：设置 → BT 与 ed2k 的“立即更新”按钮超出卡片；悬浮窗展开“译”后内容被截断。
 - 修复：`CcSelect` 的“选项超过 8 项自动可搜索”此前没有生效。
+
 
 ### 内部（不改产品行为）
 - 构建工具与依赖升级：vite 7 → 8.3.8、pinia 3 → 4.1.0，以及 GitHub Actions、npm、cargo 的小版本更新。**未验证**：真实 Tauri 窗口 / Windows WebView2 里的运行。
