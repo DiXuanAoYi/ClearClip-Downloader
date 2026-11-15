@@ -39,8 +39,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libdbus-1-dev patchelf
 
-      - uses: dtolnay/rust-toolchain@stable
+      # toolchain 由 desktop/src-tauri/rust-toolchain.toml 固定；targets 必须装到这个固定版本上
+      # （装在 stable 上的 target，进 desktop/ 后 rustup 切到固定版本就看不到了），做法与 desktop-ci 一致。
+      - name: Read pinned Rust version
+        id: rust
+        shell: bash
+        run: echo "version=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' desktop/src-tauri/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.rust.outputs.version }}
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || (matrix.arch == 'arm64' && 'aarch64-pc-windows-msvc' || '') }}
 
       - uses: Swatinem/rust-cache@v2

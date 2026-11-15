@@ -48,6 +48,7 @@
 - 构建工具与依赖升级：vite 7 → 8.3.8、pinia 3 → 4.1.0，以及 GitHub Actions、npm、cargo 的小版本更新。**未验证**：真实 Tauri 窗口 / Windows WebView2 里的运行。
 - 新增前端组件测试（vitest）、命令契约检查（`npm run check:commands`），界面测试端口随机化并可并行。
 - Rust：`rust-version` 改为实际的 1.96；多个超长函数拆分（先补了特征化测试）；31 处持久化吞错改为记录警告日志。
+- 修复发版工作流在固定 Rust 工具链后缺少 mac universal / Windows ARM64 构建目标（targets 现在装到 rust-toolchain.toml 固定的版本上），调试、Windows 测试、依赖审计工作流同步改为用固定版本；不改变产品行为。
 
 ## 1.15.0（扩展 1.24.0）
 
