@@ -21,7 +21,16 @@ jobs:
       - name: npm audit
         working-directory: desktop
         run: npm audit --audit-level=high
-      - uses: dtolnay/rust-toolchain@stable
+      # toolchain 由 desktop/src-tauri/rust-toolchain.toml 固定；targets 必须装到这个固定版本上
+      # （装在 stable 上的 target，进 desktop/ 后 rustup 切到固定版本就看不到了），做法与 desktop-ci 一致。
+      - name: Read pinned Rust version
+        id: rust
+        shell: bash
+        run: echo "version=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' desktop/src-tauri/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust.outputs.version }}
       - name: cargo audit
         working-directory: desktop/src-tauri
         run: |
