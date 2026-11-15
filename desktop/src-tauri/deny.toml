@@ -22,13 +22,6 @@ ignore = [
   "RUSTSEC-2026-0293",
   # rsa 的 Marvin 时序侧信道：来自 SFTP 用的 russh，需要精确测量本机计时；上游还没有修复版本。
   "RUSTSEC-2023-0071",
-  # tract-nnef 解析 NNEF 张量时整数溢出：清影只加载 ONNX 模型，不会解析 NNEF 文件。
-  "RUSTSEC-2026-0217",
-  # zip 4.6.1 的 4 条（都是 `ZipArchive::extract`）：只来自 tauri-plugin-updater，解压的是已验签的更新包。
-  "RUSTSEC-2026-0367",
-  "RUSTSEC-2026-0368",
-  "RUSTSEC-2026-0369",
-  "RUSTSEC-2026-0429",
 ]
 
 [licenses]
