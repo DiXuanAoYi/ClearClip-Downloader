@@ -259,7 +259,7 @@ pub async fn ml_model_download(app: AppHandle, state: St<'_>, id: String, url: O
         return Err(fail(m));
     }
     if let Some(want) = sha256.map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()) {
-        let have = format!("{:x}", hasher.finalize());
+        let have = hex::encode(hasher.finalize());
         if have != want {
             return Err(fail(format!("校验不一致（应为 {want}，实际 {have}）。文件可能损坏或被替换。")));
         }

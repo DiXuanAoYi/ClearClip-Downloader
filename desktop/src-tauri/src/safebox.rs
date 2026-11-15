@@ -542,6 +542,14 @@ mod tests {
         d
     }
 
+    /// 文件密钥派生（SHA-256）的固定向量：旧版保险箱文件靠它解密，升级 sha2 后输出必须逐字节一致。
+    /// 期望值由 Python hashlib 独立算出。
+    #[test]
+    fn file_key_derivation_is_pinned() {
+        let master: [u8; 32] = std::array::from_fn(|i| i as u8);
+        assert_eq!(hex::encode(file_key(&master, "file-0001")), "1e6fe82e18ef4f36c2b5c6ba5942e0e5f6f2434ce7c2e0d3f8adabd07045fb6a");
+    }
+
     fn sample(len: usize) -> Vec<u8> {
         (0..len).map(|i| (i * 31 % 251) as u8).collect()
     }

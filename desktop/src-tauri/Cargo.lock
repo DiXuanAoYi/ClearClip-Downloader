@@ -1146,7 +1146,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha1 0.10.7",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "tar",
  "tauri",
  "tauri-build",
