@@ -1,13 +1,14 @@
 //! tract 的真实实现。
 
 use std::path::Path;
+use std::sync::Arc;
 
 use tract_onnx::prelude::*;
 use tract_onnx::tract_hir::infer::Factoid;
 
 use crate::error::{AppError, AppResult};
 
-type Plan = TypedSimplePlan<TypedModel>;
+type Plan = Arc<TypedSimplePlan>;
 
 pub struct Net {
     plan: Plan,
@@ -78,7 +79,7 @@ impl Net {
         let t = Tensor::from_shape(shape, &data).map_err(|e| err("输入形状不对", e))?;
         let out = self.plan.run(tvec!(t.into())).map_err(|e| err("模型运行失败", e))?;
         let o = out.first().ok_or_else(|| AppError::msg("模型没有输出"))?;
-        let v = o.to_array_view::<f32>().map_err(|e| err("模型输出不是 f32", e))?;
+        let v = o.to_plain_array_view::<f32>().map_err(|e| err("模型输出不是 f32", e))?;
         Ok((v.shape().to_vec(), v.iter().copied().collect()))
     }
 }
