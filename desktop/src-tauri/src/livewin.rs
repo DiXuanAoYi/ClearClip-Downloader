@@ -152,7 +152,8 @@ mod win {
     }
 
     pub fn list_windows() -> Vec<WinInfo> {
-        use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
+        use windows_sys::core::BOOL;
+        use windows_sys::Win32::Foundation::{HWND, LPARAM};
         use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
         use windows_sys::Win32::System::Threading::GetCurrentProcessId;
         use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible};
