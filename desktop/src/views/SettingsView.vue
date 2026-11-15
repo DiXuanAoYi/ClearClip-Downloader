@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import PageHead from '../components/ui/PageHead.vue'
 import { ElMessage } from 'element-plus'
 import { errorText } from '../api'
 import { useAppStore } from '../stores/app'
@@ -99,11 +100,7 @@ async function save() {
 
 <template>
   <div class="dpage page">
-    <div class="dtop">
-      <h1>设置</h1>
-      <span class="dspacer" />
-      <span class="chip" :class="{ cyan: !saving }" role="status" aria-live="polite"><i v-if="!saving" class="ddot" />{{ saving ? '保存中…' : '已自动保存' }}</span>
-    </div>
+    <PageHead title="设置" />
 
     <div class="dsplit2">
       <aside class="cats dsticky" aria-label="设置分类">
@@ -119,6 +116,8 @@ async function save() {
       <section class="setmain" :aria-label="`${catLabel}设置`">
         <div class="dtoolbar sethead">
           <h2>{{ catLabel }}</h2>
+          <span class="dspacer" />
+          <span class="chip" :class="{ cyan: !saving }" role="status" aria-live="polite"><i v-if="!saving" class="ddot" />{{ saving ? '保存中…' : '已自动保存' }}</span>
         </div>
     <el-tabs v-model="app.settingsTab" class="hidetabs">
       <el-tab-pane label="下载" name="download">

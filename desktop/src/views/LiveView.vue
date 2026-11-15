@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import PageHead from '../components/ui/PageHead.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -154,16 +155,14 @@ const REC_STATUS: Record<string, string> = { recording: '录制中', done: '已�
 
 <template>
   <div class="dpage page">
-    <div class="dtop">
-      <h1>直播</h1>
-      <span class="dspacer" />
-      <span v-if="recordingCount" class="chip acc"><i class="ddot red" />{{ recordingCount }} 路录制中</span>
-    </div>
+    <PageHead title="直播" />
 
     <section class="dpanel">
       <div class="dtoolbar">
         <el-button type="primary" @click="openAdd">添加直播间</el-button>
         <span class="dnote">开播自动录制，下播自动结束。</span>
+        <span class="dspacer" />
+        <span v-if="recordingCount" class="chip acc"><i class="ddot red" />{{ recordingCount }} 路录制中</span>
       </div>
     </section>
 

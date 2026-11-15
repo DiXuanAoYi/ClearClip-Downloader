@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import PageHead from '../components/ui/PageHead.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -245,11 +246,7 @@ const ITEM_STATUS: Record<string, string> = { seen: '订阅前已发布', pendin
 
 <template>
   <div class="dpage page">
-    <div class="dtop">
-      <h1>订阅</h1>
-      <span class="dspacer" />
-      <span v-if="app.settings?.subscriptionsEnabled" class="chip cyan"><i class="ddot" />订阅已开启 · 托盘运行</span>
-    </div>
+    <PageHead title="订阅" />
 
     <section v-if="!app.settings?.subscriptionsEnabled" class="dpanel intro">
       <div class="dpanel-h"><h2>订阅与追更</h2></div>
@@ -267,6 +264,8 @@ const ITEM_STATUS: Record<string, string> = { seen: '订阅前已发布', pendin
         <div class="dtoolbar">
           <el-button type="primary" @click="openAdd">添加订阅</el-button>
           <span class="dnote">关注频道、UP 主、画师、合集，有新内容自动下载。每个订阅单独设置检查间隔、过滤条件、清晰度和保存位置。</span>
+          <span class="dspacer" />
+          <span class="chip cyan"><i class="ddot" />订阅已开启 · 托盘运行</span>
         </div>
       </section>
       <div class="dsplit">

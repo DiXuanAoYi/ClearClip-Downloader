@@ -15,6 +15,7 @@ import ClipPicker from '../components/ClipPicker.vue'
 import PlaylistPicker from '../components/PlaylistPicker.vue'
 import BatchWorkspace from '../components/BatchWorkspace.vue'
 import BatchList from '../components/BatchList.vue'
+import PageHead from '../components/ui/PageHead.vue'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { useTauriEvents } from '../composables/useTauriEvent'
 import { toastErr } from '../utils/toastErr'
@@ -774,17 +775,14 @@ function recentKind(r: HistoryItem) {
 
 <template>
   <div class="dpage page">
-    <div class="dtop">
-      <h1>解析</h1>
-      <span class="dspacer" />
-      <span v-if="app.settings?.watchClipboard" class="chip cyan"><i class="ddot" />剪贴板监听中</span>
-      <span v-else class="chip">剪贴板监听已关闭</span>
-    </div>
+    <PageHead title="解析" />
     <!-- 单个解析 / 批量下载 -->
     <div class="modes" role="tablist">
       <button type="button" role="tab" :class="{ on: app.homeMode === 'single' }" :aria-selected="app.homeMode === 'single'" @click="setMode('single')">单个解析</button>
       <button type="button" role="tab" :class="{ on: app.homeMode === 'batch' }" :aria-selected="app.homeMode === 'batch'" @click="setMode('batch')">批量下载</button>
       <span class="mute modes-hint">{{ app.homeMode === 'single' ? '粘贴多条链接会自动切到“批量下载”' : '粘贴多条链接、导入 .txt / .csv，去重预览后统一加入队列' }}</span>
+      <span v-if="app.settings?.watchClipboard" class="clipstat on" role="status" title="剪贴板监听中"><i class="ddot" /><span class="clipstat-t">剪贴板监听中</span></span>
+      <span v-else class="clipstat" role="status" title="剪贴板监听已关闭"><i class="ddot" /><span class="clipstat-t">剪贴板监听已关闭</span></span>
     </div>
 
     <!-- 粘贴栏 -->
@@ -1947,7 +1945,42 @@ function recentKind(r: HistoryItem) {
 .modes-hint {
   margin-left: 10px;
   font-size: 12.5px;
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.modes button {
+  flex: none;
+  white-space: nowrap;
+}
+/* 剪贴板监听状态：在分段控件同一行的最右边；极窄时收成一个状态点（文字在 tooltip 里） */
+.clipstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  margin-left: auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--cc-line-strong);
+  color: var(--cc-mute);
+  font-family: var(--cc-mono);
+  font-size: 11.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.clipstat.on {
+  border-color: var(--cc-cyan-line);
+  background: var(--cc-cyan-soft);
+  color: var(--cc-cyan);
+}
+@media (max-width: 720px) {
+  .clipstat { padding: 6px; }
+  .clipstat-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+.clipstat:not(.on) .ddot { background: var(--cc-faint); box-shadow: none; }
 .bpaste {
   display: flex;
   gap: 8px;

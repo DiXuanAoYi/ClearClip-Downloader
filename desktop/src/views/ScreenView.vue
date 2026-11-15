@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import PageHead from '../components/ui/PageHead.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { open, save as saveDialog } from '@tauri-apps/plugin-dialog'
@@ -411,12 +412,10 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 
 <template>
   <div class="scr dpage">
-    <header class="head dtop">
-      <h1>屏幕翻译</h1>
-      <span class="dspacer" />
+    <PageHead title="屏幕翻译">
+      <p class="sub dnote dgrow one">翻译别的软件和游戏画面上的文字。译文贴在原位，不挡鼠标，也不会被自己再识别一遍。</p>
       <span class="chip" :class="{ cyan: st.running }"><i v-if="st.running" class="ddot" />{{ st.running ? `运行中 · ${modeName(st.mode)}` : '未运行' }}<template v-if="st.msg"> · {{ st.msg }}</template></span>
-    </header>
-    <p class="sub dnote">翻译别的软件和游戏画面上的文字。译文贴在原位，不挡鼠标，也不会被自己再识别一遍。</p>
+    </PageHead>
 
     <el-alert v-if="!st.supported" type="info" :closable="false" show-icon title="屏幕翻译目前只支持 Windows。其他系统暂时不能用。" />
 
@@ -764,10 +763,8 @@ const modeName = (m: string) => MODES.find((x) => x.id === m)?.name ?? m
 </template>
 
 <style scoped>
+.sub { color: var(--cc-mute); font-size: 13px }
 .scr { height: 100%; overflow-y: auto; box-sizing: border-box }
-.head { display: flex; align-items: center; gap: 20px; flex-wrap: wrap }
-.head h2 { margin: 0 }
-.sub { margin: 4px 0 0; color: var(--cc-mute); font-size: 13px }
 .state { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 13px }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cc-faint) }
 .dot.on { background: var(--cc-cyan) }
