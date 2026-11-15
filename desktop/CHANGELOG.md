@@ -2,6 +2,10 @@
 
 版本号与 `tauri.conf.json` 一致；每个版本对应一个 `desktop-v<版本>` 的 Release。
 
+## 未发布
+
+- 依赖升级（无功能变化）：aes 0.9 / cbc 0.2（仅 HLS 分片解密）、sha2 0.11、windows-sys 0.61、tract-onnx 0.23。AES / SHA-256 已用固定向量确认输出与旧版一致，保险箱文件格式不变；Windows 代码只在 Linux 上交叉检查过，真实 OCR 模型没有对比过。
+
 ## 1.16.0（扩展 1.25.0，2026-11-15）
 
 发布日期：2026-11-15。除特别注明外，改动都只在开发环境（Linux、Chromium、单元 / 组件 / 界面测试）里验证过；**没有在真实的 Windows、macOS、WebView2、真实网站和真实浏览器里的扩展上验证**。
