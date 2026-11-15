@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use aes::cipher::{block_padding::Pkcs7, BlockModeDecrypt, KeyIvInit};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{watch, Semaphore};
 use url::Url;
@@ -213,7 +213,7 @@ pub fn segment_dir(part: &Path) -> PathBuf {
 }
 
 fn decrypt(data: &[u8], key: &[u8; 16], iv: &[u8; 16]) -> Result<Vec<u8>, DlError> {
-    Aes128CbcDec::new(key.into(), iv.into()).decrypt_padded_vec_mut::<Pkcs7>(data).map_err(|_| DlError::Other("分片解密失败，密钥可能不正确".into()))
+    Aes128CbcDec::new(key.into(), iv.into()).decrypt_padded_vec::<Pkcs7>(data).map_err(|_| DlError::Other("分片解密失败，密钥可能不正确".into()))
 }
 
 /// 获取媒体播放列表：如果是主播放列表，选码率最高的子流。
@@ -394,7 +394,7 @@ fn estimate(bytes: u64, done: u64, total: u64) -> Option<u64> {
 mod tests {
     use super::*;
     use crate::engine::{CTRL_PAUSE, CTRL_RUN};
-    use aes::cipher::BlockEncryptMut;
+    use aes::cipher::BlockModeEncrypt;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
@@ -408,7 +408,7 @@ mod tests {
     fn encrypted(i: usize, seq: u64) -> Vec<u8> {
         let mut iv = [0u8; 16];
         iv[8..].copy_from_slice(&seq.to_be_bytes());
-        Aes128CbcEnc::new(&KEY.into(), &iv.into()).encrypt_padded_vec_mut::<Pkcs7>(&plain(i))
+        Aes128CbcEnc::new(&KEY.into(), &iv.into()).encrypt_padded_vec::<Pkcs7>(&plain(i))
     }
 
     /// /master.m3u8 → /v/media.m3u8（相对地址、AES-128、媒体序号从 10 开始）；/ads.m3u8 含另一主机的广告段；
@@ -472,6 +472,22 @@ mod tests {
         let (_tx, mut rx) = watch::channel(CTRL_RUN);
         let opts = HlsOptions { concurrency: 3, skip_ads, ..Default::default() };
         download(&client(), &HttpRequest::new(url), part, &mut rx, &opts, |_, _| {}).await
+    }
+
+    /// NIST SP 800-38A F.2.1 的 AES-128-CBC 标准向量：已知明文 → 固定密文，与 aes/cbc 的版本无关，
+    /// 用来保证升级 aes/cbc 后加解密结果不变（HLS 分片按这个算法解密）。
+    #[test]
+    fn aes128_cbc_nist_vector() {
+        let key: [u8; 16] = hex::decode("2b7e151628aed2a6abf7158809cf4f3c").unwrap().try_into().unwrap();
+        let iv: [u8; 16] = hex::decode("000102030405060708090a0b0c0d0e0f").unwrap().try_into().unwrap();
+        let plain =
+            hex::decode("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710")
+                .unwrap();
+        let nist_ct = "7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b273bed6b8e3c1743b7116e69e222295163ff1caa1681fac09120eca307586e1a7";
+        let ct = Aes128CbcEnc::new(&key.into(), &iv.into()).encrypt_padded_vec::<Pkcs7>(&plain);
+        assert_eq!(hex::encode(&ct[..64]), nist_ct);
+        assert_eq!(ct.len(), 80);
+        assert_eq!(decrypt(&ct, &key, &iv).unwrap(), plain);
     }
 
     #[test]
