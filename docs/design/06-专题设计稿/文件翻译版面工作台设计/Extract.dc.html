@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 从原页提取颜色</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1360px; height: 780px; box-sizing: border-box; padding: 24px; display: flex; gap: 28px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<section aria-label="原页与吸管" style="width: 560px; flex: none; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><strong style="font-size: 15px">原页取色：吸管 + 取色点</strong><span style="font-size: 12px; font-weight: 600; color: #2457e6; background: #eaf0ff; border: 1px solid #c3d3fb; padding: 1px 8px; border-radius: 10px">取色中</span></div>
+<div style="position: relative; width: 520px; height: 640px; box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25)">
+<dc-import name="Page" lang="en" hint-size="520px,640px"></dc-import>
+<div style="position: absolute; left: 36px; top: 112px; width: 440px; height: 112px; border: 2px dashed #3b82f6; box-sizing: border-box; border-radius: 4px"></div>
+<span style="position: absolute; left: 36px; top: 90px; font-size: 11px; font-weight: 600; color: #ffffff; background: #3b82f6; padding: 1px 8px; border-radius: 4px 4px 0 0">取色范围（拖框选区域）</span>
+<sc-for list="{{markers}}" as="m" hint-placeholder-count="5">
+<div style="{{m.style}}">{{m.n}}</div>
+</sc-for>
+<div style="position: absolute; left: 244px; top: 36px; width: 150px; display: flex; flex-direction: column; align-items: center; gap: 4px">
+<div style="width: 112px; height: 112px; border-radius: 56px; overflow: hidden; border: 3px solid #ffffff; box-shadow: 0 0 0 1px #1d2433, 0 6px 18px rgba(0, 0, 0, 0.45); box-sizing: border-box"><div style="display: grid; grid-template-columns: repeat(9, 1fr); width: 100%; height: 100%">
+<sc-for list="{{cells}}" as="c" hint-placeholder-count="81"><div style="{{c}}"></div></sc-for>
+</div></div>
+<div style="padding: 2px 8px; border-radius: 6px; background: #1d2433; color: #ffffff; font: 11px ui-monospace, Menlo, Consolas, monospace">#D4A5A5</div>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 14px; color: #6b7385; font-size: 12px"><span><b style="color: #1d2433">单击</b> 取色</span><span><b style="color: #1d2433">Esc</b> 取消</span><span><b style="color: #1d2433">方向键</b> 微调 1 像素</span><span><b style="color: #1d2433">Shift / Alt</b> 取 5×5 / 9×9 平均</span></div>
+</section>
+
+<section style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+<div style="background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 10px"><strong style="font-size: 15px">从原页提取一组颜色</strong><span style="color: #6b7385">一次得到 5 个，对着原页上的圆点</span></div>
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><span style="color: #6b7385">范围</span>
+<div style="display: flex; border: 1px solid #cfd5e0; border-radius: 8px; overflow: hidden"><span style="padding: 5px 12px; background: #ffffff; border-right: 1px solid #cfd5e0">整页</span><span style="padding: 5px 12px; background: #ffffff; border-right: 1px solid #cfd5e0">选中块周围</span><span style="padding: 5px 12px; background: #eaf0ff; color: #2457e6; font-weight: 600">框选区域</span></div>
+<span style="color: #6b7385; margin-left: 10px">风格</span>
+<div style="display: flex; border: 1px solid #cfd5e0; border-radius: 8px; overflow: hidden"><span style="padding: 5px 10px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">自动</span><span style="padding: 5px 10px; background: #ffffff; border-right: 1px solid #cfd5e0">多彩</span><span style="padding: 5px 10px; background: #ffffff; border-right: 1px solid #cfd5e0">明亮</span><span style="padding: 5px 10px; background: #ffffff; border-right: 1px solid #cfd5e0">柔和</span><span style="padding: 5px 10px; background: #ffffff; border-right: 1px solid #cfd5e0">深色</span><span style="padding: 5px 10px; background: #ffffff">暗</span></div></div>
+<div style="display: flex; gap: 10px">
+<sc-for list="{{swatches}}" as="s" hint-placeholder-count="5">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+<div style="position: relative; height: 88px; border-radius: 10px; border: 1px solid #cfd5e0; box-sizing: border-box; background: {{s.hex}}"><span style="position: absolute; left: 6px; top: 6px; width: 18px; height: 18px; border-radius: 9px; background: #1d2433; color: #ffffff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{s.n}}</span></div>
+<div style="font: 12px ui-monospace, Menlo, Consolas, monospace; text-align: center">{{s.hex}}</div>
+<div style="font-size: 11px; color: #6b7385; text-align: center">{{s.share}}</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<button style="height: 24px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; font: inherit; font-size: 12px">设为文字色</button>
+<button style="height: 24px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; font: inherit; font-size: 12px">设为背景色</button>
+</div>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; align-items: center; gap: 8px"><button style="height: 30px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; font: inherit">全部加入自定义颜色</button><button style="height: 30px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; font: inherit">复制为色值列表</button><span style="flex: 1"></span><span style="color: #6b7385; font-size: 12px">圆点可以拖动，颜色跟着变</span></div>
+</div>
+
+<div style="background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 10px"><strong style="font-size: 15px">从原页取一条渐变，给“渐变背景”用</strong></div>
+<div style="color: #4a5367; line-height: 1.6">原页上这块的背景如果是渐变，纯色会显得“贴了一块补丁”。在原页上拖一条取样线，沿线取 3–5 个颜色，生成渐变。</div>
+<div style="position: relative; height: 56px; border-radius: 10px; border: 1px solid #cfd5e0; box-sizing: border-box; background: linear-gradient(to right, #5b2f48 0%, #653450 35%, #703a58 70%, #7a4560 100%)">
+<span style="position: absolute; left: 0%; bottom: -9px; margin-left: -7px; width: 14px; height: 14px; border-radius: 7px; border: 2px solid #ffffff; box-shadow: 0 0 0 1px #1d2433; background: #5b2f48; box-sizing: border-box"></span>
+<span style="position: absolute; left: 35%; bottom: -9px; margin-left: -7px; width: 14px; height: 14px; border-radius: 7px; border: 2px solid #ffffff; box-shadow: 0 0 0 1px #1d2433; background: #653450; box-sizing: border-box"></span>
+<span style="position: absolute; left: 70%; bottom: -9px; margin-left: -7px; width: 14px; height: 14px; border-radius: 7px; border: 2px solid #ffffff; box-shadow: 0 0 0 1px #1d2433; background: #703a58; box-sizing: border-box"></span>
+<span style="position: absolute; left: 100%; bottom: -9px; margin-left: -7px; width: 14px; height: 14px; border-radius: 7px; border: 2px solid #ffffff; box-shadow: 0 0 0 1px #1d2433; background: #7a4560; box-sizing: border-box"></span>
+</div>
+<div style="height: 6px"></div>
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><span style="color: #6b7385">方向</span>
+<div style="display: flex; border: 1px solid #cfd5e0; border-radius: 8px; overflow: hidden"><span style="padding: 5px 12px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">左 → 右</span><span style="padding: 5px 12px; background: #ffffff; border-right: 1px solid #cfd5e0">上 → 下</span><span style="padding: 5px 12px; background: #ffffff">自定义角度</span></div>
+<span style="color: #6b7385; margin-left: 10px">色标 4 个</span><button style="height: 26px; padding: 0 10px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; font: inherit; font-size: 12px">＋ 加一个</button><span style="flex: 1"></span>
+<button style="height: 30px; padding: 0 14px; border: 0; border-radius: 6px; background: #2457e6; color: #ffffff; font: inherit; font-weight: 600">设为所选块的背景渐变</button></div>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":780}}'>
+class Component extends DCLogic {
+renderVals() {
+const bg = [91, 47, 72], rose = [212, 165, 165];
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const css = (c) => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+const cells = [];
+for (let y = 0; y < 9; y++) for (let x = 0; x < 9; x++) {
+  const t = y < 4 ? 0 : y === 4 ? 0.5 : 1;
+  cells.push('background:' + css(mix(bg, rose, t)) + ';box-sizing:border-box;' + (x === 4 && y === 4 ? 'outline:2px solid #fff;outline-offset:-2px;box-shadow:inset 0 0 0 3px #1d2433;' : 'border:1px solid rgba(255,255,255,0.08);'));
+}
+const pts = [[90, 164], [188, 164], [286, 164], [140, 60], [24, 600]];
+const markers = pts.map(([x, y], i) => ({ n: i + 1, style: 'position:absolute;left:' + (x - 10) + 'px;top:' + (y - 10) + 'px;width:20px;height:20px;border-radius:10px;border:2px solid #ffffff;box-shadow:0 0 0 1px #1d2433;background:#1d2433;color:#ffffff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;box-sizing:border-box' }));
+const swatches = [['#D4A5A5', '14%'], ['#B87D6D', '9%'], ['#E8D5C4', '8%'], ['#5B2F48', '58%'], ['#7A4560', '4%']].map(([hex, share], i) => ({ n: i + 1, hex, share: '占 ' + share }));
+return { cells, markers, swatches };
+}
+}
+</script>
+</body>
+</html>

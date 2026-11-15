@@ -1,0 +1,338 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>摘要面板其余标签设计稿</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 布局：说明 + 统一规则，然后六张侧栏样机（章节、文稿、导图、问答、笔记、更多）排成自适应网格；每张样机下面一行改动说明。沿用摘要页的橙棕强调色和偏绿的灰。 */
+:root {
+  --bg: #f3f4f1; --fg: #1d2420; --mute: #5d6862; --line: #dde1dc; --acc: #b4561a; --acc-2: #d9762b; --acc-tint: #d9762b1a;
+  --surface: #ffffff; --panel: #fbfaf8; --warn-bg: #fff4e5; --warn-line: #f0c98e; --ok: #2f7a4d; --hit: #ffe066; --hit-fg: #1b1f1d;
+  --shadow: 0 10px 30px #1d242018;
+  --ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131815; --fg: #eef1ee; --mute: #9aa6a0; --line: #2f3833; --acc: #f0a064; --acc-2: #e28a45; --acc-tint: #e28a4524;
+    --surface: #262f2a; --panel: #1d2420; --warn-bg: #3a2f1e; --warn-line: #6b5530; --ok: #6cc08a; --shadow: 0 10px 30px #0008; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131815; --fg: #eef1ee; --mute: #9aa6a0; --line: #2f3833; --acc: #f0a064; --acc-2: #e28a45; --acc-tint: #e28a4524;
+  --surface: #262f2a; --panel: #1d2420; --warn-bg: #3a2f1e; --warn-line: #6b5530; --ok: #6cc08a; --shadow: 0 10px 30px #0008; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.6 var(--ui); padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 56px; }
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 34px; }
+header.top { display: flex; gap: 16px; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; }
+h1 { margin: 0 0 4px; font-size: 26px; text-wrap: balance; }
+.sub { margin: 0; color: var(--mute); max-width: 56ch; }
+.theme { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.theme button { border: 0; background: transparent; color: var(--mute); padding: 5px 14px; font: inherit; cursor: pointer; }
+.theme button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+button:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+h2.big { margin: 0 0 12px; font-size: 18px; }
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px 26px; }
+.rules h3 { margin: 0 0 2px; font-size: 14px; }
+.rules p { margin: 0; color: var(--mute); }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--acc); margin-right: 6px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 40px 28px; align-items: start; }
+.item h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .08em; color: var(--mute); }
+.item .note { margin: 10px auto 0; max-width: 380px; color: var(--mute); font-size: 13px; }
+
+/* ---- 共用的侧栏外壳（所有标签都是这一套）---- */
+.panel { width: 100%; max-width: 380px; height: 640px; margin-inline: auto; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; font-size: 13px; line-height: 1.6; position: relative; }
+.p-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 4px; }
+.p-head .t { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ibtn { border: 1px solid var(--line); background: var(--surface); color: var(--mute); border-radius: 6px; padding: 1px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+.p-meta { padding: 0 10px 6px; color: var(--mute); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+.p-tabs { display: flex; border-bottom: 1px solid var(--line); }
+.p-tabs span { flex: 1; text-align: center; padding: 6px 0; color: var(--mute); border-bottom: 2px solid transparent; font-size: 12.5px; }
+.p-tabs span.on { color: var(--acc); border-bottom-color: var(--acc); font-weight: 700; }
+.p-body { flex: 1; min-height: 0; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 12px; }
+.p-foot { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 10px; display: flex; gap: 6px; }
+.mute { color: var(--mute); font-size: 12px; }
+
+/* 共用小部件 */
+.pbtn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 6px; padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.pbtn.main { background: var(--acc); color: var(--bg); border-color: var(--acc); }
+.pbtn.grow { flex: 1; }
+.seg { display: flex; gap: 2px; padding: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.seg span { flex: 1; text-align: center; padding: 2px 8px; border-radius: 6px; color: var(--mute); font-size: 12.5px; white-space: nowrap; }
+.seg span.on { background: var(--acc); color: var(--bg); font-weight: 700; }
+.fake-in { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 4px 10px; color: var(--mute); }
+.fake-sel { border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; background: var(--surface); font-size: 12.5px; white-space: nowrap; }
+.row { display: flex; align-items: center; gap: 8px; }
+.tm { background: var(--surface); border: 1px solid var(--line); color: var(--acc); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px; line-height: 20px; padding: 0 6px; border-radius: 6px; flex: none; }
+.sh { display: flex; align-items: baseline; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--mute); margin: 0 0 6px; }
+.sh em { font-style: normal; font-weight: 400; letter-spacing: 0; }
+.quote { border-left: 3px solid var(--acc-2); padding: 2px 0 2px 10px; margin: 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--acc-2); flex: none; }
+.pill { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; background: var(--acc); color: var(--bg); border-radius: 999px; padding: 4px 14px; font-size: 12.5px; box-shadow: var(--shadow); }
+
+/* 章节 */
+.chs { list-style: none; margin: 0; padding: 0; position: relative; display: grid; gap: 2px; }
+.chs::before { content: ""; position: absolute; left: 25px; top: 12px; bottom: 12px; border-left: 1px dashed var(--line); }
+.chs li { display: grid; grid-template-columns: 52px 1fr; gap: 8px; padding: 7px 4px; border-radius: 8px; }
+.chs li.cur { background: var(--acc-tint); }
+.chs li.cur .tm { background: var(--acc); color: var(--bg); border-color: var(--acc); }
+.chs b { display: flex; align-items: center; gap: 6px; line-height: 1.5; }
+.chs .d { display: block; color: var(--mute); }
+.chs .quote { margin-top: 4px; color: var(--mute); font-size: 12.5px; }
+.chs .bar { height: 3px; border-radius: 2px; background: var(--line); margin-top: 6px; overflow: hidden; }
+.chs .bar i { display: block; height: 100%; width: 45%; background: var(--acc-2); }
+
+/* 文稿 */
+.tools-sticky { position: sticky; top: -10px; background: var(--panel); margin: -10px -10px 0; padding: 10px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; z-index: 1; }
+.lines { display: grid; gap: 1px; }
+.ln { display: grid; grid-template-columns: 44px 1fr; gap: 8px; padding: 5px 6px; border-radius: 8px; position: relative; }
+.ln .tm { background: transparent; border-color: transparent; padding: 0; text-align: left; }
+.ln.cur { background: var(--acc-tint); }
+.ln.cur .tm { background: var(--acc); color: var(--bg); border-color: var(--acc); padding: 0 6px; }
+.ln .tr { display: block; color: var(--mute); border-left: 2px solid var(--line); padding-left: 8px; margin-top: 2px; }
+.ln mark { background: var(--hit); color: var(--hit-fg); border-radius: 2px; padding: 0 1px; }
+.ln.hover .add { display: block; }
+.ln .add { display: none; position: absolute; right: 6px; top: 4px; color: var(--acc); border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 0 7px; font-size: 12px; }
+
+/* 导图 */
+.map { position: relative; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.map svg { display: block; width: 100%; height: auto; }
+.map .zoom { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
+.map .hint { position: absolute; left: 10px; bottom: 6px; font-size: 11px; color: var(--mute); }
+.acc { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.acc summary { padding: 8px 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; }
+.acc summary::after { content: "展开 ▾"; color: var(--mute); font-weight: 400; font-size: 12px; }
+.acc pre { margin: 0; padding: 0 10px 10px; font: 12px/1.7 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--mute); white-space: pre-wrap; }
+
+/* 问答 */
+.chat { display: flex; flex-direction: column; gap: 10px; }
+.msg { display: flex; flex-direction: column; gap: 4px; max-width: 92%; }
+.msg.u { align-self: flex-end; align-items: flex-end; }
+.msg .b { padding: 8px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); border-top-left-radius: 4px; }
+.msg.u .b { background: var(--acc); color: var(--bg); border-color: var(--acc); border-top-left-radius: 14px; border-top-right-radius: 4px; }
+.cite { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 8px; font-size: 12px; color: var(--mute); }
+.sugg { display: grid; gap: 6px; }
+.sugg div { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 12px; display: flex; justify-content: space-between; gap: 8px; }
+.sugg div::after { content: "›"; color: var(--acc); }
+.askbar { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
+
+/* 笔记 */
+.ncard { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+.ncard .top { display: flex; align-items: center; gap: 8px; color: var(--mute); font-size: 12px; }
+.ncard .acts { display: flex; gap: 6px; margin-left: auto; }
+.ncard .acts span { color: var(--acc); }
+.ncard p { margin: 0; }
+.tag { display: inline-block; border: 1px solid var(--line); border-radius: 6px; padding: 0 7px; font-size: 12px; line-height: 20px; color: var(--mute); }
+
+/* 更多 */
+.grp { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.grp .gh { padding: 6px 12px; font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--mute); background: var(--panel); border-bottom: 1px solid var(--line); }
+.grp .it { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.grp .it:last-child { border-bottom: 0; }
+.grp .it > div { flex: 1; min-width: 0; }
+.grp .it b { display: block; line-height: 1.4; }
+.grp .it span.d { color: var(--mute); font-size: 12px; }
+.chev { color: var(--mute); }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>摘要面板其余标签设计稿</h1>
+      <p class="sub">章节、文稿、导图、问答、笔记、更多，按“摘要”页的风格统一。内容是示例，点上方切换明暗两套配色。</p>
+    </div>
+    <div class="theme" role="group" aria-label="样机配色">
+      <button type="button" data-t="auto" aria-pressed="true">跟随系统</button>
+      <button type="button" data-t="light" aria-pressed="false">浅色</button>
+      <button type="button" data-t="dark" aria-pressed="false">深色</button>
+    </div>
+  </header>
+
+  <section>
+    <h2 class="big">统一的规则</h2>
+    <div class="rules">
+      <div><h3>同一个外壳</h3><p>标题一行，下面一行小字写时长、字幕来源和段数；原来单独占一行的“重新读取”收进标题右侧的小按钮。7 个标签保持原样。</p></div>
+      <div><h3><span class="swatch"></span>时间都是左边的小标签</h3><p>章节、文稿、要点、引用、笔记里的时间统一成同一种标签。当前播放到的那一条标签变成实心橙色。</p></div>
+      <div><h3>操作放在固定的地方</h3><p>筛选和切换放在顶部，会跟着滚动固定；复制、导出、发送这类动作放在底部栏。</p></div>
+      <div><h3>引用统一用左边竖线</h3><p>金句、原话引用、笔记摘录都用同一种“左侧橙线”样式，一眼知道这是原话。</p></div>
+      <div><h3>空状态写清楚下一步</h3><p>每个空页面用一句话说这里会出现什么，下面给一个主按钮。</p></div>
+      <div><h3>深色模式同步</h3><p>所有颜色走同一组变量，深色下橙色提亮，文字对比度保持。</p></div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <!-- 章节 -->
+    <div class="item">
+      <h2>章节</h2>
+      <div class="panel">
+        <div class="p-head"><span class="t">为什么你总是拖延？大脑如何对付即时满足</span><button class="ibtn" type="button">重新读取</button><button class="ibtn" type="button" aria-label="关闭">✕</button></div>
+        <div class="p-meta"><span>12:34</span><span>中文字幕</span><span>186 段</span></div>
+        <div class="p-tabs"><span>摘要</span><span class="on">章节</span><span>文稿</span><span>导图</span><span>问答</span><span>笔记</span><span>更多</span></div>
+        <div class="p-body">
+          <div class="row"><span class="mute">来源：AI 生成，共 5 章</span><span style="flex:1"></span><span class="mute">跟随播放</span></div>
+          <ul class="chs">
+            <li><span class="tm">0:00</span><div><b>开场：拖延的真相</b><span class="d">先说结论：拖延是情绪问题。</span></div></li>
+            <li class="cur"><span class="tm">2:15</span><div><b><span class="dot"></span>两套系统在拉扯</b><span class="d">边缘系统要当下舒服，前额叶管长远计划。</span><div class="quote">“大脑不是在偷懒，是在逃避不适。”<span class="tm" style="margin-left:6px">3:02</span></div><div class="bar"><i></i></div></div></li>
+            <li><span class="tm">5:02</span><div><b>把任务拆小</b><span class="d">拆到五分钟能开始的大小。</span></div></li>
+            <li><span class="tm">7:48</span><div><b>设更近的截止时间</b><span class="d">近的截止时间比远期目标有效。</span></div></li>
+            <li><span class="tm">9:30</span><div><b>先做两分钟</b><span class="d">开了头，多数人会继续。</span></div></li>
+          </ul>
+        </div>
+        <div class="p-foot"><button class="pbtn main grow" type="button">复制章节列表</button><button class="pbtn" type="button">重新生成</button></div>
+      </div>
+      <p class="note">时间轴样式和摘要页的要点一致；正在播放的章节整行着色、带章内进度；每章附一行说明，提取过金句的章节下面显示金句。</p>
+    </div>
+
+    <!-- 文稿 -->
+    <div class="item">
+      <h2>文稿</h2>
+      <div class="panel">
+        <div class="p-head"><span class="t">为什么你总是拖延？大脑如何对付即时满足</span><button class="ibtn" type="button">重新读取</button><button class="ibtn" type="button" aria-label="关闭">✕</button></div>
+        <div class="p-meta"><span>12:34</span><span>中文字幕</span><span>186 段</span></div>
+        <div class="p-tabs"><span>摘要</span><span>章节</span><span class="on">文稿</span><span>导图</span><span>问答</span><span>笔记</span><span>更多</span></div>
+        <div class="p-body">
+          <div class="tools-sticky">
+            <div class="row"><div class="fake-in">搜索文稿（/）  “情绪”</div><span class="mute">1/4</span><button class="pbtn" type="button">↑</button><button class="pbtn" type="button">↓</button></div>
+            <div class="row"><div class="seg" style="flex:1"><span class="on">双语</span><span>原文</span><span>译文</span></div><span class="fake-sel">英语 · English ▾</span><button class="pbtn" type="button">重新翻译</button><button class="pbtn" type="button" aria-label="更多">⋯</button></div>
+          </div>
+          <div class="lines">
+            <div class="ln"><span class="tm">0:12</span><div>大家好，今天我们聊一个很多人的老毛病。<span class="tr">Hi everyone, today we talk about a common habit.</span></div></div>
+            <div class="ln hover"><span class="tm">0:25</span><div>你以为拖延是时间管理出了问题，其实是<mark>情绪</mark>管理。<span class="tr">You think it is time management; it is emotion management.</span></div><span class="add">＋ 笔记</span></div>
+            <div class="ln cur"><span class="tm">0:41</span><div>面对不想做的事，大脑会先处理<mark>情绪</mark>，而不是任务。<span class="tr">Faced with a task you dislike, the brain deals with the emotion first.</span></div></div>
+            <div class="ln"><span class="tm">0:58</span><div>所以逃避不是懒，是自我保护。<span class="tr">So avoidance is not laziness, it is self-protection.</span></div></div>
+            <div class="ln"><span class="tm">1:10</span><div>下面我们看看背后的机制。<span class="tr">Let us look at the mechanism behind it.</span></div></div>
+          </div>
+          <div class="pill">回到当前句</div>
+        </div>
+        <div class="p-foot"><button class="pbtn main grow" type="button">复制文稿</button><button class="pbtn" type="button">.srt</button><button class="pbtn" type="button">.txt</button></div>
+      </div>
+      <p class="note">顶部两行固定不动：搜索一行，显示方式和翻译一行；顺句等不常用的收进“⋯”。导出放到底部栏。译文用左侧淡线和原文区分，当前句整行着色。</p>
+    </div>
+
+    <!-- 导图 -->
+    <div class="item">
+      <h2>导图</h2>
+      <div class="panel">
+        <div class="p-head"><span class="t">为什么你总是拖延？大脑如何对付即时满足</span><button class="ibtn" type="button">重新读取</button><button class="ibtn" type="button" aria-label="关闭">✕</button></div>
+        <div class="p-meta"><span>12:34</span><span>中文字幕</span><span>186 段</span></div>
+        <div class="p-tabs"><span>摘要</span><span>章节</span><span>文稿</span><span class="on">导图</span><span>问答</span><span>笔记</span><span>更多</span></div>
+        <div class="p-body">
+          <div class="map" role="img" aria-label="思维导图缩略图">
+            <svg viewBox="0 0 340 230" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif" font-size="11">
+              <g fill="none" stroke="currentColor" stroke-opacity=".28" stroke-width="1.5" style="color:var(--fg)">
+                <path d="M120 115 C145 115 140 40 165 40"/><path d="M120 115 C145 115 140 90 165 90"/><path d="M120 115 C145 115 140 140 165 140"/><path d="M120 115 C145 115 140 190 165 190"/>
+                <path d="M235 40 C255 40 250 28 270 28"/><path d="M235 40 C255 40 250 52 270 52"/><path d="M235 140 C255 140 250 128 270 128"/><path d="M235 140 C255 140 250 152 270 152"/>
+              </g>
+              <rect x="14" y="98" width="106" height="34" rx="9" style="fill:var(--acc)"/><text x="67" y="119" text-anchor="middle" style="fill:var(--bg)" font-weight="700">拖延的真相</text>
+              <g style="fill:var(--acc-tint);stroke:var(--acc-2)" stroke-width="1"><rect x="165" y="28" width="70" height="24" rx="7"/><rect x="165" y="78" width="70" height="24" rx="7"/><rect x="165" y="128" width="70" height="24" rx="7"/><rect x="165" y="178" width="70" height="24" rx="7"/></g>
+              <g text-anchor="middle" style="fill:var(--fg)"><text x="200" y="44">两套系统</text><text x="200" y="94">任务拆小</text><text x="200" y="144">近的截止</text><text x="200" y="194">先做两分钟</text></g>
+              <g style="fill:var(--surface);stroke:var(--line)"><rect x="270" y="17" width="58" height="22" rx="6"/><rect x="270" y="41" width="58" height="22" rx="6"/><rect x="270" y="117" width="58" height="22" rx="6"/><rect x="270" y="141" width="58" height="22" rx="6"/></g>
+              <g text-anchor="middle" style="fill:var(--mute)" font-size="10"><text x="299" y="32">边缘系统</text><text x="299" y="56">前额叶</text><text x="299" y="132">五分钟</text><text x="299" y="156">启动</text></g>
+            </svg>
+            <div class="zoom"><button class="ibtn" type="button">＋</button><button class="ibtn" type="button">－</button><button class="ibtn" type="button">全屏</button></div>
+            <div class="hint">点击缩略图全屏查看</div>
+          </div>
+          <details class="acc"><summary>大纲文本</summary><pre># 拖延的真相
+- 两套系统在拉扯
+  - 边缘系统：当下舒服
+  - 前额叶：长远计划
+- 任务拆小
+  - 五分钟能开始</pre></details>
+        </div>
+        <div class="p-foot"><button class="pbtn main grow" type="button">全屏查看 / 缩放</button><button class="pbtn" type="button">SVG</button><button class="pbtn" type="button">PNG</button><button class="pbtn" type="button">复制大纲</button></div>
+      </div>
+      <p class="note">缩略图占主要位置，缩放和全屏按钮浮在图上；大纲文本默认折叠（现在是直接铺一大段）；导出按钮放底部栏。</p>
+    </div>
+
+    <!-- 问答 -->
+    <div class="item">
+      <h2>问答</h2>
+      <div class="panel">
+        <div class="p-head"><span class="t">为什么你总是拖延？大脑如何对付即时满足</span><button class="ibtn" type="button">重新读取</button><button class="ibtn" type="button" aria-label="关闭">✕</button></div>
+        <div class="p-meta"><span>12:34</span><span>中文字幕</span><span>186 段</span></div>
+        <div class="p-tabs"><span>摘要</span><span>章节</span><span>文稿</span><span>导图</span><span class="on">问答</span><span>笔记</span><span>更多</span></div>
+        <div class="p-body">
+          <div class="chat">
+            <div class="msg u"><div class="b">作者说怎么对付拖延？</div></div>
+            <div class="msg"><div class="b">三个办法：把任务拆小，拆到五分钟能开始 <span class="tm">5:02</span>；设更近的截止时间 <span class="tm">7:48</span>；先做两分钟，开了头多数人会继续 <span class="tm">9:30</span>。</div>
+              <div class="cite"><span class="tm">5:02</span><span>“把任务拆到五分钟就能开始的大小，启动阻力最小。”</span></div>
+              <div class="cite"><span class="tm">9:30</span><span>“先做两分钟，之后大多数人会继续做下去。”</span></div>
+            </div>
+            <div class="msg u"><div class="b">有哪些我可能不同意的地方？</div></div>
+            <div class="msg"><div class="b" style="background:var(--warn-bg);border-color:var(--warn-line)">这条回答没有给出可核对的时间点，请当作参考。</div></div>
+          </div>
+          <div class="sh" style="margin-top:4px">接着问</div>
+          <div class="sugg"><div>这个视频的核心观点是什么？</div><div>有哪些可以直接照做的建议？</div></div>
+        </div>
+        <div class="askbar"><div class="fake-in">问点什么…</div><button class="pbtn main" type="button">发送</button></div>
+      </div>
+      <p class="note">气泡区分你和回答；回答里的时间变成标签；引用的原话做成小卡片，点一下跳转；推荐问题变成可点的整行。回答没有出处时用琥珀色提醒。</p>
+    </div>
+
+    <!-- 笔记 -->
+    <div class="item">
+      <h2>笔记</h2>
+      <div class="panel">
+        <div class="p-head"><span class="t">为什么你总是拖延？大脑如何对付即时满足</span><button class="ibtn" type="button">重新读取</button><button class="ibtn" type="button" aria-label="关闭">✕</button></div>
+        <div class="p-meta"><span>12:34</span><span>中文字幕</span><span>186 段</span></div>
+        <div class="p-tabs"><span>摘要</span><span>章节</span><span>文稿</span><span>导图</span><span>问答</span><span class="on">笔记</span><span>更多</span></div>
+        <div class="p-body">
+          <div class="tools-sticky">
+            <div class="row"><div class="seg" style="flex:1"><span class="on">本视频</span><span>所有分P</span><span>全部视频</span></div></div>
+            <div class="row"><div class="fake-in">搜索笔记（正文、标题、作者）</div><span class="mute">3 条</span></div>
+          </div>
+          <div class="ncard"><div class="top"><span class="tm">0:41</span><span>刚刚</span><span class="acts"><span>整理</span><span>优化</span><span>删除</span></span></div><p class="quote">面对不想做的事，大脑会先处理情绪，而不是任务。</p><p>我自己的例子：写周报前总要先刷一会儿手机。</p><div><span class="tag">拖延</span> <span class="tag">情绪</span></div></div>
+          <div class="ncard"><div class="top"><span class="tm">5:02</span><span>2 分钟前</span><span class="acts"><span>整理</span><span>优化</span><span>删除</span></span></div><p class="quote">把任务拆到五分钟能开始的大小。</p></div>
+          <div class="ncard"><div class="top"><span class="tm">9:30</span><span>5 分钟前</span><span class="acts"><span>整理</span><span>优化</span><span>删除</span></span></div><p class="quote">先做两分钟，之后大多数人会继续做下去。</p></div>
+        </div>
+        <div class="p-foot"><button class="pbtn main grow" type="button">记下当前这句（n）</button><button class="pbtn" type="button">导出 .md</button><button class="pbtn" type="button">学习稿</button></div>
+      </div>
+      <p class="note">范围和搜索固定在顶部；每条笔记一张卡片：时间标签、原话（左橙线）、我写的话、标签；整理、优化、删除放在卡片右上角。最常用的“记下当前这句”放底部主按钮。</p>
+    </div>
+
+    <!-- 更多 -->
+    <div class="item">
+      <h2>更多</h2>
+      <div class="panel">
+        <div class="p-head"><span class="t">为什么你总是拖延？大脑如何对付即时满足</span><button class="ibtn" type="button">重新读取</button><button class="ibtn" type="button" aria-label="关闭">✕</button></div>
+        <div class="p-meta"><span>12:34</span><span>中文字幕</span><span>186 段</span></div>
+        <div class="p-tabs"><span>摘要</span><span>章节</span><span>文稿</span><span>导图</span><span>问答</span><span>笔记</span><span class="on">更多</span></div>
+        <div class="p-body">
+          <div class="grp"><div class="gh">生成</div>
+            <div class="it"><div><b>学习卡片</b><span class="d">问答卡片，可导出 CSV 导入 Anki</span></div><button class="pbtn" type="button">生成</button></div>
+            <div class="it"><div><b>金句</b><span class="d">提取 8 条，会显示在章节里</span></div><button class="pbtn" type="button">重新生成</button></div>
+          </div>
+          <div class="grp"><div class="gh">改写成其他形式</div>
+            <div class="it"><div style="display:flex;flex-wrap:wrap;gap:6px"><button class="pbtn" type="button">小红书文案</button><button class="pbtn" type="button">推文串</button><button class="pbtn" type="button">博客文章</button><button class="pbtn" type="button">分享邮件</button><button class="pbtn" type="button">会议纪要式笔记</button></div></div>
+          </div>
+          <div class="grp"><div class="gh">导出</div>
+            <div class="it"><div><b>下载 Markdown</b></div><span class="chev">›</span></div>
+            <div class="it"><div><b>复制到剪贴板（含文稿）</b></div><span class="chev">›</span></div>
+            <div class="it"><div><b>存进清影的便签</b></div><span class="chev">›</span></div>
+            <div class="it"><div><b>发到 Obsidian</b></div><span class="chev">›</span></div>
+          </div>
+          <div class="grp"><div class="gh">偏好与数据</div>
+            <div class="it"><div><b>外观</b></div><div class="seg" style="flex:none"><span class="on">跟随</span><span>浅</span><span>深</span></div></div>
+            <div class="it"><div><b>字号</b></div><span class="fake-sel">标准 ▾</span></div>
+            <div class="it"><div><b>提示词</b><span class="d">自定义摘要、导图、问答的提示词</span></div><span class="chev">›</span></div>
+            <div class="it"><div><b>清除缓存与备份</b></div><span class="chev">›</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="note">现在是一长串标题加按钮。改成四组：生成、改写、导出、偏好与数据。每行左边写名字和一句说明，右边是按钮或箭头，需要的功能一眼找到。</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btns = document.querySelectorAll('.theme button');
+  function set(t) {
+    if (t === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
+    btns.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.t === t)); });
+  }
+  btns.forEach(function (b) { b.addEventListener('click', function () { set(b.dataset.t); }); });
+})();
+</script>
+
+</body></html>

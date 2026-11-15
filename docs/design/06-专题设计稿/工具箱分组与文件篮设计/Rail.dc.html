@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>主导航图标条</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<nav aria-label="主导航" style="width: {{w}}px; height: 860px; box-sizing: border-box; background: {{c.bg}}; border-right: 1px solid {{c.line}}; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; color: {{c.fg}}">
+<button aria-label="展开主导航" style="height: 36px; display: flex; align-items: center; gap: 12px; padding: 0 10px; margin-bottom: 8px; border: 0; border-radius: 8px; background: transparent; color: {{c.mute}}; font: inherit; text-align: left">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{c.mute}}" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+<sc-if value="{{open}}" hint-placeholder-val="{{ false }}"><span>主导航</span></sc-if>
+</button>
+<sc-for list="{{items}}" as="n" hint-placeholder-count="11">
+<button title="{{n.name}}" style="{{n.style}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{n.color}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="{{n.d}}"></path></svg>
+<sc-if value="{{open}}" hint-placeholder-val="{{ false }}"><span>{{n.name}}</span></sc-if>
+</button>
+</sc-for>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"open":{"editor":"boolean","default":false},"active":{"editor":"text","default":"工具箱"},"$preview":{"width":56,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const dark = this.props.dark === true;
+const open = this.props.open === true;
+const active = this.props.active ?? '工具箱';
+const c = dark
+  ? { bg: '#181b22', line: '#2a303b', fg: '#e6e9ef', mute: '#98a0b3', on: '#25304f', onFg: '#9db8ff' }
+  : { bg: '#ffffff', line: '#e4e7ec', fg: '#1d2433', mute: '#6b7385', on: '#eaf0ff', onFg: '#2457e6' };
+const defs = [
+  ['解析', 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1'],
+  ['下载队列', 'M12 4v11M7 11l5 5 5-5M5 20h14'],
+  ['订阅', 'M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0'],
+  ['直播', 'M10 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.5 7.5a6 6 0 0 0 0 9M16.5 7.5a6 6 0 0 1 0 9'],
+  ['屏幕翻译', 'M4 5h16v11H4zM8 20h8M9 9h6M9 12h4'],
+  ['媒体库', 'M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5'],
+  ['文件翻译', 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4'],
+  ['生词与摘录', 'M7 4h10v17l-5-4-5 4z'],
+  ['工具箱', 'M4 8h16v11H4zM9 8V5h6v3M4 13h16'],
+  ['保险箱', 'M6 11h12v9H6zM9 11V8a3 3 0 0 1 6 0v3'],
+  ['设置', 'M5 7h14M5 12h14M5 17h14M9 5v4M15 10v4M8 15v4'],
+];
+const items = defs.map(([name, d]) => {
+  const on = name === active;
+  return {
+    name,
+    d,
+    color: on ? c.onFg : c.mute,
+    style: 'height: 38px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 10px; border: 0; border-radius: 8px; font: inherit; text-align: left; white-space: nowrap;' + (on ? 'background:' + c.on + ';color:' + c.onFg + ';font-weight:600;' : 'background:transparent;color:' + c.fg + ';'),
+  };
+});
+return { c, items, open, w: open ? 148 : 56 };
+}
+}
+</script>
+</body>
+</html>

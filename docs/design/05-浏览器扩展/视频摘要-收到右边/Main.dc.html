@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>视频摘要 · 展开</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+button{font:inherit;cursor:pointer}
+.sec{border:1px solid #cfd5d1;background:#fff;color:#1d2420;border-radius:6px;padding:3px 8px;font-size:13px;line-height:1.5}
+.tabbtn{flex:1;background:none;border:0;border-bottom:2px solid transparent;color:#5d6862;padding:7px 0;font-size:13px}
+.tabbtn.on{color:#b4561a;border-bottom-color:#b4561a;font-weight:700}
+.seg{display:inline-flex;border:1px solid #e3e6e3;border-radius:8px;overflow:hidden;background:#fff}
+.seg button{border:0;background:none;padding:3px 10px;font-size:12px;color:#5d6862}
+.seg button.on{background:#b4561a;color:#fff}
+.kw{display:inline-block;border:1px solid #e3e6e3;background:#fff;border-radius:999px;padding:0 9px;font-size:12px;line-height:22px;margin:0 4px 4px 0}
+.pt{display:grid;grid-template-columns:52px 1fr;gap:8px;padding:6px 4px}
+.tm{justify-self:start;align-self:start;background:#fff;border:1px solid #e3e6e3;color:#b4561a;font-weight:700;font-size:12px;line-height:20px;padding:0 6px;border-radius:6px}
+.pill{width:30px;height:30px;border-radius:50%;background:#e0e4e1}
+.badge{position:absolute;width:22px;height:22px;border-radius:50%;background:#c2453b;color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;box-shadow:0 0 0 3px #fff}
+</style>
+</helmet>
+<div style="position: relative; width: 1280px; height: 720px; overflow: hidden; background: #f3f4f3; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420; font-size: 13px; line-height: 1.55">
+
+  <!-- 示例视频页（泛指，不是某个真实网站） -->
+  <div style="height: 52px; background: #fff; border-bottom: 1px solid #e3e6e3; display: flex; align-items: center; gap: 16px; padding: 0 24px">
+    <b style="font-size: 16px; color: #1d2420">示例视频站</b>
+    <span style="flex: 1; max-width: 420px; height: 32px; border-radius: 16px; background: #eceeed; display: flex; align-items: center; padding: 0 14px; color: #8a948f">搜索</span>
+    <span style="flex: 1"></span>
+    <span class="pill"></span><span class="pill"></span>
+  </div>
+  <div style="padding: 20px 24px; display: flex; gap: 20px">
+    <div style="width: 820px; display: flex; flex-direction: column; gap: 10px">
+      <div style="position: relative; width: 820px; height: 461px; border-radius: 10px; background: linear-gradient(135deg, #1b2421, #0e1311); overflow: hidden">
+        <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,.16); display: grid; place-items: center"><svg width="26" height="26" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg></div>
+        <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 44px; background: linear-gradient(transparent, rgba(0,0,0,.55)); display: flex; align-items: flex-end; padding: 0 14px 10px; color: #fff; font-size: 12px; gap: 10px"><span>4:21 / 10:12</span><span style="flex: 1; height: 3px; background: rgba(255,255,255,.3); border-radius: 2px; margin-bottom: 6px"><i style="display: block; width: 42%; height: 3px; background: #d9762b; border-radius: 2px"></i></span></div>
+      </div>
+      <b style="font-size: 18px">电动车电池，十分钟讲清楚</b>
+      <span style="color: #66716c">12.4 万次观看 · 3 天前</span>
+      <div style="height: 10px; width: 640px; background: #e0e4e1; border-radius: 5px"></div>
+      <div style="height: 10px; width: 540px; background: #e0e4e1; border-radius: 5px"></div>
+    </div>
+    <div style="width: 320px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; gap: 10px"><div style="width: 150px; height: 84px; border-radius: 8px; background: #d5dad6"></div><div style="flex: 1; display: flex; flex-direction: column; gap: 6px; padding-top: 4px"><i style="height: 9px; background: #e0e4e1; border-radius: 4px"></i><i style="height: 9px; width: 70%; background: #e0e4e1; border-radius: 4px"></i></div></div>
+      <div style="display: flex; gap: 10px"><div style="width: 150px; height: 84px; border-radius: 8px; background: #d5dad6"></div><div style="flex: 1; display: flex; flex-direction: column; gap: 6px; padding-top: 4px"><i style="height: 9px; background: #e0e4e1; border-radius: 4px"></i><i style="height: 9px; width: 70%; background: #e0e4e1; border-radius: 4px"></i></div></div>
+    </div>
+  </div>
+
+  <!-- 摘要面板：贴右边、整高 400px（现在的样子），标题栏多一个“收起” -->
+  <aside style="position: absolute; top: 0; right: 0; width: 400px; height: 720px; display: flex; flex-direction: column; background: #fbfaf8; border-left: 1px solid #cfd5d1; box-shadow: -8px 0 28px #0002">
+    <div style="display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #e3e6e3">
+      <span style="flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">电动车电池，十分钟讲清楚</span>
+      <button class="sec">重新读取</button>
+      <button class="sec" aria-label="收起到右边" title="收起到右边（Alt+Shift+S）" style="position: relative; padding: 3px 7px; border-color: #d9762b; color: #b4561a; background: #fbeadb; display: inline-flex; align-items: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6l6 6-6 6M19 5v14"></path></svg></button>
+      <button class="sec" aria-label="关闭" title="关闭">✕</button>
+    </div>
+    <div style="padding: 6px 10px; font-size: 12px; color: #5d6862">128 段 · 中文（自动生成） · 10:12</div>
+    <div style="display: flex; border-bottom: 1px solid #e3e6e3">
+      <button class="tabbtn on">摘要</button><button class="tabbtn">文稿</button><button class="tabbtn">章节</button><button class="tabbtn">导图</button><button class="tabbtn">问答</button><button class="tabbtn">笔记</button><button class="tabbtn">生词</button>
+    </div>
+    <div style="flex: 1; overflow: hidden; padding: 12px 10px; display: flex; flex-direction: column; gap: 12px">
+      <div class="seg"><button>简短</button><button class="on">标准</button><button>详细</button></div>
+      <p style="margin: 0; font-size: 14px; line-height: 1.7">这期视频讲清了电动车电池的三件事：电芯怎么选、续航为什么会衰减、冬天为什么掉电快，并给出买车时最该看的五个参数。</p>
+      <div><span class="kw"># 磷酸铁锂</span><span class="kw"># 三元锂</span><span class="kw"># 续航衰减</span><span class="kw"># 低温</span></div>
+      <div>
+        <div class="pt"><span class="tm">0:42</span><span>三元锂和磷酸铁锂的区别，以及各自适合的车。</span></div>
+        <div class="pt"><span class="tm">3:15</span><span>续航衰减的两个来源：循环次数和高温存放。</span></div>
+        <div class="pt"><span class="tm">6:08</span><span>冬天掉电：低温下内阻变大，电池管理系统会限功率。</span></div>
+        <div class="pt"><span class="tm">8:30</span><span>买车时看的五个参数：能量密度、快充倍率……</span></div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid #e3e6e3"><button class="sec">复制摘要</button><button class="sec">存为笔记</button></div>
+  </aside>
+
+  <!-- 说明 -->
+  <div style="position: absolute; left: 24px; bottom: 24px; width: 380px; background: #fff; border: 1px solid #d9dedb; border-radius: 10px; padding: 12px 14px; box-shadow: 0 4px 16px #0002; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; gap: 8px; align-items: flex-start"><span style="flex: none; width: 20px; height: 20px; border-radius: 50%; background: #b4561a; color: #fff; font-size: 13px; font-weight: 700; display: grid; place-items: center">⇥</span><span><b>⇥ 收起到右边</b>（新）：面板滑到屏幕右边，只剩一个小标签。快捷键 Alt+Shift+S 也一样。</span></div>
+    <div style="display: flex; gap: 8px; align-items: flex-start"><span style="flex: none; width: 20px; height: 20px; border-radius: 50%; background: #66716c; color: #fff; font-size: 12px; font-weight: 700; display: grid; place-items: center">✕</span><span><b>✕ 关闭</b>：和现在一样，真正关掉（小标签也消失）。</span></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

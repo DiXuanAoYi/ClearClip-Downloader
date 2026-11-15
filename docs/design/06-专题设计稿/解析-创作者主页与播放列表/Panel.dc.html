@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>每个视频怎么下</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1300px; height: 860px; box-sizing: border-box; padding: 24px 28px; display: flex; gap: 24px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<section style="width: 560px; flex: none; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; align-items: baseline; gap: 10px"><strong style="font-size: 16px">每个视频怎么下</strong><span style="color: #6b7385">现在是三行只读文字，改成能选的</span></div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-weight: 600">清晰度</span>
+<div role="radiogroup" aria-label="清晰度" style="display: flex; flex-wrap: wrap; gap: 6px">
+<sc-for list="{{quality}}" as="q" hint-placeholder-count="7"><span role="radio" aria-checked="{{q.on}}" style="{{q.style}}">{{q.t}}</span></sc-for>
+</div>
+<span style="color: #6b7385; font-size: 12px">“按设置”就是设置里的默认（现在是：最高 1080p）。选了具体清晰度，每个视频取不超过它的最高一档；没有就退到最接近的。</span>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-weight: 600">字幕</span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{subs}}" as="q" hint-placeholder-count="4"><span style="{{q.style}}">{{q.t}}</span></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center"><span style="color: #6b7385; font-size: 12px">语言</span><sc-for list="{{langs}}" as="q" hint-placeholder-count="5"><label style="{{q.style}}"><input type="checkbox" checked="{{q.on}}" aria-label="{{q.t}}">{{q.t}}</label></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 14px; color: #4a5367"><label style="display: flex; gap: 6px; align-items: center"><input type="checkbox" checked>没有人工字幕时用自动字幕</label><label style="display: flex; gap: 6px; align-items: center"><input type="checkbox">字幕烧录进画面</label></div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-weight: 600">声音</span>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{sound}}" as="q" hint-placeholder-count="3"><span style="{{q.style}}">{{q.t}}</span></sc-for></div>
+<div style="display: flex; gap: 8px; align-items: center"><span style="color: #6b7385; font-size: 12px">只要音频时转成</span><span style="height: 28px; border: 1px solid #cfd5e0; border-radius: 6px; padding: 0 10px; display: flex; align-items: center; gap: 14px; background: #fff">MP3<span style="color: #8a92a3">▾</span></span></div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-weight: 600">只保存这一次，还是记为默认</span>
+<div style="display: flex; gap: 6px"><span style="padding: 5px 12px; border-radius: 8px; background: #eaf0ff; color: #2457e6; font-weight: 600; border: 1px solid #c3d3fb">只用于这次下载</span><span style="padding: 5px 12px; border-radius: 8px; background: #fff; border: 1px solid #cfd5e0">存成默认设置</span></div>
+</div>
+
+<div style="margin-top: auto; padding: 10px 12px; background: #fdf0e6; border: 1px solid #f3cfb2; border-radius: 8px; color: #a14a12; line-height: 1.6">现在的问题：三个框只显示文字，点不动，要改只能跳去设置页、改了全局默认。这一版直接在这里选。</div>
+</section>
+
+<section style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+
+<div style="background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+<strong style="font-size: 16px">保存到哪里</strong>
+<div style="display: flex; align-items: center; justify-content: space-between"><span>按列表放进各自的文件夹</span><span style="width: 36px; height: 20px; border-radius: 10px; background: #2457e6; position: relative"><i style="position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff"></i></span></div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="color: #6b7385; font-size: 12px">文件夹怎么排</span>
+<div role="radiogroup" aria-label="文件夹结构" style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{layouts}}" as="q" hint-placeholder-count="3"><div role="radio" aria-checked="{{q.on}}" style="{{q.style}}"><b>{{q.t}}</b><span style="font: 12px ui-monospace, Menlo, Consolas, monospace; color: #6b7385">{{q.p}}</span></div></sc-for>
+</div>
+</div>
+<div style="display: flex; gap: 18px; flex-wrap: wrap; color: #4a5367"><label style="display: flex; gap: 6px; align-items: center"><input type="checkbox" checked>文件名带列表里的序号（01、02…）</label><label style="display: flex; gap: 6px; align-items: center"><input type="checkbox" checked>同名文件夹已有，就接着放进去</label></div>
+<div style="font: 12px ui-monospace, Menlo, Consolas, monospace; line-height: 1.75; background: #f5f6f8; border-radius: 8px; padding: 12px 14px; color: #4a5367">下载目录/YouTube/彼德·生活工程師/AI新聞/<br>&nbsp;&nbsp;├ 01 - 在大模型之后，AI 新闻这周发生了什么.mp4<br>&nbsp;&nbsp;├ 02 - 一口气看完本周十条 AI 新闻.mp4<br>&nbsp;&nbsp;└ 03 - 新模型发布：我们真的需要它吗.mp4<br>下载目录/YouTube/彼德·生活工程師/旅行 Vlog/…</div>
+<span style="color: #6b7385; font-size: 12px">文件夹名里的 / \ : * ? 等字符自动换成全角或去掉；太长的截断，重名自动加（2）。</span>
+</div>
+
+<div style="background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px">
+<strong style="font-size: 16px">下载队列里按列表分组</strong>
+<div style="border: 1px solid #dde1e8; border-radius: 8px; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #eef0f4; font-weight: 600"><span>▾</span><span>AI新聞</span><span style="font-weight: 400; color: #6b7385">42 个 · 进行中 3 · 完成 12</span><span style="flex: 1"></span><span style="width: 120px; height: 5px; border-radius: 3px; background: #cfd5e0; position: relative; overflow: hidden"><i style="position: absolute; left: 0; top: 0; bottom: 0; width: 30%; background: #2457e6"></i></span></div>
+<div style="display: flex; gap: 10px; padding: 7px 12px 7px 34px; border-top: 1px solid #eef0f4"><span style="flex: 1">01 - 在大模型之后，AI 新闻这周发生了什么</span><span style="color: #2f8a57">完成</span></div>
+<div style="display: flex; gap: 10px; padding: 7px 12px 7px 34px; border-top: 1px solid #eef0f4"><span style="flex: 1">02 - 一口气看完本周十条 AI 新闻</span><span style="color: #2457e6">下载中 63%</span></div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #eef0f4; font-weight: 600; border-top: 1px solid #dde1e8"><span>▸</span><span>旅行 Vlog</span><span style="font-weight: 400; color: #6b7385">9 个 · 排队中</span></div>
+</div>
+<span style="color: #6b7385; font-size: 12px">整组可以暂停 / 继续 / 取消 / 打开文件夹；某一个失败只影响它自己，组里会写“失败 1 个，点开看原因”。</span>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1300,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const chip = (on) => 'padding:5px 12px;border-radius:8px;border:1px solid ' + (on ? '#c3d3fb' : '#cfd5e0') + ';background:' + (on ? '#eaf0ff' : '#fff') + ';color:' + (on ? '#2457e6' : '#1d2433') + ';font-weight:' + (on ? 600 : 400);
+const mk = (list, sel) => list.map((t) => ({ t, on: t === sel, style: chip(t === sel) }));
+const quality = mk(['按设置', '最高', '1080p', '720p', '480p', '最低', '只要音频'], '1080p');
+const subs = mk(['按设置', '不要字幕', '选语言', '全部'], '选语言');
+const sound = mk(['视频（含声音）', '只要音频', '视频不要声音'], '视频（含声音）');
+const langs = [['中文', true], ['English', true], ['日本語', false], ['한국어', false], ['其他…', false]].map(([t, on]) => ({ t, on, style: 'display:flex;gap:5px;align-items:center;padding:3px 10px;border-radius:14px;border:1px solid #cfd5e0;background:' + (on ? '#eaf0ff' : '#fff') }));
+const lay = (on) => 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:8px;border:1px solid ' + (on ? '#9db8f5' : '#dde1e8') + ';background:' + (on ? '#f3f7ff' : '#fff');
+const layouts = [
+  { t: '平台 / 创作者 / 列表', p: 'YouTube/彼德/AI新聞/', on: true },
+  { t: '创作者 / 列表', p: '彼德/AI新聞/', on: false },
+  { t: '只用列表名', p: 'AI新聞/', on: false },
+].map((x) => ({ ...x, style: lay(x.on) }));
+return { quality, subs, sound, langs, layouts };
+}
+}
+</script>
+</body>
+</html>

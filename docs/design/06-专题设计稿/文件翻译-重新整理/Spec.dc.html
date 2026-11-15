@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 · 原因与规则</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+.rule{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;padding:9px 0;border-top:1px solid #eef0ee;font-size:13px;line-height:1.7}
+.rk{color:#66716c;font-size:12.5px}
+.sec{background:#fff;border:1px solid #d9dedb;border-radius:12px;padding:12px 22px 8px;display:flex;flex-direction:column}
+.sec h2{margin:0 0 4px;font-size:15px;font-weight:700}
+code{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:12px;background:#eef0ee;border-radius:4px;padding:1px 5px}
+.n{flex:none;width:22px;height:22px;border-radius:50%;background:#c2453b;color:#fff;font-size:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+</style>
+</helmet>
+<div style="width: 1100px; height: 900px; box-sizing: border-box; padding: 26px 34px; background: #f4f5f4; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420; display: flex; flex-direction: column; gap: 12px">
+  <div><h1 style="margin: 0; font-size: 22px; font-weight: 700">文件翻译：问题清单和改法</h1><p style="margin: 4px 0 0; font-size: 13px; color: #66716c">下面三条根因是我读代码查出来的，还没拿真实的 PDF 复现；改完会补上对应的测试（译一半、停止、失败页、换排版方式各一个）。</p></div>
+
+  <section class="sec">
+    <h2>版面渲染不出来的原因（都在 <code>collect_page</code> 里）</h2>
+    <div class="rule" style="border-top: 0"><span class="rk"><span class="n">1</span></span><span><b>一边译一边存，版面却要“全部对齐”。</b>译文缓存每译完一页就写一次，所以译到一半时缓存里只有前几页；版面要把缓存里<b>所有</b>译文段和 PDF 里<b>所有</b>文字块逐个对上，数量差一点就整份报错。译到一半、点了取消、某一页失败，都会这样。</span></div>
+    <div class="rule"><span class="rk"><span class="n">2</span></span><span><b>缓存没记是怎么切的。</b>缓存只按“文件路径 + 大小 + 目标语言”命名。没装排版组件时译的 PDF，缓存是按段落切的；装了组件再点“版面”，块数对不上。换 PDF 方式、换识字方式也一样串用。</span></div>
+    <div class="rule"><span class="rk"><span class="n">3</span></span><span><b>文字版 PDF 里夹着扫描页。</b>翻译只处理有文字层的页，夹在里面的扫描页被跳过；版面点到这些页就报“这一页还没有识字”。改法：这种混合文件也把扫描页交给识字再翻译。</span></div>
+    <div class="rule"><span class="rk">改法</span><span>缓存里<b>每页各记一份</b>：页号、这页的块数、每块原文的指纹。版面只取当前这一页：这一页的指纹对得上就显示译文；对不上就按原文一句句匹配，匹配不上的标“未译”（画面 ③）。译到哪页看哪页，不再需要整份译完。缓存名加上 PDF 方式和识字方式，旧缓存读到时自动升级。</span></div>
+  </section>
+
+  <section class="sec">
+    <h2>任务管理</h2>
+    <div class="rule" style="border-top: 0"><span class="rk">状态与按钮</span><span>排队 / 进行中 / 已停止 / 失败 / 已译完待生成 / 已生成，每种状态的主按钮和“⋯”见画面 ②。“停止”只是暂停：已译的页都在缓存里，“继续”从停下的那页接着译。</span></div>
+    <div class="rule"><span class="rk">记着源文件</span><span>任务记录里保存源文件位置和当时的选项，重启程序后照样能“继续”“重试”“在阅读器里打开”；源文件被移走了，卡片上写“找不到源文件”，给“重新选择文件”。</span></div>
+    <div class="rule"><span class="rk">清理</span><span>列表顶部“清除已结束的”；单条“从列表里移除”不动译文缓存，“删除译文缓存”才清（会连你改过的译文一起，二次确认）。译文缓存超过 30 天没碰过的，在“设置 → 存储”里一键清理。</span></div>
+    <div class="rule"><span class="rk">失败说清楚</span><span>失败卡片写“第几页、几段、原因”；阅读器左边页缩略图用红点标出；底部“重试失败（N）”只重翻这些段。</span></div>
+  </section>
+
+  <section class="sec">
+    <h2>其他不完备的地方</h2>
+    <div class="rule" style="border-top: 0"><span class="rk">开始前</span><span>没有页范围、不能排除页眉页脚和参考文献、不知道要花多少请求。加“开始前确认”（画面 ④），当前文件的设置只对这份文件有效。</span></div>
+    <div class="rule"><span class="rk">阅读器</span><span>只有“上一页 / 下一页”：加左边的页缩略图（带状态点）、搜索、“只看未译 / 失败”。</span></div>
+    <div class="rule"><span class="rk">导出</span><span>“复制全文（Markdown）”和纯文本一样（代码里 <code>replace(/\n\n/g, '\n\n')</code> 是空操作），也没法直接存成文件。补译文 TXT、双语 Markdown、字幕 SRT，换输出方式从缓存直接出，不重新翻译。</span></div>
+    <div class="rule"><span class="rk">设置栏</span><span>330 像素窄栏里堆了 10 多项，识字、PDF 组件的长段说明一直占着位置。常用的四项（语言、输出、PDF 方式、页范围）放前面，专家、术语库、先预览、识字收进“高级”。</span></div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

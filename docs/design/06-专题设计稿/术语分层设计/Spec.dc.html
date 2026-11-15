@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>术语分层 · 现状与规则</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+.mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace}
+.rule{display:grid;grid-template-columns:92px minmax(0,1fr);gap:12px;padding:10px 0;border-top:1px solid #eef0ee;font-size:13px;line-height:1.65}
+.rk{color:#69746f;font-size:12.5px}
+.n{flex:none;width:22px;height:22px;border-radius:50%;background:#c2453b;color:#fff;font-size:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.it{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.6}
+code{font-family:'JetBrains Mono',monospace;font-size:12px;background:#eef0ee;border-radius:4px;padding:1px 5px}
+</style>
+</helmet>
+<div style="width: 1280px; height: 900px; box-sizing: border-box; padding: 32px 40px; display: flex; gap: 24px; background: #f4f5f4; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420">
+
+  <div style="flex: 0 0 520px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 700">现状</h1>
+      <p style="margin: 0; font-size: 13px; color: #69746f">当前 1.8.1 的“编辑术语库”，用假数据截的图。</p>
+    </div>
+    <figure style="margin: 0; border: 1px solid #d9dedb; border-radius: 8px; overflow: hidden; background: #fff; height: 360px">
+      <img src="assets/d6722339fd1110b46696718d5c48f2f3.png" alt="当前编辑术语库对话框截图" style="width: 100%; height: 100%; object-fit: cover; object-position: center 18%">
+    </figure>
+    <section style="background: #fff; border: 1px solid #d9dedb; border-radius: 10px; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px">
+      <div class="it"><span class="n">1</span><span>术语只有一层平铺的表格，“文件 › 打开文件”这种从属关系没法表达，菜单、设置项多了就分不清哪个“打开”是哪个菜单下的。</span></div>
+      <div class="it"><span class="n">2</span><span>每个格子都是带边框的输入框，几十行时满屏方框，看不清内容；“删”是红字挤在行尾。</span></div>
+      <div class="it"><span class="n">3</span><span>名称、语言、文件夹、网站四项占了半个对话框，术语表只剩 340 像素高。</span></div>
+    </section>
+  </div>
+
+  <section style="flex: 1; min-width: 0; background: #fff; border: 1px solid #d9dedb; border-radius: 12px; padding: 22px 26px; display: flex; flex-direction: column">
+    <h2 style="margin: 0 0 10px; font-size: 17px; font-weight: 600">术语分层的规则</h2>
+    <div class="rule"><span class="rk">结构</span><span>每条术语都可以有下级，最多 6 层。上级本身也是一条术语，照样有自己的译文（“文件 = File”）。以前的术语库就是全部在第一层，打开后不用改。</span></div>
+    <div class="rule"><span class="rk">翻译时</span><span>命中“打开文件”时，把它的路径一起交给模型：<code>界面 › 文件 › 打开文件 = Interface › File › Open File</code>，上级的说明也带上（“软件界面的菜单和按钮”）。同一个原文在不同上级下可以有不同译法，按出现的上下文挑最接近的那条。</span></div>
+    <div class="rule"><span class="rk">只作分组</span><span>上级只想用来归类、不想当术语用：在 ⋯ 里勾“只作分组”，这一行显示成灰色小标题，不参与翻译，下级照常用。</span></div>
+    <div class="rule"><span class="rk">编辑</span><span>行内直接改，平时没有框，点进去才显示输入框。<b style="font-weight: 600">Enter</b> 在下面加同级，<b style="font-weight: 600">Tab</b> 变成上一条的下级，<b style="font-weight: 600">Shift+Tab</b> 升一层，<b style="font-weight: 600">Alt+↑↓</b> 上下移，<b style="font-weight: 600">←→</b> 收起展开；也可以拖行首的点。底栏一直显示当前这条的完整路径和译文路径。</span></div>
+    <div class="rule"><span class="rk">删除</span><span>没有下级的直接删；有下级的问一次：只删这一条（下级升一层）或连同下级一起删。保存前都能 Ctrl+Z 撤回。</span></div>
+    <div class="rule"><span class="rk">CSV</span><span>导出多一列“上级路径”，如 <code>界面/文件</code>；导入时有这一列就还原层级，没有就都放在第一层。和沉浸式翻译互相导入导出时，多出的这一列对方会忽略，不影响使用。</span></div>
+    <div class="rule"><span class="rk">搜索</span><span>原文、译文、说明都能搜；命中的连同上级一起显示（上级变灰），清空后回到原来的展开状态。</span></div>
+    <div class="rule"><span class="rk">外观</span><span>沿用现有主题，亮色和暗色都适配：层级用缩进加细竖线，每一层一种底色（第一层最深，越往下越浅，第三层以下同一种），行与行之间留 3 像素空隙；有下级的行首有展开箭头，收起时显示“N 条下级”；第一层的分组加粗；当前行浅橙底；保存按钮用深一档的橙。对话框加宽到 960，基本信息压成一行，术语区占满剩下的高度。</span></div>
+    <p style="margin: 10px 0 0; font-size: 12px; color: #69746f">注：草图里“文件 Film”按“File”画的，Film 是电影的意思，应该是笔误。</p>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

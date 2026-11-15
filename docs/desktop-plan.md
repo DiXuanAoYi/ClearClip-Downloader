@@ -2,7 +2,7 @@
 
 做成独立运行的短视频解析与下载桌面程序。本文包含15 个同类产品调研、界面参考图说明、技术选型和分阶段实施计划。
 
-界面参考图见 [`design-reference.html`](./design-reference.html)（1.16 起是新主题的全部页面设计稿，源文件在 [`design/`](./design/)），用浏览器直接打开即可。
+界面参考图见 [`design-reference.html`](./design-reference.html)（1.16 起是新主题的全部页面设计稿，源文件与分类索引见 [`design/README.md`](./design/README.md)），用浏览器直接打开即可。
 
 ---
 

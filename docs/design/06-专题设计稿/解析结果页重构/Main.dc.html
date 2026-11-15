@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>解析结果 · 视频</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#f4f5f4}
+a{color:#ad5e22}a:hover{color:#8a4a19}
+.mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+.sec{display:flex;flex-direction:column;gap:12px;padding:20px 24px;border-top:1px solid #e3e7e4}
+.sh{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.st{font-size:13px;font-weight:600;color:#1d2420}
+.sa{display:flex;gap:16px;font-size:12px}
+.row{display:grid;grid-template-columns:20px 120px minmax(0,1fr) 84px;align-items:center;gap:12px;min-height:44px;padding:0 14px;border-radius:6px;border:1px solid transparent;background:transparent;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.row:hover{background:#f6f7f6}
+.dot{width:16px;height:16px;border-radius:50%;border:1.5px solid #b9c1bd;box-sizing:border-box}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border-radius:6px;border:1px solid #d9dedb;background:#fff;font:inherit;font-size:13px;color:#1d2420;cursor:pointer}
+.box{width:14px;height:14px;border-radius:3px;border:1.5px solid #b9c1bd;box-sizing:border-box;flex:none}
+.seg{display:inline-flex;padding:3px;border-radius:8px;background:#eef0ee;gap:2px}
+.sg{min-height:32px;padding:0 14px;border:0;border-radius:6px;background:transparent;font:inherit;font-size:13px;color:#4a5550;cursor:pointer}
+.tag{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font-size:11.5px;background:#eef0ee;color:#4a5550}
+.nav{display:flex;align-items:center;min-height:36px;padding:0 14px;border-radius:6px;font-size:13px;color:#3d4843}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 14px;border-radius:6px;border:1px solid #d9dedb;background:#fff;font:inherit;font-size:13px;color:#1d2420;cursor:pointer}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1040px; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; font-size: 13px; line-height: 1.5; color: #1d2420; background: #f4f5f4">
+
+  <nav aria-label="主导航" style="flex: 1 1 200px; max-width: 200px; background: #eaedeb; padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 0 14px 18px; font-weight: 700; font-size: 15px">
+      <span style="width: 22px; height: 22px; border-radius: 6px; background: #d9762b; display: inline-block"></span>清影
+    </div>
+    <span class="nav" style="background: #fff; color: #1d2420; font-weight: 600; box-shadow: 0 1px 2px #0000000f">解析</span>
+    <span class="nav">批量下载</span>
+    <span class="nav">下载队列</span>
+    <span class="nav">订阅</span>
+    <span class="nav">直播</span>
+    <span class="nav">屏幕翻译</span>
+    <span class="nav">媒体库</span>
+    <span class="nav">文件翻译</span>
+    <span class="nav">生词与摘录</span>
+    <span class="nav">工具箱</span>
+    <span class="nav">保险箱</span>
+    <span class="nav">设置</span>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; padding: 24px 32px 32px; box-sizing: border-box">
+    <div style="max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px">
+
+      <!-- 粘贴栏 -->
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; gap: 8px; align-items: stretch">
+          <label style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #d9dedb; background: #fff; box-sizing: border-box">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#69746f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"></path></svg>
+            <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">分享链接</span>
+            <input value="https://www.youtube.com/watch?v=abc123" style="flex: 1; min-width: 0; border: 0; outline: none; font: inherit; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #1d2420; background: transparent">
+          </label>
+          <button type="button" style="min-width: 88px; height: 44px; border: 0; border-radius: 8px; background: #b4561a; color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer">解析</button>
+          <button type="button" class="btn" style="height: 44px">清空</button>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: #69746f">
+          <span style="color: #2f8a57">● 剪贴板监听已开启</span>
+          <span>Enter 解析 · Shift+Enter 换行</span>
+          <span>全局快捷键 <span class="mono">Ctrl+Shift+D</span></span>
+          <a href="#">支持哪些网站</a>
+        </div>
+      </div>
+
+      <!-- 结果：左作品信息，右下载内容 -->
+      <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+
+        <!-- 左：作品卡 -->
+        <section aria-label="作品信息" style="flex: 1 1 300px; max-width: 320px; background: #fff; border: 1px solid #d9dedb; border-radius: 10px; overflow: hidden">
+          <div style="position: relative; aspect-ratio: 16 / 9; background: #263034">
+            <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center">
+              <span style="width: 52px; height: 52px; border-radius: 50%; background: #ffffffe6; display: flex; align-items: center; justify-content: center">
+                <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#1d2420"></path></svg>
+              </span>
+            </div>
+            <span style="position: absolute; left: 10px; top: 10px; height: 22px; padding: 0 8px; border-radius: 4px; background: #000000b3; color: #fff; font-size: 11.5px; font-weight: 600; display: flex; align-items: center">4K</span>
+            <span class="mono" style="position: absolute; right: 10px; bottom: 10px; height: 22px; padding: 0 8px; border-radius: 4px; background: #000000b3; color: #fff; font-size: 12px; display: flex; align-items: center">23:15</span>
+            <span style="position: absolute; left: 12px; bottom: 12px; color: #ffffff99; font-size: 12px">封面</span>
+          </div>
+          <div style="padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 10px">
+            <h1 style="margin: 0; font-size: 15px; line-height: 1.45; font-weight: 600">How Rust achieves memory safety without a garbage collector — a deep dive into ownership and borrowing</h1>
+            <div style="display: flex; align-items: center; gap: 8px; color: #69746f; font-size: 12.5px">
+              <span style="width: 20px; height: 20px; border-radius: 50%; background: #d7ddd9; display: inline-block"></span>
+              <span style="color: #1d2420">Tech Explained</span><span>·</span><span>2024-10-27 发布</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px">
+              <span class="tag" style="background: #fbf1ea; color: #8a4a19">YouTube · 视频</span>
+              <span class="tag">yt-dlp 解析</span>
+              <span class="tag">3840×2160</span>
+              <span class="tag">4 个章节</span>
+              <span class="tag">3 条字幕</span>
+            </div>
+            <div style="display: flex; gap: 8px; padding-top: 6px; border-top: 1px solid #eef0ee; margin-top: 4px">
+              <button type="button" class="btn" style="flex: 1">
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"></path></svg>预览
+              </button>
+              <button type="button" class="btn" style="flex: 1">复制直链</button>
+              <button type="button" class="btn" aria-label="打开原网页" title="打开原网页" style="width: 36px; padding: 0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M14 4h6v6"></path><path d="M20 4l-9 9"></path><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path></svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 右：下载内容 -->
+        <section aria-label="下载内容" style="flex: 999 1 520px; min-width: 0; background: #fff; border: 1px solid #d9dedb; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 18px 24px 14px">
+            <h2 style="margin: 0; font-size: 15px; font-weight: 600">下载内容</h2>
+            <span style="font-size: 12px; color: #69746f">按设置默认选好了，改完点“下载所选”</span>
+          </div>
+
+          <!-- 清晰度：单选列表 -->
+          <div class="sec" role="radiogroup" aria-label="清晰度">
+            <div class="sh"><span class="st">清晰度 <span style="color: #69746f; font-weight: 400">5 种</span></span><span class="sa"><a href="#">显示全部格式</a></span></div>
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <button type="button" role="radio" aria-checked="false" class="row"><span class="dot"></span><span style="font-weight: 600">2160p <span class="tag" style="margin-left: 4px">最高</span></span><span class="mono" style="color: #69746f; font-size: 12px">3840×2160 · VP9 · 60fps</span><span class="mono" style="text-align: right">1.4 GB</span></button>
+              <button type="button" role="radio" aria-checked="false" class="row"><span class="dot"></span><span style="font-weight: 600">1440p</span><span class="mono" style="color: #69746f; font-size: 12px">2560×1440 · VP9 · 60fps</span><span class="mono" style="text-align: right">744 MB</span></button>
+              <button type="button" role="radio" aria-checked="true" class="row" style="background: #fbf1ea; border-color: #ecbb95"><span class="dot" style="border: 5px solid #b4561a"></span><span style="font-weight: 600">1080p <span class="tag" style="margin-left: 4px; background: #fff; color: #8a4a19">默认</span></span><span class="mono" style="color: #4a5550; font-size: 12px">1920×1080 · H.264 · 30fps</span><span class="mono" style="text-align: right">401 MB</span></button>
+              <button type="button" role="radio" aria-checked="false" class="row"><span class="dot"></span><span style="font-weight: 600">720p</span><span class="mono" style="color: #69746f; font-size: 12px">1280×720 · H.264 · 30fps</span><span class="mono" style="text-align: right">200 MB</span></button>
+              <button type="button" role="radio" aria-checked="false" class="row"><span class="dot"></span><span style="font-weight: 600">480p</span><span class="mono" style="color: #69746f; font-size: 12px">854×480 · H.264 · 30fps</span><span class="mono" style="text-align: right">93.5 MB</span></button>
+            </div>
+          </div>
+
+          <!-- 声音：二选一 -->
+          <div class="sec">
+            <div class="sh"><span class="st">声音</span></div>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px">
+              <div class="seg" role="radiogroup" aria-label="声音">
+                <button type="button" role="radio" aria-checked="true" class="sg" style="background: #fff; color: #1d2420; font-weight: 600; box-shadow: 0 1px 2px #0000001a">视频（含声音）</button>
+                <button type="button" role="radio" aria-checked="false" class="sg">只要音频 · MP3</button>
+              </div>
+              <span style="font-size: 12px; color: #69746f">选“只要音频”时下载后转成 MP3，清晰度和字幕不再需要</span>
+            </div>
+          </div>
+
+          <!-- 字幕：多选 + 处理方式 -->
+          <div class="sec">
+            <div class="sh"><span class="st">字幕 <span style="color: #69746f; font-weight: 400">已选 2 / 3</span></span><span class="sa"><a href="#">按偏好语言选</a><a href="#">全不选</a></span></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px">
+              <button type="button" class="chip" aria-pressed="true" style="border-color: #d9762b; background: #fbf1ea"><span class="box" style="background: #b4561a; border-color: #b4561a"></span>English<span class="tag">原字幕</span></button>
+              <button type="button" class="chip" aria-pressed="true" style="border-color: #d9762b; background: #fbf1ea"><span class="box" style="background: #b4561a; border-color: #b4561a"></span>中文（简体）<span class="tag">自动翻译</span></button>
+              <button type="button" class="chip" aria-pressed="false"><span class="box"></span>English<span class="tag">自动生成</span></button>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px">
+              <span style="font-size: 12px; color: #4a5550; width: 56px">处理方式</span>
+              <div class="seg" role="radiogroup" aria-label="字幕处理方式">
+                <button type="button" role="radio" aria-checked="true" class="sg" style="background: #fff; color: #1d2420; font-weight: 600; box-shadow: 0 1px 2px #0000001a">单独文件</button>
+                <button type="button" role="radio" aria-checked="false" class="sg">内嵌到视频</button>
+                <button type="button" role="radio" aria-checked="false" class="sg">烧录进画面</button>
+              </div>
+              <span style="font-size: 12px; color: #69746f">.srt 放在视频旁边，播放器自动加载</span>
+            </div>
+          </div>
+
+          <!-- 范围：三选一 + 章节条 -->
+          <div class="sec">
+            <div class="sh"><span class="st">范围</span><span class="sa"><span style="color: #69746f" class="mono">全长 23:15</span></span></div>
+            <div class="seg" role="radiogroup" aria-label="下载范围" style="align-self: flex-start">
+              <button type="button" role="radio" aria-checked="true" class="sg" style="background: #fff; color: #1d2420; font-weight: 600; box-shadow: 0 1px 2px #0000001a">完整视频</button>
+              <button type="button" role="radio" aria-checked="false" class="sg">只下载一段</button>
+              <button type="button" role="radio" aria-checked="false" class="sg">选章节</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px">
+              <div style="display: flex; gap: 2px; height: 28px" aria-label="章节（4）">
+                <span style="flex: 62; background: #e5e9e6; border-radius: 4px 0 0 4px; display: flex; align-items: center; padding: 0 6px; font-size: 11.5px; color: #4a5550; overflow: hidden; white-space: nowrap">开场</span>
+                <span style="flex: 418; background: #dde2de; display: flex; align-items: center; padding: 0 8px; font-size: 11.5px; color: #3d4843; overflow: hidden; white-space: nowrap">所有权 · 6:58</span>
+                <span style="flex: 620; background: #e5e9e6; display: flex; align-items: center; padding: 0 8px; font-size: 11.5px; color: #3d4843; overflow: hidden; white-space: nowrap">借用与生命周期 · 10:20</span>
+                <span style="flex: 295; background: #dde2de; border-radius: 0 4px 4px 0; display: flex; align-items: center; padding: 0 8px; font-size: 11.5px; color: #3d4843; overflow: hidden; white-space: nowrap">总结 · 4:55</span>
+              </div>
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #3d4843; min-height: 32px">
+                <input type="checkbox" style="width: 14px; height: 14px; margin: 0; accent-color: #b4561a">同时把每个章节另存为单独的文件
+              </label>
+            </div>
+          </div>
+
+          <!-- 附带内容：多选 -->
+          <div class="sec">
+            <div class="sh"><span class="st">附带下载</span></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px">
+              <button type="button" class="chip" aria-pressed="true" style="border-color: #d9762b; background: #fbf1ea"><span class="box" style="background: #b4561a; border-color: #b4561a"></span>封面<span class="mono" style="color: #69746f; font-size: 12px">JPG</span></button>
+              <button type="button" class="chip" aria-pressed="false"><span class="box"></span>单独的音频轨<span class="mono" style="color: #69746f; font-size: 12px">M4A · 21 MB</span></button>
+            </div>
+          </div>
+
+          <!-- 底部操作栏（固定在卡片底部） -->
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 16px 24px; border-top: 1px solid #d9dedb; background: #fafbfa">
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+              <span style="font-size: 13px"><b style="font-weight: 600">1080p 视频</b> + 2 条字幕（单独文件）+ 封面</span>
+              <span style="font-size: 12px; color: #69746f">约 <span class="mono">402 MB</span> · 保存到 <span class="mono">D:\下载\清影\YouTube</span> <a href="#" style="margin-left: 4px">更改</a></span>
+            </div>
+            <button type="button" style="min-width: 148px; height: 44px; border: 0; border-radius: 8px; background: #b4561a; color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"></path><path d="M7 10l5 5 5-5"></path><path d="M5 20h14"></path></svg>下载所选
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

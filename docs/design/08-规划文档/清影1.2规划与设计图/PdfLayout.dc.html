@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PDF 原处排版翻译</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:#1d2624}
+.lab{font-size:12px;font-weight:600;color:#5b6764;margin-bottom:8px;letter-spacing:.04em}
+.pg{width:300px;height:400px;background:#fff;border:1px solid #cdd6d3;box-sizing:border-box;padding:26px 24px;position:relative;box-shadow:0 6px 18px #1d262418;display:flex;flex-direction:column;gap:10px}
+.h{font-size:15px;font-weight:700;line-height:1.3}
+.tx{font-size:9.5px;line-height:1.5;color:#2e3a37}
+.fig{height:84px;border-radius:4px;background:repeating-linear-gradient(135deg,#dfe8e5 0 8px,#eef3f1 8px 16px);border:1px solid #cdd6d3;display:flex;align-items:center;justify-content:center;font-size:10px;color:#5b6764}
+.cv{background:#fff;outline:1px dashed #187a56}
+.opt{border:1px solid #cdd6d3;border-radius:10px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start;background:#fff}
+.opt.on{border-color:#187a56;background:#f0f8f4}
+.rd{width:16px;height:16px;border-radius:50%;border:1.5px solid #8a9692;box-sizing:border-box;margin-top:2px;flex:none}
+.opt.on .rd{border:5px solid #187a56}
+.sm{font-size:13px;color:#5b6764;line-height:1.6}
+.chip{font-size:12px;padding:2px 10px;border-radius:10px;background:#e4f3ec;color:#14614a;font-weight:600}
+</style>
+</helmet>
+<div style="width:1160px;height:760px;box-sizing:border-box;background:#f4f6f5;padding:32px 40px;display:grid;grid-template-columns:1fr 1fr 320px;gap:26px;align-content:start">
+  <div style="grid-column:1 / 4;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:18px;font-weight:700">翻译文件 · Attention_Is_All_You_Need.pdf · 第 3 / 15 页</div>
+    <div style="display:flex;gap:10px;align-items:center"><span class="chip">译成简体中文</span><span class="chip" style="background:#e6eefb;color:#1d4a91">文字版 PDF</span></div>
+  </div>
+
+  <div>
+    <div class="lab">原页</div>
+    <div class="pg">
+      <div class="h" style="font-size:12px">3.2 Attention</div>
+      <div class="tx">An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors.</div>
+      <div class="fig">Figure 2 · 示意图保持不动</div>
+      <div class="tx">The output is computed as a weighted sum of the values, where the weight assigned to each value is computed by a compatibility function of the query with the corresponding key.</div>
+      <div class="tx" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:8.5px">3</div>
+    </div>
+  </div>
+
+  <div>
+    <div class="lab">译文在原处（默认）</div>
+    <div class="pg">
+      <div class="h cv" style="font-size:12px">3.2 注意力</div>
+      <div class="tx cv">注意力函数可以描述为：把一个查询和一组键值对映射成一个输出，其中查询、键、值和输出都是向量。</div>
+      <div class="fig">Figure 2 · 示意图保持不动</div>
+      <div class="tx cv">输出是各个值的加权和，每个值的权重由查询与对应键的相容性函数计算得出。</div>
+      <div class="tx" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:8.5px">3</div>
+    </div>
+    <div class="sm" style="margin-top:10px;width:300px">虚线框是译文占用的原文位置：先用页面取样的背景色盖住原文，再按框宽换行，放不下就缩小字号（最小 6 磅）。图、公式、页码和矢量图原样保留。</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div class="lab">输出方式</div>
+    <div class="opt on"><div class="rd"></div><div><b style="font-size:14px">原位替换</b><div class="sm">译文放回原来的位置，版面不变。</div></div></div>
+    <div class="opt"><div class="rd"></div><div><b style="font-size:14px">原文 + 译文并排</b><div class="sm">每页拼成左右两栏，原页在左。</div></div></div>
+    <div class="opt"><div class="rd"></div><div><b style="font-size:14px">译文接在原文下面</b><div class="sm">每个段落下方加一行译文，页面会变长。</div></div></div>
+    <div class="lab" style="margin-top:6px">排版</div>
+    <div class="in" style="height:36px;border:1px solid #cdd6d3;border-radius:8px;padding:0 12px;display:flex;align-items:center;font-size:14px;background:#fff;justify-content:space-between"><span>译文字体：系统思源黑体</span><span style="color:#5b6764">▾</span></div>
+    <div class="sm">字号：自动适配　·　最小 6 磅<br>文字可选中、可搜索</div>
+  </div>
+
+  <div style="grid-column:1 / 4;background:#fff;border:1px solid #dfe5e3;border-radius:12px;padding:16px 20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
+    <div><div class="lab">需要的组件</div><div class="sm"><b style="color:#1d2624">PDF 排版组件</b>　约 6 MB　未安装<br>首次使用时一键下载，和 ffmpeg 一样放在组件里。</div></div>
+    <div><div class="lab">扫描版 PDF</div><div class="sm">页面先渲染成图，交给视觉模型识字并给出位置，再按同样方式盖回。识字不准的页可以单页重试。</div></div>
+    <div><div class="lab">已知限制</div><div class="sm">竖排、公式里的文字、重叠文字块可能错位；加密 PDF 要先去掉密码。每页都有预览，可单独重翻。</div></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1160,"height":760}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

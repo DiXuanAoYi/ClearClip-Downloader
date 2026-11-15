@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>清影写作划词工具条</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:#1d2624}
+.lab{font-size:12px;font-weight:600;color:#5b6764;margin-bottom:6px}
+.bar{display:inline-flex;gap:2px;background:#10201a;border-radius:10px;padding:4px;box-shadow:0 8px 24px #0006}
+.bt{height:30px;padding:0 10px;border-radius:7px;color:#fff;font-size:13px;display:inline-flex;align-items:center;gap:4px;font-family:inherit}
+.bt.on{background:#ffffff26}
+.sep{width:1px;background:#ffffff33;margin:5px 2px}
+.pg{background:#fff;border:1px solid #cdd6d3;border-radius:12px;padding:22px 26px;font-size:15px;line-height:1.9;position:relative}
+.hl{background:#ffe58a;border-radius:3px;padding:0 1px}
+.hl2{background:#bfe8d3;border-radius:3px;padding:0 1px}
+.sel{background:#b9d3ff;border-radius:3px}
+.card{background:#fff;border:1px solid #cdd6d3;border-radius:12px;box-shadow:0 12px 32px #1d262430;padding:14px 16px;font-size:13.5px;line-height:1.7}
+.sw{display:inline-block;width:16px;height:16px;border-radius:50%;vertical-align:middle;margin-right:4px}
+.sm{font-size:13px;color:#5b6764;line-height:1.65}
+.btn{height:30px;padding:0 12px;border-radius:8px;border:1px solid #cdd6d3;background:#fff;font-size:13px;display:inline-flex;align-items:center;font-family:inherit;color:#1d2624}
+.btn.p{background:#187a56;border-color:#187a56;color:#fff}
+.tb{display:grid;grid-template-columns:96px 1fr 1fr;gap:10px;padding:8px 0;border-top:1px solid #edf1ef;font-size:13px;line-height:1.5}
+</style>
+</helmet>
+<div style="width:1160px;height:760px;box-sizing:border-box;background:#f4f6f5;padding:28px 36px;display:grid;grid-template-columns:1fr 1fr;gap:26px;align-content:start">
+  <div>
+    <div class="lab">网页里选中一句话</div>
+    <div class="pg">
+      <div style="position:absolute;top:-6px;left:96px;transform:translateY(-100%)"><div class="bar"><span class="bt">翻译</span><span class="bt">释义</span><span class="bt on">朗读</span><span class="bt">AI 搜索</span><span class="bt">总结</span><span class="sep"></span><span class="bt"><span class="sw" style="background:#ffe58a"></span>高亮</span><span class="bt">⋯</span></div></div>
+      Self-attention lets every position in the sequence look at every other position, so <span class="sel">long-range dependencies are learned in a single step</span> instead of through many recurrent steps. This is why transformers train so much faster, and why <span class="hl">the scaling factor</span> matters when <span class="hl2">d_k grows</span>.
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="font-size:14px">释义 · dependencies</b><span class="sm">🔊 朗读　✕</span></div>
+      <div><b>dependency</b>　/dɪˈpendənsi/　n. 依赖；依存关系</div>
+      <div class="sm" style="margin-top:2px">在这句话里：序列中不同位置之间的相互依赖关系（long-range 指距离很远的）。</div>
+      <div style="display:flex;gap:8px;margin-top:10px"><span class="btn p">加入生词本</span><span class="btn">继续追问</span><span class="btn">存笔记</span></div>
+    </div>
+    <div class="sm" style="margin-top:12px">结果卡片在原地流式显示，可追问。所有动作都在同一个浮层里完成，不会跳出页面。</div>
+  </div>
+
+  <div>
+    <div class="lab">桌面端：在任意软件里选中文字，按 Ctrl+Alt+Space</div>
+    <div style="background:#e1e6e4;border-radius:12px;padding:26px 24px;height:210px;position:relative;border:1px solid #cdd6d3">
+      <div style="font-size:14px;line-height:1.9;color:#2e3a37">……该协议要求双方在握手阶段交换证书，<span class="sel">并在会话密钥建立之前完成身份校验</span>，否则中间人可以……</div>
+      <div style="position:absolute;left:70px;top:76px"><div class="bar"><span class="bt">翻译</span><span class="bt">释义</span><span class="bt">朗读</span><span class="bt">AI 搜索</span><span class="bt">总结</span><span class="sep"></span><span class="bt on">存入摘录</span><span class="bt">⋯</span></div></div>
+    </div>
+    <div class="sm" style="margin:8px 0 14px">高亮没法标记别的软件里的内容，所以桌面端这个位置是“存入摘录”，摘录页里统一查看。</div>
+
+    <div class="lab">四种高亮颜色，网页上永久保存</div>
+    <div class="card" style="display:flex;gap:18px;align-items:center;padding:10px 16px"><span><span class="sw" style="background:#ffe58a"></span>重点</span><span><span class="sw" style="background:#bfe8d3"></span>术语</span><span><span class="sw" style="background:#ffc9c2"></span>存疑</span><span><span class="sw" style="background:#cfdcff"></span>引用</span><span style="flex:1"></span><span class="sm">下次打开同一网页自动恢复</span></div>
+  </div>
+
+  <div style="grid-column:1 / 3;background:#fff;border:1px solid #dfe5e3;border-radius:12px;padding:12px 22px 14px">
+    <div class="lab" style="padding-top:4px">动作表（扩展和桌面共用同一份，改一处两边一致）</div>
+    <div class="tb" style="border-top:0;font-weight:700;color:#5b6764;font-size:12px"><div>动作</div><div>网页（扩展）</div><div>桌面（任意软件）</div></div>
+    <div class="tb"><b>翻译</b><div>在选区旁显示译文，可换服务、可对比</div><div>同左，结果浮在选区旁，可复制或替换原文</div></div>
+    <div class="tb"><b>释义</b><div>词典 + 本句里的意思，可加入生词本（带本页网址）</div><div>同左，来源记为所在软件</div></div>
+    <div class="tb"><b>朗读</b><div>浏览器自带语音，自动识别语言，可调语速</div><div>系统语音，同样可调</div></div>
+    <div class="tb"><b>AI 搜索</b><div>把选中文字当问题，用已配置的模型回答，旁边附“用搜索引擎打开”</div><div>同左</div></div>
+    <div class="tb"><b>总结</b><div>选一大段时给要点；可存笔记</div><div>同左</div></div>
+    <div class="tb"><b>高亮 / 摘录</b><div>四色高亮，永久保存，统一管理与导出 Markdown</div><div>存入摘录（来源软件和时间），摘录页统一管理</div></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1160,"height":760}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

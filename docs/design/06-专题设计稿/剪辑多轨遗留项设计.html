@@ -1,0 +1,195 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>剪辑多轨遗留项设计</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* 布局：一屏一项，左文右图；时间线示意图用同一套轨道色 */
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --fg:#1b2030; --mute:#5d6577; --line:#dfe3ea;
+  --acc:#2f6bff; --v:#4d7cff; --a:#27a67a; --t:#d98a1f; --sel:#e8eefc; --warn:#c2410c;
+  --font:'Noto Sans SC',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12151c; --card:#1a1f2a; --fg:#e8ebf2; --mute:#9aa3b5; --line:#2b3242;
+  --acc:#7a9dff; --v:#6f93ff; --a:#3cc596; --t:#e8a43f; --sel:#232c44; --warn:#fb923c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12151c; --card:#1a1f2a; --fg:#e8ebf2; --mute:#9aa3b5; --line:#2b3242;
+  --acc:#7a9dff; --v:#6f93ff; --a:#3cc596; --t:#e8a43f; --sel:#232c44; --warn:#fb923c; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);line-height:1.65;
+  padding-block:28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+h1{font-size:26px;margin:0;text-wrap:balance}
+h2{font-size:18px;margin:0 0 4px;text-wrap:balance}
+p{margin:0}.mute{color:var(--mute)}
+.lead{max-width:62ch}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:20px}
+@media(max-width:760px){section{grid-template-columns:minmax(0,1fr)}}
+.txt{display:flex;flex-direction:column;gap:8px;min-width:0}
+.meta{display:flex;gap:8px;flex-wrap:wrap;font-size:12px}
+.chip{border:1px solid var(--line);border-radius:12px;padding:1px 10px;color:var(--mute)}
+.chip.rec{border-color:var(--acc);color:var(--acc)}
+ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
+code{font-family:var(--mono);font-size:12.5px}
+figure{margin:0;min-width:0;overflow-x:auto}
+svg{display:block;width:100%;min-width:420px;height:auto}
+figcaption{font-size:12px;color:var(--mute);margin-top:4px}
+.ask{border-left:3px solid var(--acc);padding:8px 14px;background:var(--sel);border-radius:0 8px 8px 0}
+text{font-family:var(--font);font-size:11px;fill:currentColor}
+</style>
+<main>
+<header>
+  <h1>剪辑多轨：五个遗留项的设计</h1>
+  <p class="lead mute">1.13.0 的更新记录里没做的五项：联动 / 分组、复合片段、代理素材、电平表、滑动修剪。每一项先给最小可用的做法和界面示意，你看过再动手。大小按“一个独立的 PR”估。</p>
+</header>
+
+<section>
+  <div class="txt">
+    <h2>1. 联动 / 分组 <span class="chip rec">建议先做</span></h2>
+    <div class="meta"><span class="chip">中</span><span class="chip">只改工程文件，不动导出</span></div>
+    <p>视频和它的声音、字幕放在不同轨道上，现在移动、剪切、删除要逐条做，容易错位。</p>
+    <ul>
+      <li>选中几个片段，按 <code>Ctrl+G</code> 或右键“编成一组”；再按一次拆开。</li>
+      <li>组里任何一个被移动、分割、删除，其余同步；单独修剪边缘不联动（和主流剪辑软件一致）。</li>
+      <li>分离音频（已有）自动把视频和分出来的声音编成一组。</li>
+      <li>数据：每个片段加一个可选的 <code>group</code> 字段；旧工程没有这个字段，行为不变。</li>
+    </ul>
+  </div>
+  <figure>
+    <svg viewBox="0 0 460 150" role="img" aria-label="视频轨和音频轨上两个片段被编成一组，同时被选中">
+      <rect x="0" y="0" width="460" height="150" fill="none"/>
+      <text x="6" y="30">V1</text><text x="6" y="78">A1</text><text x="6" y="126">字幕</text>
+      <line x1="34" y1="42" x2="460" y2="42" stroke="var(--line)"/><line x1="34" y1="90" x2="460" y2="90" stroke="var(--line)"/>
+      <rect x="40" y="12" width="150" height="28" rx="4" fill="var(--v)"/>
+      <rect x="196" y="12" width="120" height="28" rx="4" fill="var(--v)" opacity=".45"/>
+      <rect x="40" y="60" width="150" height="28" rx="4" fill="var(--a)"/>
+      <rect x="196" y="60" width="120" height="28" rx="4" fill="var(--a)" opacity=".45"/>
+      <rect x="40" y="108" width="150" height="28" rx="4" fill="var(--t)"/>
+      <rect x="36" y="8" width="158" height="132" rx="6" fill="none" stroke="var(--acc)" stroke-width="2" stroke-dasharray="5 3"/>
+      <text x="46" y="30" fill="#fff" style="fill:#fff">片段 A</text>
+      <text x="204" y="150" style="fill:var(--acc)">虚线框 = 一组，拖动 / 分割 / 删除一起走</text>
+    </svg>
+    <figcaption>示意：三条轨道上的三个片段是一组；右边的片段不在组里，不受影响。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="txt">
+    <h2>2. 复合片段</h2>
+    <div class="meta"><span class="chip">大</span><span class="chip">要改导出的构图方式</span></div>
+    <p>把一段多轨的内容（片头、转场加字幕）收成一个片段，在主时间线上当一条用。</p>
+    <ul>
+      <li>选中若干片段，右键“合成复合片段”；主时间线上变成一条，双击进入里面继续剪，点面包屑退出。</li>
+      <li>数据：工程里多一个 <code>compounds</code> 表，每个复合片段是一份独立的子时间线；主时间线的片段引用它。</li>
+      <li>导出：先把子时间线当作一个素材渲染，再放进主时间线。嵌套限制 3 层。</li>
+      <li>风险最大的一项：预览、导出、撤销、保存都要认识“嵌套”，所以放在联动之后做，并先做导出一致性的测试。</li>
+    </ul>
+  </div>
+  <figure>
+    <svg viewBox="0 0 460 150" role="img" aria-label="主时间线上一个复合片段，双击后展开出内部三条轨道">
+      <text x="6" y="22">主时间线</text>
+      <rect x="40" y="8" width="90" height="26" rx="4" fill="var(--v)" opacity=".5"/>
+      <rect x="136" y="8" width="150" height="26" rx="4" fill="none" stroke="var(--acc)" stroke-width="2"/>
+      <text x="146" y="25" style="fill:var(--acc)">▣ 片头（复合）</text>
+      <rect x="292" y="8" width="110" height="26" rx="4" fill="var(--v)" opacity=".5"/>
+      <path d="M211 36 L211 52" stroke="var(--acc)" stroke-width="1.5"/><text x="218" y="48" style="fill:var(--mute)">双击进入</text>
+      <rect x="30" y="56" width="400" height="88" rx="6" fill="var(--sel)" stroke="var(--line)"/>
+      <text x="40" y="72" style="fill:var(--mute)">主时间线 › 片头（复合）</text>
+      <rect x="40" y="80" width="170" height="14" rx="3" fill="var(--v)"/><rect x="40" y="98" width="120" height="14" rx="3" fill="var(--a)"/><rect x="100" y="116" width="150" height="14" rx="3" fill="var(--t)"/>
+    </svg>
+    <figcaption>示意：复合片段在主线上是一条；进入后看到里面的多条轨道。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="txt">
+    <h2>3. 代理素材 <span class="chip rec">建议第二个做</span></h2>
+    <div class="meta"><span class="chip">中</span><span class="chip">只影响预览</span></div>
+    <p>4K、HEVC、HDR 素材在多轨里预览会卡。现在只有“系统播放器解不了的素材”才会生成预览用的小文件。</p>
+    <ul>
+      <li>设置里加“预览用小文件”：关 / 仅解不了的（默认，和现在一样）/ 超过 1080p 的也生成。</li>
+      <li>小文件放在工程的缓存目录，用素材路径 + 修改时间做键；素材改了自动作废。</li>
+      <li>导出永远用原素材，不受影响；预览区右上角在使用小文件时显示“预览代理”标记。</li>
+      <li>已有的机制（<code>proxy.cjs</code> 测试的那条路径）复用，主要加判断条件和缓存清理。</li>
+    </ul>
+  </div>
+  <figure>
+    <svg viewBox="0 0 460 120" role="img" aria-label="预览用代理，导出用原素材">
+      <rect x="10" y="30" width="110" height="46" rx="6" fill="var(--v)"/><text x="22" y="50" style="fill:#fff">原素材</text><text x="22" y="66" style="fill:#fff">4K HEVC</text>
+      <path d="M120 44 L190 24" stroke="var(--mute)" fill="none"/><path d="M120 62 L190 90" stroke="var(--mute)" fill="none"/>
+      <rect x="190" y="8" width="120" height="36" rx="6" fill="var(--sel)" stroke="var(--acc)"/><text x="200" y="24" style="fill:var(--acc)">小文件（缓存）</text><text x="200" y="38" style="fill:var(--mute)">720p，只用来预览</text>
+      <rect x="190" y="72" width="120" height="36" rx="6" fill="var(--sel)" stroke="var(--line)"/><text x="200" y="88">原素材</text><text x="200" y="102" style="fill:var(--mute)">导出时使用</text>
+      <path d="M310 26 L370 26" stroke="var(--mute)"/><text x="376" y="30">预览区</text>
+      <path d="M310 90 L370 90" stroke="var(--mute)"/><text x="376" y="94">导出文件</text>
+    </svg>
+    <figcaption>示意：预览走小文件，导出走原素材。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="txt">
+    <h2>4. 电平表</h2>
+    <div class="meta"><span class="chip">小到中</span><span class="chip">只读显示</span></div>
+    <p>混音器里现在只有推子，看不出哪一轨太响或削波。</p>
+    <ul>
+      <li>每条轨道的推子旁边一个竖条电平，主输出一个立体声的；单位 dBFS，-6 以上变黄，0 变红并保持 2 秒的“削波”标记。</li>
+      <li>只在预览播放时更新；用预览用的 Web Audio 分析节点取，不碰导出。</li>
+      <li>导出前的响度（LUFS）显示已有，这里不重复。</li>
+    </ul>
+  </div>
+  <figure>
+    <svg viewBox="0 0 460 150" role="img" aria-label="三条轨道和主输出的竖直电平表">
+      <g transform="translate(30,8)">
+        <rect x="0" y="0" width="20" height="120" rx="3" fill="var(--sel)"/><rect x="0" y="50" width="20" height="70" rx="3" fill="var(--a)"/>
+        <text x="-6" y="140">A1</text>
+      </g>
+      <g transform="translate(110,8)">
+        <rect x="0" y="0" width="20" height="120" rx="3" fill="var(--sel)"/><rect x="0" y="20" width="20" height="100" rx="3" fill="var(--t)"/>
+        <text x="-6" y="140">A2</text>
+      </g>
+      <g transform="translate(190,8)">
+        <rect x="0" y="0" width="20" height="120" rx="3" fill="var(--sel)"/><rect x="0" y="4" width="20" height="116" rx="3" fill="var(--warn)"/><rect x="0" y="0" width="20" height="4" fill="#d00"/>
+        <text x="-6" y="140">A3</text><text x="26" y="12" style="fill:var(--warn)">削波</text>
+      </g>
+      <g transform="translate(330,8)">
+        <rect x="0" y="0" width="14" height="120" rx="3" fill="var(--sel)"/><rect x="0" y="30" width="14" height="90" rx="3" fill="var(--a)"/>
+        <rect x="18" y="0" width="14" height="120" rx="3" fill="var(--sel)"/><rect x="18" y="26" width="14" height="94" rx="3" fill="var(--a)"/>
+        <text x="-2" y="140">主输出</text>
+      </g>
+    </svg>
+    <figcaption>示意：A3 超过 0 dBFS，显示红色削波标记；主输出是左右两个声道。</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="txt">
+    <h2>5. 滑动修剪（滑移 / 滑动）</h2>
+    <div class="meta"><span class="chip">小到中</span><span class="chip">改时间线的拖动逻辑</span></div>
+    <p>不改片段长度，只换它用素材里的哪一段（滑移）；或者把片段在前后两个片段之间挪动，前后各自补偿（滑动）。</p>
+    <ul>
+      <li>工具栏加两个工具，快捷键 <code>Y</code>（滑移）、<code>U</code>（滑动）；拖动时预览区显示四格：前一帧、本片段入点、出点、后一帧。</li>
+      <li>滑移只改片段的入点和出点（保持时长）；滑动改前一个的出点、后一个的入点，总时长不变。</li>
+      <li>素材边界处停住，不允许拖出素材范围；可撤销，和现有的修剪共用一套撤销记录。</li>
+    </ul>
+  </div>
+  <figure>
+    <svg viewBox="0 0 460 130" role="img" aria-label="滑移：片段长度不变，使用的素材区间移动；滑动：片段位置移动，前后片段相应缩放">
+      <text x="6" y="16" style="fill:var(--mute)">滑移（Y）</text>
+      <rect x="40" y="22" width="380" height="14" rx="3" fill="var(--sel)" stroke="var(--line)"/>
+      <rect x="120" y="22" width="120" height="14" rx="3" fill="var(--v)" opacity=".45"/><rect x="160" y="22" width="120" height="14" rx="3" fill="none" stroke="var(--acc)" stroke-width="2"/>
+      <text x="290" y="34" style="fill:var(--acc)">← 素材里取的那一段整体移动</text>
+      <text x="6" y="68" style="fill:var(--mute)">滑动（U）</text>
+      <rect x="40" y="74" width="100" height="26" rx="4" fill="var(--v)" opacity=".5"/>
+      <rect x="146" y="74" width="120" height="26" rx="4" fill="none" stroke="var(--acc)" stroke-width="2"/>
+      <rect x="272" y="74" width="150" height="26" rx="4" fill="var(--v)" opacity=".5"/>
+      <text x="150" y="116" style="fill:var(--acc)">片段平移，前一个变长、后一个变短（总长不变）</text>
+    </svg>
+    <figcaption>示意：虚线外框是被拖动的片段。</figcaption>
+  </figure>
+</section>
+
+<div class="ask">
+  <p><b>要你定的：</b>做哪几项、什么顺序。我的建议是 1 联动 → 3 代理素材 → 4 电平表 → 5 滑动修剪，最后才做 2 复合片段（它牵涉预览、导出、撤销和保存的整体改动，风险最大）。每一项做完都推到分支，在你确认前不合并。</p>
+</div>
+</main>
+
+</body></html>

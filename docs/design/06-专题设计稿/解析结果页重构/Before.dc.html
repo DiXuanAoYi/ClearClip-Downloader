@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>现状与问题 · 新规范</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#f4f5f4}
+.mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+.n{flex:none;width:22px;height:22px;border-radius:50%;background:#c2453b;color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.it{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.6}
+.rule{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;padding:10px 0;border-top:1px solid #eef0ee;font-size:13px;line-height:1.6}
+.rk{color:#69746f;font-size:12.5px}
+</style>
+</helmet>
+<div style="min-height: 1040px; box-sizing: border-box; padding: 32px 40px 40px; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420; background: #f4f5f4; display: flex; flex-direction: column; gap: 24px">
+
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 22px; font-weight: 700">现状：解析结果页</h1>
+    <p style="margin: 0; font-size: 13px; color: #69746f">下面两张是当前版本（1.8.1）用假数据渲染的真实界面截图，左：YouTube 视频，右：抖音图集。红色数字对应下方问题。</p>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 20px">
+    <figure style="flex: 1 1 520px; min-width: 0; margin: 0; display: flex; flex-direction: column; gap: 8px">
+      <div style="position: relative; border: 1px solid #d9dedb; border-radius: 8px; overflow: hidden; background: #fff; height: 420px">
+        <img src="assets/8a0d35e8258e7f8f23c6e13c0a4055ed.png" alt="当前视频解析结果截图" style="width: 100%; display: block">
+        <span class="n" style="position: absolute; left: 6px; top: 140px">1</span>
+        <span class="n" style="position: absolute; left: 100px; top: 120px">2</span>
+        <span class="n" style="position: absolute; left: 100px; top: 165px">3</span>
+        <span class="n" style="position: absolute; left: 100px; top: 312px">4</span>
+        <span class="n" style="position: absolute; right: 10px; bottom: 10px">5</span>
+      </div>
+      <figcaption style="font-size: 12px; color: #69746f">视频（裁到上半部分；完整一页约 850 像素高，“下载所选”在最底下）</figcaption>
+    </figure>
+    <figure style="flex: 1 1 520px; min-width: 0; margin: 0; display: flex; flex-direction: column; gap: 8px">
+      <div style="position: relative; border: 1px solid #d9dedb; border-radius: 8px; overflow: hidden; background: #fff; height: 420px">
+        <img src="assets/c6cc2743c272c21b8c6e9bc3fa90ca3f.png" alt="当前图集解析结果截图" style="width: 100%; display: block">
+        <span class="n" style="position: absolute; left: 6px; top: 140px">1</span>
+        <span class="n" style="position: absolute; left: 100px; top: 180px">7</span>
+        <span class="n" style="position: absolute; left: 100px; top: 330px">6</span>
+      </div>
+      <figcaption style="font-size: 12px; color: #69746f">图集</figcaption>
+    </figure>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+    <section style="flex: 1 1 520px; min-width: 0; background: #fff; border: 1px solid #d9dedb; border-radius: 10px; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600">问题</h2>
+      <div class="it"><span class="n">1</span><span><b>封面比例不对。</b>封面固定成 168×300 的竖条，横屏视频被裁成中间一窄条，竖版图集又被拉长；作品最直观的信息反而最难看清。</span></div>
+      <div class="it"><span class="n">2</span><span><b>区块标题四种写法。</b>“清晰度（5 种）”“其他内容”是 12 号灰字；“字幕与弹幕（3）”带右侧操作；“章节（4）”又是另一套；看不出哪些是同一层级。</span></div>
+      <div class="it"><span class="n">3</span><span><b>选项卡片三套宽度。</b>清晰度三列平分、其他内容固定宽、字幕再缩进一点，左边对不齐；1080p 的规格（分辨率 · 编码 · 帧率 · 大小）挤在一行折行，大小也没法上下对比。</span></div>
+      <div class="it"><span class="n">4</span><span><b>同类开关四散。</b>“只下载一段”“同时把每章另存”“只保留音频”三个复选框分在三处，离它们影响的内容很远；“只保留音频”勾上后，清晰度和字幕还照样显示。</span></div>
+      <div class="it"><span class="n">5</span><span><b>下载前看不到结果。</b>“下载所选”在最底下左边，内容一长就要往下滚；按之前看不到会下哪些、总共多大、存到哪个文件夹。</span></div>
+      <div class="it"><span class="n">6</span><span><b>按钮主次不清。</b>“复制直链”“合成视频”“预览”和“下载所选”同一排同一级；“合成视频”点开才知道要设置秒数和配乐。</span></div>
+      <div class="it"><span class="n">7</span><span><b>图集选中态太重。</b>7 列小图，每张选中都是整圈橙边加角标，全选时一片橙；“全不选”在右上角，离“已选 9 / 9”很远。</span></div>
+      <div class="it"><span class="n">8</span><span><b>提示行没有层级。</b>剪贴板状态、支持的网站列表、两种快捷键挤在一行灰字里；网站多了以后这一行会很长。</span></div>
+    </section>
+
+    <section style="flex: 1 1 480px; min-width: 0; background: #fff; border: 1px solid #d9dedb; border-radius: 10px; padding: 20px 24px; display: flex; flex-direction: column; gap: 4px">
+      <h2 style="margin: 0 0 8px; font-size: 15px; font-weight: 600">新规范</h2>
+      <div class="rule"><span class="rk">布局</span><span>两栏：左边“作品”（宽 320，封面按真实比例：横屏 16:9，竖图在 4:3 框里居中不裁切），右边“下载内容”。窄窗口时左栏叠到上面。</span></div>
+      <div class="rule"><span class="rk">区块</span><span>右栏按“清晰度 → 声音 → 字幕 → 范围 → 附带下载”排，每块一样：13 号中粗标题 + 灰色数量，次要操作（全选、按偏好选）放标题右侧；块之间一条细线，内边距 20 / 24。</span></div>
+      <div class="rule"><span class="rk">选择控件</span><span>一选一（清晰度）用列表行：单选圈 · 名称 · 规格 · 大小 四列对齐。二选一 / 三选一（声音、字幕处理方式、范围）用分段按钮。多选（字幕、附带内容、图片）用带勾的标签或右上角小勾。</span></div>
+      <div class="rule"><span class="rk">联动</span><span>选“只要音频”时清晰度、字幕区块变灰并说明原因；范围选“只下载一段 / 选章节”才展开时间输入或章节勾选；章节用按时长比例的色条展示。</span></div>
+      <div class="rule"><span class="rk">操作</span><span>右栏底部固定一条操作栏：左边是下载摘要（下哪些、约多大、存到哪，可“更改”），右边唯一的主按钮“下载所选”。预览、复制直链、打开原网页放到左边作品卡下面；合成视频改成图集里的一个可选区块，参数直接摆出来。</span></div>
+      <div class="rule"><span class="rk">颜色</span><span>沿用现有的灰绿底和暖橙：橙色只用于选中态和主按钮。主按钮底色用深一档的 <span class="mono">#B4561A</span>，白字对比度到 4.5:1（现在的 <span class="mono">#D9762B</span> 只有 3.2:1）；链接文字用 <span class="mono">#AD5E22</span>。</span></div>
+      <div class="rule"><span class="rk">尺寸</span><span>字号只用 12 / 13 / 15 / 22；间距 4 的倍数；圆角 卡片 10、控件 6；可点的行和按钮不低于 36 像素高，主按钮 44。规格、大小、时长一律等宽数字。</span></div>
+      <div class="rule"><span class="rk">提示行</span><span>只留剪贴板状态和快捷键，支持的网站收进“支持哪些网站”链接。</span></div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

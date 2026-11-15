@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>工具箱 预览三档</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 620px; box-sizing: border-box; padding: 28px 36px; display: flex; flex-direction: column; gap: 14px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<h2 style="margin: 0; font-size: 16px">每个工具的预览是哪一档</h2>
+<div style="flex: 1; min-height: 0; display: flex; gap: 14px">
+<sc-for list="{{tiers}}" as="t" hint-placeholder-count="3">
+<section style="flex: 1; min-width: 0; box-sizing: border-box; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 8px"><span style="{{t.pill}}">{{t.tag}}</span><strong style="font-size: 14px">{{t.title}}</strong></div>
+<div style="color: #6b7385; line-height: 1.55">{{t.how}}</div>
+<div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #e4e7ec; padding-top: 10px">
+<sc-for list="{{t.tools}}" as="u" hint-placeholder-count="6">
+<div style="display: flex; gap: 8px; align-items: baseline"><strong style="flex: none; width: 118px">{{u.name}}</strong><span style="flex: 1; min-width: 0; color: #6b7385; line-height: 1.5">{{u.note}}</span></div>
+</sc-for>
+</div>
+</section>
+</sc-for>
+</div>
+<div style="display: flex; gap: 24px; padding: 10px 14px; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 8px; color: #6b7385; line-height: 1.55">
+<span><strong style="color: #1d2433">共同点</strong>　预览区固定在设置右侧；对比方式有“滑动 / 并排 / 切换”；预览用文件篮里的第一个文件；不生成文件、不进媒体库；改参数或换文件时旧预览自动作废。</span>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":620}}'>
+class Component extends DCLogic {
+renderVals() {
+const pill = (fg, bg, bd) => 'flex:none;font-size:12px;font-weight:600;padding:1px 8px;border-radius:10px;color:' + fg + ';background:' + bg + ';border:1px solid ' + bd;
+const tiers = [
+  {
+    tag: '实时', title: '改参数，画面立刻重画', pill: pill('#0b6b3a', '#e6f6ec', '#b4e2c6'),
+    how: '预览区显示当前这一帧；有时间条可以换帧。取帧的延迟取决于文件和电脑。',
+    tools: [
+      { name: 'LUT 工作室', note: '在界面里直接绘制，最快（已有）' },
+      { name: '视频规整', note: '调色、降噪：取当前帧处理（后端已有，界面改成自动刷新）' },
+      { name: '旋转 / 翻转', note: '取一帧变换（新增）' },
+      { name: '竖屏转横屏', note: '看两侧补边的效果（新增）' },
+      { name: '截图', note: '拖时间条选帧，本身就是预览' },
+      { name: '裁剪', note: '在播放器上拖入点、出点' },
+      { name: '剪辑（时间线）', note: '自带监视器，可播放（已有）' },
+    ],
+  },
+  {
+    tag: '试一小段', title: '点一下，处理几秒再对比', pill: pill('#a14a12', '#fdf0e6', '#f3cfb2'),
+    how: '需要真的编码或测量，没法边拖边出。只处理一小段，播放前后对比。',
+    tools: [
+      { name: '压缩视频', note: '试压 5 秒并排比画质，给出这段的体积变化和整段粗略估算（新增）' },
+      { name: '倍速', note: '试 5 秒，听音调是否自然（新增）' },
+      { name: '转 GIF', note: '先出一张几秒的预览动图（新增）' },
+      { name: '响度标准化', note: '试听约 20 秒，显示处理前后的响度（新增）' },
+      { name: '音效 / 混响', note: '试听最长 2 分钟（已有）' },
+      { name: '防抖', note: '先分析，再试 5 秒（新增）' },
+    ],
+  },
+  {
+    tag: '不需要预览', title: '预览区不出现，页面更紧凑', pill: pill('#4a5367', '#eef0f4', '#d5d9e2'),
+    how: '处理本身不改变要看的内容，或者页面已经有对照。',
+    tools: [
+      { name: '转换格式', note: '只换封装或格式' },
+      { name: '去除音轨', note: '直接开始' },
+      { name: '拼接', note: '用缩略图排好顺序即可' },
+      { name: '音频标签', note: '直接编辑，所见即所得' },
+      { name: '字幕校对与调整', note: '自带视频播放对照（已有）' },
+      { name: '生成字幕 / AI', note: '结果在页面下方显示' },
+    ],
+  },
+];
+return { tiers };
+}
+}
+</script>
+</body>
+</html>

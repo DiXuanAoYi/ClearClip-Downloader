@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 裁切背景换行字号</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1360px; height: 680px; box-sizing: border-box; padding: 20px; display: flex; flex-direction: column; gap: 16px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<div style="flex: 1; min-height: 0; display: flex; gap: 24px">
+
+<section style="flex: 1; min-width: 0; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<strong style="font-size: 15px">① 译文被裁切</strong>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">现在：框和原文字一样高，中文又比英文高，下沿被切掉</span>
+<div style="position: relative; padding: 14px 18px; background: #5b2f48; border-radius: 8px">
+<div style="position: relative; width: 250px; height: 26px; overflow: hidden; line-height: 1.25; font-size: 26px; font-weight: 700; color: #d4a5a5; outline: 1px dashed #ffffff; outline-offset: 0; background: #5b2f48">示例标题文本</div>
+<span style="position: absolute; right: 12px; top: 12px; font-size: 11px; color: #e8d5c4">虚线 = 原文字的框</span>
+</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">改后：框上下左右外扩，文字在框里垂直居中；放不下就往下长，不再裁</span>
+<div style="position: relative; padding: 14px 18px; background: #5b2f48; border-radius: 8px">
+<div style="position: relative; width: 250px; height: 26px; margin: 0">
+<div style="position: absolute; left: -9px; top: -7px; width: 268px; height: 40px; background: #5b2f48; outline: 1px solid #3b82f6; box-sizing: border-box; display: flex; align-items: center; padding: 0 9px; line-height: 1.2; font-size: 26px; font-weight: 700; color: #d4a5a5">示例标题文本</div>
+<div style="position: absolute; left: 0; top: 0; width: 250px; height: 26px; outline: 1px dashed #ffffff"></div>
+</div>
+<div style="height: 8px"></div>
+<span style="position: absolute; right: 12px; top: 12px; font-size: 11px; color: #e8d5c4">蓝框 = 新的遮盖和文字区域</span>
+</div></div>
+<ul style="margin: 0; padding-left: 18px; color: #4a5367; line-height: 1.7">
+<li>外扩量 = 字号的 18%，至少 2 磅（可在检查器里调）</li>
+<li>只有单行时垂直居中；多行从上往下排</li>
+<li>预览（版面）和导出走同一套尺寸，不再出现“预览裁了、导出正常”</li>
+</ul>
+</section>
+
+<section style="flex: 1; min-width: 0; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<strong style="font-size: 15px">② 背景露出原文边缘、背景色识别不对</strong>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">现在：遮盖刚好是文字框大小，原文抗锯齿的边缘还会露出来</span>
+<div style="position: relative; height: 70px; background: #5b2f48; border-radius: 8px; overflow: hidden">
+<div style="position: absolute; left: 18px; top: 8px; font-size: 40px; font-weight: 700; line-height: 1.1; color: #d4a5a5; white-space: nowrap">Desert Rose</div>
+<div style="position: absolute; left: 18px; top: 18px; width: 214px; height: 38px; background: #5b2f48; display: flex; align-items: center; color: #d4a5a5; font-size: 26px; font-weight: 700; padding-left: 2px">沙漠玫瑰</div>
+</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">改后：外扩后完全盖住；颜色取“框里不是文字的像素”的主色</span>
+<div style="position: relative; height: 70px; background: #5b2f48; border-radius: 8px; overflow: hidden">
+<div style="position: absolute; left: 18px; top: 8px; font-size: 40px; font-weight: 700; line-height: 1.1; color: #d4a5a5; white-space: nowrap">Desert Rose</div>
+<div style="position: absolute; left: 10px; top: 4px; width: 238px; height: 60px; background: #5b2f48; display: flex; align-items: center; color: #d4a5a5; font-size: 26px; font-weight: 700; padding-left: 10px; box-sizing: border-box">沙漠玫瑰</div>
+</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">背景模式（每块可单独选）</span>
+<div style="display: flex; border: 1px solid #cfd5e0; border-radius: 6px; overflow: hidden; align-self: flex-start; font-size: 12px"><span style="padding: 5px 10px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">纯色</span><span style="padding: 5px 10px; background: #ffffff; border-right: 1px solid #cfd5e0">横向渐变</span><span style="padding: 5px 10px; background: #ffffff; border-right: 1px solid #cfd5e0">竖向渐变</span><span style="padding: 5px 10px; background: #ffffff">不遮盖</span></div></div>
+<ul style="margin: 0; padding-left: 18px; color: #4a5367; line-height: 1.7">
+<li>现在取的是框外一圈像素的中位数，旁边有色块、描边就会取错</li>
+<li>改成：先去掉和文字颜色接近的像素，再取剩下的主色；渐变底按左右（或上下）边缘插值</li>
+</ul>
+</section>
+
+<section style="flex: 1; min-width: 0; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+<strong style="font-size: 15px">③ 行尾是句号的行，不再连成一段</strong>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">原文（两行，各以 . 结尾）</span>
+<div style="padding: 10px 12px; border-radius: 8px; background: #5b2f48; color: #b87d6d; font-size: 12px; line-height: 1.5; white-space: pre">This is sample body text showing how your content will appear in presentations.<span style="color: #e8d5c4"> ⏎</span>
+The typography pairs perfectly with the color palette for a cohesive design.<span style="color: #e8d5c4"> ⏎</span></div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">现在：两行并成一段，译文也连在一起</span>
+<div style="padding: 10px 12px; border-radius: 8px; background: #f0f2f6; color: #4a5367; font-size: 12px; line-height: 1.5">这是示例正文，展示您的内容在演示文稿中的呈现效果。字体排印与配色方案完美搭配，打造协调统一的设计。</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">改后：一行对一行，译文在对应位置换行</span>
+<div style="padding: 10px 12px; border-radius: 8px; background: #e6f6ec; color: #1d2433; font-size: 12px; line-height: 1.5; white-space: pre">这是示例正文，展示您的内容在演示文稿中的呈现效果。<span style="color: #0b6b3a"> ⏎</span>
+字体排印与配色方案完美搭配，打造协调统一的设计。<span style="color: #0b6b3a"> ⏎</span></div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">翻译设置里的“换行”</span>
+<div style="display: flex; border: 1px solid #cfd5e0; border-radius: 6px; overflow: hidden; align-self: flex-start; font-size: 12px"><span style="padding: 5px 10px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">句号处保留换行</span><span style="padding: 5px 10px; background: #ffffff; border-right: 1px solid #cfd5e0">每一行都保留</span><span style="padding: 5px 10px; background: #ffffff">合并成段落</span></div></div>
+<ul style="margin: 0; padding-left: 18px; color: #4a5367; line-height: 1.7">
+<li>行尾是 . 。 ! ? 就保留这个换行；Dr. / e.g. / Fig. 3. 这类缩写和编号不算</li>
+<li>按“行”交给模型翻译，并要求行数一致；对不上时退回按句拆分，不会丢字</li>
+</ul>
+</section>
+</div>
+
+<section style="flex: none; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 14px 18px; display: flex; align-items: center; gap: 22px">
+<strong style="font-size: 15px; flex: none">④ 字号和原文一样</strong>
+<div style="flex: none; display: flex; align-items: center; gap: 10px"><span style="color: #6b7385; font-size: 12px">现在</span><span style="padding: 4px 10px; border-radius: 6px; background: #fdf0e6; color: #a14a12; border: 1px solid #f3cfb2">放不下就一直缩：12 pt → 9.8 pt</span></div>
+<div style="flex: none; display: flex; align-items: center; gap: 10px"><span style="color: #6b7385; font-size: 12px">改后</span><span style="padding: 4px 10px; border-radius: 6px; background: #e6f6ec; color: #0b6b3a; border: 1px solid #b4e2c6">默认保持原字号 12 pt，框往下 / 往右长大</span></div>
+<span style="flex: 1; color: #4a5367; line-height: 1.6">只有长大后会压到别的块才缩小，且不低于原字号的 85%；缩过的块在检查器里标出“原 12 → 现 10.8”，可以一键恢复原字号。</span>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":680}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

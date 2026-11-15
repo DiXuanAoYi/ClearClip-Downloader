@@ -1,0 +1,18 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-07T10:00:00Z" },
+  "title": "清影解析结果页重构",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 1040, "title": "新 · 视频（多清晰度、字幕、章节）", "expand": "fill" },
+    "Images.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 1040, "title": "新 · 图集（图片 + 背景音乐）", "expand": "fill" },
+    "Playlist.dc.html": { "x": 0, "y": 1160, "w": 1280, "h": 1040, "title": "新 · 合集 / 播放列表", "expand": "fill" },
+    "Before.dc.html": { "x": 1360, "y": 1160, "w": 1280, "h": 1040, "title": "现状与问题 · 新规范", "expand": "fill" }
+  },
+  "order": ["Main.dc.html", "Images.dc.html", "Playlist.dc.html", "Before.dc.html"],
+  "notes": {
+    "t1": { "x": 0, "y": -300, "text": "解析结果页 · 重构设计", "kind": "title1", "maxW": 2640 }
+  },
+  "designSystems": []
+}

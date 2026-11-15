@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>工具箱 批量处理中</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 860px; display: flex; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<dc-import name="Rail" dark="{{no}}" hint-size="56px,860px"></dc-import>
+<dc-import name="Sidebar" active="响度标准化" dark="{{no}}" hint-size="232px,860px"></dc-import>
+<main style="flex: 1; min-width: 0; box-sizing: border-box; padding: 20px 28px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="margin: 0; font-size: 18px">响度标准化</h2>
+<p style="margin: 0; color: #6b7385">把音量调到统一水平，画面不重新编码。</p>
+</div>
+
+<section aria-label="设置摘要" style="background: #ffffff; border: 1px solid #e4e7ec; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px">
+<span style="color: #6b7385">目标</span><strong>−16 LUFS · 短视频平台</strong>
+<span style="color: #6b7385; margin-left: 12px">输出</span><strong>原文件旁边</strong>
+<span style="flex: 1"></span>
+<button style="height: 28px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; color: #1d2433; font: inherit">修改设置</button>
+</section>
+
+<section aria-label="文件篮" style="flex: 1; min-height: 0; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 10px">
+<strong style="font-size: 14px">文件篮</strong>
+<span style="background: #3b6cf6; color: #ffffff; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px">12</span>
+<span style="color: #6b7385; flex: 1; min-width: 0">已完成 5 · 处理中 2 · 排队 4 · 失败 1</span>
+<button style="height: 30px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; color: #1d2433; font: inherit">暂停全部</button>
+<button style="height: 30px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; color: #1d2433; font: inherit">重试失败项</button>
+<button style="height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: #6b7385; font: inherit">清空已完成</button>
+</div>
+<div style="display: flex; align-items: center; gap: 12px">
+<div style="flex: 1; min-width: 0; height: 8px; border-radius: 4px; background: #e9ecf2"><div style="width: 46%; height: 8px; border-radius: 4px; background: #3b6cf6"></div></div>
+<strong style="width: 90px; flex: none; text-align: right">5 / 12</strong>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 0 10px; color: #6b7385; font-size: 12px">
+<div style="width: 28px; flex: none"></div>
+<div style="flex: 1; min-width: 0">文件</div>
+<div style="width: 70px; flex: none">时长</div>
+<div style="width: 190px; flex: none">状态</div>
+<div style="width: 140px; flex: none; text-align: right">结果</div>
+</div>
+<div style="flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 2px; overflow: hidden">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+<div style="display: flex; align-items: center; gap: 12px; height: 34px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; background: {{r.bg}}">
+<div style="width: 28px; height: 20px; flex: none; border-radius: 4px; background: #dfe4ee"></div>
+<div style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.name}}</div>
+<div style="width: 70px; flex: none; color: #6b7385">{{r.dur}}</div>
+<div style="width: 190px; flex: none; display: flex; align-items: center; gap: 8px">
+<span style="font-weight: 600; color: {{r.color}}">{{r.state}}</span>
+<div style="{{r.track}}"><div style="{{r.bar}}"></div></div>
+</div>
+<div style="width: 140px; flex: none; text-align: right; color: {{r.rcolor}}">{{r.result}}</div>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #e4e7ec; padding-top: 12px">
+<span style="color: #6b7385">每个文件生成一个新文件并登记到媒体库；可以关掉窗口，处理在后台继续。</span>
+<button disabled style="height: 36px; padding: 0 22px; border: 0; border-radius: 8px; background: #c5d0ea; color: #ffffff; font: inherit; font-weight: 600">正在处理 7 / 12</button>
+</div>
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const track = 'flex:1;min-width:0;height:5px;border-radius:3px;background:#e9ecf2';
+const none = 'display:none';
+const done = (name, dur, lufs) => ({ name, dur, state: '已完成', color: '#0b7a67', bg: 'transparent', track: none, bar: none, result: lufs, rcolor: '#1d2433' });
+const run = (name, dur, p) => ({ name, dur, state: '处理中 ' + p + '%', color: '#2457e6', bg: '#f3f6ff', track, bar: 'width:' + p + '%;height:5px;border-radius:3px;background:#3b6cf6', result: '', rcolor: '#6b7385' });
+const wait = (name, dur) => ({ name, dur, state: '排队中', color: '#6b7385', bg: 'transparent', track: none, bar: none, result: '', rcolor: '#6b7385' });
+const fail = (name, dur, why) => ({ name, dur, state: '失败', color: '#b42318', bg: '#fff4f2', track: none, bar: none, result: why, rcolor: '#b42318' });
+const rows = [
+  done('第 01 集 开场.mp4', '24:10', '−23.4 → −16.0'),
+  done('第 02 集 安装.mp4', '18:42', '−19.8 → −16.0'),
+  done('第 03 集 配置.mp4', '21:05', '−17.1 → −16.0'),
+  fail('第 04 集 常见问题.mkv', '09:33', '没有音轨'),
+  done('第 05 集 进阶.mp4', '27:50', '−21.2 → −16.0'),
+  done('第 06 集 插件.mp4', '16:08', '−18.6 → −16.0'),
+  run('第 07 集 备份.mp4', '12:44', 78),
+  run('第 08 集 迁移.mp4', '19:21', 31),
+  wait('第 09 集 排错.mp4', '22:37'),
+  wait('第 10 集 性能.mp4', '14:56'),
+  wait('第 11 集 安全.mp4', '17:03'),
+  wait('第 12 集 总结.mp4', '08:12'),
+];
+return { rows, no: false };
+}
+}
+</script>
+</body>
+</html>

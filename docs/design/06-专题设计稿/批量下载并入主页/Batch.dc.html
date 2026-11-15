@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>主页 批量模式</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.nav{display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border-radius:10px;font-size:14px;color:#5b544c}
+.nav.on{background:#fbe9d9;color:#a0551a;font-weight:700}
+.card{background:#fff;border:1px solid #ebe5dc;border-radius:14px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:34px;padding:0 14px;border-radius:9px;border:1px solid #e3ddd4;background:#fff;color:#2a2622;font:500 13px/1 inherit}
+.btn.pri{background:#d9772f;border-color:#d9772f;color:#fff;font-weight:700}
+.mute{color:#8a8279}
+.bar{height:5px;border-radius:3px;background:#efe9e0;overflow:hidden}.bar i{display:block;height:100%;background:#d9772f}
+.pl{font-size:11.5px;padding:2px 8px;border-radius:999px;background:#f1ece4;color:#6e675f;white-space:nowrap}
+.pl.run{background:#e4eefb;color:#2f5f9e}.pl.bad{background:#fbe5e2;color:#b53b30}.pl.ok{background:#e3f3ea;color:#23703f}.pl.warn{background:#fdf0d8;color:#8a5a00}
+.chip{font-size:12.5px;padding:4px 11px;border-radius:999px;border:1px solid #e3ddd4;background:#fff;color:#5b544c;white-space:nowrap}
+.chip.on{background:#2a2622;border-color:#2a2622;color:#fff}
+.row{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid #f0ebe3;font-size:13px}
+.cb{width:16px;height:16px;border-radius:4px;border:1.5px solid #cfc7bb;flex:none;background:#fff}
+.cb.on{background:#d9772f;border-color:#d9772f}
+.site{font-size:11px;padding:1px 7px;border-radius:5px;background:#f1ece4;color:#6e675f;flex:none}
+.t{flex-grow:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m{font-size:12px;color:#8a8279;white-space:nowrap}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.lbl{font-size:12px;color:#8a8279;margin-bottom:5px}
+.fld{height:32px;border:1px solid #e3ddd4;border-radius:8px;background:#fff;display:flex;align-items:center;padding:0 10px;font-size:13px}
+</style>
+</helmet>
+<div style="width:1200px;height:900px;display:flex;background:#f6f4f1;color:#2a2622;overflow:hidden">
+
+<div style="width:196px;flex:none;box-sizing:border-box;padding:18px 12px;background:#fbfaf8;border-right:1px solid #e9e3da;display:flex;flex-direction:column;gap:4px">
+<div style="display:flex;align-items:center;gap:8px;padding:0 6px 14px"><div style="width:28px;height:28px;border-radius:8px;background:#d9772f;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800">清</div><b style="font-size:15px">清影</b></div>
+<div class="nav on">解析</div><div class="nav">下载队列</div><div class="nav">订阅</div><div class="nav">直播</div><div class="nav">屏幕翻译</div><div class="nav">媒体库</div><div class="nav">文件翻译</div><div class="nav">生词与摘录</div><div class="nav">工具箱</div>
+<div style="flex-grow:1"></div><div class="nav">设置</div>
+</div>
+
+<div style="flex-grow:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
+<div style="flex-grow:1;min-height:0;padding:22px 32px 0;display:flex;flex-direction:column;gap:12px;overflow:hidden">
+
+<!-- 粘贴栏（批量模式） -->
+<div style="display:flex;align-items:center;gap:10px">
+<div style="display:flex;background:#ece7df;border-radius:11px;padding:3px">
+<span style="padding:7px 18px;font-size:13.5px;font-weight:600;color:#6e675f">单个解析</span>
+<span style="padding:7px 18px;border-radius:9px;background:#fff;font-size:13.5px;font-weight:700;box-shadow:0 1px 2px #0001">批量下载</span>
+</div>
+<span style="font-size:13px">识别到 <b>46</b> 条链接 <span class="mute">· 来源：粘贴</span></span>
+<span style="flex-grow:1"></span>
+<span class="btn">粘贴更多</span><span class="btn">导入文件…</span><span class="btn">清空</span>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<div class="bar" style="flex-grow:1"><i style="width:78%"></i></div>
+<span class="mute" style="font-size:12px;white-space:nowrap">已解析 36 / 46 · 同一网站会放慢速度，避免被限制</span>
+</div>
+
+<!-- 整批设置：折成一行摘要，点“修改”展开（这里展示展开状态） -->
+<div class="card" style="padding:12px 16px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;align-items:center;gap:8px;font-size:13px">
+<b>整批设置</b>
+<span class="chip">1080p</span><span class="chip">同时 3 个</span><span class="chip">间隔 2–8 秒</span><span class="chip">不限速</span><span class="chip">放进批次文件夹</span><span class="chip">完成后通知</span>
+<span style="flex-grow:1"></span><span style="color:#b65f1c;font-weight:600;font-size:12.5px">收起 ▴</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px">
+<div><div class="lbl">批次名</div><div class="fld mute">留空自动命名（批量-1109-1520）</div></div>
+<div><div class="lbl">清晰度</div><div class="fld" style="justify-content:space-between">1080p<span class="mute">▾</span></div></div>
+<div style="grid-column:span 2"><div class="lbl">保存到</div><div style="display:flex;gap:8px"><div class="fld mute" style="flex-grow:1">D:\下载\清影（设置里的下载目录）</div><span class="btn" style="height:32px">选择</span></div></div>
+<div><div class="lbl">同时下载数：3</div><div style="height:32px;display:flex;align-items:center"><div style="height:4px;flex-grow:1;border-radius:2px;background:#e3ddd4;position:relative"><div style="position:absolute;left:0;top:0;height:4px;width:50%;border-radius:2px;background:#d9772f"></div><div style="position:absolute;left:50%;top:-5px;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #d9772f;margin-left:-7px"></div></div></div></div>
+<div><div class="lbl">条目间随机间隔（秒）</div><div class="fld">2 — 8</div></div>
+<div><div class="lbl">整批限速（KB/s，0 不限）</div><div class="fld">0</div></div>
+<div><div class="lbl">批次完成后</div><div class="fld" style="justify-content:space-between">通知<span class="mute">▾</span></div></div>
+</div>
+</div>
+
+<!-- 预览列表 -->
+<div class="card" style="flex-grow:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+<div style="display:flex;align-items:center;gap:8px;padding:10px 14px">
+<span class="chip on">全部 46</span><span class="chip">可下载 38</span><span class="chip">重复 3</span><span class="chip">已下载过 2</span><span class="chip">需登录 1</span><span class="chip">不支持 1</span><span class="chip">解析中 1</span>
+<span style="flex-grow:1"></span><span style="font-size:12.5px;color:#b65f1c;font-weight:600">全选可下载</span><span class="mute" style="font-size:12.5px">清除勾选</span>
+</div>
+<div class="row"><span class="cb on"></span><span class="m" style="width:22px">1</span><span class="site">B站</span><span class="t">【4K】东京夜景延时摄影 · 凌晨三点的涩谷</span><span class="m">12:08 · 1080p · ≈ 186 MB</span><span class="pl ok">可下载</span></div>
+<div class="row"><span class="cb on"></span><span class="m" style="width:22px">2</span><span class="site">B站</span><span class="t">Rust 异步编程入门（合集 · 12 集）　　<span style="color:#b65f1c">下载第 1 到 12 项</span></span><span class="m">12 项 · ≈ 2.4 GB</span><span class="pl ok">合集</span></div>
+<div class="row"><span class="cb on"></span><span class="m" style="width:22px">3</span><span class="site">YouTube</span><span class="t">How Rust achieves memory safety</span><span class="m">23:15 · 1080p · ≈ 401 MB</span><span class="pl ok">可下载</span></div>
+<div class="row"><span class="cb"></span><span class="m" style="width:22px">4</span><span class="site">抖音</span><span class="t">https://v.douyin.com/iABCdef/　<span class="mute">与第 1 条是同一个视频</span></span><span class="m">—</span><span class="pl warn">重复</span></div>
+<div class="row"><span class="cb"></span><span class="m" style="width:22px">5</span><span class="site">B站</span><span class="t">周末做饭｜红烧肉的 5 个关键步骤</span><span class="m">08:41 · 720p</span><span class="pl">已下载过</span></div>
+<div class="row"><span class="cb"></span><span class="m" style="width:22px">6</span><span class="site">小红书</span><span class="t">https://www.xiaohongshu.com/explore/6540…　<span class="mute">需要登录才能解析</span></span><span class="m" style="color:#b65f1c;font-weight:600">去登录</span><span class="pl warn">需登录</span></div>
+<div class="row"><span class="cb on"></span><span class="m" style="width:22px">7</span><span class="site">微博</span><span class="t">正在解析…</span><span class="m"></span><span class="pl run">解析中</span></div>
+</div>
+</div>
+
+<!-- 吸底操作条 -->
+<div style="flex:none;display:flex;align-items:center;gap:10px;padding:12px 32px 18px;background:#fbfaf8;border-top:1px solid #e9e3da">
+<span style="font-size:13.5px">已勾选 <b>38</b> 条 <span class="mute">· 预计 4.2 GB · 保存到 D:\下载\清影\批量-1109-1520</span></span>
+<span style="flex-grow:1"></span>
+<span class="btn" style="height:38px">取消</span><span class="btn" style="height:38px">先暂停地加入</span><span class="btn pri" style="height:38px;padding:0 22px;font-size:14px">加入队列并开始</span>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

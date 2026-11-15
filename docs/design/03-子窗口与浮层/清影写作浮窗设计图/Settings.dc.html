@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>设置页</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body{margin:0}
+.chip{display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:13px;border:1px solid #CBD5DC;background:#fff;font-size:12px;color:#14202B;white-space:nowrap}
+.on{background:#0F766E;border-color:#0F766E;color:#fff}
+.grp{background:#fff;border:1px solid #D5DDE3;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.gt{font-size:13px;font-weight:700}
+.it{display:flex;align-items:center;gap:10px;font-size:12.5px;color:#14202B;min-height:26px}
+.it .d{color:#4A5A68;font-size:11.5px}
+.sw{width:32px;height:18px;border-radius:9px;background:#0F766E;position:relative;flex:none;margin-left:auto}
+.sw::after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.off{background:#B8C3CC}
+.off::after{right:auto;left:2px}
+.kb{font-family:ui-monospace,monospace;background:#EEF1F4;padding:2px 8px;border-radius:4px;font-size:12px;margin-left:auto}
+</style>
+</helmet>
+<div style="width:900px;height:800px;box-sizing:border-box;background:#F1F4F6;font-family:'Noto Sans SC',system-ui,sans-serif;color:#14202B;padding:32px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;align-items:baseline;gap:10px">
+    <div style="font-size:18px;font-weight:700">写作助手 · 设置</div>
+    <div style="font-size:12px;color:#4A5A68">桌面应用里的页面，扩展的设置页同样内容</div>
+  </div>
+
+  <div style="display:flex;gap:14px;min-height:0">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+      <div class="grp">
+        <div class="gt">出现方式</div>
+        <div class="it"><span>默认触发</span><span style="margin-left:auto;display:flex;gap:6px"><span class="chip on">小浮标</span><span class="chip">仅快捷键</span><span class="chip">自动展开</span></span></div>
+        <div class="it"><span>呼出快捷键</span><span class="kb">Alt + J</span></div>
+        <div class="it"><span>桌面全局快捷键</span><span class="kb">Ctrl + Alt + J</span></div>
+        <div class="it"><span>空输入框也显示浮标</span><span class="sw"></span></div>
+        <div class="it"><span>拼音选词时不显示</span><span class="sw"></span></div>
+        <div class="it"><span>点选项后立即生成</span><span class="sw off"></span></div>
+      </div>
+
+      <div class="grp">
+        <div class="gt">按网站 / 程序</div>
+        <div class="it"><span>mail.example.com</span><span class="d">浮标 · 默认格式：电子邮件</span><span class="sw"></span></div>
+        <div class="it"><span>weibo.com</span><span class="d">浮标 · 默认格式：评论</span><span class="sw"></span></div>
+        <div class="it"><span>银行、支付类网站</span><span class="d">已自动排除</span><span class="sw off"></span></div>
+        <div class="it"><span>记事本 notepad.exe</span><span class="d">浮标</span><span class="sw"></span></div>
+        <div class="it"><span>游戏 / 全屏程序</span><span class="d">已自动排除</span><span class="sw off"></span></div>
+        <div style="font-size:12px;color:#0F766E">+ 添加网站或程序</div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+      <div class="grp">
+        <div class="gt">模型与隐私</div>
+        <div class="it"><span>模型选择</span><span style="margin-left:auto;display:flex;gap:6px"><span class="chip on">优先本地</span><span class="chip">仅本地</span><span class="chip">仅云端</span></span></div>
+        <div class="it"><span>本地模型</span><span class="d">qwen2.5-7b · 已就绪</span></div>
+        <div class="it"><span>云端备用</span><span class="d">使用“AI 模型池”中的接口</span></div>
+        <div class="it"><span>发往云端前先打码</span><span class="d">手机号、邮箱、身份证、金额</span><span class="sw"></span></div>
+        <div class="it"><span>保存历史记录</span><span class="d">仅存本机，可一键清空</span><span class="sw"></span></div>
+      </div>
+
+      <div class="grp">
+        <div class="gt">默认修饰</div>
+        <div class="it"><span>长度</span><span style="margin-left:auto" class="chip on">自动</span></div>
+        <div class="it"><span>正式程度</span><span style="margin-left:auto" class="chip on">自动</span></div>
+        <div class="it"><span>语气</span><span style="margin-left:auto" class="chip on">自动</span></div>
+        <div class="it"><span>翻译目标语言</span><span style="margin-left:auto" class="chip on">简体中文 ⇄ English</span></div>
+        <div class="it"><span>我的写作风格</span><span class="d">从你采用过的结果里学习</span><span class="sw off"></span></div>
+      </div>
+
+      <div class="grp">
+        <div class="gt">统计数据来源</div>
+        <div class="it"><span>联合国数据</span><span class="sw"></span></div>
+        <div class="it"><span>世界银行开放数据</span><span class="sw"></span></div>
+        <div class="it"><span>国际劳工组织</span><span class="sw"></span></div>
+        <div class="it"><span>国家统计局</span><span class="sw off"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":900,"height":800}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

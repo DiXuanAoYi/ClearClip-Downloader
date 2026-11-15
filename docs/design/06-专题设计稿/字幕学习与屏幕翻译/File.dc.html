@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{width:1280px;height:900px;box-sizing:border-box;display:flex;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+.side{width:200px;flex:none;border-right:1px solid var(--line);background:var(--card);padding:20px 12px;display:flex;flex-direction:column;gap:4px}
+.side .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:16px;padding:0 8px 16px}
+.side .brand i{width:24px;height:24px;border-radius:7px;background:var(--acc);display:block}
+.nav{height:38px;border-radius:8px;display:flex;align-items:center;padding:0 12px;color:var(--mute)}
+.nav.cur{background:var(--soft);color:var(--acc);font-weight:700}
+.page{flex:1;min-width:0;padding:24px 28px;display:flex;flex-direction:column;gap:16px}
+.h1{display:flex;align-items:flex-end;gap:14px}
+.h1 h1{margin:0;font-size:26px}
+.h1 p{margin:0;color:var(--mute)}
+.cols{flex:1;display:flex;gap:18px;min-height:0}
+.lc{width:330px;flex:none;display:flex;flex-direction:column;gap:12px}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:18px 14px;text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center;background:var(--card)}
+.drop b{font-size:15px}
+.fmt{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.fmt span{height:22px;padding:0 8px;border-radius:11px;background:var(--soft);color:var(--acc);font-size:12px;font-weight:700;display:flex;align-items:center}
+.card{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.card h3{margin:0;font-size:13px;color:var(--mute);font-weight:600}
+.job{display:flex;flex-direction:column;gap:5px;padding:8px 10px;border-radius:9px;border:1px solid var(--line)}
+.job.cur{border-color:var(--acc);background:var(--soft)}
+.job .n{display:flex;gap:8px;align-items:center}
+.job .n b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.job .s{color:var(--mute);font-size:12px}
+.bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:5px;background:var(--acc)}
+.bar.ok i{background:var(--good)}
+.fld{display:flex;align-items:center;gap:8px}
+.fld span{width:58px;color:var(--mute);font-size:12.5px;flex:none}
+.sel{flex:1;height:30px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:var(--bg)}
+.sw{display:flex;align-items:center;gap:8px;color:var(--fg);font-size:13px}
+.sw i{width:30px;height:17px;border-radius:9px;background:var(--line);position:relative;flex:none}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--card)}
+.sw.on i{background:var(--acc)}
+.sw.on i::after{left:15px}
+.seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px;flex:1}
+.seg span{flex:1;text-align:center;padding:4px 0;border-radius:6px;color:var(--mute);font-size:13px}
+.seg .on{background:var(--acc);color:var(--onacc);font-weight:700}
+.rd{flex:1;min-width:0;border:1px solid var(--line);background:var(--card);border-radius:12px;display:flex;flex-direction:column;overflow:hidden}
+.tb{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.tb .t{font-weight:700}
+.btn{height:30px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);display:flex;align-items:center;padding:0 12px;font-size:13px}
+.btn.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700}
+.pg{flex:1;display:grid;grid-template-columns:1fr 1fr;min-height:0}
+.pane{padding:18px 22px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.pane + .pane{border-left:1px solid var(--line);background:var(--bg)}
+.lab{font-size:11px;letter-spacing:.06em;color:var(--mute);font-weight:700}
+.pane h2{margin:0;font-size:19px;line-height:1.35}
+.pane p{margin:0;line-height:1.75;font-size:13.5px}
+.pane p.hl{background:var(--soft);border-radius:6px;padding:6px 8px;margin:-6px -8px}
+.eq{border:1px dashed var(--line);border-radius:8px;padding:8px 10px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--mute);text-align:center}
+.tbl{border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:12px}
+.tbl div{display:grid;grid-template-columns:1.4fr 1fr 1fr;padding:5px 8px;border-bottom:1px solid var(--line)}
+.tbl div:last-child{border-bottom:0}
+.tbl .th{background:var(--soft);font-weight:700}
+.st{display:flex;gap:16px;align-items:center;padding:9px 14px;border-top:1px solid var(--line);color:var(--mute);font-size:12.5px}
+.st b{color:var(--fg)}
+.ok{color:var(--good)}
+</style>
+</helmet>
+<div class="root" style="{{vars}}">
+  <div class="side">
+    <div class="brand"><i></i>清影</div>
+    <div class="nav">解析</div><div class="nav">下载队列</div><div class="nav">媒体库</div><div class="nav">字幕</div><div class="nav">工具箱</div>
+    <div class="nav cur">文件翻译</div>
+    <div class="nav">生词本</div>
+    <div class="nav">设置</div>
+  </div>
+  <div class="page">
+    <div class="h1"><h1>文件翻译</h1><p>PDF、EPUB、TXT、Markdown、字幕、图片，译成双语对照，术语和专家沿用你的设置</p></div>
+    <div class="cols">
+      <div class="lc">
+        <div class="drop">
+          <b>把文件拖到这里，或点击选择</b>
+          <div class="fmt"><span>PDF</span><span>EPUB</span><span>TXT</span><span>MD</span><span>SRT / ASS</span><span>PNG / JPG</span></div>
+        </div>
+        <div class="card">
+          <h3>任务</h3>
+          <div class="job cur"><div class="n"><b>Attention Is All You Need.pdf</b><span class="s">63%</span></div><div class="bar"><i style="width:63%"></i></div><div class="s">共 15 页 · 正在译第 10 页 · 已缓存 9 页</div></div>
+          <div class="job"><div class="n"><b>Dune.epub</b><span class="s ok">已完成</span></div><div class="bar ok"><i style="width:100%"></i></div><div class="s">28 / 28 章 · 14.2 万字</div></div>
+          <div class="job"><div class="n"><b>release-notes.md</b><span class="s">排队中</span></div><div class="bar"><i style="width:0"></i></div></div>
+        </div>
+        <div class="card">
+          <h3>翻译设置</h3>
+          <div class="fld"><span>语言</span><div class="sel">自动检测 → 简体中文<i style="font-style:normal">▾</i></div></div>
+          <div class="fld"><span>翻译服务</span><div class="sel">AI 模型池 · 自动选择<i style="font-style:normal">▾</i></div></div>
+          <div class="fld"><span>专家</span><div class="sel">学术论文<i style="font-style:normal">▾</i></div></div>
+          <div class="fld"><span>术语库</span><div class="sel">机器学习<i style="font-style:normal">▾</i></div></div>
+          <div class="fld"><span>输出</span><div class="seg"><span class="on">双语对照</span><span>仅译文</span></div></div>
+          <div class="sw on"><i></i>保留公式、表格和图片位置</div>
+          <div class="sw on"><i></i>扫描件自动先做文字识别</div>
+        </div>
+      </div>
+      <div class="rd">
+        <div class="tb">
+          <span class="t">第 3 / 15 页</span>
+          <span class="btn">上一页</span><span class="btn">下一页</span>
+          <span style="flex:1"></span>
+          <div class="seg" style="flex:none;width:210px"><span>原文</span><span class="on">对照</span><span>译文</span></div>
+          <span class="btn">导出 ▾</span>
+        </div>
+        <div class="pg">
+          <div class="pane">
+            <div class="lab">原文</div>
+            <h2>3.2 Attention</h2>
+            <p>An attention function can be described as mapping a query and a set of key-value pairs to an output, where the query, keys, values, and output are all vectors.</p>
+            <div class="eq">Attention(Q, K, V) = softmax(QKᵀ / √dₖ) V</div>
+            <p class="hl">The output is computed as a weighted sum of the values, where the weight assigned to each value is computed by a compatibility function of the query with the corresponding key.</p>
+            <div class="tbl"><div class="th"><span>Model</span><span>BLEU</span><span>Cost</span></div><div><span>Transformer (base)</span><span>27.3</span><span>3.3e18</span></div><div><span>Transformer (big)</span><span>28.4</span><span>2.3e19</span></div></div>
+          </div>
+          <div class="pane">
+            <div class="lab">译文</div>
+            <h2>3.2 注意力</h2>
+            <p>注意力函数可以描述为：把一个查询和一组键值对映射成一个输出，其中查询、键、值和输出都是向量。</p>
+            <div class="eq">Attention(Q, K, V) = softmax(QKᵀ / √dₖ) V</div>
+            <p class="hl">输出是各个值的加权和，分配给每个值的权重，由查询与对应键的相容性函数计算得出。</p>
+            <div class="tbl"><div class="th"><span>模型</span><span>BLEU</span><span>成本</span></div><div><span>Transformer（基础版）</span><span>27.3</span><span>3.3e18</span></div><div><span>Transformer（大型版）</span><span>28.4</span><span>2.3e19</span></div></div>
+          </div>
+        </div>
+        <div class="st"><span><b>已译 9 / 15 页</b></span><span>公式 6 处、表格 2 个原样保留</span><span>“attention”按术语库译为“注意力”</span><span style="flex:1"></span><span class="btn">重试失败段落</span><span class="btn p">导出双语文件</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const t = dark
+      ? { bg: '#14181a', card: '#1d2420', line: '#3a443e', fg: '#eef1ee', mute: '#a9b3ad', acc: '#f0a064', soft: '#3a2c20', onacc: '#14181a', good: '#6cc08a' }
+      : { bg: '#f1f3f1', card: '#ffffff', line: '#d9dedb', fg: '#1d2420', mute: '#5d6862', acc: '#b4561a', soft: '#f6e6da', onacc: '#ffffff', good: '#1f6a45' };
+    const vars = `--bg:${t.bg};--card:${t.card};--line:${t.line};--fg:${t.fg};--mute:${t.mute};--acc:${t.acc};--soft:${t.soft};--onacc:${t.onacc};--good:${t.good}`;
+    return { vars };
+  }
+}
+</script>
+</body>
+</html>

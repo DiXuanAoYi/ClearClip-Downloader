@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>网页截图翻译</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{position:relative;width:1440px;height:900px;box-sizing:border-box;overflow:hidden;background:#eef0ee;color:#1d2420;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+.page{position:absolute;inset:0;padding:48px 220px;display:flex;flex-direction:column;gap:18px}
+.page h1{margin:0;font-size:34px;line-height:1.25;max-width:760px}
+.page p{margin:0;max-width:760px;line-height:1.75;color:#3c4741}
+.chart{width:760px;height:360px;border-radius:10px;background:#fff;border:1px solid #d9dedb;position:relative;overflow:hidden}
+.chart .lbl{position:absolute;font-size:15px;font-weight:700;color:#1d2420}
+.chart .bar{position:absolute;bottom:56px;width:92px;background:#6fa8dc}
+.dim{position:absolute;inset:0;background:rgba(10,14,16,.55)}
+.sel{position:absolute;left:206px;top:372px;width:790px;height:392px;border:2px solid #f0a064;border-radius:4px;background:#fff;box-shadow:0 0 0 9999px rgba(10,14,16,.55);overflow:hidden}
+.h{position:absolute;width:10px;height:10px;background:#f0a064;border:2px solid #fff;border-radius:2px}
+.tr{position:absolute;box-sizing:border-box;padding:3px 6px;font-weight:700;line-height:1.3;border-radius:3px}
+.tr.t{background:#fff3e8;color:#7a3a0f;outline:1px solid #f0a064}
+.hint{position:absolute;left:50%;top:18px;transform:translateX(-50%);height:34px;border-radius:17px;background:rgba(20,24,26,.92);color:#eef1ee;display:flex;align-items:center;gap:14px;padding:0 18px;font-size:13px}
+.hint b{display:inline-block;min-width:18px;text-align:center;padding:0 5px;border:1px solid #5d6862;border-radius:5px;margin-right:4px}
+.tool{position:absolute;left:206px;top:780px;display:flex;align-items:center;gap:8px;padding:8px;border-radius:12px;background:var(--card);border:1px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.tb{height:34px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);display:flex;align-items:center;padding:0 12px;font-size:13px;gap:6px}
+.tb.p{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:700}
+.tb.on{background:var(--soft);border-color:var(--acc);color:var(--acc);font-weight:700}
+.sep{width:1px;height:22px;background:var(--line)}
+.side{position:absolute;right:24px;top:76px;width:340px;max-height:780px;box-sizing:border-box;padding:14px;border-radius:12px;background:var(--card);color:var(--fg);border:1px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:10px}
+.side h3{margin:0;font-size:15px;display:flex;align-items:center;gap:8px}
+.side .m{color:var(--mute);font-size:12px;font-weight:400;margin-left:auto}
+.it{border:1px solid var(--line);border-radius:9px;padding:8px 10px;display:flex;flex-direction:column;gap:3px}
+.it .o{color:var(--mute);font-size:12.5px}
+.it .z{font-weight:700}
+.it.cur{border-color:var(--acc);background:var(--soft)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.chip{height:26px;border-radius:13px;border:1px solid var(--line);display:flex;align-items:center;padding:0 10px;font-size:12px;color:var(--mute)}
+.chip.on{background:var(--soft);border-color:var(--acc);color:var(--acc);font-weight:700}
+.hd{display:flex;align-items:center;gap:8px;color:var(--mute);font-size:12.5px}
+</style>
+</helmet>
+<div class="root" style="{{vars}}">
+  <div class="page">
+    <h1>Global energy outlook: where demand grows next</h1>
+    <p>Electricity use is rising faster than total energy demand, driven by cooling, data centres and electric vehicles. The chart below summarises our central scenario.</p>
+    <div class="chart"></div>
+    <p>Emerging economies account for most of the increase through 2035.</p>
+  </div>
+  <div class="dim"></div>
+  <div class="hint"><span><b>拖动</b>框选</span><span><b>Enter</b>翻译</span><span><b>Tab</b>点选文字块</span><span><b>Esc</b>退出</span></div>
+  <div class="sel">
+    <div class="tr t" style="left:20px;top:16px;width:420px;font-size:20px">电力需求增长快于总能源需求</div>
+    <div class="tr t" style="left:20px;top:56px;width:300px;font-size:13px;font-weight:400">2023–2035 年中央情景，单位：EJ</div>
+    <div class="tr t" style="left:56px;top:300px;width:110px;font-size:13px">太阳能</div>
+    <div class="tr t" style="left:190px;top:300px;width:110px;font-size:13px">风能</div>
+    <div class="tr t" style="left:324px;top:300px;width:110px;font-size:13px">天然气</div>
+    <div class="tr t" style="left:458px;top:300px;width:110px;font-size:13px">煤炭</div>
+    <div class="tr t" style="left:592px;top:300px;width:150px;font-size:13px">电动汽车用电</div>
+    <div class="tr t" style="left:520px;top:120px;width:230px;font-size:14px;font-weight:400">新兴经济体占增量的大部分</div>
+    <div style="position:absolute;left:62px;top:150px;width:92px;height:140px;background:#6fa8dc"></div>
+    <div style="position:absolute;left:196px;top:190px;width:92px;height:100px;background:#6fa8dc"></div>
+    <div style="position:absolute;left:330px;top:230px;width:92px;height:60px;background:#6fa8dc"></div>
+    <div style="position:absolute;left:464px;top:250px;width:92px;height:40px;background:#6fa8dc"></div>
+    <div style="position:absolute;left:600px;top:170px;width:92px;height:120px;background:#6fa8dc"></div>
+    <i class="h" style="left:-6px;top:-6px"></i><i class="h" style="right:-6px;top:-6px"></i><i class="h" style="left:-6px;bottom:-6px"></i><i class="h" style="right:-6px;bottom:-6px"></i>
+  </div>
+  <div class="tool">
+    <span class="tb p">译图</span>
+    <span class="tb">原图</span>
+    <span class="sep"></span>
+    <span class="tb">复制译文</span>
+    <span class="tb">复制原文</span>
+    <span class="tb">下载译图</span>
+    <span class="tb">存为笔记</span>
+    <span class="sep"></span>
+    <span class="tb on">识别：视觉模型 ▾</span>
+  </div>
+  <div class="side">
+    <h3>识别与翻译<span class="m">8 段 · 用时 2.4 秒</span></h3>
+    <div class="row"><span class="chip on">译文贴回原图</span><span class="chip">仅文字列表</span><span class="chip">版面线框</span></div>
+    <div class="it cur"><span class="o">Electricity demand grows faster than total energy</span><span class="z">电力需求增长快于总能源需求</span></div>
+    <div class="it"><span class="o">Central scenario, 2023–2035, EJ</span><span class="z">2023–2035 年中央情景，单位：EJ</span></div>
+    <div class="it"><span class="o">Solar · Wind · Gas · Coal · EV charging</span><span class="z">太阳能 · 风能 · 天然气 · 煤炭 · 电动汽车用电</span></div>
+    <div class="it"><span class="o">Emerging economies drive most of the increase</span><span class="z">新兴经济体占增量的大部分</span></div>
+    <div class="hd">识别不准？点一段可以手动改字，再重新翻译这一段</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":true}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dark = this.props.dark ?? true;
+    const t = dark
+      ? { card: '#1d2420', line: '#3a443e', fg: '#eef1ee', mute: '#a9b3ad', acc: '#f0a064', soft: '#3a2c20', onacc: '#14181a' }
+      : { card: '#ffffff', line: '#d9dedb', fg: '#1d2420', mute: '#5d6862', acc: '#b4561a', soft: '#f6e6da', onacc: '#ffffff' };
+    const vars = `--card:${t.card};--line:${t.line};--fg:${t.fg};--mute:${t.mute};--acc:${t.acc};--soft:${t.soft};--onacc:${t.onacc}`;
+    return { vars };
+  }
+}
+</script>
+</body>
+</html>

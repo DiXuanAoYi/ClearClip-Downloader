@@ -1,0 +1,19 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-10T00:40:00Z" },
+  "title": "工具箱分组与文件篮设计",
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1280, "h": 860, "title": "1 压缩视频（试一小段预览 + 文件篮）" },
+    "Live.dc.html": { "x": 1360, "y": 0, "w": 1280, "h": 860, "title": "2 视频规整（实时预览）" },
+    "Batch.dc.html": { "x": 2720, "y": 0, "w": 1280, "h": 860, "title": "3 批量处理中（响度标准化）" },
+    "Dark.dc.html": { "x": 4080, "y": 0, "w": 1280, "h": 860, "title": "4 暗色（生成字幕，不需要预览）" },
+    "Tiers.dc.html": { "x": 0, "y": 980, "w": 1280, "h": 620, "title": "5 预览三档：每个工具属于哪一档" },
+    "Nav.dc.html": { "x": 1360, "y": 980, "w": 1280, "h": 620, "title": "6 返回按钮与主导航图标条" },
+    "Map.dc.html": { "x": 2720, "y": 980, "w": 1280, "h": 620, "title": "7 旧位置 → 新位置，文件篮规则" },
+    "Sidebar.dc.html": { "x": 4080, "y": 980, "w": 232, "h": 860, "title": "侧栏组件" },
+    "Rail.dc.html": { "x": 4392, "y": 980, "w": 56, "h": 860, "title": "主导航图标条组件" }
+  },
+  "order": ["Main.dc.html", "Live.dc.html", "Batch.dc.html", "Dark.dc.html", "Tiers.dc.html", "Nav.dc.html", "Map.dc.html", "Sidebar.dc.html", "Rail.dc.html"],
+  "notes": {},
+  "designSystems": []
+}

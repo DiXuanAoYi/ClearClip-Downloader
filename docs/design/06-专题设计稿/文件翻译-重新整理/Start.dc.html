@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 · 开始前确认与导出</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+button{font:inherit;cursor:pointer}
+.mute{color:#66716c;font-size:12px}
+.btn{border:1px solid #d9dedb;background:#fff;border-radius:7px;height:30px;padding:0 14px;font-size:13px;color:#1d2420}
+.btn.pri{background:#b4561a;border-color:#b4561a;color:#fff;font-weight:600}
+.seg{display:inline-flex;border:1px solid #d9dedb;border-radius:8px;overflow:hidden;background:#fff}
+.seg span{padding:0 10px;height:26px;line-height:26px;font-size:12px;color:#4d5853;white-space:nowrap}
+.seg span.on{background:#fbeadb;color:#8a3d0f;font-weight:600}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:13px}
+.box{width:15px;height:15px;border-radius:4px;border:1.5px solid #b7beb9;flex:none;margin-top:3px;background:#fff}
+.box.on{background:#b4561a;border-color:#b4561a;position:relative}
+.box.on::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.sel{border:1px solid #d9dedb;border-radius:7px;height:28px;padding:0 9px;display:flex;align-items:center;font-size:12.5px;background:#fff}
+.menu{width:250px;border:1px solid #d9dedb;border-radius:10px;background:#fff;box-shadow:0 10px 28px rgba(0,0,0,.16);padding:5px;display:flex;flex-direction:column}
+.menu span{padding:6px 10px;border-radius:6px;font-size:12.5px}
+.menu small{padding:2px 10px;color:#66716c;font-size:11px}
+.menu hr{border:0;border-top:1px solid #eef0ee;margin:4px 0;width:100%}
+</style>
+</helmet>
+<div style="width: 720px; height: 720px; box-sizing: border-box; padding: 22px 26px; background: #f4f5f4; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420; font-size: 13px; line-height: 1.55; display: flex; flex-direction: column; gap: 14px">
+
+  <!-- 开始前确认 -->
+  <div style="background: #fff; border: 1px solid #d9dedb; border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.12); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; align-items: baseline; gap: 10px"><b style="font-size: 16px">翻译这份文件？</b><span class="mute">拖入或选择文件后弹出；设置里关掉“开始前确认”就直接开始</span></div>
+    <div style="display: flex; gap: 14px; align-items: center; background: #f4f5f4; border-radius: 10px; padding: 10px 12px">
+      <div style="width: 40px; height: 52px; border-radius: 5px; background: #fff; border: 1px solid #d9dedb; display: grid; place-items: center; font-size: 11px; color: #b4561a; font-weight: 700">PDF</div>
+      <div style="flex: 1"><b>Attention Is All You Need.pdf</b><div class="mute">18 页 · 文字版 · 约 340 段 · 约 3.1 万字　<span style="color: #8a3d0f">此前已译 6 页，会接着译</span></div></div>
+    </div>
+    <div style="display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 10px 10px; align-items: center">
+      <span class="mute">页范围</span><div style="display: flex; gap: 8px; align-items: center"><div class="seg"><span class="on">全部</span><span>指定</span></div><div class="sel" style="width: 140px; color: #8a948f">例如 3-12, 15</div></div>
+      <span class="mute">语言</span><div class="sel">自动检测 → 简体中文</div>
+      <span class="mute">输出</span><div style="display: flex; gap: 8px"><div class="seg"><span class="on">双语对照</span><span>仅译文</span></div><div class="seg"><span class="on">原处替换</span><span>原页+译文页</span><span>只要文字</span></div></div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 7px; border-top: 1px solid #eef0ee; padding-top: 10px">
+      <span class="mute">这些内容不翻译</span>
+      <div class="chk"><i class="box on"></i><span>页眉、页脚、页码（每页都重复出现的）</span></div>
+      <div class="chk"><i class="box on"></i><span>公式、代码块、纯数字和网址</span></div>
+      <div class="chk"><i class="box"></i><span>参考文献（从“References”那一页起）</span></div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #eef0ee; padding-top: 10px; font-size: 12.5px">
+      <div style="display: flex; gap: 8px"><span class="mute" style="width: 70px">翻译用</span><span>AI 模型池（设置 → AI）　专家：自动　术语库：开</span></div>
+      <div style="display: flex; gap: 8px"><span class="mute" style="width: 70px">预计</span><span>约 28 次请求，已有缓存的段不再请求；译完先在右边检查，再生成文件</span></div>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center"><span class="mute" style="flex: 1">只有这一份文件的设置会变，不会改你的默认设置</span><button class="btn">取消</button><button class="btn pri">开始翻译</button></div>
+  </div>
+
+  <!-- 导出菜单 -->
+  <div style="display: flex; gap: 22px; align-items: flex-start">
+    <div class="menu">
+      <small>阅读器右上角“导出 ▾”</small>
+      <span><b>双语文件</b>（PDF / DOCX / EPUB…）</span><span>只要译文的文件</span><hr><span>译文 TXT</span><span>双语 Markdown</span><span>字幕：双语 SRT / 仅译文 SRT</span><hr><span>复制全文</span><span>在文件夹里显示</span>
+    </div>
+    <div style="flex: 1; font-size: 12.5px; line-height: 1.7; color: #4d5853; padding-top: 4px"><b style="color: #1d2420">导出补全</b><br>现在“导出”里只有“复制全文”和“显示文件夹”，“复制全文（Markdown）”其实和纯文本一样（代码里把换行换成了换行）。<br>改成真能保存的：译文 TXT、双语 Markdown 直接存成文件；已生成过的文件换一种输出（双语 ↔ 仅译文）不用重新翻译，从缓存里直接出。</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":720,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

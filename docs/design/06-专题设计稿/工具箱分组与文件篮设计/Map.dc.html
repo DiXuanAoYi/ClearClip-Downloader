@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>工具箱 新旧位置对照</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 620px; box-sizing: border-box; padding: 32px 36px; display: flex; gap: 40px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<section style="flex: 1.5; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 16px">每个功能搬到哪里</h2>
+<div style="display: flex; gap: 12px; padding: 0 12px; color: #6b7385; font-size: 12px"><div style="width: 280px; flex: none">现在的位置</div><div style="flex: 1">新的位置</div></div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="11">
+<div style="display: flex; gap: 12px; align-items: center; min-height: 36px; box-sizing: border-box; padding: 6px 12px; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 8px">
+<div style="width: 280px; flex: none; color: #6b7385">{{r.from}}</div>
+<div style="flex: 1; min-width: 0"><span style="display: inline-block; width: 8px; height: 8px; border-radius: 3px; margin-right: 8px; background: {{r.dot}}"></span><strong>{{r.group}}</strong> › {{r.to}}</div>
+</div>
+</sc-for>
+</section>
+<section style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 16px">文件篮怎么工作</h2>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<sc-for list="{{rules}}" as="u" hint-placeholder-count="5">
+<div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 8px">
+<div style="width: 22px; height: 22px; flex: none; border-radius: 11px; background: #2457e6; color: #ffffff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{u.n}}</div>
+<div style="flex: 1; min-width: 0; line-height: 1.55">{{u.text}}</div>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":620}}'>
+class Component extends DCLogic {
+renderVals() {
+const G = { cut: ['剪辑', '#3b6cf6'], enc: ['压制与转换', '#e8743b'], pic: ['画面与调色', '#9b5de5'], snd: ['声音', '#14a38b'], ai: ['字幕与 AI', '#d9488f'] };
+const row = (from, g, to) => ({ from, group: G[g][0], dot: G[g][1], to });
+const rows = [
+  row('视频与音频 › 压缩视频', 'enc', '压缩视频'),
+  row('视频与音频 › 转换格式', 'enc', '转换格式（含提取音频）'),
+  row('视频与音频 › 竖屏转横屏', 'enc', '竖屏转横屏'),
+  row('视频与音频 › 裁剪 / 拼接 / 倍速 / 旋转 / 去除音轨', 'cut', '快速处理'),
+  row('视频与音频 › 转 GIF、截图', 'cut', '转 GIF、截图'),
+  row('剪辑', 'cut', '剪辑（时间线）'),
+  row('视频规整（含防抖）', 'pic', '视频规整、防抖'),
+  row('LUT 工作室', 'pic', 'LUT 工作室'),
+  row('视频与音频 › 响度标准化、音效 / 混响', 'snd', '响度标准化、音效 / 混响'),
+  row('音频标签', 'snd', '音频标签'),
+  row('字幕（校对、平移、两点校准等 8 项）', 'ai', '字幕校对与调整（8 项原样保留）'),
+  row('AI（生成字幕、纠错、摘要与章节）', 'ai', '生成字幕、AI 纠错、摘要与章节'),
+];
+const rules = [
+  { n: 1, text: '文件篮固定在每个工具的上方：选一次文件，换工具也不会丢。' },
+  { n: 2, text: '点工具里的主按钮，就对篮里每个文件各生成一个新文件；进度同时显示在文件篮和下方任务列表，可暂停、重试失败项。' },
+  { n: 3, text: '一次只能处理一个文件的工具（剪辑时间线、逐条校对字幕）用篮里第一个；“在剪辑里打开”把整篮按顺序放进主轨。' },
+  { n: 4, text: '媒体库里右键“送到工具箱”、下载完成后的“压缩 / 提取音频”等现有入口不变：文件进文件篮，并直接打开对应的工具。' },
+  { n: 5, text: '侧栏顶部是返回按钮和搜索，“最近用过”列出最近 3 个工具；所有分组默认展开，找常用工具不用多点一次。主导航在工具箱里收成图标条。' },
+];
+return { rows, rules };
+}
+}
+</script>
+</body>
+</html>

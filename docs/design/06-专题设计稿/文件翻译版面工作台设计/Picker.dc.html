@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 取色器</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1360px; height: 860px; box-sizing: border-box; padding: 20px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<div style="height: 100%; box-sizing: border-box; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 14px; box-shadow: 0 10px 34px rgba(20, 30, 60, 0.16); display: flex; flex-direction: column; overflow: hidden">
+
+<div style="flex: none; display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid #e4e7ec">
+<strong style="font-size: 16px">取色与调色</strong>
+<span style="color: #6b7385">选中的 3 块 · 标题</span>
+<span style="flex: 1"></span>
+<span style="color: #6b7385">改的是</span>
+<div style="display: flex; border: 1px solid #cfd5e0; border-radius: 8px; overflow: hidden"><span style="padding: 5px 14px; background: #2457e6; color: #ffffff; font-weight: 600; border-right: 1px solid #cfd5e0">文字色</span><span style="padding: 5px 14px; background: #ffffff; border-right: 1px solid #cfd5e0">背景色</span><span style="padding: 5px 14px; background: #ffffff">两者</span></div>
+<button aria-label="关闭" style="width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: #6b7385; font-size: 18px">×</button>
+</div>
+
+<div style="flex: 1; min-height: 0; display: flex; gap: 18px; padding: 16px 22px; overflow: hidden">
+
+<!-- A 颜色库 -->
+<section aria-label="颜色库" style="width: 232px; flex: none; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 6px"><strong style="font-size: 12px">基本颜色</strong>
+<div style="display: grid; grid-template-columns: repeat(8, 24px); gap: 2px">
+<sc-for list="{{basic}}" as="c" hint-placeholder-count="48"><button title="{{c.hex}}" aria-label="{{c.hex}}" style="{{c.style}}"></button></sc-for>
+</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="display: flex; align-items: center"><strong style="font-size: 12px">自定义颜色</strong><span style="flex: 1"></span><span style="font-size: 11px; color: #6b7385">16 格，自动保存</span></div>
+<div style="display: grid; grid-template-columns: repeat(8, 24px); gap: 2px">
+<sc-for list="{{custom}}" as="c" hint-placeholder-count="16"><button title="{{c.hex}}" aria-label="{{c.hex}}" style="{{c.style}}"></button></sc-for>
+</div>
+<button style="height: 28px; border: 1px solid #2457e6; border-radius: 6px; background: #ffffff; color: #2457e6; font: inherit; font-weight: 600">添加到自定义颜色</button></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><strong style="font-size: 12px">历史记录</strong>
+<div style="display: grid; grid-template-columns: repeat(6, 24px); gap: 2px">
+<sc-for list="{{history}}" as="c" hint-placeholder-count="12"><button title="{{c.hex}}" aria-label="{{c.hex}}" style="{{c.style}}"></button></sc-for>
+</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="display: flex; align-items: center"><strong style="font-size: 12px">这一页的颜色</strong><span style="flex: 1"></span><span style="font-size: 11px; color: #6b7385">取自原页</span></div>
+<div style="display: grid; grid-template-columns: repeat(8, 24px); gap: 2px">
+<sc-for list="{{pageColors}}" as="c" hint-placeholder-count="8"><button title="{{c.hex}}" aria-label="{{c.hex}}" style="{{c.style}}"></button></sc-for>
+</div></div>
+</section>
+
+<!-- B 色域 -->
+<section aria-label="色域" style="width: 300px; flex: none; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><span style="color: #6b7385; font-size: 12px">色域</span>
+<div style="flex: 1; height: 28px; box-sizing: border-box; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #cfd5e0; border-radius: 6px">矩形<span style="color: #6b7385">▾</span></div></div>
+<div style="display: flex; gap: 6px; font-size: 11px; color: #6b7385; flex-wrap: wrap"><span>矩形</span><span>·</span><span>色轮</span><span>·</span><span>HSL 圆柱</span><span>·</span><span>HSV 圆环</span><span>·</span><span>RGB 三角形</span></div>
+<div style="display: flex; gap: 6px">
+<div style="position: relative; width: 256px; height: 256px; flex: none; border: 1px solid #cfd5e0; box-sizing: border-box; background: linear-gradient(to bottom, rgba(128, 128, 128, 0), #808080), linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)">
+<div style="position: absolute; left: 0; top: 200px; width: 100%; height: 1px; background: rgba(255, 255, 255, 0.9)"></div>
+<div style="position: absolute; left: 0; top: 0; width: 1px; height: 100%; background: rgba(255, 255, 255, 0.9)"></div>
+<div style="position: absolute; left: 0; top: 200px; margin: -8px 0 0 -8px; width: 16px; height: 16px; border-radius: 8px; border: 2px solid #ffffff; box-shadow: 0 0 0 1px #000000; box-sizing: border-box"></div>
+</div>
+<div style="position: relative; width: 30px; height: 256px; flex: none; border: 1px solid #cfd5e0; box-sizing: border-box; background: linear-gradient(to bottom, #ffc7c7, #000000)">
+<span style="position: absolute; left: -11px; top: 36px; font-size: 11px; color: #1d2433">▶</span><span style="position: absolute; right: -11px; top: 36px; font-size: 11px; color: #1d2433">◀</span>
+</div>
+</div>
+<div style="display: flex; align-items: flex-end; gap: 12px">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 2px"><span style="font-size: 11px">新颜色</span><div style="width: 64px; height: 34px; border-radius: 6px; border: 1px solid #cfd5e0; background: #d4a5a5"></div></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 2px"><span style="font-size: 11px">原颜色</span><div style="width: 64px; height: 34px; border-radius: 6px; border: 1px solid #cfd5e0; background: #d4a5a5"></div></div>
+<button style="height: 34px; padding: 0 12px; display: flex; align-items: center; gap: 6px; border: 1px solid #2457e6; border-radius: 6px; background: #eaf0ff; color: #2457e6; font: inherit; font-weight: 600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4l6 6M4 20l1-4 9-9 3 3-9 9zM13 5l6 6"></path></svg>吸管</button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; background: #f5f6f8; font-size: 12px; line-height: 1.55">
+<div><b>吸管有两种</b></div>
+<div style="color: #4a5367">原页取色：直接在页面图的像素上取，带放大镜（见图 3 左）。屏幕取色：像“截图翻译”那样先截屏再点，可以取别的软件里的颜色。</div>
+</div>
+</section>
+
+<!-- C 数值与检查 -->
+<section aria-label="数值与检查" style="width: 330px; flex: none; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; border: 1px solid #cfd5e0; border-radius: 8px; overflow: hidden; align-self: flex-start"><span style="padding: 5px 14px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">RGB</span><span style="padding: 5px 14px; background: #ffffff; border-right: 1px solid #cfd5e0">HSV</span><span style="padding: 5px 14px; background: #ffffff; border-right: 1px solid #cfd5e0">HSL</span><span style="padding: 5px 14px; background: #ffffff">Lab</span></div>
+<div style="display: flex; gap: 6px">
+<label style="flex: 1; min-width: 0"><span style="display: block; font-size: 11px; color: #6b7385">R</span><input aria-label="R" value="212" style="width: 100%; height: 30px; box-sizing: border-box; border: 1px solid #cfd5e0; border-radius: 6px; padding: 0 8px; font: 12px ui-monospace, Menlo, Consolas, monospace; background: #ffffff; color: #1d2433"></label>
+<label style="flex: 1; min-width: 0"><span style="display: block; font-size: 11px; color: #6b7385">G</span><input aria-label="G" value="165" style="width: 100%; height: 30px; box-sizing: border-box; border: 1px solid #cfd5e0; border-radius: 6px; padding: 0 8px; font: 12px ui-monospace, Menlo, Consolas, monospace; background: #ffffff; color: #1d2433"></label>
+<label style="flex: 1; min-width: 0"><span style="display: block; font-size: 11px; color: #6b7385">B</span><input aria-label="B" value="165" style="width: 100%; height: 30px; box-sizing: border-box; border: 1px solid #cfd5e0; border-radius: 6px; padding: 0 8px; font: 12px ui-monospace, Menlo, Consolas, monospace; background: #ffffff; color: #1d2433"></label>
+</div>
+<div style="display: flex; gap: 6px">
+<label style="width: 92px; flex: none"><span style="display: block; font-size: 11px; color: #6b7385">Hex</span><input aria-label="Hex" value="#D4A5A5" style="width: 100%; height: 30px; box-sizing: border-box; border: 1px solid #cfd5e0; border-radius: 6px; padding: 0 8px; font: 12px ui-monospace, Menlo, Consolas, monospace; background: #ffffff; color: #1d2433"></label>
+<label style="flex: 1; min-width: 0"><span style="display: block; font-size: 11px; color: #6b7385">RGB 写法</span><input aria-label="RGB 写法" value="RGB(212, 165, 165)" style="width: 100%; height: 30px; box-sizing: border-box; border: 1px solid #cfd5e0; border-radius: 6px; padding: 0 8px; font: 12px ui-monospace, Menlo, Consolas, monospace; background: #ffffff; color: #1d2433"></label>
+<label style="width: 70px; flex: none"><span style="display: block; font-size: 11px; color: #6b7385">名称</span><input aria-label="名称" value="玫瑰粉" style="width: 100%; height: 30px; box-sizing: border-box; border: 1px solid #cfd5e0; border-radius: 6px; padding: 0 8px; font: 12px 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #ffffff; color: #1d2433"></label>
+</div>
+
+<div style="border-top: 1px solid #e4e7ec; padding-top: 10px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px"><strong style="font-size: 12px">配色建议</strong>
+<div style="height: 26px; box-sizing: border-box; padding: 0 8px; display: flex; align-items: center; gap: 6px; border: 1px solid #cfd5e0; border-radius: 6px; font-size: 12px">互补<span style="color: #6b7385">▾</span></div>
+<span style="flex: 1"></span><span style="font-size: 11px; color: #6b7385">点圆球取色</span></div>
+<div style="display: flex; gap: 8px; align-items: center"><span style="width: 22px; height: 22px; border-radius: 11px; background: #d4a5a5; border: 2px solid #1d2433; box-sizing: border-box"></span><span style="color: #6b7385">→</span><sc-for list="{{harmony}}" as="h" hint-placeholder-count="1"><button title="{{h.hex}}" aria-label="{{h.hex}}" style="{{h.style}}"></button></sc-for><span style="font-size: 11px; color: #6b7385">互补 #A5D4D4</span></div>
+</div>
+
+<div style="border-top: 1px solid #e4e7ec; padding-top: 10px; display: flex; flex-direction: column; gap: 6px">
+<strong style="font-size: 12px">对比度</strong>
+<div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px">
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 20px; height: 20px; border-radius: 4px; background: #5b2f48; border: 1px solid #cfd5e0; display: flex; align-items: center; justify-content: center; color: #d4a5a5; font-size: 11px; font-weight: 700">A</span><span style="flex: 1">对页面背景 #5B2F48</span><span style="font-weight: 600; color: #0b6b3a">5.0 : 1 · AA</span></div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 20px; height: 20px; border-radius: 4px; background: #ffffff; border: 1px solid #cfd5e0; display: flex; align-items: center; justify-content: center; color: #d4a5a5; font-size: 11px; font-weight: 700">A</span><span style="flex: 1">对白色</span><span style="font-weight: 600; color: #b42318">2.2 : 1 · ✗</span></div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 20px; height: 20px; border-radius: 4px; background: #000000; border: 1px solid #cfd5e0; display: flex; align-items: center; justify-content: center; color: #d4a5a5; font-size: 11px; font-weight: 700">A</span><span style="flex: 1">对黑色</span><span style="font-weight: 600; color: #0b6b3a">9.7 : 1 · AAA</span></div>
+</div>
+</div>
+
+<div style="border-top: 1px solid #e4e7ec; padding-top: 10px; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px"><strong style="font-size: 12px">色盲模拟</strong><span style="flex: 1"></span><span style="font-size: 11px; color: #6b7385">近似值，供参考</span></div>
+<div style="display: flex; gap: 14px; font-size: 12px"><span style="display: flex; align-items: center; gap: 4px"><span style="width: 18px; height: 18px; border-radius: 9px; background: #c0bfa5; border: 1px solid #cfd5e0"></span>红盲</span><span style="display: flex; align-items: center; gap: 4px"><span style="width: 18px; height: 18px; border-radius: 9px; background: #c2c6a5; border: 1px solid #cfd5e0"></span>绿盲</span><span style="display: flex; align-items: center; gap: 4px"><span style="width: 18px; height: 18px; border-radius: 9px; background: #d2a5a5; border: 1px solid #cfd5e0"></span>蓝盲</span></div>
+</div>
+
+<div style="border-top: 1px solid #e4e7ec; padding-top: 10px; display: flex; flex-direction: column; gap: 6px">
+<label style="display: flex; align-items: center; gap: 8px"><span style="width: 16px; height: 16px; border: 1px solid #cfd5e0; border-radius: 4px; background: #ffffff; flex: none"></span><span>安全色域（BT.709，视频 / 广播用）</span></label>
+<span style="font-size: 11px; color: #6b7385; line-height: 1.5">默认关闭。打开后颜色会被限制在 Y 16–235、CbCr 16–240 内，并显示“钳制 旧→新”和 Y / Cb / Cr；从 weld_app 带过来的，做 PDF 用不到可以一直关着。</span>
+</div>
+</section>
+
+<!-- D 预览与应用 -->
+<section aria-label="预览与应用" style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<strong style="font-size: 12px">这几块在页面上的样子（实时）</strong>
+<div style="background: #5b2f48; border-radius: 10px; padding: 18px 18px; display: flex; flex-direction: column; gap: 12px">
+<div style="font-size: 26px; font-weight: 700; color: #d4a5a5; line-height: 1.2">示例标题文本</div>
+<div style="font-size: 30px; font-weight: 700; color: #d4a5a5; line-height: 1.2">沙漠玫瑰</div>
+<div style="font-size: 20px; font-weight: 700; color: #d4a5a5; line-height: 1.2">字体排印</div>
+<div style="font-size: 12px; color: #b87d6d">正文保持原来的颜色，不受影响</div>
+</div>
+<div style="display: flex; gap: 8px"><div style="flex: 1; padding: 8px 10px; border-radius: 8px; background: #f5f6f8"><div style="font-size: 11px; color: #6b7385">改之前</div><div style="font-weight: 700; color: #d4a5a5; background: #5b2f48; padding: 2px 8px; border-radius: 4px; margin-top: 4px">Aa 沙漠玫瑰</div></div><div style="flex: 1; padding: 8px 10px; border-radius: 8px; background: #f5f6f8"><div style="font-size: 11px; color: #6b7385">改之后</div><div style="font-weight: 700; color: #d4a5a5; background: #5b2f48; padding: 2px 8px; border-radius: 4px; margin-top: 4px">Aa 沙漠玫瑰</div></div></div>
+
+<div style="border-top: 1px solid #e4e7ec; padding-top: 12px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 8px"><span style="color: #6b7385">应用到</span></div>
+<div style="display: flex; border: 1px solid #cfd5e0; border-radius: 8px; overflow: hidden; font-size: 12px"><span style="flex: 1; text-align: center; padding: 6px 4px; background: #ffffff; border-right: 1px solid #cfd5e0">这一块</span><span style="flex: 1.3; text-align: center; padding: 6px 4px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">选中的 3 块</span><span style="flex: 1; text-align: center; padding: 6px 4px; background: #ffffff; border-right: 1px solid #cfd5e0">本页全部</span><span style="flex: 1; text-align: center; padding: 6px 4px; background: #ffffff">整份文件</span></div>
+<div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px"><span style="color: #6b7385">替换颜色</span><span style="width: 16px; height: 16px; border-radius: 4px; background: #d4a5a5; border: 1px solid #cfd5e0"></span><span style="font-family: ui-monospace, Menlo, Consolas, monospace">#D4A5A5</span><span style="color: #6b7385">→ 新颜色，本页 6 处 · 全文 38 处</span></div>
+</div>
+<div style="margin-top: auto; display: flex; justify-content: flex-end; gap: 8px">
+<button style="height: 36px; padding: 0 18px; border: 1px solid #cfd5e0; border-radius: 8px; background: #ffffff; font: inherit">取消</button>
+<button style="height: 36px; padding: 0 22px; border: 0; border-radius: 8px; background: #2457e6; color: #ffffff; font: inherit; font-weight: 600">应用到 3 块</button>
+</div>
+</section>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const sq = (c, on, empty) => 'display:block;width:24px;height:24px;padding:0;border-radius:3px;box-sizing:border-box;background:' + c + ';border:' + (on ? '2px solid #2457e6' : empty ? '1px dashed #cfd5e0' : '1px solid #cfd5e0') + ';';
+const base = ['#FFFFFF','#C0C0C0','#808080','#404040','#000000','#2F4F4F','#556B2F','#8B4513','#FF0000','#FF4500','#FF8C00','#FFD700','#FFFF00','#ADFF2F','#00FF00','#00FA9A','#00FFFF','#00CED1','#1E90FF','#0000FF','#8A2BE2','#9400D3','#FF00FF','#FF1493','#FF6347','#FF7F50','#FFA07A','#FFDAB9','#FFFACD','#98FB98','#AFEEEE','#87CEFA','#CD853F','#D2691E','#BC8F8F','#F4A460','#DEB887','#DAA520','#BDB76B','#6B8E23','#800000','#8B0000','#A0522D','#4B0082','#483D8B','#000080','#006400','#191970'];
+const custom = ['#D4A5A5', '#F4A900', '#5B2F48', '#B87D6D', '#E8D5C4', '#C0392B', '#2C3E50', '#F7F1E8'];
+while (custom.length < 16) custom.push('#FFFFFF');
+const history = ['#D4A5A5', '#F4A900', '#E8D5C4', '#B87D6D', '#FFFFFF', '#1D2433', '#2457E6', '#0B6B3A', '#C0392B', '#5B2F48'];
+const page = ['#5B2F48', '#D4A5A5', '#B87D6D', '#E8D5C4', '#7A4560', '#C98F8F', '#F0E4D8', '#3E1F31'];
+return {
+  basic: base.map((hex) => ({ hex, style: sq(hex, false, false) })),
+  custom: custom.map((hex, i) => ({ hex, style: sq(hex, i === 0, hex === '#FFFFFF' && i > 7) })),
+  history: history.map((hex) => ({ hex, style: sq(hex, false, false) })),
+  pageColors: page.map((hex) => ({ hex, style: sq(hex, false, false) })),
+  harmony: [{ hex: '#A5D4D4', style: 'width:22px;height:22px;border-radius:11px;padding:0;background:#a5d4d4;border:1px solid #cfd5e0' }],
+};
+}
+}
+</script>
+</body>
+</html>

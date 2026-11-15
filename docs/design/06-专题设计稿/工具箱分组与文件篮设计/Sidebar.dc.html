@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>工具箱侧栏</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 232px; height: 860px; box-sizing: border-box; background: {{c.bg}}; border-right: 1px solid {{c.line}}; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; color: {{c.fg}}">
+<div style="display: flex; gap: 8px; margin-bottom: 8px">
+<button aria-label="返回上一页" title="返回进工具箱之前的页面" style="width: 34px; height: 34px; flex: none; display: flex; align-items: center; justify-content: center; border: 1px solid {{c.line}}; border-radius: 8px; background: {{c.field}}; padding: 0">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{c.fg}}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+</button>
+<label style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 34px; box-sizing: border-box; padding: 0 10px; border: 1px solid {{c.line}}; border-radius: 8px; background: {{c.field}}">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="{{c.mute}}" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+<input aria-label="搜索工具" placeholder="搜索工具…" style="flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: {{c.fg}}">
+</label>
+</div>
+<sc-for list="{{sections}}" as="sec" hint-placeholder-count="6">
+<div style="display: flex; align-items: center; gap: 8px; padding: 12px 10px 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: {{c.mute}}">
+<span style="width: 8px; height: 8px; border-radius: 3px; background: {{sec.dot}}"></span>
+<span>{{sec.name}}</span>
+</div>
+<sc-for list="{{sec.tools}}" as="t" hint-placeholder-count="4">
+<div style="{{t.style}}">
+<span>{{t.name}}</span>
+<span style="font-size: 11px; color: {{t.tagColor}}">{{t.tag}}</span>
+</div>
+</sc-for>
+</sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"active":{"editor":"text","default":"压缩视频"},"dark":{"editor":"boolean","default":false},"$preview":{"width":232,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+const dark = this.props.dark === true;
+const active = this.props.active ?? '压缩视频';
+const c = dark
+  ? { bg: '#181b22', line: '#2a303b', field: '#1f232c', fg: '#e6e9ef', mute: '#98a0b3', hover: '#232834', on: '#25304f', onFg: '#9db8ff' }
+  : { bg: '#ffffff', line: '#e4e7ec', field: '#f5f6f8', fg: '#1d2433', mute: '#6b7385', hover: '#f0f2f6', on: '#eaf0ff', onFg: '#2457e6' };
+const base = 'height: 30px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; font-size: 13px;';
+const mk = (name, tag, recent) => {
+  const on = !recent && name === active;
+  return {
+    name,
+    tag: tag || '',
+    tagColor: on ? c.onFg : c.mute,
+    style: base + (on ? 'background:' + c.on + ';color:' + c.onFg + ';font-weight:600;' : 'color:' + (recent ? c.mute : c.fg) + ';'),
+  };
+};
+const sections = [
+  { name: '最近用过', dot: dark ? '#6b7385' : '#b7bdca', tools: [mk('压缩视频', '', true), mk('快速处理', '', true), mk('响度标准化', '', true)] },
+  { name: '剪辑', dot: '#3b6cf6', tools: [mk('剪辑（时间线）', '多轨'), mk('快速处理', '裁剪 拼接'), mk('转 GIF'), mk('截图')] },
+  { name: '压制与转换', dot: '#e8743b', tools: [mk('压缩视频'), mk('转换格式'), mk('竖屏转横屏')] },
+  { name: '画面与调色', dot: '#9b5de5', tools: [mk('视频规整'), mk('LUT 工作室'), mk('防抖')] },
+  { name: '声音', dot: '#14a38b', tools: [mk('响度标准化'), mk('音效 / 混响'), mk('音频标签')] },
+  { name: '字幕与 AI', dot: '#d9488f', tools: [mk('字幕校对与调整', '8 项'), mk('生成字幕'), mk('AI 纠错'), mk('摘要与章节')] },
+];
+return { c, sections };
+}
+}
+</script>
+</body>
+</html>

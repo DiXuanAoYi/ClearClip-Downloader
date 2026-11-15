@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>工具箱 暗色</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 860px; display: flex; background: #14171d; color: #e6e9ef; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+<dc-import name="Rail" dark="{{yes}}" hint-size="56px,860px"></dc-import>
+<dc-import name="Sidebar" active="生成字幕" dark="{{yes}}" hint-size="232px,860px"></dc-import>
+<main style="flex: 1; min-width: 0; box-sizing: border-box; padding: 20px 28px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="margin: 0; font-size: 18px">生成字幕</h2>
+<p style="margin: 0; color: #98a0b3">给没有字幕的视频 / 音频生成字幕：识别 → 纠错 → 断句 → 翻译 → 导出。</p>
+</div>
+
+<section aria-label="文件篮" style="background: #1c2028; border: 1px solid #2a303b; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 10px">
+<strong style="font-size: 14px">文件篮</strong>
+<span style="background: #6b93ff; color: #0f1320; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 10px">1</span>
+<span style="color: #98a0b3; flex: 1; min-width: 0">字幕生成按顺序逐个处理；放进多个文件会依次排队。</span>
+<button style="height: 30px; padding: 0 12px; border: 1px solid #3a4152; border-radius: 6px; background: #1c2028; color: #e6e9ef; font: inherit">添加文件…</button>
+<button style="height: 30px; padding: 0 12px; border: 1px solid #3a4152; border-radius: 6px; background: #1c2028; color: #e6e9ef; font: inherit">从媒体库选</button>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #2a303b; border-radius: 8px; background: #20252f">
+<div style="width: 44px; height: 44px; flex: none; border-radius: 6px; background: #2c3342"></div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<div style="font-weight: 600">公开课 第 3 讲.mp4</div>
+<div style="color: #98a0b3; font-size: 12px">1920×1080 · 48:20 · 英语（自动判断）</div>
+</div>
+<button aria-label="移出文件篮" style="width: 24px; height: 24px; border: 0; border-radius: 12px; background: transparent; color: #98a0b3; font-size: 16px; line-height: 1">×</button>
+</div>
+</section>
+
+<section aria-label="字幕设置" style="background: #1c2028; border: 1px solid #2a303b; border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: center; gap: 16px">
+<div style="width: 88px; flex: none; color: #98a0b3">音频语言</div>
+<div style="width: 220px; box-sizing: border-box; height: 30px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #3a4152; border-radius: 6px">自动判断<span style="color: #98a0b3">▾</span></div>
+<span style="color: #98a0b3">翻译时，这个语言一直作为原文。</span>
+</div>
+<div style="display: flex; align-items: center; gap: 16px">
+<div style="width: 88px; flex: none; color: #98a0b3">翻译为</div>
+<div style="display: flex; gap: 0; border: 1px solid #3a4152; border-radius: 6px; overflow: hidden">
+<span style="padding: 6px 14px; background: #1c2028; border-right: 1px solid #3a4152">不翻译</span>
+<span style="padding: 6px 14px; background: #25304f; color: #9db8ff; font-weight: 600; border-right: 1px solid #3a4152">中文</span>
+<span style="padding: 6px 14px; background: #1c2028">English</span>
+</div>
+<span style="color: #98a0b3">双语排列</span>
+<div style="width: 140px; box-sizing: border-box; height: 30px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #3a4152; border-radius: 6px">原文在上<span style="color: #98a0b3">▾</span></div>
+</div>
+<div style="display: flex; align-items: center; gap: 16px">
+<div style="width: 88px; flex: none; color: #98a0b3">AI 纠错</div>
+<div style="display: flex; gap: 0; border: 1px solid #3a4152; border-radius: 6px; overflow: hidden">
+<span style="padding: 6px 14px; background: #25304f; color: #9db8ff; font-weight: 600; border-right: 1px solid #3a4152">保守</span>
+<span style="padding: 6px 14px; background: #1c2028; border-right: 1px solid #3a4152">积极</span>
+<span style="padding: 6px 14px; background: #1c2028">只用规则</span>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 16px">
+<div style="width: 88px; flex: none; color: #98a0b3">导出格式</div>
+<div style="display: flex; gap: 8px">
+<span style="padding: 5px 12px; border-radius: 14px; background: #25304f; color: #9db8ff; font-weight: 600; border: 1px solid #3d4f82">SRT</span>
+<span style="padding: 5px 12px; border-radius: 14px; border: 1px solid #3a4152">VTT</span>
+<span style="padding: 5px 12px; border-radius: 14px; border: 1px solid #3a4152">ASS</span>
+<span style="padding: 5px 12px; border-radius: 14px; border: 1px solid #3a4152">LRC</span>
+<span style="padding: 5px 12px; border-radius: 14px; border: 1px solid #3a4152">TXT</span>
+</div>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid #2a303b; padding-top: 16px">
+<span style="color: #98a0b3">字幕保存在视频旁边，不改原文件。</span>
+<button style="height: 36px; padding: 0 22px; border: 0; border-radius: 8px; background: #6b93ff; color: #0f1320; font: inherit; font-weight: 700">生成字幕</button>
+</div>
+</section>
+
+<section aria-label="任务" style="background: #1c2028; border: 1px solid #2a303b; border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; justify-content: space-between"><strong style="font-size: 14px">任务</strong><span style="color: #98a0b3">清除已完成</span></div>
+<div style="display: flex; align-items: center; gap: 12px; height: 32px">
+<div style="width: 240px; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">访谈录音.m4a</div>
+<div style="width: 90px; flex: none; color: #98a0b3">生成字幕</div>
+<div style="flex: 1; min-width: 0; height: 6px; border-radius: 3px; background: #2a303b"><div style="width: 42%; height: 6px; border-radius: 3px; background: #6b93ff"></div></div>
+<div style="width: 150px; flex: none; text-align: right; font-weight: 600; color: #9db8ff">识别中 42%</div>
+</div>
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+return { yes: true };
+}
+}
+</script>
+</body>
+</html>

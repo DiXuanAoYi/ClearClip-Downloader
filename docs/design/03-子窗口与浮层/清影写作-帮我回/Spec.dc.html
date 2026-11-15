@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>帮我回 · 规则与重组</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+.rule{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;padding:9px 0;border-top:1px solid #eef0ee;font-size:13px;line-height:1.65}
+.rk{color:#66716c;font-size:12.5px}
+.m{display:grid;grid-template-columns:110px 20px minmax(0,1fr);align-items:center;gap:6px;font-size:13px;padding:5px 0}
+.from{background:#f5f6f5;border:1px solid #e1e5e2;border-radius:6px;padding:2px 8px;white-space:nowrap}
+.to{color:#1d2420}
+.tag{display:inline-block;background:#fbeadb;color:#8a3d0f;border-radius:5px;padding:0 6px;font-size:12px;font-weight:600;margin-right:4px}
+h2{margin:0 0 8px;font-size:16px;font-weight:600}
+</style>
+</helmet>
+<div style="width: 1000px; height: 1000px; box-sizing: border-box; padding: 32px 36px; display: flex; gap: 24px; background: #f4f5f4; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420">
+
+  <div style="flex: 0 0 430px; display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 700">把“回复”做成“帮我回”</h1>
+      <p style="margin: 0; font-size: 13px; color: #66716c; line-height: 1.6">现在的“回复”只是动作条里的一个按钮，意思全靠在“额外要求”里打字。改成两个维度点选：<b style="color: #1d2420">我的意思</b>（说什么）× <b style="color: #1d2420">怎么说</b>（语气），再加上<b style="color: #1d2420">对方是谁</b>。</p>
+    </div>
+
+    <section style="background: #fff; border: 1px solid #d9dedb; border-radius: 10px; padding: 14px 18px">
+      <h2>你提的 9 项放在哪</h2>
+      <div class="m"><span class="from">正式得体</span><span>→</span><span class="to"><span class="tag">怎么说</span>正式得体</span></div>
+      <div class="m"><span class="from">高情商回复</span><span>→</span><span class="to"><span class="tag">怎么说</span>高情商</span></div>
+      <div class="m"><span class="from">幽默接话</span><span>→</span><span class="to"><span class="tag">怎么说</span>幽默接话</span></div>
+      <div class="m"><span class="from">体面拒绝</span><span>→</span><span class="to"><span class="tag">我的意思</span>拒绝 ＋ <span class="tag">怎么说</span>高情商（选“拒绝”时默认就是这个搭配）</span></div>
+      <div class="m"><span class="from">答应但设条件</span><span>→</span><span class="to"><span class="tag">我的意思</span>有条件地答应（多一个“条件”框）</span></div>
+      <div class="m"><span class="from">答应 / 拒绝</span><span>→</span><span class="to"><span class="tag">我的意思</span>原样保留</span></div>
+      <div class="m"><span class="from">再想想 / 问清楚</span><span>→</span><span class="to"><span class="tag">我的意思</span>原样保留，各带一个小表单</span></div>
+      <p style="margin: 8px 0 0; font-size: 12px; color: #66716c; line-height: 1.6">分成两组后可以自由组合（5 × 5 = 25 种），比列 9 个平铺的按钮更好选；我补了“简短干脆”“温暖真诚”两种语气，“对方是谁”和“长度”。</p>
+    </section>
+
+    <section style="background: #fff; border: 1px solid #d9dedb; border-radius: 10px; padding: 14px 18px">
+      <h2>和现有功能怎么合</h2>
+      <div class="m"><span class="from">回复</span><span>→</span><span class="to">顶部第一个标签“帮我回”</span></div>
+      <div class="m"><span class="from">改写 · 润色 · 更简洁 · 缩短 · 更礼貌 · 更有说服力</span><span>→</span><span class="to">“改写润色”标签：选“怎么改”，和帮我回共用同一排语气</span></div>
+      <div class="m"><span class="from">语法检查</span><span>→</span><span class="to">“检查”标签</span></div>
+      <div class="m"><span class="from">翻译 · 总结 · 续写 · 划词工具 · 摘录</span><span>→</span><span class="to">“翻译 · 更多”标签</span></div>
+      <div class="m"><span class="from">场景模板（小红书、周报…）</span><span>→</span><span class="to">留在“改写润色”里；“客服回复”挪进帮我回，变成“对方是：客户”</span></div>
+    </section>
+  </div>
+
+  <section style="flex: 1; min-width: 0; background: #fff; border: 1px solid #d9dedb; border-radius: 12px; padding: 20px 24px; display: flex; flex-direction: column">
+    <h2 style="font-size: 17px; margin-bottom: 6px">规则</h2>
+    <div class="rule"><span class="rk">什么时候进</span><span>按快捷键时，取到文字的程序是微信、QQ、钉钉、飞书、企业微信、Outlook / 邮件，就直接停在“帮我回”；别的程序停在上次用的标签。顶部小标签写来源和对方名字（能读到时）。</span></div>
+    <div class="rule"><span class="rk">看懂了</span><span>生成前先用一句话说出对方要什么、给了哪些信息、语气怎样；“问清楚”时顺便列出没说清的地方。这一步很短，跟着回复一起出，不多等。</span></div>
+    <div class="rule"><span class="rk">对方是谁</span><span>上级 / 同事 / 客户 / 朋友 / 家人 / 不太熟。按称呼和来源先猜一个，可以改；按“程序 + 对方名字”记住，下次自动选上。邮件会自动带称呼和落款。</span></div>
+    <div class="rule"><span class="rk">我的意思</span><span>五选一，各带一个小框：答应（还想说，可选）、有条件地答应（条件，必填）、再想想（什么时候答复）、问清楚（要问的，可勾选）、拒绝（理由可不说，可以给个替代：改天 / 推荐别人）。</span></div>
+    <div class="rule"><span class="rk">怎么说</span><span>正式得体 / 高情商 / 幽默接话 / 简短干脆 / 温暖真诚，单选；长度：一句话 / 正常 / 详细。上级、客户时“幽默接话”会提示“可能不合适”，但不拦。</span></div>
+    <div class="rule"><span class="rk">结果</span><span>一次出三版，各有一个说法标签（稳妥 / 热情 / 简短），Alt+1/2/3 切换。下面一排“微调”：更软一点、更硬一点、再短点、去掉客套、加个表情，点一下就在当前这版上改，不重新选。</span></div>
+    <div class="rule"><span class="rk">不乱说</span><span>理由、时间、条件只用你写的；你没给理由时不替你编（拒绝就只说“这次没法”），不多答应你没答应的事。结果里出现原文没有的数字或时间，会标黄提醒核对。</span></div>
+    <div class="rule"><span class="rk">上下文</span><span>“＋ 贴上前面的聊天”可以多贴几条之前的消息，只用来理解，不会回复它们。</span></div>
+    <div class="rule"><span class="rk">写回</span><span>“替换到微信”写回原输入框（和现在的“替换原文”一样），按钮名跟着来源变；收藏的回复在“翻译 · 更多 › 我的收藏”。</span></div>
+    <div class="rule"><span class="rk">外观</span><span>沿用写作窗现有的主题色和组件，亮色、暗色都适配；窗口宽度不变（420），内容多时中间滚动，生成按钮和结果始终在下面。</span></div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

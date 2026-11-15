@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>右键菜单与页面保存</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;color:#1d2420}
+.cap{font-size:14px;font-weight:700;margin-bottom:10px}
+.cap span{font-weight:400;color:#5d6862}
+.menu{background:#fff;border:1px solid #cfd5d1;border-radius:8px;box-shadow:0 10px 28px #1d242026;padding:4px;width:250px;font-size:13px}
+.mi{padding:6px 10px;border-radius:4px;display:flex;justify-content:space-between;gap:10px}
+.mi.hot{background:#d9762b24}
+.mi small{color:#5d6862;font-size:11px}
+.sep{height:1px;background:#e3e7e4;margin:4px 6px}
+.hd{font-size:11px;color:#5d6862;padding:4px 10px;letter-spacing:.04em}
+.m{font-size:12px;color:#5d6862;line-height:1.6}
+.card{background:#fff;border:1px solid #cfd5d1;border-radius:12px;padding:14px 16px;box-shadow:0 10px 28px #1d242018;display:flex;flex-direction:column;gap:8px}
+.t{font-size:14px;font-weight:700}
+.row{display:flex;align-items:center;gap:8px}
+.new{background:#b4561a;color:#fff;font-size:10px;border-radius:3px;padding:0 4px;line-height:15px}
+.ln{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid #eceeed}
+</style>
+</helmet>
+<div style="width:1200px;height:620px;background:#eef0ee;padding:40px;display:flex;gap:36px;align-items:flex-start">
+
+<div>
+<div class="cap">在网页上右键 <span>菜单项按右键对象自动出现</span></div>
+<div style="display:flex;gap:6px;align-items:flex-start">
+<div class="menu">
+<div class="hd">清影 ClearClip</div>
+<div class="mi"><span>发送此页面到清影</span><small>已有</small></div>
+<div class="mi"><span>稍后看</span><span class="new">新</span></div>
+<div class="mi"><span>复制干净链接</span><span class="new">新</span></div>
+<div class="mi"><span>二维码…</span><span class="new">新</span></div>
+<div class="sep"></div>
+<div class="hd">选中了文字时</div>
+<div class="mi"><span>摘录选中文字到清影</span><span class="new">新</span></div>
+<div class="sep"></div>
+<div class="mi hot"><span>页面保存</span><span>▸</span></div>
+<div class="mi"><span>打开页面媒体总览</span><span class="new">新</span></div>
+<div class="sep"></div>
+<div class="hd">右键在图片 / 视频 / 链接上</div>
+<div class="mi"><span>发送此图片 / 视频 / 链接</span><small>已有</small></div>
+<div class="mi"><span>以图搜图</span><span>▸</span></div>
+<div class="mi"><span>同步此网站的登录 Cookie</span><small>已有</small></div>
+</div>
+<div class="menu" style="width:200px;margin-top:150px">
+<div class="mi"><span>截图：可见区域</span></div>
+<div class="mi"><span>截图：选取区域…</span></div>
+<div class="mi"><span>截图：整页</span></div>
+<div class="sep"></div>
+<div class="mi"><span>另存为 PDF</span></div>
+<div class="mi"><span>保存为 Markdown</span></div>
+</div>
+</div>
+<div class="menu" style="width:210px;margin-top:14px;margin-left:256px">
+<div class="hd">以图搜图（子菜单）</div>
+<div class="mi"><span>Google</span></div><div class="mi"><span>Bing</span></div><div class="mi"><span>Yandex</span></div>
+<div class="mi"><span>TinEye</span></div><div class="mi"><span>百度</span></div><div class="mi"><span>搜狗</span></div>
+<div class="sep"></div>
+<div class="mi"><span>全部引擎各开一个标签</span></div>
+<div class="mi"><span>上传本地图片…</span></div>
+</div>
+</div>
+
+<div style="width:380px;display:flex;flex-direction:column;gap:16px">
+<div class="cap" style="margin-bottom:0">页面保存 <span>功能 8</span></div>
+<div class="card">
+<div class="t">保存为 Markdown <span class="m">8d</span></div>
+<div class="m">先在页面里找正文（<code>article</code>、段落密度），转成 Markdown，图片保留原链接。预览一遍再保存：</div>
+<div style="border:1px solid #e3e7e4;border-radius:6px;padding:8px 10px;background:#f6f7f6;font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:11px;line-height:1.6"># 示例文章标题<br>&gt; 来源：example.com/post/12 · 2026-10-30<br><br>第一段正文……<br>![配图](https://example.com/a.jpg)</div>
+<div class="row" style="justify-content:flex-end"><span class="m" style="flex:1">提取不准时，可先选中要保存的部分</span><button style="font:inherit;font-size:13px;border:1px solid #b4561a;background:#b4561a;color:#fff;border-radius:6px;padding:5px 12px;min-height:32px;font-weight:700">保存</button></div>
+</div>
+<div class="card">
+<div class="t">整页截图 <span class="m">8b</span></div>
+<div class="m">自动滚动拼接；固定头部只保留一次；超过 16384 px 的长页面自动分块，输出 PNG / JPG。</div>
+</div>
+</div>
+
+<div style="width:230px">
+<div class="cap">保存去哪里</div>
+<div class="card">
+<div class="ln"><span>摘录</span><b>清影“文字便签”</b></div>
+<div class="ln"><span>截图</span><b>浏览器下载 / 发到清影</b></div>
+<div class="ln"><span>PDF</span><b>浏览器下载</b></div>
+<div class="ln" style="border:0"><span>Markdown</span><b>浏览器下载</b></div>
+<div class="m">不做“整页单文件 HTML”，设置页里推荐 SingleFile。</div>
+</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":620}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

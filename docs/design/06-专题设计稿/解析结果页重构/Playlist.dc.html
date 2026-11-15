@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>解析结果 · 合集</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#f4f5f4}
+a{color:#ad5e22}a:hover{color:#8a4a19}
+.mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+.sec{display:flex;flex-direction:column;gap:12px;padding:20px 24px;border-top:1px solid #e3e7e4}
+.sh{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.st{font-size:13px;font-weight:600;color:#1d2420}
+.sa{display:flex;gap:16px;font-size:12px}
+.tag{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font-size:11.5px;background:#eef0ee;color:#4a5550}
+.nav{display:flex;align-items:center;min-height:36px;padding:0 14px;border-radius:6px;font-size:13px;color:#3d4843}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 14px;border-radius:6px;border:1px solid #d9dedb;background:#fff;font:inherit;font-size:13px;color:#1d2420;cursor:pointer}
+.ent{display:grid;grid-template-columns:18px 28px 64px minmax(0,1fr) auto 56px;align-items:center;gap:12px;min-height:48px;padding:0 14px;border-bottom:1px solid #eef0ee;cursor:pointer}
+.ent:last-child{border-bottom:0}
+.th{width:64px;height:36px;border-radius:4px;background:#d3d9d5}
+.fld{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#4a5550;min-width:0}
+.sel{display:flex;align-items:center;justify-content:space-between;gap:8px;height:36px;padding:0 12px;border:1px solid #d9dedb;border-radius:6px;background:#fff;font:inherit;font-size:13px;color:#1d2420;cursor:pointer}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1040px; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; font-size: 13px; line-height: 1.5; color: #1d2420; background: #f4f5f4">
+
+  <nav aria-label="主导航" style="flex: 1 1 200px; max-width: 200px; background: #eaedeb; padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 0 14px 18px; font-weight: 700; font-size: 15px">
+      <span style="width: 22px; height: 22px; border-radius: 6px; background: #d9762b; display: inline-block"></span>清影
+    </div>
+    <span class="nav" style="background: #fff; color: #1d2420; font-weight: 600; box-shadow: 0 1px 2px #0000000f">解析</span>
+    <span class="nav">批量下载</span>
+    <span class="nav">下载队列</span>
+    <span class="nav">订阅</span>
+    <span class="nav">直播</span>
+    <span class="nav">屏幕翻译</span>
+    <span class="nav">媒体库</span>
+    <span class="nav">文件翻译</span>
+    <span class="nav">生词与摘录</span>
+    <span class="nav">工具箱</span>
+    <span class="nav">保险箱</span>
+    <span class="nav">设置</span>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; padding: 24px 32px 32px; box-sizing: border-box">
+    <div style="max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px">
+
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; gap: 8px; align-items: stretch">
+          <label style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #d9dedb; background: #fff; box-sizing: border-box">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#69746f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"></path></svg>
+            <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">分享链接</span>
+            <input value="https://space.bilibili.com/1234/channel/collectiondetail?sid=5678" style="flex: 1; min-width: 0; border: 0; outline: none; font: inherit; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #1d2420; background: transparent">
+          </label>
+          <button type="button" style="min-width: 88px; height: 44px; border: 0; border-radius: 8px; background: #b4561a; color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer">解析</button>
+          <button type="button" class="btn" style="height: 44px">清空</button>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: #69746f">
+          <span style="color: #2f8a57">● 剪贴板监听已开启</span>
+          <span>Enter 解析 · Shift+Enter 换行</span>
+          <span>全局快捷键 <span class="mono">Ctrl+Shift+D</span></span>
+          <a href="#">支持哪些网站</a>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+
+        <section aria-label="合集信息" style="flex: 1 1 300px; max-width: 320px; background: #fff; border: 1px solid #d9dedb; border-radius: 10px; overflow: hidden">
+          <div style="position: relative; aspect-ratio: 16 / 9; background: #2c3a40">
+            <div style="position: absolute; right: 0; top: 0; bottom: 0; width: 38%; background: #000000a6; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #fff">
+              <span class="mono" style="font-size: 22px; font-weight: 600">24</span>
+              <span style="font-size: 12px">个视频</span>
+            </div>
+            <span style="position: absolute; left: 12px; bottom: 12px; color: #ffffff99; font-size: 12px">封面</span>
+          </div>
+          <div style="padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 10px">
+            <h1 style="margin: 0; font-size: 15px; line-height: 1.45; font-weight: 600">Rust 入门到精通（2024 合集）</h1>
+            <div style="display: flex; align-items: center; gap: 8px; color: #69746f; font-size: 12.5px">
+              <span style="width: 20px; height: 20px; border-radius: 50%; background: #d7ddd9; display: inline-block"></span>
+              <span style="color: #1d2420">编程老张</span><span>·</span><span>更新到第 24 集</span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px">
+              <span class="tag" style="background: #fbf1ea; color: #8a4a19">B站 · 合集</span>
+              <span class="tag">24 个视频</span>
+              <span class="tag">共 9:42:10</span>
+              <span class="tag" style="background: #e6f2eb; color: #22663f">之前下载过 3 个</span>
+            </div>
+            <div style="display: flex; gap: 8px; padding-top: 6px; border-top: 1px solid #eef0ee; margin-top: 4px">
+              <button type="button" class="btn" style="flex: 1">订阅更新</button>
+              <button type="button" class="btn" aria-label="打开原网页" title="打开原网页" style="width: 36px; padding: 0">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M14 4h6v6"></path><path d="M20 4l-9 9"></path><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path></svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section aria-label="选择要下载的视频" style="flex: 999 1 520px; min-width: 0; background: #fff; border: 1px solid #d9dedb; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 18px 24px 14px">
+            <h2 style="margin: 0; font-size: 15px; font-weight: 600">选择要下载的视频</h2>
+            <span style="font-size: 12px; color: #69746f">默认选中没下载过的</span>
+          </div>
+
+          <div class="sec">
+            <div class="sh"><span class="st">视频 <span style="color: #69746f; font-weight: 400">已选 21 / 24</span></span><span class="sa"><a href="#">全选</a><a href="#">反选</a><a href="#">只选没下载过的</a></span></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+              <label style="flex: 1 1 220px; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid #d9dedb; border-radius: 6px; box-sizing: border-box">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#69746f" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+                <input placeholder="搜索标题" aria-label="搜索标题" style="flex: 1; min-width: 0; border: 0; outline: none; font: inherit; background: transparent">
+              </label>
+              <span style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #4a5550">第
+                <input value="1" aria-label="从第几个" style="width: 52px; height: 36px; box-sizing: border-box; border: 1px solid #d9dedb; border-radius: 6px; text-align: center; font: inherit">到
+                <input value="24" aria-label="到第几个" style="width: 52px; height: 36px; box-sizing: border-box; border: 1px solid #d9dedb; border-radius: 6px; text-align: center; font: inherit">
+                <button type="button" class="btn">选这些</button>
+              </span>
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #3d4843; min-height: 36px">
+                <input type="checkbox" style="width: 14px; height: 14px; margin: 0; accent-color: #b4561a">隐藏已下载的
+              </label>
+            </div>
+            <div style="border: 1px solid #e3e7e4; border-radius: 8px; max-height: 392px; overflow: hidden">
+              <sc-for list="{{ rows }}" as="r" hint-placeholder-count="8">
+                <label class="ent" style="{{ r.bg }}">
+                  <input type="checkbox" checked="{{ r.on }}" style="width: 14px; height: 14px; margin: 0; accent-color: #b4561a">
+                  <span class="mono" style="color: #69746f; font-size: 12px; text-align: right">{{ r.no }}</span>
+                  <span class="th"></span>
+                  <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ r.title }}</span>
+                  <span style="{{ r.tagStyle }}">{{ r.tag }}</span>
+                  <span class="mono" style="color: #69746f; font-size: 12px; text-align: right">{{ r.dur }}</span>
+                </label>
+              </sc-for>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="sh"><span class="st">每个视频怎么下</span><span class="sa"><a href="#">改默认设置</a></span></div>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+              <div class="fld">清晰度<button type="button" class="sel">按设置（1080p）<span aria-hidden="true">▾</span></button></div>
+              <div class="fld">字幕<button type="button" class="sel">偏好语言 · 单独文件<span aria-hidden="true">▾</span></button></div>
+              <div class="fld">声音<button type="button" class="sel">视频（含声音）<span aria-hidden="true">▾</span></button></div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 16px 24px; border-top: 1px solid #d9dedb; background: #fafbfa">
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0">
+              <span style="font-size: 13px"><b style="font-weight: 600">21 个视频</b> · 1080p · 偏好语言字幕</span>
+              <span style="font-size: 12px; color: #69746f">保存到 <span class="mono">D:\下载\清影\B站\Rust 入门到精通（2024 合集）</span> <a href="#" style="margin-left: 4px">更改</a></span>
+            </div>
+            <button type="button" style="min-width: 168px; height: 44px; border: 0; border-radius: 8px; background: #b4561a; color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"></path><path d="M7 10l5 5 5-5"></path><path d="M5 20h14"></path></svg>下载所选 21 个
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const t = ['课程介绍与环境搭建', '变量、可变性与基本类型', '函数与控制流', '所有权：移动与复制', '引用与借用', '切片', '结构体与方法', '枚举与模式匹配'];
+    const d = ['8:12', '21:40', '18:05', '26:31', '24:10', '15:47', '22:03', '28:19'];
+    const done = [0, 1, 2];
+    const rows = t.map((title, i) => {
+      const was = done.includes(i);
+      return {
+        no: i + 1,
+        title: '第 ' + (i + 1) + ' 集 ' + title,
+        dur: d[i],
+        on: !was,
+        tag: was ? '已下载' : '',
+        tagStyle: was ? 'display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font-size:11.5px;background:#e6f2eb;color:#22663f' : 'display:none',
+        bg: was ? 'color:#69746f' : '',
+      };
+    });
+    return { rows };
+  }
+}
+</script>
+</body>
+</html>

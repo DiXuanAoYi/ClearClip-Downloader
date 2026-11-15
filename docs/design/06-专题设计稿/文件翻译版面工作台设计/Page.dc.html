@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>页面示意</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 520px; height: 640px; background: {{bg}}; overflow: hidden; font-family: 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+<sc-for list="{{swatches}}" as="s" hint-placeholder-count="4">
+<div style="{{s.box}}"></div>
+<div style="{{s.hex}}">{{s.code}}</div>
+</sc-for>
+<sc-for list="{{blocks}}" as="b" hint-placeholder-count="9">
+<div style="{{b.style}}">{{b.text}}</div>
+<sc-if value="{{b.badge}}" hint-placeholder-val="{{ false }}">
+<div style="{{b.badgeStyle}}">{{b.badge}}</div>
+</sc-if>
+<sc-for list="{{b.dots}}" as="d" hint-placeholder-count="0">
+<div style="{{d}}"></div>
+</sc-for>
+</sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"lang":{"editor":"enum","default":"en","options":["en","zh"]},"sel":{"editor":"text","default":""},"ring":{"editor":"enum","default":"single","options":["single","multi"]},"$preview":{"width":520,"height":640}}'>
+class Component extends DCLogic {
+renderVals() {
+const zh = this.props.lang === 'zh';
+const sel = (this.props.sel || '').split(',').filter(Boolean);
+const ring = this.props.ring || 'single';
+const bg = '#5b2f48';
+const rose = '#d4a5a5', clay = '#b87d6d', sand = '#e8d5c4';
+const B = [
+  ['t1', 'Desert Rose', '沙漠玫瑰', 50, 40, 330, 48, 30, rose, 700],
+  ['t2', 'Soft and sophisticated dusty tones', '柔和雅致的灰调色系', 50, 100, 300, 22, 14, clay, 400],
+  ['l1', 'Dusty Rose', '灰玫瑰', 50, 214, 84, 16, 10, sand, 400],
+  ['l2', 'Clay', '陶土色', 148, 214, 84, 16, 10, sand, 400],
+  ['l3', 'Sand', '沙色', 246, 214, 84, 16, 10, sand, 400],
+  ['l4', 'Deep Burgundy', '深勃艮第红', 344, 214, 84, 16, 10, sand, 400],
+  ['h2', 'Typography', '字体排印', 50, 288, 200, 30, 20, rose, 700],
+  ['hd', 'Headers:   FreeSans Bold', '标题：FreeSans Bold', 50, 336, 260, 22, 13, sand, 400],
+  ['sh', 'Sample Header Text', '示例标题文本', 50, 364, 340, 40, 26, rose, 700],
+  ['bt', 'Body Text:   FreeSans', '正文：FreeSans', 50, 432, 240, 22, 13, sand, 400],
+  ['pp', 'This is sample body text showing how your content will appear in presentations.\nThe typography pairs perfectly with the color palette for a cohesive design.', '这是示例正文，展示您的内容在演示文稿中的呈现效果。\n字体排印与配色方案完美搭配，打造协调统一的设计。', 50, 480, 440, 40, 12, clay, 400],
+];
+const blocks = B.map(([id, en, cn, x, y, w, h, size, color, weight]) => {
+  const on = sel.indexOf(id) >= 0;
+  const base = 'position:absolute;box-sizing:border-box;line-height:1.2;color:' + color + ';font-size:' + size + 'px;font-weight:' + weight + ';white-space:pre;';
+  let style;
+  if (zh) {
+    style = base + 'left:' + (x - 5) + 'px;top:' + (y - 4) + 'px;width:' + (w + 10) + 'px;height:' + (h + 8) + 'px;padding:0 5px;display:flex;align-items:center;background:' + bg + ';';
+    if (on) style += 'outline:2px ' + (ring === 'multi' ? 'dashed' : 'solid') + ' #3b82f6;outline-offset:1px;';
+  } else {
+    style = base + 'left:' + x + 'px;top:' + y + 'px;width:' + w + 'px;height:' + h + 'px;';
+  }
+  const dots = [];
+  if (zh && on && ring === 'single') {
+    const L = x - 5, T = y - 4, R = x + w + 5, Bm = y + h + 4;
+    for (const [px, py] of [[L, T], [R, T], [L, Bm], [R, Bm]]) {
+      dots.push('position:absolute;width:9px;height:9px;border-radius:2px;background:#ffffff;border:2px solid #3b82f6;box-sizing:border-box;left:' + (px - 4.5) + 'px;top:' + (py - 4.5) + 'px');
+    }
+  }
+  const n = sel.indexOf(id) + 1;
+  const badge = zh && on && ring === 'multi' ? String(n) : '';
+  return {
+    text: zh ? cn : en,
+    style,
+    dots,
+    badge,
+    badgeStyle: 'position:absolute;left:' + (x - 5) + 'px;top:' + (y - 22) + 'px;width:18px;height:18px;border-radius:9px;background:#3b82f6;color:#ffffff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center',
+  };
+});
+const sw = [rose, clay, sand, bg];
+const names = ['#d4a5a5', '#b87d6d', '#e8d5c4', '#5d2e46'];
+const swatches = sw.map((c, i) => ({
+  box: 'position:absolute;left:' + (50 + i * 98) + 'px;top:124px;width:80px;height:80px;background:' + c + ';' + (i === 3 ? 'border:2px solid ' + sand + ';box-sizing:border-box;' : ''),
+  hex: 'position:absolute;left:' + (50 + i * 98) + 'px;top:236px;font-size:8px;color:' + clay,
+  code: names[i],
+}));
+return { bg, swatches, blocks };
+}
+}
+</script>
+</body>
+</html>

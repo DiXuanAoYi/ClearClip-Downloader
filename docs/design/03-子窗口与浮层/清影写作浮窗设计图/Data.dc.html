@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>加入统计数据：开放数据源</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+body{margin:0}
+.chip{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:12px;border:1px solid #CBD5DC;background:#fff;font-size:12px;color:#14202B;white-space:nowrap}
+.on{background:#0F766E;border-color:#0F766E;color:#fff}
+.step{display:flex;gap:10px;align-items:flex-start}
+.num{width:22px;height:22px;border-radius:50%;background:#0F766E;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.cand{border:1px solid #E2E8EC;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:5px;background:#fff}
+.src{font-size:11px;color:#1D5FA8}
+.ph{background:#FEF3E2;color:#8A4B06;border-radius:3px;padding:0 3px}
+.sec{font-size:11px;color:#4A5A68;letter-spacing:.08em}
+</style>
+</helmet>
+<div style="width:900px;height:780px;box-sizing:border-box;background:#F1F4F6;font-family:'Noto Sans SC',system-ui,sans-serif;color:#14202B;padding:32px;display:flex;gap:28px">
+
+  <div style="width:540px;flex:none;background:#fff;border:1px solid #D5DDE3;border-radius:14px;box-shadow:0 10px 34px rgba(20,32,43,.14);display:flex;flex-direction:column;overflow:hidden">
+    <div style="height:44px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid #E2E8EC">
+      <b style="font-size:13px">加入统计数据</b>
+      <span style="font-size:11px;color:#4A5A68">从开放数据库查找，不凭空编造</span>
+    </div>
+
+    <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+      <div class="step"><span class="num">1</span><div style="font-size:12.5px;line-height:1.7"><b>理解原文</b>　识别主题：“远程办公对员工效率的影响”，提取可查证的概念：就业、劳动生产率、国家/地区。</div></div>
+      <div class="step"><span class="num">2</span><div style="font-size:12.5px;line-height:1.7;min-width:0"><b>去开放数据源检索</b>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+          <span class="chip on">联合国数据 data.un.org</span>
+          <span class="chip on">世界银行开放数据</span>
+          <span class="chip on">国际劳工组织 ILOSTAT</span>
+          <span class="chip">世界卫生组织 GHO</span>
+          <span class="chip">经合组织 OECD</span>
+          <span class="chip">国家统计局</span>
+          <span class="chip">Our World in Data</span>
+        </div>
+      </div></div>
+      <div class="step"><span class="num">3</span><div style="font-size:12.5px;line-height:1.7;min-width:0;flex:1"><b>挑选可用的数据</b>（每条都带出处，勾选后才写入）
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+          <div class="cand">
+            <div style="display:flex;gap:8px;align-items:center"><span class="chip on" style="height:20px;padding:0 8px">已选</span><span>劳动生产率：<span class="ph">[指标名]</span> <span class="ph">[国家]</span> <span class="ph">[年份]</span> 为 <span class="ph">[数值]</span></span></div>
+            <div class="src">来源：国际劳工组织 ILOSTAT · 指标代码 <span class="ph">[代码]</span> · 获取于检索当天 · 查看原始数据</div>
+          </div>
+          <div class="cand">
+            <div style="display:flex;gap:8px;align-items:center"><span class="chip on" style="height:20px;padding:0 8px">已选</span><span>就业人口占比：<span class="ph">[国家]</span> <span class="ph">[年份]</span> 为 <span class="ph">[数值]</span>%</span></div>
+            <div class="src">来源：世界银行开放数据 · 指标 <span class="ph">[代码]</span> · 查看原始数据</div>
+          </div>
+          <div class="cand" style="background:#F6F8F9">
+            <div style="display:flex;gap:8px;align-items:center"><span class="chip" style="height:20px;padding:0 8px">未选</span><span style="color:#4A5A68">与主题相关度低：人口总数</span></div>
+            <div class="src">来源：联合国数据 · 人口司</div>
+          </div>
+        </div>
+      </div></div>
+      <div class="step"><span class="num">4</span><div style="font-size:12.5px;line-height:1.7"><b>写入文中</b>　把选中的数据自然融入原文，句末标注“（来源：国际劳工组织，年份）”，并在末尾可选附上来源列表。</div></div>
+
+      <div style="display:flex;gap:8px;align-items:center;border-top:1px solid #E2E8EC;padding-top:12px">
+        <button style="height:32px;padding:0 16px;border-radius:8px;border:0;background:#0F766E;color:#fff;font-size:12.5px;font-weight:500;font-family:inherit">写入文中</button>
+        <button style="height:32px;padding:0 14px;border-radius:8px;border:1px solid #CBD5DC;background:#fff;font-size:12.5px;font-family:inherit;color:#14202B">换一批数据</button>
+        <span style="margin-left:auto;font-size:11px;color:#4A5A68">页面中的浅橙色框仅为占位示意</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:15px;font-weight:700">数据从哪来</div>
+    <div style="font-size:12.5px;line-height:1.75;color:#33434F;display:flex;flex-direction:column;gap:10px">
+      <div>模型只负责“想查什么”和“怎么写进文中”；数字本身必须来自开放数据库的返回结果。</div>
+      <div>每个数字都带出处链接和获取日期，点开可核对原始表格。</div>
+      <div>查不到合适的数据时，明确提示“没有找到可靠数据”，不会用模型记忆里的数字凑数。</div>
+      <div>数据源在设置里可开关，也可添加自己的（任何提供 JSON/CSV 接口的网站）。</div>
+      <div>常用查询结果缓存在本机，离线时仍可用已缓存的数据。</div>
+    </div>
+    <div style="border:1px dashed #B45309;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.65;color:#5C3A06;background:#FFF8EC">
+      <b>需要先验证</b>：各数据源的接口能否从你的网络访问、返回格式是否稳定，开工前会逐个实测，不通的先不列入。
+    </div>
+    <div style="margin-top:auto;font-size:12px;line-height:1.7;color:#33434F">
+      这一步比普通改写慢（要联网检索），所以单独成一个流程，进度会逐步显示，并可随时取消。
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":900,"height":780}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

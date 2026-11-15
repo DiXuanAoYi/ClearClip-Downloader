@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>手机端 发送</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.bub{border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;max-width:300px}
+.out{background:#fbe9d9;border:1px solid #f3d3b6;border-top-right-radius:5px;align-self:flex-end}
+.in{background:#fff;border:1px solid #ebe5dc;border-top-left-radius:5px;align-self:flex-start}
+.thumb{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.meta{font-size:12px;color:#8a8279}
+.bar{height:5px;border-radius:3px;background:#efe9e0;overflow:hidden}
+.bar i{display:block;height:100%;background:#d9772f;border-radius:3px}
+</style>
+</helmet>
+<div style="width:390px;height:844px;box-sizing:border-box;background:#f6f4f1;color:#2a2622;display:flex;flex-direction:column;overflow:hidden">
+
+<!-- 头部 -->
+<div style="padding:54px 18px 12px;display:flex;flex-direction:column;gap:12px;background:#fbfaf8;border-bottom:1px solid #e9e3da">
+<div style="display:flex;align-items:center;gap:10px">
+<div style="width:34px;height:34px;border-radius:10px;background:#d9772f;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px">清</div>
+<div style="flex-grow:1"><div style="font-size:16px;font-weight:700">隔空传送</div>
+<div style="font-size:12px;color:#23703f;display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:#2f9d5b"></span>已连接 · 办公室电脑</div></div>
+</div>
+<div style="display:flex;background:#ece7df;border-radius:12px;padding:3px">
+<div style="flex:1;text-align:center;padding:9px 0;border-radius:10px;background:#fff;font-size:14px;font-weight:700;box-shadow:0 1px 2px #0001">发送到电脑</div>
+<div style="flex:1;text-align:center;padding:9px 0;font-size:14px;font-weight:600;color:#6e675f">电脑发来的 <span style="display:inline-block;min-width:18px;line-height:18px;border-radius:9px;background:#c4423a;color:#fff;font-size:11px;padding:0 5px">2</span></div>
+</div>
+</div>
+
+<!-- 传输流 -->
+<div style="flex-grow:1;min-height:0;overflow:hidden;padding:16px 16px 0;display:flex;flex-direction:column;gap:12px">
+<div style="align-self:center;font-size:11.5px;color:#8a8279;background:#ece7df;border-radius:999px;padding:3px 12px">今天 14:02</div>
+
+<div class="bub out" style="width:268px">
+<div style="display:flex;gap:11px;align-items:center">
+<div class="thumb" style="background:#4b7bb5"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></div>
+<div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:600">IMG_4821.MOV</div><div class="meta">186 MB · 62%</div></div>
+<div style="width:30px;height:30px;border-radius:50%;border:1px solid #e3b78f;display:flex;align-items:center;justify-content:center;color:#a0662f"><svg class="ic" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M6 6l12 12M18 6 6 18"/></svg></div>
+</div>
+<div class="bar"><i style="width:62%"></i></div>
+</div>
+
+<div class="bub out" style="width:268px">
+<div style="display:flex;gap:11px;align-items:center">
+<div class="thumb" style="background:#c98a3b"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 9"/></svg></div>
+<div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:600">IMG_4819.HEIC</div><div class="meta" style="color:#2f9d5b">3.2 MB · 已保存到电脑</div></div>
+</div>
+</div>
+
+<div class="bub out">
+<div style="font-size:14px;line-height:1.5;word-break:break-all">https://www.bilibili.com/video/BV1xx411c7mD</div>
+<div class="meta" style="color:#2f9d5b">电脑已开始下载 · 【4K】东京夜景延时摄影</div>
+</div>
+
+<div class="bub out" style="width:268px">
+<div style="display:flex;gap:11px;align-items:center">
+<div class="thumb" style="background:#b5493f"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg></div>
+<div style="flex-grow:1;min-width:0"><div style="font-size:14px;font-weight:600">电影合集.mkv</div><div class="meta" style="color:#c4423a">超过上限 2048 MB，可在电脑设置里调整</div></div>
+</div>
+</div>
+</div>
+
+<!-- 底部输入 -->
+<div style="padding:10px 14px 28px;background:#fbfaf8;border-top:1px solid #e9e3da;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;gap:8px">
+<div style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:44px;border-radius:13px;background:#fff;border:1px solid #e3ddd4;font-size:13.5px;font-weight:600"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 9"/></svg>照片和视频</div>
+<div style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:44px;border-radius:13px;background:#fff;border:1px solid #e3ddd4;font-size:13.5px;font-weight:600"><svg class="ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>文件</div>
+<div style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:44px;border-radius:13px;background:#fff;border:1px solid #e3ddd4;font-size:13.5px;font-weight:600"><svg class="ic" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>粘贴</div>
+</div>
+<div style="display:flex;gap:8px;align-items:center">
+<div style="flex-grow:1;height:46px;border-radius:23px;background:#fff;border:1px solid #e3ddd4;display:flex;align-items:center;padding:0 16px;color:#a79f95;font-size:14px">粘贴链接，或写一段文字…</div>
+<div style="width:46px;height:46px;border-radius:50%;background:#d9772f;color:#fff;display:flex;align-items:center;justify-content:center"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

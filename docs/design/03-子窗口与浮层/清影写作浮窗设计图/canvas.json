@@ -1,0 +1,95 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Arch.dc.html": {
+      "h": 560,
+      "title": "8 一个引擎，两个入口",
+      "w": 900,
+      "x": 980,
+      "y": 1800
+    },
+    "Data.dc.html": {
+      "h": 780,
+      "title": "5 加入统计数据：开放数据源",
+      "w": 900,
+      "x": 980,
+      "y": 900
+    },
+    "Desktop.dc.html": {
+      "h": 660,
+      "title": "6 Windows 桌面：其他程序里的浮标",
+      "w": 900,
+      "x": 1960,
+      "y": 900
+    },
+    "Diff.dc.html": {
+      "h": 780,
+      "title": "3 结果：差异预览与候选",
+      "w": 900,
+      "x": 1960,
+      "y": 0
+    },
+    "Grammar.dc.html": {
+      "h": 640,
+      "title": "4 语法检查：行内标注",
+      "w": 900,
+      "x": 0,
+      "y": 900
+    },
+    "Main.dc.html": {
+      "h": 620,
+      "title": "1 触发：输入框里的小浮标",
+      "w": 900,
+      "x": 0,
+      "y": 0
+    },
+    "Panel.dc.html": {
+      "h": 780,
+      "title": "2 展开面板：动作与四组修饰符",
+      "w": 900,
+      "x": 980,
+      "y": 0
+    },
+    "Settings.dc.html": {
+      "h": 800,
+      "title": "7 设置页",
+      "w": 900,
+      "x": 0,
+      "y": 1800
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-02T09:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "noteOrder": [
+    "t1"
+  ],
+  "notes": {
+    "t1": {
+      "kind": "title1",
+      "maxW": 2860,
+      "text": "清影写作浮窗 · 设计图 v1（浏览器扩展 + Windows 桌面端）",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Panel.dc.html",
+    "Diff.dc.html",
+    "Grammar.dc.html",
+    "Data.dc.html",
+    "Desktop.dc.html",
+    "Settings.dc.html",
+    "Arch.dc.html"
+  ],
+  "pages": [],
+  "title": "清影写作浮窗设计图"
+}

@@ -1,0 +1,361 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>清影 批量下载设计</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 布局：说明 → 三个入口 → 批量添加面板（左列表 右设置）→ 队列（按批次分组）→ 待确认。沿用清影主程序的灰绿底 + 橙色强调色。 */
+:root{
+  --bg:#f4f5f4; --side:#eaedeb; --card:#ffffff; --line:#d9dedb; --fg:#1d2420; --mute:#69746f;
+  --acc:#d9762b; --acc-soft:#d9762b1f; --acc-ink:#8f4a14; --ok:#2f8a57; --ok-soft:#2f8a5720; --err:#c2453b; --err-soft:#c2453b1c; --warn:#a8741a; --warn-soft:#d9a02b24;
+  --shadow:0 8px 30px #1d24201f;
+  --font:'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Noto Sans SC',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,Consolas,'SF Mono',monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14181a; --side:#1b2023; --card:#22292c; --line:#2f383c; --fg:#e7ecea; --mute:#8c9894;
+  --acc:#f08a3c; --acc-soft:#f08a3c22; --acc-ink:#f5b27f; --ok:#5cc28a; --ok-soft:#5cc28a22; --err:#ec7a70; --err-soft:#ec7a7022; --warn:#e2b258; --warn-soft:#e2b25822;
+  --shadow:0 8px 30px #0008; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14181a; --side:#1b2023; --card:#22292c; --line:#2f383c; --fg:#e7ecea; --mute:#8c9894;
+  --acc:#f08a3c; --acc-soft:#f08a3c22; --acc-ink:#f5b27f; --ok:#5cc28a; --ok-soft:#5cc28a22; --err:#ec7a70; --err-soft:#ec7a7022; --warn:#e2b258; --warn-soft:#e2b25822;
+  --shadow:0 8px 30px #0008; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.6 var(--font);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 64px}
+.wrap{max-width:1040px;margin:0 auto;display:grid;gap:36px}
+h1{font-size:26px;margin:0 0 6px;text-wrap:balance}
+h2{font-size:18px;margin:0 0 4px;text-wrap:balance}
+.lead{color:var(--mute);margin:0;max-width:68ch}
+.sec-h{display:grid;gap:2px;margin-bottom:12px}
+.sec-h p{margin:0;color:var(--mute);max-width:70ch}
+.mute{color:var(--mute)}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:5px 12px;line-height:1.5}
+.btn:hover{border-color:var(--acc)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.btn.pri:hover{filter:brightness(1.06)}
+.btn.sm{padding:2px 9px;font-size:12px;border-radius:6px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--acc-ink)}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:12px;line-height:20px;padding:0 8px;border-radius:10px;white-space:nowrap}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-err{background:var(--err-soft);color:var(--err)} .p-warn{background:var(--warn-soft);color:var(--warn)} .p-mute{background:var(--side);color:var(--mute)} .p-acc{background:var(--acc-soft);color:var(--acc-ink)}
+.site{font-size:11px;font-weight:700;letter-spacing:.04em;padding:0 6px;border-radius:4px;background:var(--side);color:var(--mute);line-height:18px;flex:none}
+
+/* 入口 */
+.entries{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.entry{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px;align-content:start}
+.entry h3{margin:0;font-size:14px}
+.entry p{margin:0;color:var(--mute);font-size:13px}
+.toast{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:10px 12px;display:grid;gap:8px;font-size:13px}
+.toast .row{display:flex;gap:8px;flex-wrap:wrap}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:16px 10px;text-align:center;color:var(--mute);font-size:13px;background:var(--bg)}
+.drop b{color:var(--fg)}
+.inp{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 10px;font:12px/1.5 var(--mono);color:var(--mute);white-space:pre;overflow:hidden}
+.bar-mini{display:flex;gap:8px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 10px;font-size:13px}
+
+/* 窗口框 */
+.win{background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+.win-bar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--side);border-bottom:1px solid var(--line);font-size:12px;color:var(--mute)}
+.dots{display:flex;gap:6px}.dots i{width:10px;height:10px;border-radius:50%;background:var(--line)}
+
+/* 批量添加面板 */
+.dlg-h{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--card)}
+.dlg-h h3{margin:0;font-size:16px}
+.dlg-h .grow{flex:1}
+.prog{height:3px;background:var(--line);position:relative}
+.prog i{position:absolute;inset:0 auto 0 0;background:var(--acc);width:61%}
+.dlg-body{display:grid;grid-template-columns:minmax(0,1fr) 270px}
+.list-col{min-width:0;border-right:1px solid var(--line);display:grid;grid-template-rows:auto 1fr}
+.filters{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;align-items:center;border-bottom:1px solid var(--line);background:var(--card)}
+.chip{border:1px solid var(--line);background:var(--bg);border-radius:14px;padding:1px 10px;font-size:12px}
+.chip[aria-pressed="true"]{background:var(--acc-soft);border-color:var(--acc);color:var(--acc-ink);font-weight:600}
+.rows{max-height:400px;overflow:auto}
+.r{display:grid;grid-template-columns:22px 22px 1fr auto;gap:8px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--card)}
+.r:nth-child(even){background:color-mix(in srgb,var(--card) 70%,var(--bg))}
+.r.off{opacity:.55}
+.r .n{color:var(--mute);font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.r .t{min-width:0}
+.r .t b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r .t span{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--mute)}
+.r .t .u{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.r .act{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.sk{display:inline-block;height:12px;border-radius:4px;background:linear-gradient(90deg,var(--line),var(--side),var(--line));background-size:200% 100%;animation:sh 1.2s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none}}
+input[type=checkbox]{accent-color:var(--acc);width:16px;height:16px;margin:0}
+.set{padding:14px;display:grid;gap:14px;align-content:start;background:var(--bg)}
+.set h4{margin:0 0 -6px;font-size:12px;letter-spacing:.08em;color:var(--mute)}
+.fld{display:grid;gap:4px}
+.fld label,.fld .l{font-size:12px;color:var(--mute)}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card)}
+.seg button{flex:1;border:0;background:transparent;padding:4px 6px;font-size:12px}
+.seg button[aria-pressed="true"]{background:var(--acc);color:#fff;font-weight:600}
+.box{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:5px 10px;font-size:13px;display:flex;justify-content:space-between;gap:8px}
+.tg{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px}
+.tg small{display:block;color:var(--mute);font-size:12px;line-height:1.4}
+.sw{width:32px;height:18px;border-radius:9px;background:var(--line);position:relative;flex:none;border:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .15s}
+.sw[aria-pressed="true"]{background:var(--acc)}.sw[aria-pressed="true"]::after{left:16px}
+.step{display:flex;align-items:center;gap:8px}
+.step b{min-width:24px;text-align:center;font-variant-numeric:tabular-nums}
+.dlg-f{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line);background:var(--card)}
+.dlg-f .grow{flex:1;min-width:180px}
+.dlg-f .sum{font-variant-numeric:tabular-nums}
+
+/* 队列 */
+.qtop{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line)}
+.qtop .grow{flex:1}
+.stat{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}
+.stat b{font-variant-numeric:tabular-nums}
+.tabs{display:flex;gap:4px;padding:8px 16px 0;background:var(--card);border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{border:0;background:transparent;padding:6px 12px;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button[aria-selected="true"]{border-color:var(--acc);color:var(--acc-ink);font-weight:700}
+.qbody{padding:14px 16px;display:grid;gap:14px}
+.batchbox{border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden}
+.bh{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;cursor:pointer}
+.bh .caret{transition:transform .15s;color:var(--mute)}
+.batchbox[data-open="false"] .caret{transform:rotate(-90deg)}
+.bh .tt b{font-size:14px}
+.bh .tt .sub{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--mute);align-items:center}
+.meter{height:4px;background:var(--line);border-radius:2px;overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%;background:var(--acc)}
+.meter.ok i{background:var(--ok)}
+.bh .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.items{border-top:1px solid var(--line)}
+.batchbox[data-open="false"] .items{display:none}
+.q{display:grid;grid-template-columns:18px 1fr 150px auto;gap:10px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line);font-size:13px}
+.q:last-child{border-bottom:0}
+.q .grip{color:var(--line);cursor:grab;font-size:14px;user-select:none}
+.q .nm{min-width:0}
+.q .nm b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q .nm small{color:var(--mute);font-size:12px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q .pg{display:grid;gap:3px;font-size:12px;color:var(--mute);font-variant-numeric:tabular-nums}
+.q .more{display:flex;gap:4px;justify-content:flex-end}
+.q.fail .nm small{color:var(--err)}
+
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.note{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.note h3{margin:0 0 6px;font-size:14px}
+.note ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.note li{color:var(--mute)}
+.note li b{color:var(--fg)}
+.ask{border-color:var(--acc);background:var(--acc-soft)}
+
+@media (max-width:860px){
+  .entries,.notes{grid-template-columns:1fr}
+  .dlg-body{grid-template-columns:1fr}
+  .list-col{border-right:0;border-bottom:1px solid var(--line)}
+  .q{grid-template-columns:18px 1fr auto}
+  .q .pg{display:none}
+  .bh{grid-template-columns:auto 1fr}
+  .bh .acts{grid-column:1/-1;justify-content:flex-start}
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>批量下载与下载队列</h1>
+    <p class="lead">用户复制了一堆链接、或者拿到一个链接清单文件时，不该一条条解析。思路是三步：随处能触发，先预览再确认，进了队列按批次管理。下面是三个入口、批量添加面板、重做后的队列页。示例数据，不是真实任务。</p>
+  </header>
+
+  <section>
+    <div class="sec-h"><h2>一、入口：三种方式都进同一个面板</h2><p>现在只有“解析页检测到多条链接，直接全部下载”这一条路，没有预览、不能挑选、也不能统一设置。三个入口都改成先打开批量添加面板。</p></div>
+    <div class="entries">
+      <div class="entry">
+        <h3>① 复制多条链接（剪贴板监听）</h3>
+        <div class="toast">
+          <div><b>剪贴板里有 12 条链接</b><br><span class="mute">抖音 5 · B站 4 · YouTube 3</span></div>
+          <div class="row"><button class="btn pri sm">批量添加…</button><button class="btn sm">只解析第一条</button><button class="btn ghost sm">忽略</button></div>
+        </div>
+        <p>一次复制出现 2 条以上链接才弹出，单条链接保持现在的行为。同一份剪贴板内容只提示一次。</p>
+      </div>
+      <div class="entry">
+        <h3>② 在解析页粘贴多行文字</h3>
+        <div class="inp">https://www.bilibili.com/video/BV1xx…
+【抖音】这个太好笑了 https://v.douyin.com/i8…
+https://youtu.be/XqJMIE6_9gY</div>
+        <div class="bar-mini"><span>检测到 <b>3</b> 条链接</span><span class="grow"></span><button class="btn pri sm">批量添加…</button></div>
+        <p>分享文案里的口令、标题会自动去掉，只留链接。按钮替换原来的“全部解析并下载”。</p>
+      </div>
+      <div class="entry">
+        <h3>③ 加载文件 / 拖进窗口</h3>
+        <div class="drop"><b>拖入 .txt / .csv / .md / .html</b><br>或点“导入文件”。浏览器书签导出的 .html 也行</div>
+        <p>文件里每行一条或夹在文字里都能抽出来。CSV 有“标题”“链接”列时会带上标题和备注。一次最多 500 条。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-h"><h2>二、批量添加面板</h2><p>左边是清单，右边是整批统一设置。解析是边解析边显示，不用等 23 条全部完成，已经好的可以先加入队列。</p></div>
+    <div class="win">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span>清影 · 批量添加</span></div>
+      <div class="dlg-h">
+        <h3>批量添加</h3>
+        <span class="pill p-acc">已识别 23 条</span>
+        <span class="mute" style="font-size:12px">来自剪贴板 14:32</span>
+        <span class="grow"></span>
+        <button class="btn sm">粘贴更多</button><button class="btn sm">导入文件…</button>
+      </div>
+      <div class="prog" title="解析进度"><i></i></div>
+      <div class="dlg-body">
+        <div class="list-col">
+          <div class="filters" id="filters"></div>
+          <div class="rows" id="rows"></div>
+        </div>
+        <div class="set">
+          <h4>整批设置</h4>
+          <div class="fld"><span class="l">清晰度</span>
+            <div class="seg" id="q"><button aria-pressed="true">最高</button><button aria-pressed="false">1080p</button><button aria-pressed="false">720p</button><button aria-pressed="false">仅音频</button></div></div>
+          <div class="fld"><span class="l">保存到</span><div class="box"><span>D:\下载\清影</span><span class="mute">更改</span></div></div>
+          <div class="tg"><span>放进新建的批次文件夹<small>课程合集-0614</small></span><button class="sw" aria-pressed="true" aria-label="批次文件夹"></button></div>
+          <div class="tg"><span>按网站分子文件夹</span><button class="sw" aria-pressed="false" aria-label="按网站分文件夹"></button></div>
+          <div class="tg"><span>下载字幕<small>有则下，语言按设置</small></span><button class="sw" aria-pressed="true" aria-label="字幕"></button></div>
+          <div class="tg"><span>播放列表展开成单个视频<small>2 个列表 → 共 +38 条</small></span><button class="sw" aria-pressed="false" aria-label="展开播放列表"></button></div>
+          <h4>下载节奏</h4>
+          <div class="fld"><span class="l">这批同时下载</span><div class="step"><button class="btn sm" id="dec" aria-label="减少">−</button><b id="cc">3</b><button class="btn sm" id="inc" aria-label="增加">＋</button><span class="mute" style="font-size:12px">全局上限 5</span></div></div>
+          <div class="tg"><span>条目之间随机间隔 2–6 秒<small>同一网站连续请求太密容易被限制</small></span><button class="sw" aria-pressed="true" aria-label="随机间隔"></button></div>
+        </div>
+      </div>
+      <div class="dlg-f">
+        <span class="sum grow" id="sum"></span>
+        <button class="btn">取消</button>
+        <button class="btn">先暂停地加入</button>
+        <button class="btn pri" id="go">加入队列并开始</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-h"><h2>三、下载队列：按批次分组</h2><p>同一次批量添加的条目收成一个“批次”，可整批暂停、整批重试、折叠。单条添加的任务放在“单个任务”里，和现在一样。</p></div>
+    <div class="win">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span>清影 · 下载队列</span></div>
+      <div class="qtop">
+        <div class="stat"><span>进行中 <b>3</b></span><span>排队 <b>14</b></span><span>已完成 <b>6</b></span><span style="color:var(--err)">失败 <b>1</b></span></div>
+        <span class="grow"></span>
+        <span class="mute" style="font-size:13px">总速度 <b style="color:var(--fg)">12.4 MB/s</b></span>
+        <button class="btn sm">全部暂停</button>
+        <div class="box" style="padding:2px 10px">同时下载 3 ▾</div>
+        <div class="box" style="padding:2px 10px">全部完成后：通知 ▾</div>
+      </div>
+      <div class="tabs" role="tablist" id="qtabs">
+        <button role="tab" aria-selected="true">全部</button><button role="tab" aria-selected="false">进行中</button><button role="tab" aria-selected="false">排队中</button><button role="tab" aria-selected="false">失败 1</button><button role="tab" aria-selected="false">已完成</button>
+      </div>
+      <div class="qbody" id="qbody"></div>
+    </div>
+  </section>
+
+  <section class="notes">
+    <div class="note">
+      <h3>几个设计取舍</h3>
+      <ul>
+        <li><b>先预览再下载。</b>批量下载一旦跑起来很难收回，所以默认要点“加入队列”。设置里可改成“直接加入”。</li>
+        <li><b>自动整理清单。</b>去重、归一化（短链、带跟踪参数的链接）、标出“已下载过”，已下载过的默认不勾选。</li>
+        <li><b>问题条目不拖累整批。</b>需要登录的、不支持的会单独标出原因和“同步 Cookie”入口，其余照常下载。</li>
+        <li><b>同站限速。</b>同一网站默认最多 2 路并发、条目间随机间隔，避免触发验证（比如 YouTube 的机器人检查）。</li>
+        <li><b>可调顺序。</b>队列里拖动排序；批次可置顶；失败的可以一键只重试失败项。</li>
+      </ul>
+    </div>
+    <div class="note ask">
+      <h3>需要你定的几件事</h3>
+      <ul>
+        <li><b>预览是默认还是可选？</b>我建议默认先预览，设置里可以关。</li>
+        <li><b>单条上限 500 条够不够？</b>超过会提示分批。</li>
+        <li><b>批次文件夹默认开吗？</b>我建议 3 条以上默认开，用批次名当文件夹名。</li>
+        <li><b>是否做“链接清单文件”的导出？</b>比如把失败项导出成 txt 方便稍后重试。</li>
+        <li><b>手机端 / 悬浮窗</b>是否也要支持（目前设计只覆盖桌面主窗口）。</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<script>
+const DATA=[
+ {s:'B站',t:'【课程】Rust 入门 第 1 讲 所有权',u:'bilibili.com/video/BV1xx411c7mD',m:'24:10 · 1080p · 约 310 MB',st:'ok'},
+ {s:'B站',t:'【课程】Rust 入门 第 2 讲 借用与生命周期',u:'bilibili.com/video/BV1xx411c7mE',m:'31:45 · 1080p · 约 402 MB',st:'ok'},
+ {s:'B站',t:'【课程】Rust 入门 第 3 讲 结构体与枚举',u:'bilibili.com/video/BV1xx411c7mF',m:'28:02 · 1080p · 约 361 MB',st:'ok'},
+ {s:'抖音',t:'这个太好笑了，全程憋笑',u:'v.douyin.com/i8aKq2/',m:'0:42 · 720p · 约 9 MB',st:'ok'},
+ {s:'抖音',t:'做饭小技巧合集（二）',u:'v.douyin.com/i8aKq9/',m:'1:15 · 1080p · 约 22 MB',st:'ok'},
+ {s:'YouTube',t:'How Rust Moves Memory',u:'youtu.be/XqJMIE6_9gY',m:'18:20 · 1080p · 约 240 MB',st:'login',why:'YouTube 要求确认不是机器人'},
+ {s:'YouTube',t:'Async Rust explained',u:'youtu.be/kP2u3h8Zq1A',m:'42:08 · 1080p · 约 520 MB',st:'ok'},
+ {s:'B站',t:'【课程】Rust 入门 第 1 讲 所有权',u:'bilibili.com/video/BV1xx411c7mD?spm_id_from=333',m:'与第 1 条相同',st:'dup'},
+ {s:'B站',t:'年度回顾 2023',u:'bilibili.com/video/BV1Yz4y1B7sd',m:'8:30 · 已在 D:\\下载\\清影 里',st:'done'},
+ {s:'微博',t:'解析中…',u:'weibo.com/tv/show/1034:49123…',m:'',st:'busy'},
+ {s:'微博',t:'解析中…',u:'weibo.com/tv/show/1034:49124…',m:'',st:'busy'},
+ {s:'—',t:'example.com/files/report.docx',u:'example.com/files/report.docx',m:'不是视频页，可按普通文件下载',st:'file'},
+ {s:'—',t:'无法识别：http://192.168.0.8/x',u:'192.168.0.8/x',m:'不支持的地址',st:'bad'}
+];
+const ST={ok:['p-ok','可下载'],login:['p-err','需要登录'],dup:['p-warn','重复'],done:['p-warn','已下载过'],busy:['p-mute','解析中'],file:['p-acc','普通文件'],bad:['p-err','不支持']};
+const sel=new Set(DATA.map((d,i)=>(d.st==='ok'||d.st==='file')?i:-1).filter(i=>i>=0));
+let filter='all';
+const $=s=>document.querySelector(s);
+const counts=()=>{const c={all:DATA.length};DATA.forEach(d=>c[d.st]=(c[d.st]||0)+1);return c};
+function renderFilters(){
+  const c=counts();
+  const defs=[['all','全部'],['ok','可下载'],['dup','重复'],['done','已下载过'],['login','需登录'],['bad','不支持'],['busy','解析中']];
+  $('#filters').innerHTML=defs.filter(([k])=>c[k]).map(([k,n])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${n} ${c[k]}</button>`).join('')+
+   '<span style="flex:1"></span><button class="btn ghost sm" id="all">全选可下载</button><button class="btn ghost sm" id="none">清除勾选</button>';
+  document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
+  $('#all').onclick=()=>{DATA.forEach((d,i)=>{if(d.st==='ok'||d.st==='file')sel.add(i)});render()};
+  $('#none').onclick=()=>{sel.clear();render()};
+}
+function renderRows(){
+  $('#rows').innerHTML=DATA.map((d,i)=>({d,i})).filter(({d})=>filter==='all'||d.st===filter).map(({d,i})=>{
+    const [cls,label]=ST[d.st];
+    const can=d.st==='ok'||d.st==='file'||d.st==='done'||d.st==='dup';
+    const title=d.st==='busy'?'<span class="sk" style="width:60%"></span>':`<b title="${d.t}">${d.t}</b>`;
+    const extra=d.st==='login'?`<span style="color:var(--err)">${d.why}</span>`:`<span>${d.m}</span>`;
+    const act=d.st==='login'?'<button class="btn sm">同步 Cookie</button>':(d.st==='ok'?'<button class="btn ghost sm">单独设置</button>':'');
+    return `<div class="r ${sel.has(i)?'':'off'}"><input type="checkbox" data-i="${i}" ${sel.has(i)?'checked':''} ${can?'':'disabled'} aria-label="选择第 ${i+1} 条"><span class="n">${i+1}</span>
+      <div class="t">${title}<span><span class="site">${d.s}</span><span class="u">${d.u}</span>${d.st==='busy'?'':extra}</span></div>
+      <div class="act">${act}<span class="pill ${cls}">${label}</span></div></div>`}).join('');
+  document.querySelectorAll('#rows input').forEach(x=>x.onchange=()=>{x.checked?sel.add(+x.dataset.i):sel.delete(+x.dataset.i);render()});
+}
+function renderSum(){
+  const n=sel.size;
+  $('#sum').innerHTML=`已勾选 <b>${n}</b> 条 · 预计 <b>${(n*0.28).toFixed(1)} GB</b> · 磁盘剩余 218 GB`;
+  $('#go').textContent=`加入队列并开始（${n}）`;$('#go').disabled=!n;$('#go').style.opacity=n?1:.5;
+}
+function render(){renderFilters();renderRows();renderSum()}
+render();
+document.querySelectorAll('#q button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#q button').forEach(x=>x.setAttribute('aria-pressed',x===b));});
+document.querySelectorAll('.sw').forEach(b=>b.onclick=()=>b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true'));
+let cc=3;$('#inc').onclick=()=>{cc=Math.min(5,cc+1);$('#cc').textContent=cc};$('#dec').onclick=()=>{cc=Math.max(1,cc-1);$('#cc').textContent=cc};
+
+/* 队列示例 */
+const B=[
+ {name:'课程合集-0614',src:'批量 · 剪贴板 14:32',total:17,done:6,run:3,fail:1,open:true,items:[
+  ['【课程】Rust 入门 第 1 讲 所有权','B站','run',64,'8.2 MB/s','剩 0:41'],
+  ['【课程】Rust 入门 第 2 讲 借用与生命周期','B站','run',23,'3.1 MB/s','剩 2:05'],
+  ['这个太好笑了，全程憋笑','抖音','run',88,'1.1 MB/s','剩 0:02'],
+  ['Async Rust explained','YouTube','wait'],
+  ['How Rust Moves Memory','YouTube','fail','YouTube 要求确认不是机器人，请先同步 Cookie'],
+  ['年度回顾 2023','B站','done']]},
+ {name:'单个任务',src:'手动添加',total:2,done:1,run:0,fail:0,open:false,items:[['播客 第 88 期.mp3','小宇宙','done'],['演示文稿.pdf','example.com','wait']]}
+];
+function q(it){
+  const [t,s,st,a,b,c]=it;
+  let pg='',pill='';
+  if(st==='run'){pg=`<div class="meter" style="margin:0"><i style="width:${a}%"></i></div><span>${a}% · ${b} · ${c}</span>`;pill='<button class="btn sm">暂停</button>'}
+  if(st==='wait'){pg='<span>排队中</span>';pill='<button class="btn sm">优先</button>'}
+  if(st==='fail'){pg='<span style="color:var(--err)">失败</span>';pill='<button class="btn sm">重试</button><button class="btn ghost sm">同步 Cookie</button>'}
+  if(st==='done'){pg='<span style="color:var(--ok)">已完成</span>';pill='<button class="btn ghost sm">打开</button>'}
+  return `<div class="q ${st==='fail'?'fail':''}"><span class="grip" aria-hidden="true">⋮⋮</span><div class="nm"><b>${t}</b><small>${st==='fail'?a:s}</small></div><div class="pg">${pg}</div><div class="more">${pill}</div></div>`;
+}
+function renderQ(){
+  $('#qbody').innerHTML=B.map((b,i)=>`<div class="batchbox" data-open="${b.open}">
+    <div class="bh" data-b="${i}" role="button" tabindex="0" aria-expanded="${b.open}">
+      <span class="caret">▼</span>
+      <div class="tt"><b>${b.name}</b><div class="sub"><span>${b.src}</span><span>${b.done}/${b.total} 完成</span>${b.run?`<span class="pill p-acc">${b.run} 条下载中</span>`:''}${b.fail?`<span class="pill p-err">${b.fail} 条失败</span>`:''}</div>
+      <div class="meter ${b.done===b.total?'ok':''}"><i style="width:${Math.round(b.done/b.total*100)}%"></i></div></div>
+      <div class="acts">${b.run?'<button class="btn sm" data-stop>暂停批次</button>':''}${b.fail?'<button class="btn sm" data-stop>只重试失败项</button>':''}<button class="btn ghost sm" data-stop>打开文件夹</button></div>
+    </div>
+    <div class="items">${b.items.map(q).join('')}</div></div>`).join('');
+  document.querySelectorAll('.bh').forEach(h=>{
+    const tog=()=>{const b=B[+h.dataset.b];b.open=!b.open;renderQ()};
+    h.onclick=e=>{if(e.target.closest('[data-stop]'))return;tog()};
+    h.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tog()}};
+  });
+}
+renderQ();
+document.querySelectorAll('#qtabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#qtabs button').forEach(x=>x.setAttribute('aria-selected',x===b))});
+</script>
+
+</body></html>

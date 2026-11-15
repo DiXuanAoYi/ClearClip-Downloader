@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>电脑端互传</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.r.l{--bg:#f6f4f1;--bar:#fbfaf8;--sf:#ffffff;--ln:#e8e2d9;--fg:#2a2622;--mt:#7a736a;--ac:#d9772f;--acfg:#ffffff;--ob:#fbe9d9;--obl:#f1d0b2;--obfg:#3a2a1c;--obmt:#8a6a4e;--ok:#23703f;--okbg:#e3f3ea;--bd:#d98a50;--ch:#efe9e0;--sh:0 1px 2px #0001}
+.r.d{--bg:#161412;--bar:#1c1a17;--sf:#25221f;--ln:#37322c;--fg:#f2eee8;--mt:#a89f94;--ac:#f08c3e;--acfg:#1b1207;--ob:#4a2f1b;--obl:#6a4426;--obfg:#fdf0e3;--obmt:#d7b793;--ok:#6fd49a;--okbg:#1d3a2a;--bd:#f08c3e;--ch:#2e2a26;--sh:0 1px 2px #0006}
+.r{width:1180px;height:780px;display:flex;flex-direction:column;background:var(--bg);color:var(--fg);overflow:hidden}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:9px;border:1px solid var(--ln);background:var(--sf);color:var(--fg);font:500 13px/1 inherit}
+.mt{color:var(--mt)}
+.lk{color:var(--ac);font-size:12px;font-weight:700}
+.cb{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--mt);flex:none;display:flex;align-items:center;justify-content:center;color:var(--acfg)}
+.cb.on{background:var(--ac);border-color:var(--ac)}
+.cb svg{width:11px;height:11px;stroke-width:3}
+.dev{display:flex;align-items:center;gap:10px;border:1px solid var(--ln);background:var(--sf);border-radius:13px;padding:9px 11px}
+.av{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.who{font-size:11.5px;color:var(--mt);padding:0 4px}
+.bub{width:420px;box-sizing:border-box;border-radius:16px;padding:11px 13px;display:flex;flex-direction:column;gap:8px;background:var(--sf);border:1px solid var(--ln);border-top-left-radius:4px}
+.out .bub{background:var(--ob);border-color:var(--obl);color:var(--obfg);border-top-left-radius:16px;border-top-right-radius:4px}
+.out .mt,.out .who{color:var(--obmt)}
+.out .who{color:var(--mt)}
+.out .lk{color:var(--ac)}
+.row{display:flex;gap:11px;align-items:center}
+.th{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;flex:none}
+.pic{width:140px;height:100px;border-radius:11px;flex:none;position:relative;overflow:hidden}
+.bar{height:5px;border-radius:3px;background:var(--ch);overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
+.pill{font-size:12px;padding:3px 11px;border-radius:999px;display:inline-flex;align-items:center;gap:7px;font-weight:700}
+</style>
+</helmet>
+<div class="r {{theme}}">
+
+<div style="display:flex;align-items:center;gap:12px;padding:13px 24px;border-bottom:1px solid var(--ln);background:var(--bar)">
+<b style="font-size:17px">手机互传</b>
+<span class="pill" style="background:var(--okbg);color:var(--ok)"><span style="width:7px;height:7px;border-radius:50%;background:var(--ok)"></span>服务已开启 · 192.168.1.23:5173</span>
+<span style="flex-grow:1"></span>
+<span class="mt" style="font-size:12.5px">只在局域网内传输</span>
+<span class="btn">选项</span>
+</div>
+
+<div style="display:flex;flex-grow:1;min-height:0">
+
+<!-- 左栏 -->
+<div style="width:292px;flex:none;box-sizing:border-box;padding:18px 16px;display:flex;flex-direction:column;gap:16px;border-right:1px solid var(--ln);background:var(--bar)">
+<div style="background:var(--sf);border:1px solid var(--ln);border-radius:16px;padding:14px;display:flex;align-items:center;gap:14px">
+<div style="width:104px;height:104px;border-radius:10px;background:#fff;padding:7px;box-sizing:border-box;flex:none">
+<svg viewBox="0 0 21 21" width="90" height="90" shape-rendering="crispEdges" role="img" aria-label="二维码示意"><rect width="21" height="21" fill="#fff"/><g fill="#222"><path d="M0 0h7v7H0zM14 0h7v7h-7zM0 14h7v7H0z"/><path d="M8 0h1v2H8zM10 1h2v1h-2zM8 4h3v1H8zM12 3h1v3h-1zM0 8h2v1H0zM3 8h3v1H3zM8 8h2v2H8zM11 9h3v1h-3zM15 8h2v1h-2zM18 9h3v1h-3zM1 10h2v2H1zM4 11h3v1H4zM8 12h1v3H8zM10 11h2v2h-2zM13 12h2v1h-2zM16 11h1v3h-1zM19 12h2v2h-2zM10 14h3v1h-3zM14 15h2v2h-2zM17 15h1v3h-1zM9 16h2v2H9zM12 17h2v1h-2zM8 19h3v2H8zM15 19h4v1h-4z"/></g><g fill="#fff"><path d="M1 1h5v5H1zM15 1h5v5h-5zM1 15h5v5H1z"/></g><g fill="#d9772f"><path d="M2 2h3v3H2zM16 2h3v3h-3zM2 16h3v3H2z"/></g></svg>
+</div>
+<div style="display:flex;flex-direction:column;gap:7px;min-width:0">
+<b style="font-size:13px">手机扫码连接</b>
+<span class="mt" style="font-size:12px;line-height:1.5">同一个 Wi-Fi 下，用相机或微信扫一扫</span>
+<span class="lk">复制网址　换个地址</span>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;align-items:baseline"><b style="font-size:13px">发送对象</b><span style="flex-grow:1"></span><span class="mt" style="font-size:12px">已选 2 / 3</span></div>
+<div class="dev"><span class="cb on"><svg class="ic" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg></span><span class="av" style="background:#2f2a25"><svg class="ic" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/></svg></span><span style="flex-grow:1;min-width:0;display:flex;flex-direction:column"><b style="font-size:13px">iPhone</b><span style="font-size:11.5px;color:var(--ok)">● 在线</span></span><span class="lk" style="color:var(--mt);font-weight:600">撤销</span></div>
+<div class="dev"><span class="cb on"><svg class="ic" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg></span><span class="av" style="background:#6f8760"><svg class="ic" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M10 18h4"/></svg></span><span style="flex-grow:1;min-width:0;display:flex;flex-direction:column"><b style="font-size:13px">iPad</b><span class="mt" style="font-size:11.5px">昨天 21:40</span></span><span class="lk" style="color:var(--mt);font-weight:600">撤销</span></div>
+<div class="dev" style="border-style:dashed"><span class="cb"></span><span class="av" style="background:#3f6fa8"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span><span style="flex-grow:1;min-width:0;display:flex;flex-direction:column"><b style="font-size:13px">Edge 浏览器扩展</b><span class="mt" style="font-size:11.5px">只用来发链接 · 默认不接收文件</span></span></div>
+<span class="mt" style="font-size:11.5px;line-height:1.5">只勾选“手机 / 平板”。浏览器扩展会把收到的链接再交给主程序下载，勾上会造成来回传。</span>
+</div>
+
+<div style="flex-grow:1"></div>
+<div style="border:1px solid var(--ln);background:var(--sf);border-radius:13px;padding:11px 12px;display:flex;flex-direction:column;gap:5px">
+<span class="mt" style="font-size:11.5px">收到的文件保存在</span>
+<b style="font-size:12.5px;word-break:break-all">D:\清影\手机收到的文件</b>
+<span style="display:flex;gap:16px"><span class="lk">打开文件夹</span><span class="lk">更改…</span></span>
+</div>
+</div>
+
+<!-- 传输流 -->
+<div style="flex-grow:1;min-width:0;display:flex;flex-direction:column">
+<div style="flex-grow:1;overflow:hidden;padding:18px 26px 6px;display:flex;flex-direction:column;gap:13px">
+<div style="align-self:center;font-size:11.5px;color:var(--mt);background:var(--ch);border-radius:999px;padding:3px 12px">今天 14:02</div>
+
+<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
+<div class="who">iPhone</div>
+<div class="bub">
+<div style="display:flex;gap:8px">
+<div class="pic" style="background:linear-gradient(135deg,#88a9c9,#e9c79a 55%,#c9805f)"></div>
+<div class="pic" style="background:linear-gradient(160deg,#27425a,#5d8a93 60%,#d7b779)"></div>
+<div class="pic" style="width:72px;background:var(--ch);display:flex;align-items:center;justify-content:center;color:var(--mt);font-size:13px;font-weight:700">+2</div>
+</div>
+<div class="row"><div style="flex-grow:1;min-width:0"><b style="font-size:13.5px">5 张照片</b><div class="mt" style="font-size:11.5px"><span style="color:var(--ok);font-weight:700">已保存</span> · 14.8 MB · 点缩略图看大图</div></div><span class="lk">打开</span><span class="lk">显示位置</span></div>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
+<div class="bub">
+<div class="row">
+<div class="th" style="background:#4b7bb5"><svg class="ic" viewBox="0 0 24 24" style="width:22px;height:22px"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></div>
+<div style="flex-grow:1;min-width:0"><b style="font-size:13.5px">IMG_4821.MOV</b><div class="mt" style="font-size:11.5px">186 MB · 18.4 MB/s · 还剩 4 秒</div></div>
+<span class="lk">取消</span>
+</div>
+<div class="bar"><i style="width:62%"></i></div>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end" class="out">
+<div class="who">发给 iPhone、iPad</div>
+<div class="bub">
+<div class="row">
+<div class="pic" style="width:64px;height:64px;border-radius:10px;background:linear-gradient(135deg,#e8b17a,#b85c3d)"></div>
+<div style="flex-grow:1;min-width:0"><b style="font-size:13.5px">会议白板.jpg</b><div class="mt" style="font-size:11.5px">2.1 MB · 手机已下载 1 次 · 23 小时后撤回</div></div>
+<span class="lk">撤回</span>
+</div>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end" class="out">
+<div class="who">发给 iPhone、iPad</div>
+<div class="bub" style="width:auto;max-width:320px;padding:9px 13px;gap:2px">
+<div style="font-size:13.5px;line-height:1.5">门禁密码 4096，到了前台报我的名字</div>
+<div class="mt" style="font-size:11.5px">文字 · 手机上可一键复制 · <span class="lk">撤回</span></div>
+</div>
+</div>
+</div>
+
+<!-- 紧凑输入区 -->
+<div style="padding:8px 26px 16px;display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;align-items:center;gap:8px;height:42px;border:1px solid var(--ln);background:var(--sf);border-radius:14px;padding:0 6px 0 8px;box-shadow:var(--sh)">
+<span class="pill" style="background:var(--ch);color:var(--fg);font-weight:600;height:28px;box-sizing:border-box">发给 iPhone、iPad<svg class="ic" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="m6 9 6 6 6-6"/></svg></span>
+<span style="width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--mt)"><svg class="ic" viewBox="0 0 24 24"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.4-2.4L15 8.6"/></svg></span>
+<span class="mt" style="flex-grow:1;font-size:13.5px">输入文字，或把文件拖进窗口…</span>
+<span style="height:30px;padding:0 16px;border-radius:9px;background:var(--ac);color:var(--acfg);font:700 13px/30px inherit">发送</span>
+</div>
+<div style="display:flex;justify-content:space-between"><span class="mt" style="font-size:11.5px">拖文件进窗口时，整个传输区会变成蓝色虚线框提示松手即发</span><span class="lk">清空记录</span></div>
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1180,"height":780}}'>
+class Component extends DCLogic {
+renderVals() { return { theme: this.props.dark ? 'd' : 'l' }; }
+}
+</script>
+</body>
+</html>

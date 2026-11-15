@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>创作者主页解析结果</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1500px; height: 1000px; box-sizing: border-box; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<div style="display: flex; align-items: center; gap: 10px; color: #6b7385; font-size: 12px"><span style="padding: 2px 10px; border-radius: 10px; background: #e6f6ec; border: 1px solid #b4e2c6; color: #0b6b3a; font-weight: 600">示意图</span>下面的名字和数字都是示意，真实的以解析结果为准</div>
+
+<div style="display: flex; gap: 18px; flex: 1; min-height: 0">
+
+<section style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+
+<div style="display: flex; gap: 16px; align-items: center; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 14px 18px">
+<div style="width: 64px; height: 64px; border-radius: 32px; background: #2457e6; color: #fff; font-size: 26px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none">彼</div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 8px"><strong style="font-size: 18px">彼德·生活工程師</strong><span style="font-size: 12px; font-weight: 600; color: #2457e6; background: #eaf0ff; border: 1px solid #c3d3fb; padding: 1px 8px; border-radius: 10px">YouTube · 创作者</span></div>
+<div style="color: #6b7385">youtube.com/@peter-life · 解析于刚刚 · 已读取 视频 128 · Shorts 24 · 播放列表 6</div>
+</div>
+<button style="height: 32px; padding: 0 14px; border: 1px solid #cfd5e0; border-radius: 8px; background: #fff; font: inherit">订阅更新</button>
+<button style="height: 32px; padding: 0 14px; border: 1px solid #cfd5e0; border-radius: 8px; background: #fff; font: inherit">打开原网页</button>
+</div>
+
+<div style="display: flex; align-items: center; gap: 4px; border-bottom: 1px solid #e4e7ec" role="tablist" aria-label="分栏">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="3"><span style="{{t.style}}">{{t.name}}<small style="{{t.sm}}">{{t.n}}</small></span></sc-for>
+<span style="flex: 1"></span>
+<span style="color: #6b7385; font-size: 12px; padding-bottom: 6px">每个分栏单独读取；切过去才读，读过的记住</span>
+</div>
+
+<div style="display: flex; align-items: center; gap: 10px">
+<label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" checked aria-label="全选这一栏">全选这一栏（6 个列表）</label>
+<span style="color: #6b7385">已选 3 个列表</span>
+<span style="flex: 1"></span>
+<div style="display: flex; border: 1px solid #cfd5e0; border-radius: 8px; overflow: hidden"><span style="padding: 4px 12px; background: #eaf0ff; color: #2457e6; font-weight: 600; border-right: 1px solid #cfd5e0">最新在前</span><span style="padding: 4px 12px; background: #fff; border-right: 1px solid #cfd5e0">最早在前</span><span style="padding: 4px 12px; background: #fff">按名字</span></div>
+<input aria-label="搜索" placeholder="在列表和视频里搜索" style="height: 30px; width: 200px; border: 1px solid #cfd5e0; border-radius: 8px; padding: 0 10px; font: inherit; background: #fff">
+</div>
+
+<div style="flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{lists}}" as="l" hint-placeholder-count="6">
+<div style="{{l.box}}">
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px">
+<input type="checkbox" checked="{{l.on}}" aria-label="选中整个列表" style="flex: none">
+<div style="{{l.thumb}}">{{l.n}}</div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><strong>{{l.name}}</strong><span style="color: #6b7385; font-size: 12px">{{l.meta}}</span></div>
+<span style="{{l.tag}}">{{l.sel}}</span>
+<button style="height: 28px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #fff; font: inherit">{{l.btn}}</button>
+</div>
+<sc-if value="{{l.open}}" hint-placeholder-val="{{false}}">
+<div style="border-top: 1px solid #e4e7ec; background: #fafbfc; padding: 4px 14px 10px 46px; display: flex; flex-direction: column">
+<div style="display: flex; align-items: center; gap: 10px; padding: 6px 0; color: #6b7385; font-size: 12px"><span>展开的 3 个视频（共 42 个，滚动加载更多）</span><span style="flex: 1"></span><button style="border: 0; background: none; color: #2457e6; cursor: pointer; font: inherit; font-size: 12px">只选没下载过的</button><button style="border: 0; background: none; color: #2457e6; cursor: pointer; font: inherit; font-size: 12px">反选</button></div>
+<sc-for list="{{videos}}" as="v" hint-placeholder-count="3">
+<div style="display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid #eef0f4">
+<input type="checkbox" checked="{{v.on}}" aria-label="选中这个视频">
+<span style="width: 24px; color: #8a92a3; font-size: 12px; text-align: right">{{v.i}}</span>
+<div style="width: 72px; height: 40px; border-radius: 5px; background: {{v.bg}}; flex: none"></div>
+<span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{v.t}}</span>
+<span style="{{v.tag}}">{{v.tt}}</span>
+<span style="width: 52px; text-align: right; color: #6b7385; font-variant-numeric: tabular-nums">{{v.d}}</span>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+
+<div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #1d2433; color: #fff; border-radius: 10px">
+<span>已选 <b>3 个列表</b>（共 <b>57</b> 个视频）</span>
+<span style="color: #a8b0c2">来自 AI新聞、旅行 Vlog、生活工程</span>
+<span style="flex: 1"></span>
+<span style="color: #a8b0c2">没下载过的 49 个</span>
+<button style="height: 32px; padding: 0 16px; border: 0; border-radius: 8px; background: #2457e6; color: #fff; font: inherit; font-weight: 700">下载所选 57 个</button>
+</div>
+</section>
+
+<aside style="width: 360px; flex: none; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px" aria-label="下载设置">
+<strong style="font-size: 15px">每个视频怎么下</strong>
+<div style="color: #6b7385; font-size: 12px; line-height: 1.6">只改这一次，不动全局设置；细节见图 2。</div>
+<sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
+<div style="display: flex; flex-direction: column; gap: 5px"><span style="color: #6b7385; font-size: 12px">{{o.k}}</span><span style="height: 32px; border: 1px solid #cfd5e0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; background: #fff"><span>{{o.v}}</span><span style="color: #8a92a3">▾</span></span></div>
+</sc-for>
+<div style="height: 1px; background: #e4e7ec"></div>
+<div style="display: flex; align-items: center; justify-content: space-between"><strong>按列表放进文件夹</strong><span style="width: 36px; height: 20px; border-radius: 10px; background: #2457e6; position: relative"><i style="position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff"></i></span></div>
+<div style="font: 12px ui-monospace, Menlo, Consolas, monospace; line-height: 1.7; background: #f5f6f8; border-radius: 8px; padding: 10px 12px; color: #4a5367">下载目录/<br>└ YouTube/<br>&nbsp;&nbsp;└ 彼德·生活工程師/<br>&nbsp;&nbsp;&nbsp;&nbsp;├ AI新聞/ <span style="color: #8a92a3">（42 个）</span><br>&nbsp;&nbsp;&nbsp;&nbsp;├ 旅行 Vlog/ <span style="color: #8a92a3">（9 个）</span><br>&nbsp;&nbsp;&nbsp;&nbsp;└ 生活工程/ <span style="color: #8a92a3">（6 个）</span></div>
+</aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1500,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+const tab = (name, n, on) => ({ name, n, style: 'padding:8px 16px;font-weight:' + (on ? 700 : 500) + ';color:' + (on ? '#2457e6' : '#4a5367') + ';border-bottom:2px solid ' + (on ? '#2457e6' : 'transparent') + ';margin-bottom:-1px;display:flex;align-items:center;gap:6px', sm: 'font-size:11px;padding:0 6px;border-radius:8px;background:' + (on ? '#eaf0ff' : '#eef0f4') + ';color:' + (on ? '#2457e6' : '#6b7385') });
+const tabs = [tab('视频', '128', false), tab('Shorts', '24', false), tab('播放列表', '6', true)];
+const colors = ['#5b9cff', '#d9762b', '#2f8a57', '#8a5a7c', '#b9812d', '#4f7cc9'];
+const mk = (i, name, count, on, open) => ({
+  n: String(count), name, on,
+  meta: count + ' 个视频 · 更新于 ' + ['2 天前', '3 周前', '2 个月前', '半年前', '1 年前', '2 年前'][i],
+  thumb: 'width:84px;height:48px;border-radius:6px;flex:none;background:' + colors[i] + ';color:#fff;font-weight:700;font-size:18px;display:flex;align-items:center;justify-content:center',
+  box: 'background:#fff;border:1px solid ' + (open ? '#9db8f5' : '#e4e7ec') + ';border-radius:10px;overflow:hidden',
+  sel: on ? '整个列表' : '没选', tag: 'font-size:11px;padding:1px 8px;border-radius:10px;border:1px solid ' + (on ? '#b4e2c6' : '#dde1e8') + ';color:' + (on ? '#0b6b3a' : '#6b7385') + ';background:' + (on ? '#e6f6ec' : '#f5f6f8'),
+  btn: open ? '收起' : '展开', open,
+});
+const lists = [mk(0, 'AI新聞', 42, true, true), mk(1, '旅行 Vlog', 9, true, false), mk(2, '生活工程', 6, true, false), mk(3, '开箱与评测', 31, false, false), mk(4, '访谈', 18, false, false), mk(5, '早期作品', 22, false, false)];
+const vids = [['在大模型之后，AI 新闻这周发生了什么', '18:42', '没下载过', 1], ['一口气看完本周十条 AI 新闻', '12:05', '之前下载过', 2], ['新模型发布：我们真的需要它吗', '09:58', '没下载过', 3]];
+const videos = vids.map(([t, d, tt, i], k) => ({ t, d, tt, i, on: tt === '没下载过', bg: colors[(k + 2) % 6], tag: 'font-size:11px;padding:0 7px;border-radius:9px;color:' + (tt === '没下载过' ? '#0b6b3a' : '#a14a12') + ';background:' + (tt === '没下载过' ? '#e6f6ec' : '#fdf0e6') }));
+const opts = [{ k: '清晰度', v: '按设置（最高 1080p）' }, { k: '字幕', v: '按设置（中文 + 英文）' }, { k: '声音', v: '视频（含声音）' }, { k: '文件名', v: '{序号} - {标题}' }];
+return { tabs, lists, videos, opts };
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>视频摘要 · 规则</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+.rule{display:grid;grid-template-columns:92px minmax(0,1fr);gap:12px;padding:9px 0;border-top:1px solid #eef0ee;font-size:13px;line-height:1.65}
+.rk{color:#66716c;font-size:12.5px}
+.st{flex:1;border:1px solid #d9dedb;border-radius:10px;background:#fff;padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.st b{font-size:14px}
+.st span{font-size:12.5px;color:#4d5853;line-height:1.6}
+.ar{flex:none;width:112px;display:flex;flex-direction:column;align-items:center;gap:8px;font-size:11.5px;color:#66716c;text-align:center;line-height:1.4}
+code{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:12px;background:#eef0ee;border-radius:4px;padding:1px 5px}
+</style>
+</helmet>
+<div style="width: 1000px; height: 760px; box-sizing: border-box; padding: 28px 36px; background: #f4f5f4; font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1d2420; display: flex; flex-direction: column; gap: 16px">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="margin: 0; font-size: 22px; font-weight: 700">摘要面板：收到右边、再弹出来</h1>
+    <p style="margin: 0; font-size: 13px; color: #66716c; line-height: 1.6">现在的面板只有“打开”和“✕ 关闭”两种状态，想暂时让开就得关掉，再开要等重新读取。加一个<b style="color: #1d2420">收起</b>：面板滑到右边，只留一个小标签；点它或停在上面就能弹出来，摘要、文稿、问答、笔记都在，不丢。</p>
+  </div>
+
+  <div style="display: flex; align-items: stretch; gap: 0">
+    <div class="st"><b>展开</b><span>现在的样子，多一个“⇥”。点页面别处<b>不会</b>收起（免得看文稿时误关）。</span></div>
+    <div class="ar"><svg width="70" height="18" viewBox="0 0 70 18" fill="none" stroke="#b4561a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h62M58 1l6 5-6 5M68 12H6M12 7l-6 5 6 5"></path></svg><span>⇥ 或 Alt+Shift+S<br>点标签</span></div>
+    <div class="st"><b>收起</b><span>只剩右边 30 像素的小标签，不占页面、不挡内容、不挤开网页。</span></div>
+    <div class="ar"><svg width="70" height="18" viewBox="0 0 70 18" fill="none" stroke="#b4561a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h62M58 1l6 5-6 5M68 12H6M12 7l-6 5 6 5"></path></svg><span>停 0.35 秒<br>移开 0.8 秒</span></div>
+    <div class="st" style="border-color: #d9762b"><b>预览</b><span>面板盖在页面上，带“预览条”；点<b>固定</b>或在里面点任何地方就变成展开。</span></div>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #d9dedb; border-radius: 12px; padding: 14px 24px; display: flex; flex-direction: column">
+    <div class="rule" style="border-top: 0"><span class="rk">快捷键</span><span><code>Alt+Shift+S</code>：没打开 → 打开并展开；展开 → 收起；收起或预览 → 展开。想真的关掉点 ✕。视频胶囊菜单里的“关闭视频摘要”不变，旁边加一项“收起到右边”。</span></div>
+    <div class="rule"><span class="rk">✕ 关闭</span><span>和现在一样：小标签也消失；正在生成的任务照旧继续，下次打开自动接上。</span></div>
+    <div class="rule"><span class="rk">小标签</span><span>宽 30、高 84，贴右边缘，上下拖动换位置，记住位置（所有网站共用）；默认在窗口高度 38% 处，会躲开视频右下的播放胶囊。平时半透明，鼠标过去变实并展开成“视频摘要 ‹ Alt+Shift+S”。</span></div>
+    <div class="rule"><span class="rk">看得到进度</span><span>收起后也要知道发生了什么：生成中，图标外一圈转动；生成好了，绿点 + 旁边弹一句“摘要生成好了 · 点开看”（6 秒淡出，绿点留到你打开为止）；没设置大模型 / 读不到字幕，琥珀点 + 一句原因。</span></div>
+    <div class="rule"><span class="rk">误触</span><span>预览要在标签上停够 0.35 秒才弹，路过右边缘去拖滚动条不会触发；预览中鼠标移开 0.8 秒才收回，不会一抖就缩。</span></div>
+    <div class="rule"><span class="rk">设置</span><span>扩展设置里“视频摘要”两个开关：“打开时默认收起到右边”（默认关，开着时用快捷键打开直接是小标签）；“鼠标停在小标签上时预览”（默认开）。</span></div>
+    <div class="rule"><span class="rk">外观</span><span>配色沿用面板的亮色 / 暗色；滑出、收回 180 毫秒，系统设了“减少动态效果”时直接切换；视频全屏时标签随网页一起隐藏。</span></div>
+    <div class="rule"><span class="rk">没这么做</span><span>不做成漂浮圆球：会盖住页面，也容易和视频胶囊、悬浮球挤在一起；不挤开网页（网页布局不动，不会引起视频重新排版）。</span></div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

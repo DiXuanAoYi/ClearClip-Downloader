@@ -72,7 +72,7 @@
 | **内置播放器（字幕跳转）** | **设置（左侧分类）** |
 | ![播放器](docs/screenshots/player.png) | ![设置](docs/screenshots/settings.png) |
 
-界面设计稿（全部页面，含浏览器扩展、清影写作、手机互传）见 [`docs/design-reference.html`](docs/design-reference.html)。
+界面设计稿（全部页面，含浏览器扩展、清影写作、手机互传）见 [`docs/design-reference.html`](docs/design-reference.html)。分类归档的设计源文件与索引见 [`docs/design/README.md`](docs/design/README.md)。
 
 ## 从源码构建
 

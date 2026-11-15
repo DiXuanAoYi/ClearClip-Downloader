@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文稿字幕轨与原文语言</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;color:#1d2624}
+.lab{font-size:12px;font-weight:600;color:#5b6764;margin-bottom:6px}
+.tab{padding:9px 14px;font-size:14px;color:#5b6764;border-bottom:2px solid transparent}
+.tab.on{color:#14614a;border-color:#187a56;font-weight:700}
+.ln{display:grid;grid-template-columns:52px 1fr;gap:10px;padding:9px 0;border-top:1px solid #edf1ef;font-size:14px;line-height:1.6}
+.ts{color:#187a56;font-variant-numeric:tabular-nums;font-size:13px}
+.tr{color:#5b6764;font-size:13px}
+.tk{display:flex;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid #edf1ef;font-size:14px}
+.tg{font-size:11px;padding:1px 8px;border-radius:9px;font-weight:600}
+.a{background:#e6eefb;color:#1d4a91}.h{background:#e4f3ec;color:#14614a}.m{background:#fbeede;color:#8a4608}
+</style>
+</helmet>
+<div style="width:1160px;height:760px;box-sizing:border-box;background:#e9eeec;padding:34px 40px;display:grid;grid-template-columns:440px 1fr;gap:40px">
+  <div style="background:#fff;border:1px solid #cdd6d3;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 12px 40px #1d262422;height:690px">
+    <div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e8edeb"><b style="font-size:15px">视频摘要 / 总结</b><span style="font-size:13px;color:#5b6764">Alt+Shift+S</span></div>
+    <div style="display:flex;border-bottom:1px solid #e8edeb"><div class="tab">摘要</div><div class="tab">导图</div><div class="tab on">文稿</div><div class="tab">评论</div><div class="tab">生词</div></div>
+
+    <div style="padding:12px 16px;background:#f4f6f5;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #e8edeb">
+      <div style="display:flex;align-items:center;gap:8px;font-size:14px"><span style="color:#5b6764">原文</span><b>English</b><span class="tg a">自动字幕</span><span style="color:#5b6764;font-size:13px">· 与视频语音一致</span></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="height:32px;border:1px solid #cdd6d3;border-radius:8px;background:#fff;padding:0 10px;display:inline-flex;align-items:center;font-size:13px;gap:6px">字幕轨：English（自动）▾</span>
+        <span style="height:32px;border:1px solid #cdd6d3;border-radius:8px;background:#fff;padding:0 10px;display:inline-flex;align-items:center;font-size:13px;gap:6px">译成：简体中文 ▾</span>
+      </div>
+    </div>
+
+    <div style="padding:6px 16px;flex:1;overflow:hidden">
+      <div class="ln"><div class="ts">00:12</div><div>So today we're going to talk about how attention actually works.<div class="tr">今天我们来讲注意力到底是怎么工作的。</div></div></div>
+      <div class="ln"><div class="ts">00:17</div><div>Imagine you have a query and a bunch of keys.<div class="tr">假设你有一个查询和一堆键。</div></div></div>
+      <div class="ln"><div class="ts">00:22</div><div>Each key gets a score based on how well it matches.<div class="tr">每个键会根据匹配程度得到一个分数。</div></div></div>
+      <div class="ln"><div class="ts">00:28</div><div>Then we normalise the scores with a softmax.<div class="tr">然后用 softmax 把分数归一化。</div></div></div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:18px;padding-top:6px">
+    <div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:6px">字幕轨选择（展开后）</div>
+      <div style="font-size:14px;line-height:1.7;color:#2e3a37">每一条轨道都标出语言和来源。机器翻译出来的轨道打上橙色标记，不会再被当成“原文”。</div>
+    </div>
+    <div style="background:#fff;border:1px solid #cdd6d3;border-radius:10px;overflow:hidden;width:520px">
+      <div class="tk" style="border-top:0;background:#f0f8f4"><b>● English</b><span class="tg a">自动字幕</span><span style="flex:1"></span><span style="color:#5b6764;font-size:13px">视频语音 · 默认</span></div>
+      <div class="tk"><b>English</b><span class="tg h">人工字幕</span><span style="flex:1"></span><span style="color:#5b6764;font-size:13px">有则优先</span></div>
+      <div class="tk"><b>简体中文</b><span class="tg m">机器翻译</span><span style="flex:1"></span><span style="color:#5b6764;font-size:13px">不当作原文</span></div>
+      <div class="tk"><b>日本語</b><span class="tg m">机器翻译</span><span style="flex:1"></span></div>
+      <div class="tk" style="color:#14614a"><b>用清影转写音频…</b><span style="flex:1"></span><span style="font-size:13px">没有可用字幕时</span></div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #dfe5e3;border-radius:10px;padding:16px 20px;width:520px;box-sizing:border-box">
+      <div class="lab">选轨规则（新）</div>
+      <div style="font-size:14px;line-height:1.8;color:#2e3a37">
+        1　视频语音的语言，人工字幕优先<br>
+        2　没有人工字幕：自动字幕里语言一致的那条<br>
+        3　都拿不到语言信息：看文本是中文还是英文，再对照标题<br>
+        4　你手动选过的轨道，下次同一个视频直接沿用
+      </div>
+    </div>
+    <div style="background:#fbeede;border-radius:10px;padding:12px 16px;width:520px;box-sizing:border-box;font-size:13px;line-height:1.7;color:#6b3a08">原文语言与页面标题明显不符时（例如英文视频的原文是中文），文稿顶部会出现一行提示：“当前轨道可能是机器翻译，切换到 English？”</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1160,"height":760}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

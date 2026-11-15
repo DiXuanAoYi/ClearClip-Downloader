@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>实时屏幕翻译 · 总体方案</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{position:relative;width:1440px;height:900px;box-sizing:border-box;overflow:hidden;background:#14181a;color:#eef1ee;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;padding:36px 44px;display:flex;flex-direction:column;gap:22px}
+h1{margin:0;font-size:28px;letter-spacing:.5px}
+h2{margin:0;font-size:15px;color:#f0a064;letter-spacing:1px}
+.lead{color:#a9b3ad;font-size:14px;line-height:1.6;max-width:1100px;margin:6px 0 0}
+.pipe{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
+.st{position:relative;background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:14px 14px 12px;display:flex;flex-direction:column;gap:6px;min-height:156px}
+.st .n{font-size:12px;color:#14181a;background:#f0a064;border-radius:10px;padding:1px 8px;align-self:flex-start;font-weight:700}
+.st b{font-size:16px}
+.st p{margin:0;color:#a9b3ad;font-size:12.5px;line-height:1.55}
+.st .ms{margin-top:auto;font-size:12px;color:#8fd0b0;font-family:ui-monospace,Consolas,monospace}
+.st:not(:last-child)::after{content:"";position:absolute;right:-12px;top:50%;width:10px;height:10px;border-top:2px solid #f0a064;border-right:2px solid #f0a064;transform:translateY(-50%) rotate(45deg)}
+.bud{display:flex;height:26px;border-radius:7px;overflow:hidden;font-size:11.5px;color:#14181a;font-weight:700}
+.bud div{display:flex;align-items:center;justify-content:center;white-space:nowrap}
+.cols{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;flex:1;min-height:0}
+.box{background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.md{border:1px solid #3a443e;border-radius:10px;padding:12px;background:#14181a;display:flex;flex-direction:column;gap:6px}
+.md.a{border-color:#f0a064;background:#2a2218}
+.md b{font-size:15px}
+.md span{color:#a9b3ad;font-size:12.5px;line-height:1.55}
+.md .tag{color:#8fd0b0;font-size:11.5px;font-family:ui-monospace,Consolas,monospace;line-height:1.5}
+ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+li{color:#cfd6da;font-size:13px;line-height:1.55;padding-left:14px;position:relative}
+li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:2px;background:#f0a064}
+li em{font-style:normal;color:#8fd0b0}
+li s{text-decoration:none;color:#e58a8a}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+</style>
+</helmet>
+<div class="root">
+  <div>
+    <h1>实时屏幕翻译 · 总体方案</h1>
+    <p class="lead">目标：翻译桌面上<b>任何软件和游戏</b>的界面文字，不用截一张翻一张，而是框好区域后持续盯着，画面里的字一变就自动换成译文，直接贴在原位。参考 Bubble Translate 的三种模式，结合 Translumo、ScreenTranslator、Manga-Translator 的做法，落在清影已有的“模型池 / 术语库 / 专家”之上。</p>
+  </div>
+
+  <div>
+    <h2>一帧画面的旅程</h2>
+    <div class="pipe" style="margin-top:10px">
+      <div class="st"><span class="n">1 取景</span><b>只盯一块地方</b><p>窗口或框选区域，每秒 2–4 帧。优先用系统的窗口捕获，游戏切到“无边框窗口”最稳。</p><span class="ms">≈ 10–20 ms</span></div>
+      <div class="st"><span class="n">2 变化检测</span><b>没变就不干活</b><p>缩成小图比对，画面稳定半秒才往下走，对话框逐字出现时不会翻一半。</p><span class="ms">≈ 5 ms</span></div>
+      <div class="st"><span class="n">3 识字</span><b>本机识别，不上传</b><p>本机文字识别得到每行文字和位置。漫画、艺术字可切到视觉模型。</p><span class="ms">≈ 100–300 ms</span></div>
+      <div class="st"><span class="n">4 翻译</span><b>整屏一次翻完</b><p>同一帧的所有行打包给模型，带上游戏术语库和上一句，译名前后一致；翻过的直接走缓存。</p><span class="ms">≈ 0.6–2 s（缓存 0 ms）</span></div>
+      <div class="st"><span class="n">5 排版</span><b>取原背景色盖住</b><p>按原文框大小选字号，竖排漫画按气泡形状排，译文放不下就微缩而不是溢出。</p><span class="ms">≈ 10 ms</span></div>
+      <div class="st"><span class="n">6 贴字</span><b>透明悬浮层</b><p>全屏透明、鼠标穿透、不抢焦点的窗口。截图时自己被排除在外，不会把译文再翻一遍。</p><span class="ms">新译文就绪才替换</span></div>
+    </div>
+    <div class="bud" style="margin-top:12px">
+      <div style="width:3%;background:#8fd0b0"></div>
+      <div style="width:2%;background:#7fb6e8"></div>
+      <div style="width:13%;background:#f0a064">识字</div>
+      <div style="width:70%;background:#d9c06a">翻译（大模型，占大头）</div>
+      <div style="width:6%;background:#c9a0e8"></div>
+      <div style="width:6%;background:#8fd0b0"></div>
+    </div>
+    <p class="lead" style="margin-top:6px;font-size:12.5px">预估：首次出译文约 1–2.5 秒；同一画面再出现、对话重复，缓存命中后基本是瞬间。数字是目标值，要在真机和真实模型上实测后才作数。</p>
+  </div>
+
+  <div class="cols">
+    <div class="box">
+      <h2>三种模式，只改“怎么识、怎么排”</h2>
+      <div class="modes">
+        <div class="md a"><b>标准模式</b><span>游戏菜单、软件界面、网页、聊天窗口。多处零散文字，各翻各的、各贴各的。</span><span class="tag">本机识字 · 按行贴字 · 可框选或跟随窗口</span></div>
+        <div class="md"><b>漫画模式 · 竖排</b><span>竖排日文、气泡里的字。先找气泡再识字，擦掉原字，把译文排进气泡。</span><span class="tag">气泡检测 · 竖排识字 · 视觉模型兜底</span></div>
+        <div class="md"><b>字幕模式</b><span>视频、直播、游戏过场字幕。只盯画面下方一条，字幕一换就换，译文固定在原位置。</span><span class="tag">固定条带 · 更高刷新 · 去重合并断句</span></div>
+      </div>
+      <h2 style="margin-top:6px">控制条（像 Bubble Translate 的那个悬浮钮）</h2>
+      <ul>
+        <li>屏幕边缘一个小悬浮钮：<em>开始 / 暂停</em>、选区域、切换模式、显示 / 隐藏译文，可拖动、可收起成圆点。</li>
+        <li>全局快捷键：<em>开始暂停</em>、<em>重选区域</em>、<em>一键隐藏译文</em>、<em>只翻一次</em>（就是现在做好的 Ctrl+Alt+T）。</li>
+        <li>按程序记住设置：同一个游戏下次打开，区域、模式、语言、术语库自动恢复。</li>
+      </ul>
+    </div>
+    <div class="two">
+      <div class="box">
+        <h2>参考后的取舍</h2>
+        <ul>
+          <li><em>Translumo</em>：多引擎识字打分挑最好——太重，我们只留“本机 + 视觉模型”两档。它也要求游戏用无边框窗口，我们同样写进引导。</li>
+          <li><em>ScreenTranslator</em>：识字语言包和翻译脚本随时在线下载更新——借鉴为“识字组件”，需要时才下载。</li>
+          <li><em>Manga-Translator</em>：检测→识字→擦除→排版的流水线值得学；但它只会白底涂白、字号不设下限会崩——我们取背景色填充，并给字号设下限。</li>
+          <li><em>win_subtitle / Screen-Translate</em>：静音切句、上限强制切句——用在字幕模式的“合并断句”，也可以日后做系统声音的实时字幕。</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h2>边界，先说清楚</h2>
+        <ul>
+          <li><s>独占全屏</s>的游戏可能抓不到画面，要用无边框窗口模式。</li>
+          <li>只做“看屏幕 + 画一层”，不注入游戏、不改内存，不碰反作弊；但个别带强保护的游戏可能仍不让截屏。</li>
+          <li>竖排漫画的识字，本机组件的准确率不如视觉模型，漫画模式默认走视觉模型并明说会上传图片。</li>
+          <li>译文位置来自识别框，字体、描边是近似还原，不会像原生界面那样完美。</li>
+          <li>第一期只做 Windows；macOS / Linux 没有对应的窗口捕获，暂不做。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

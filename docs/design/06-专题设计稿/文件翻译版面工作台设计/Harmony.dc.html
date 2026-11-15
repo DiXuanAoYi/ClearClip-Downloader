@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>文件翻译 配色与对比度</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1360px; height: 780px; box-sizing: border-box; padding: 24px; display: flex; gap: 28px; background: #f5f6f8; color: #1d2433; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden">
+
+<section aria-label="配色" style="width: 600px; flex: none; box-sizing: border-box; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 10px"><strong style="font-size: 15px">配色</strong><span style="color: #6b7385">围绕当前颜色找一组搭得上的</span></div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap">
+<sc-for list="{{schemes}}" as="s" hint-placeholder-count="6"><span style="{{s.style}}">{{s.name}}</span></sc-for>
+</div>
+<div style="display: flex; gap: 20px; align-items: center">
+<div style="position: relative; width: 340px; height: 340px; flex: none; border-radius: 170px; background: radial-gradient(circle closest-side, #ffffff, rgba(255, 255, 255, 0)), conic-gradient(#ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000); box-shadow: 0 0 0 1px #cfd5e0">
+<div style="position: absolute; inset: 0; border-radius: 170px; border: 1px solid rgba(255, 255, 255, 0.5)"></div>
+<sc-for list="{{handles}}" as="h" hint-placeholder-count="5"><div style="{{h.style}}"></div></sc-for>
+</div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="color: #6b7385; font-size: 12px">基准色</span>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 32px; height: 32px; border-radius: 8px; background: #f4a900; border: 1px solid #cfd5e0"></span><span style="font: 13px ui-monospace, Menlo, Consolas, monospace">#F4A900</span></div></div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; flex-direction: column; gap: 2px"><div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: #6b7385">色相 H</span><span style="font-variant-numeric: tabular-nums">42°</span></div><div style="position: relative; height: 8px; border-radius: 4px; background: linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)"><span style="position: absolute; left: 11.7%; top: -4px; margin-left: -8px; width: 16px; height: 16px; border-radius: 8px; background: #ffffff; border: 2px solid #1d2433; box-sizing: border-box"></span></div></div>
+<div style="display: flex; flex-direction: column; gap: 2px"><div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: #6b7385">饱和度 S</span><span style="font-variant-numeric: tabular-nums">100%</span></div><div style="position: relative; height: 8px; border-radius: 4px; background: linear-gradient(to right, #ffffff, #ffaa00)"><span style="position: absolute; left: 100%; top: -4px; margin-left: -8px; width: 16px; height: 16px; border-radius: 8px; background: #ffffff; border: 2px solid #1d2433; box-sizing: border-box"></span></div></div>
+<div style="display: flex; flex-direction: column; gap: 2px"><div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: #6b7385">明度 B</span><span style="font-variant-numeric: tabular-nums">96%</span></div><div style="position: relative; height: 8px; border-radius: 4px; background: linear-gradient(to right, #000000, #ffaa00)"><span style="position: absolute; left: 96%; top: -4px; margin-left: -8px; width: 16px; height: 16px; border-radius: 8px; background: #ffffff; border: 2px solid #1d2433; box-sizing: border-box"></span></div></div>
+</div>
+<span style="color: #6b7385; font-size: 12px; line-height: 1.55">拖色轮上的点，一组颜色一起转；单独拖某一个点，只改它。</span>
+</div>
+</div>
+<div style="display: flex; gap: 8px">
+<sc-for list="{{palette}}" as="p" hint-placeholder-count="5">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<button title="{{p.hex}}" aria-label="{{p.hex}}" style="{{p.style}}"></button>
+<div style="font: 11px ui-monospace, Menlo, Consolas, monospace; text-align: center">{{p.hex}}</div>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; gap: 8px; align-items: center"><button style="height: 30px; padding: 0 12px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; font: inherit">全部加入自定义颜色</button><span style="flex: 1"></span><span style="color: #6b7385; font-size: 12px">点色块设为文字色 / 背景色</span></div>
+</section>
+
+<section aria-label="对比度与色盲" style="flex: 1; min-width: 0; box-sizing: border-box; background: #ffffff; border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 10px"><strong style="font-size: 15px">对比度与无障碍</strong><span style="color: #6b7385">文字色 对 背景色</span></div>
+<div style="display: flex; gap: 14px">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 50px; color: #6b7385">文字色</span><span style="width: 26px; height: 26px; border-radius: 6px; background: #f4a900; border: 1px solid #cfd5e0"></span><span style="font: 13px ui-monospace, Menlo, Consolas, monospace">#F4A900</span></div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 50px; color: #6b7385">背景色</span><span style="width: 26px; height: 26px; border-radius: 6px; background: #4a403a; border: 1px solid #cfd5e0"></span><span style="font: 13px ui-monospace, Menlo, Consolas, monospace">#4A403A</span><button aria-label="对调文字色和背景色" style="height: 26px; padding: 0 8px; border: 1px solid #cfd5e0; border-radius: 6px; background: #ffffff; font: inherit; font-size: 12px">⇄ 对调</button></div>
+</div>
+<div style="width: 170px; flex: none; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px"><span style="font-size: 38px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums">5.0<span style="font-size: 20px; font-weight: 400; color: #6b7385"> : 1</span></span><span style="font-size: 12px; font-weight: 600; color: #0b6b3a; background: #e6f6ec; border: 1px solid #b4e2c6; padding: 1px 10px; border-radius: 10px">达到 AA</span></div>
+</div>
+<div style="background: #4a403a; border-radius: 10px; padding: 16px 18px; display: flex; align-items: baseline; gap: 16px; color: #f4a900"><span style="font-size: 28px; font-weight: 700">黄金时刻</span><span style="font-size: 16px">浓郁温暖的秋季色调</span><span style="font-size: 12px">示例小字 Aa #f4a900</span></div>
+<div style="display: grid; grid-template-columns: 1fr auto; gap: 0; border: 1px solid #e4e7ec; border-radius: 8px; overflow: hidden; font-size: 12.5px">
+<sc-for list="{{wcag}}" as="w" hint-placeholder-count="5">
+<div style="padding: 7px 12px; border-bottom: 1px solid #e4e7ec; background: #ffffff">{{w.name}}<span style="color: #6b7385">　{{w.need}}</span></div>
+<div style="padding: 7px 12px; border-bottom: 1px solid #e4e7ec; background: #ffffff; font-weight: 600; text-align: right; color: {{w.color}}">{{w.mark}}</div>
+</sc-for>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px"><strong style="font-size: 12px">想更清楚？保持色相，只调明度</strong>
+<div style="display: flex; gap: 10px">
+<div style="flex: 1; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #e4e7ec; border-radius: 8px"><span style="width: 26px; height: 26px; border-radius: 6px; background: #ffd356; border: 1px solid #cfd5e0"></span><span style="flex: 1; line-height: 1.4"><span style="font-family: ui-monospace, Menlo, Consolas, monospace">#FFD356</span><br><span style="font-size: 11px; color: #6b7385">文字调亮 · 7.1 : 1 AAA</span></span><button style="height: 26px; padding: 0 8px; border: 1px solid #2457e6; border-radius: 6px; background: #ffffff; color: #2457e6; font: inherit; font-size: 12px">采用</button></div>
+<div style="flex: 1; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #e4e7ec; border-radius: 8px"><span style="width: 26px; height: 26px; border-radius: 6px; background: #2e2824; border: 1px solid #cfd5e0"></span><span style="flex: 1; line-height: 1.4"><span style="font-family: ui-monospace, Menlo, Consolas, monospace">#2E2824</span><br><span style="font-size: 11px; color: #6b7385">背景调暗 · 7.3 : 1 AAA</span></span><button style="height: 26px; padding: 0 8px; border: 1px solid #2457e6; border-radius: 6px; background: #ffffff; color: #2457e6; font: inherit; font-size: 12px">采用</button></div>
+</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="display: flex; align-items: center; gap: 8px"><strong style="font-size: 12px">色盲下看起来怎样</strong><span style="color: #6b7385; font-size: 11px">近似模拟，供参考</span></div>
+<div style="display: flex; gap: 8px">
+<sc-for list="{{cb}}" as="c" hint-placeholder-count="4">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
+<div style="{{c.style}}">Aa 黄金</div>
+<div style="font-size: 12px; text-align: center">{{c.name}}</div>
+<div style="font-size: 11px; text-align: center; font-weight: 600; color: {{c.color}}">{{c.ratio}}</div>
+</div>
+</sc-for>
+</div>
+<div style="padding: 6px 10px; border-radius: 8px; background: #fdf0e6; border: 1px solid #f3cfb2; color: #a14a12; font-size: 12px; line-height: 1.5">蓝盲下对比度降到 2.9 : 1，小字会看不清。建议用上面的“采用”调一下。</div>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":780}}'>
+class Component extends DCLogic {
+renderVals() {
+const hsv = (h, s, v) => {
+  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return '#' + [r, g, b].map((k) => Math.round((k + m) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+};
+const baseH = 42;
+const hues = [-60, -30, 0, 30, 60].map((d) => (baseH + d + 360) % 360);
+const R = 160, C = 170;
+const handles = hues.map((h, i) => {
+  const rad = (h * Math.PI) / 180;
+  const x = C + R * Math.sin(rad), y = C - R * Math.cos(rad);
+  const base = i === 2;
+  const size = base ? 26 : 20;
+  return { style: 'position:absolute;left:' + (x - size / 2) + 'px;top:' + (y - size / 2) + 'px;width:' + size + 'px;height:' + size + 'px;border-radius:' + size / 2 + 'px;border:3px solid #ffffff;box-shadow:0 0 0 1px #1d2433;box-sizing:border-box;background:' + hsv(h, 1, 0.96) };
+});
+const palette = hues.map((h) => { const hex = hsv(h, 1, 0.96); return { hex, style: 'display:block;width:100%;height:64px;padding:0;border-radius:8px;border:1px solid #cfd5e0;box-sizing:border-box;background:' + hex }; });
+const names = ['类似', '单色', '三色', '互补', '分裂互补', '四方', '自定义'];
+const schemes = names.map((name, i) => ({ name, style: 'padding:5px 12px;border-radius:8px;border:1px solid ' + (i === 0 ? '#c3d3fb' : '#cfd5e0') + ';background:' + (i === 0 ? '#eaf0ff' : '#ffffff') + ';color:' + (i === 0 ? '#2457e6' : '#1d2433') + ';font-weight:' + (i === 0 ? 600 : 400) }));
+const ok = '#0b6b3a', no = '#b42318';
+const wcag = [
+  { name: '普通文字', need: 'AA 需要 4.5 : 1', mark: '✓ 通过', color: ok },
+  { name: '普通文字', need: 'AAA 需要 7 : 1', mark: '✗ 差 2.0', color: no },
+  { name: '大号文字（≥ 18 pt）', need: 'AA 需要 3 : 1', mark: '✓ 通过', color: ok },
+  { name: '大号文字（≥ 18 pt）', need: 'AAA 需要 4.5 : 1', mark: '✓ 通过', color: ok },
+  { name: '图形和界面元素', need: '需要 3 : 1', mark: '✓ 通过', color: ok },
+];
+const sim = (fg, bg) => 'display:flex;align-items:center;justify-content:center;height:52px;border-radius:8px;border:1px solid #cfd5e0;box-sizing:border-box;font-weight:700;font-size:15px;color:' + fg + ';background:' + bg;
+const cb = [
+  { name: '正常', style: sim('#f4a900', '#4a403a'), ratio: '5.0 : 1 ✓', color: ok },
+  { name: '红盲', style: sim('#d3d329', '#464640'), ratio: '6.0 : 1 ✓', color: ok },
+  { name: '绿盲', style: sim('#d8dd33', '#484741'), ratio: '6.6 : 1 ✓', color: ok },
+  { name: '蓝盲', style: sim('#f04950', '#493d3d'), ratio: '2.9 : 1 ✗', color: no },
+];
+return { handles, palette, schemes, wcag, cb };
+}
+}
+</script>
+</body>
+</html>

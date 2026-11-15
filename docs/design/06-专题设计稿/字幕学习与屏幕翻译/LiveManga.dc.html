@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>漫画模式 · 竖排</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+.root{position:relative;width:1440px;height:900px;box-sizing:border-box;overflow:hidden;background:#14181a;color:#eef1ee;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;padding:32px 44px}
+h1{margin:0;font-size:26px}
+.sub{color:#a9b3ad;font-size:13.5px;line-height:1.6;margin:6px 0 0;max-width:980px}
+.cap{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:#a9b3ad}
+.cap b{color:#eef1ee;font-size:14px}
+.cap i{font-style:normal;background:#f0a064;color:#14181a;border-radius:10px;padding:0 8px;font-weight:700;font-size:12px}
+.pages{position:absolute;left:44px;top:116px;display:flex;gap:22px}
+.pg{position:relative;width:340px;height:520px;background:#f6f4ee;border:1px solid #3a443e;border-radius:4px;overflow:hidden}
+.pn{position:absolute;border:2.5px solid #1b1b1b;background:#e9e6de;overflow:hidden}
+.sc{position:absolute;background:#9b9890}
+.bb{position:absolute;background:#fff;border:2px solid #1b1b1b;border-radius:50%;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+.jp{writing-mode:vertical-rl;font-size:15px;line-height:1.45;color:#111;font-weight:700;letter-spacing:1px;font-family:"Yu Gothic","MS Gothic","Noto Sans JP",system-ui,sans-serif}
+.zh{font-size:12.5px;line-height:1.35;color:#111;font-weight:700;text-align:center;padding:0 8px}
+.det{position:absolute;border:1.8px dashed #e0622e;border-radius:50%;pointer-events:none}
+.det i{position:absolute;left:50%;top:-15px;transform:translateX(-50%);font-style:normal;font-size:10px;background:#e0622e;color:#fff;padding:0 5px;border-radius:3px;white-space:nowrap;font-weight:700}
+.sfx{position:absolute;font-weight:900;color:#1b1b1b;font-size:34px;writing-mode:vertical-rl;letter-spacing:2px}
+.steps{position:absolute;left:760px;top:116px;width:330px;display:flex;flex-direction:column;gap:10px}
+.s{background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.s b{font-size:14.5px}
+.s b em{font-style:normal;background:#f0a064;color:#14181a;border-radius:10px;padding:0 8px;font-size:12px;margin-right:8px}
+.s span{color:#a9b3ad;font-size:12.6px;line-height:1.55}
+.panel{position:absolute;right:44px;top:32px;width:300px;box-sizing:border-box;background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.panel h3{margin:0;font-size:15px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld span{color:#a9b3ad;font-size:12px}
+.sl{height:30px;border:1px solid #3a443e;border-radius:8px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#14181a;font-size:13px}
+.sw{display:flex;align-items:center;gap:8px;font-size:13px;line-height:1.4}
+.sw i{width:30px;height:17px;border-radius:9px;background:#3a443e;position:relative;flex:none}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#1d2420}
+.sw.on i{background:#f0a064}
+.sw.on i::after{left:15px}
+.seg{display:flex;border:1px solid #3a443e;border-radius:8px;overflow:hidden}
+.seg span{flex:1;text-align:center;padding:6px 0;font-size:12.5px;color:#a9b3ad}
+.seg .on{background:#f0a064;color:#14181a;font-weight:700}
+.warn{background:#2a2218;border:1px solid #f0a064;border-radius:10px;padding:10px 12px;color:#f3d3b5;font-size:12.5px;line-height:1.55}
+.foot{position:absolute;left:44px;top:664px;width:1046px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.nt{background:#1d2420;border:1px solid #3a443e;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.nt b{font-size:14.5px}
+.nt span{color:#a9b3ad;font-size:12.8px;line-height:1.6}
+</style>
+</helmet>
+<div class="root">
+  <h1>漫画模式 · 竖排</h1>
+  <p class="sub">看漫画网页、阅读器、模拟器里的画面时用。和标准模式的区别：先找“气泡”，再识别气泡里<b>竖排</b>的字，把原字擦掉，译文按<b>原来的方向</b>重新排进去：竖排译竖排，横排译横排。翻页后自动重新翻译。</p>
+
+  <div class="pages">
+    <div>
+      <div class="cap"><i>①</i><b>原页 · 找到的气泡</b></div>
+      <div class="pg">
+        <div class="pn" style="left:10px;top:10px;width:320px;height:200px"><div class="sc" style="left:30px;top:50px;width:90px;height:150px;border-radius:45px 45px 0 0"></div><div class="sc" style="left:200px;top:80px;width:100px;height:120px;border-radius:50px 50px 0 0;background:#7c7a74"></div></div>
+        <div class="pn" style="left:10px;top:218px;width:150px;height:292px"><div class="sc" style="left:35px;top:130px;width:80px;height:160px;border-radius:40px 40px 0 0"></div></div>
+        <div class="pn" style="left:168px;top:218px;width:162px;height:292px;background:#d9d6cd"><span class="sfx" style="left:96px;top:96px">ゴゴゴ</span></div>
+        <div class="bb" style="left:222px;top:24px;width:96px;height:132px"><span class="jp">まさか、ここまで<br>来るとは…</span></div>
+        <div class="bb" style="left:64px;top:232px;width:70px;height:120px"><span class="jp">逃げろ！</span></div>
+        <div class="bb" style="left:186px;top:236px;width:110px;height:72px;border-radius:36px"><span class="jp" style="writing-mode:horizontal-tb;font-size:13px">………！</span></div>
+        <div class="det" style="left:218px;top:20px;width:104px;height:140px"><i>气泡 1 · 竖排</i></div>
+        <div class="det" style="left:60px;top:228px;width:78px;height:128px"><i>气泡 2</i></div>
+        <div class="det" style="left:182px;top:232px;width:118px;height:80px"><i>气泡 3</i></div>
+      </div>
+    </div>
+    <div>
+      <div class="cap"><i>②</i><b>译文 · 擦掉原字、重新排版</b></div>
+      <div class="pg">
+        <div class="pn" style="left:10px;top:10px;width:320px;height:200px"><div class="sc" style="left:30px;top:50px;width:90px;height:150px;border-radius:45px 45px 0 0"></div><div class="sc" style="left:200px;top:80px;width:100px;height:120px;border-radius:50px 50px 0 0;background:#7c7a74"></div></div>
+        <div class="pn" style="left:10px;top:218px;width:150px;height:292px"><div class="sc" style="left:35px;top:130px;width:80px;height:160px;border-radius:40px 40px 0 0"></div></div>
+        <div class="pn" style="left:168px;top:218px;width:162px;height:292px;background:#d9d6cd"><span class="sfx" style="left:96px;top:96px">ゴゴゴ</span></div>
+        <div class="bb" style="left:222px;top:24px;width:96px;height:132px"><span class="zh">没想到，<br>你居然<br>能走到<br>这里……</span></div>
+        <div class="bb" style="left:64px;top:232px;width:70px;height:120px"><span class="zh">快<br>逃！</span></div>
+        <div class="bb" style="left:186px;top:236px;width:110px;height:72px;border-radius:36px"><span class="zh">………！</span></div>
+        <div style="position:absolute;left:176px;top:430px;width:148px;font-size:11px;line-height:1.4;color:#1d2420;background:rgba(255,255,255,.85);border-radius:4px;padding:3px 6px;font-weight:700">拟声词默认保留原样，旁边加小注：“轰隆隆”</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="steps">
+    <div class="s"><b><em>1</em>找气泡</b><span>检测对话气泡与旁白框的位置和轮廓（轻量检测模型，本机运行）。</span></div>
+    <div class="s"><b><em>2</em>竖排识字</b><span>日文竖排、从右往左的阅读顺序。默认交给视觉模型，更准；会上传这一页图片。</span></div>
+    <div class="s"><b><em>3</em>擦字</b><span>按气泡里的底色填充；底色不是纯色（渐变、网点）时，改用邻近像素修补，不再一律涂白。</span></div>
+    <div class="s"><b><em>4</em>排版</b><span>译文按气泡形状分行居中，字号有下限，放不下就轻微缩小；放得太小就改成“气泡旁注”。</span></div>
+    <div class="s"><b><em>5</em>翻页续翻</b><span>页面整体大幅变化视为翻页，清空旧译文重新来；前后页的人名保持一致。</span></div>
+  </div>
+
+  <div class="panel">
+    <h3>漫画模式 · 设置</h3>
+    <div class="fld"><span>阅读方向</span><div class="seg"><span class="on">右→左（日漫）</span><span>左→右</span></div></div>
+    <div class="fld"><span>原文</span><div class="sl">日语（竖排）<i style="font-style:normal">▾</i></div></div>
+    <div class="fld"><span>识别方式</span><div class="sl">视觉模型 · 竖排更准<i style="font-style:normal">▾</i></div></div>
+    <div class="fld"><span>擦字方式</span><div class="seg"><span class="on">取色填充</span><span>邻近修补</span></div></div>
+    <div class="fld"><span>译文字体</span><div class="sl">手写风黑体<i style="font-style:normal">▾</i></div></div>
+    <div class="fld"><span>译文方向</span><div class="seg"><span class="on">跟随原文</span></div></div><div class="nt"><b>竖排译竖排，横排译横排</b><span>原文是竖排的气泡，译文也竖排（中日韩正立、字母旋转）；原文横排的，译文横排。不提供手动改方向，避免排版和原画对不上。</span></div>
+    <div class="sw on"><i></i>拟声词保留原样，旁边加小注</div>
+    <div class="sw on"><i></i>翻页后自动重新翻译</div>
+    <div class="sw on"><i></i>人名、称呼记到本部漫画的术语库里</div>
+    <div class="warn">漫画模式会把当前这一页图片发给你配置的视觉模型。开启前会提示一次，并显示用的是哪个模型。</div>
+  </div>
+
+  <div class="foot">
+    <div class="nt"><b>为什么默认走视觉模型</b><span>本机文字识别对竖排日文、手写体、艺术字的准确率不稳；视觉模型一次就能同时给出文字、翻译和位置。代价是要上传图片、每页要等 2–4 秒。</span></div>
+    <div class="nt"><b>参考 Manga-Translator 的地方与改进</b><span>它的流水线是“检测→识字→擦除→排版”。我们同样分四步，但擦除不再只涂白，字号设下限，没找到气泡的页面直接跳过而不是报错。</span></div>
+    <div class="nt"><b>做不到的，提前说</b><span>没有框的旁白、画面里的手写字、特效字，识别率会低；译文不会像专业汉化组那样逐页打磨，目标是“能看懂”。</span></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
