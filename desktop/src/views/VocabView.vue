@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ExcerptsPanel from '../components/ExcerptsPanel.vue'
+import PageHead from '../components/ui/PageHead.vue'
 import CcEmpty from '../components/ui/CcEmpty.vue'
 import CcButton from '../components/ui/CcButton.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -229,14 +230,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <div class="vocab dpage">
-    <header class="h1 dtop">
-      <h1>{{ part === 'words' ? '生词本' : '摘录' }}</h1>
-      <p>{{ part === 'words' ? '来自你看过的视频字幕，每个词都带着原句和出处' : '浏览器里摘录、存为笔记的文字，写作窗、截图翻译里存的，都在这里' }}</p>
+    <PageHead :title="part === 'words' ? '生词本' : '摘录'">
       <el-radio-group v-model="part" class="part dtabs">
         <el-radio-button value="words">生词</el-radio-button>
         <el-radio-button value="excerpts">摘录</el-radio-button>
       </el-radio-group>
-    </header>
+      <p class="mute dgrow one">{{ part === 'words' ? '来自你看过的视频字幕，每个词都带着原句和出处' : '浏览器里摘录、存为笔记的文字，写作窗、截图翻译里存的，都在这里' }}</p>
+    </PageHead>
     <ExcerptsPanel v-if="part === 'excerpts'" class="expanel" />
     <template v-else>
 
@@ -355,10 +355,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <style scoped>
 .vocab { height: 100%; box-sizing: border-box; min-height: 0 }
-.h1 { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap }
-.h1 h1 { margin: 0; font-size: 22px }
-.h1 p { margin: 0; color: var(--cc-mute) }
-.h1 .part { margin-left: auto }
 .expanel { flex: 1; min-height: 0 }
 .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px }
 .stat { border: 1px solid var(--cc-line); background: var(--cc-panel2); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px }

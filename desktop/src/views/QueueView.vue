@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import PageHead from '../components/ui/PageHead.vue'
 import { siteName } from '../utils/siteGuides'
 import VirtualList from '../components/VirtualList.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -246,12 +247,7 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
 
 <template>
   <div class="dpage page">
-    <div class="dtop">
-      <h1>下载队列</h1>
-      <span class="dspacer" />
-      <span v-if="speedPlan" class="chip" :class="speedPlan.limited ? 'acc' : 'cyan'" :title="speedPlan.title"><i class="ddot" :class="{ amber: speedPlan.limited }" />{{ speedPlan.text }}</span>
-      <span v-if="queue.counts.running" class="chip cyan"><i class="ddot" />{{ queue.counts.running }} 个下载中</span>
-    </div>
+    <PageHead title="下载队列" />
     <div class="dstats">
       <div class="dstat" :class="{ on: queue.counts.running > 0 }"><b>{{ queue.counts.running }}</b><span>进行中</span></div>
       <div class="dstat"><b>{{ queue.counts.queued }}</b><span>等待</span></div>
@@ -267,6 +263,8 @@ async function run<A extends unknown[]>(fn: (...args: A) => Promise<unknown>, ..
         <CcSelect v-if="lists.length" v-model="listFilter" :options="listOptions" size="s" width="m" aria-label="按列表筛选" data-testid="list-filter" />
         <span v-if="batchFilter" class="mute small">只看批次“{{ batchName(batchFilter) }}” <CcButton kind="text" size="s" @click="batchFilter = null">显示全部</CcButton></span>
         <span class="dspacer" />
+        <span v-if="speedPlan" class="chip" :class="speedPlan.limited ? 'acc' : 'cyan'" :title="speedPlan.title"><i class="ddot" :class="{ amber: speedPlan.limited }" />{{ speedPlan.text }}</span>
+        <span v-if="queue.counts.running" class="chip cyan"><i class="ddot" />{{ queue.counts.running }} 个下载中</span>
         <CcButton size="s" :disabled="queue.active === 0" disabled-reason="没有进行中或排队的任务" @click="run(api.pauseAll)">全部暂停</CcButton>
         <CcButton size="s" :disabled="queue.counts.paused + queue.counts.failed === 0" disabled-reason="没有已暂停或失败的任务" @click="run(api.resumeAll)">全部继续 / 重试</CcButton>
         <CcButton size="s" :disabled="!queue.tasks.some((t) => t.status === 'done' || t.status === 'canceled')" disabled-reason="还没有已完成的任务" @click="run(api.clearFinished)">清除已完成</CcButton>
